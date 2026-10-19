@@ -183,6 +183,8 @@ pub struct BumpMap {
 pub enum AppearanceTarget {
     /// Whole-body appearance.
     Body(BodyId),
+    /// Appearance assigned to one placed product occurrence.
+    Occurrence(crate::ids::OccurrenceId),
     /// Per-face appearance override.
     Face(FaceId),
     /// Per-edge line appearance.

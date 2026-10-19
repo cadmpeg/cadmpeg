@@ -9,10 +9,10 @@ fn validation_entity_header(
     use crate::records::identity::{DesignEntityId, ReferenceRun};
     DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity-header#1".into(),
-        byte_offset: 10,
+        byte_offset: Some(10),
         entity_id: DesignEntityId::from_parts("sketch", 1),
         class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: DesignEntityRegistration::new(
             Some(crate::records::entity_header::DESIGN_MODULE_SKETCH.into()),
             (!references.is_empty()).then_some(SketchHeaderReferences {
@@ -31,7 +31,7 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
         DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire,
     };
     use crate::records::entity_header::{
-        DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_BODY,
+        DESIGN_MODULE_BODY, DesignEntityHeader, DesignEntityRegistration,
     };
     use crate::records::identity::{DesignEntityId, ReferenceRun};
 
@@ -73,11 +73,11 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
         );
         native.design_entity_headers.push(DesignEntityHeader {
             id: "f3d:Design/BulkStream.dat:entity-header#1".into(),
-            byte_offset: 10,
+            byte_offset: Some(10),
             entity_id: DesignEntityId::from_parts("body", 1),
             class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned())
                 .unwrap(),
-            optional_slot_present: false,
+            optional_slot_present: Some(false),
             registration: DesignEntityRegistration::new(
                 Some(DESIGN_MODULE_BODY.into()),
                 None,

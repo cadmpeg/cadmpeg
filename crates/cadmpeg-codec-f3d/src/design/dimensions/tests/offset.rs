@@ -42,12 +42,12 @@ fn offset_loci(rows: &[(u32, u32, u32)]) -> Vec<crate::records::dimensions::Desi
         .map(|&(geometry_record_index, role, returned)| {
             crate::records::dimensions::DesignDimensionLocus {
                 geometry_record_index,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role,
-                role_offset: 0,
+                role_offset: Some(0),
                 returned: crate::records::identity::Located {
                     value: returned,
-                    offset: 0,
+                    offset: Some(0),
                 },
             }
         })
@@ -814,15 +814,15 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
                 loci: [
                     crate::records::dimensions::DesignDimensionAnnotationOperand {
                         geometry_record_index: std::num::NonZeroU32::new(20),
-                        geometry_reference_offset: 40,
+                        geometry_reference_offset: Some(40),
                         role: 0,
-                        role_offset: 50,
+                        role_offset: Some(50),
                     },
                     crate::records::dimensions::DesignDimensionAnnotationOperand {
                         geometry_record_index: std::num::NonZeroU32::new(21),
-                        geometry_reference_offset: 55,
+                        geometry_reference_offset: Some(55),
                         role: 0,
-                        role_offset: 65,
+                        role_offset: Some(65),
                     },
                 ],
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(

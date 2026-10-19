@@ -26,7 +26,10 @@ fn zero_length_edge_parameter_range_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino cannot write a zero-length domain");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
 }
 
 #[test]
@@ -47,7 +50,10 @@ fn admitted_unit_direction_outside_rhino_bound_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino uses a tighter direction bound");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
 }
 
 #[test]
@@ -69,7 +75,10 @@ fn admitted_frame_outside_rhino_bound_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino uses a tighter frame bound");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
 }
 
 #[test]

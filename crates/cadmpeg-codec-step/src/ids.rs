@@ -67,6 +67,12 @@ macro_rules! key_word {
 
 pub(crate) use key_word;
 
+/// Retained source image for an omitted container-only projection.
+pub(crate) fn source_image() -> UnknownId {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("source-image"));
+    UnknownId::from(Identity::compose(&namespace, IdentityKey::from(0_usize)))
+}
+
 /// File-level signature opaque record: `step:file:signature#{index}`.
 #[must_use]
 pub(crate) fn signature(index: usize) -> UnknownId {

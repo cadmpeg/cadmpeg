@@ -850,6 +850,11 @@ impl<'a> Cursor<'a> {
 }
 
 #[cfg(test)]
+pub(crate) fn model_state_fixture() -> Vec<u8> {
+    tests::fixture_for_kind(15, false).0
+}
+
+#[cfg(test)]
 mod tests {
     use crate::test_support::test_fixtures::push_u16;
     use crate::test_support::test_fixtures::push_u32;
@@ -1117,7 +1122,7 @@ mod tests {
         fixture_for_kind(schema, true)
     }
 
-    fn fixture_for_kind(schema: u16, assembly: bool) -> (Vec<u8>, usize) {
+    pub(super) fn fixture_for_kind(schema: u16, assembly: bool) -> (Vec<u8>, usize) {
         let mut bytes = Vec::new();
         push_u16(&mut bytes, schema);
         push_u16(&mut bytes, if schema == 15 { 27 } else { 23 });

@@ -21,7 +21,7 @@ pub(super) fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str 
         FeatureTreeNodeRole::Details => "Details",
         FeatureTreeNodeRole::DissectedProfile => "Profile Selection",
         FeatureTreeNodeRole::DirectionalLight => "Directional",
-        FeatureTreeNodeRole::Equations => "Equations",
+        FeatureTreeNodeRole::Equations => "EquationDriven",
         FeatureTreeNodeRole::ExplodedViews => "Exploded Views",
         FeatureTreeNodeRole::Favorites => "Favorites",
         FeatureTreeNodeRole::FeatureFolder => "Folder",
@@ -52,7 +52,7 @@ pub(super) fn require_same_family(
 ) -> Result<(), CodecError> {
     if existing.is_some_and(|record| !families.iter().any(|family| feature_family(record, family)))
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "SLDPRT feature {feature_id} changes operation family"
         )));
     }
@@ -174,7 +174,7 @@ pub(super) fn resolved_boolean_op(
     feature: &FeatureId,
 ) -> Result<&'static str, CodecError> {
     format_boolean_op(value).ok_or_else(|| {
-        CodecError::NotImplemented(format!(
+        CodecError::UnsupportedContent(format!(
             "SLDPRT feature {feature} has an unresolved boolean operation"
         ))
     })

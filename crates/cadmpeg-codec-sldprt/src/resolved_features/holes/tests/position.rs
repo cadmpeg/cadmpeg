@@ -495,11 +495,11 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
     history.features[0].source_id = None;
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "hole-name".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         value: "Hole".into(),
         object_id: Some(ObjectId::Absent),
     });
@@ -510,11 +510,11 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
         .copy_from_slice(&u32::MAX.to_le_bytes());
 
     let child_offset = hole_trailer + 32;
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "position-name".into(),
         parent: "lane".into(),
-        ordinal: 1,
-        offset: cadmpeg_core::decode::u64_from_index(child_offset),
+        ordinal: 1, sequence: 1,
+        offset: Some(cadmpeg_core::decode::u64_from_index(child_offset)),
         value: "Position".into(),
         object_id: ObjectId::from_value(6),
     });
@@ -543,11 +543,11 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
     let history = native_history();
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "hole-name".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         value: "Hole".into(),
         object_id: ObjectId::from_value(7),
     });
@@ -557,11 +557,11 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
     lane.native_payload[hole_trailer + 8..hole_trailer + 12].copy_from_slice(&7u32.to_le_bytes());
 
     let child_offset = hole_trailer + 32;
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "position-name".into(),
         parent: "lane".into(),
-        ordinal: 1,
-        offset: cadmpeg_core::decode::u64_from_index(child_offset),
+        ordinal: 1, sequence: 1,
+        offset: Some(cadmpeg_core::decode::u64_from_index(child_offset)),
         value: "Position".into(),
         object_id: ObjectId::from_value(6),
     });
@@ -698,11 +698,11 @@ fn position_sketch_index_matches_the_candidate_scan() {
             .map(|lane_index| FeatureInputLane {
                 id: format!("lane-{lane_index}"),
                 names: (0..next(12))
-                    .map(|ordinal| FeatureInputName {
+                    .map(|ordinal| FeatureInputName { feature_ref: None,
                         id: format!("name-{lane_index}-{ordinal}"),
                         parent: format!("lane-{lane_index}"),
-                        ordinal,
-                        offset: u64::from(ordinal) * 8,
+                        ordinal, sequence: ordinal,
+                        offset: Some(u64::from(ordinal) * 8),
                         object_id: ObjectId::from_value(1 + next(6)),
                         value: format!("Sketch{}", next(8)),
                     })
@@ -740,6 +740,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -1001,6 +1002,7 @@ fn unique_unindexed_point_locus_is_projected() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -1129,6 +1131,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1248,6 +1251,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         &[surface],
         &[history],
         &[lane],
+        &[],
     );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -1282,6 +1286,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1345,6 +1350,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         &[],
         &[history],
         &[lane],
+        &[],
     );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -1393,6 +1399,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1474,6 +1481,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         &[surface],
         &[history],
         &[lane],
+        &[],
     );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -1579,19 +1587,19 @@ fn source_intervals_supply_legacy_hole_profiles() {
     });
 
     let mut lane = lane_with_position_reference(12);
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "depth-name".into(),
         parent: "lane".into(),
-        ordinal: 1,
-        offset: 120,
+        ordinal: 1, sequence: 1,
+        offset: Some(120),
         value: "depth".into(),
         object_id: None,
     });
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "profile-name".into(),
         parent: "lane".into(),
-        ordinal: 2,
-        offset: 100,
+        ordinal: 2, sequence: 2,
+        offset: Some(100),
         value: "Profile".into(),
         object_id: ObjectId::from_value(8),
     });
@@ -1599,8 +1607,8 @@ fn source_intervals_supply_legacy_hole_profiles() {
         id: "depth-scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("native-profile-sketch".into()),
-        ordinal: 0,
-        offset: 150,
+        ordinal: 0, sequence: 0,
+        offset: Some(150),
         object_id: 1,
         name: "depth-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.0068).expect("finite test scalar"),
@@ -1683,19 +1691,19 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     let mut lane = lane_with_position_reference(12);
     lane.native_payload.resize(300, 0);
     lane.names.extend([
-        FeatureInputName {
+        FeatureInputName { feature_ref: None,
             id: "position-name".into(),
             parent: "lane".into(),
-            ordinal: 1,
-            offset: 100,
+            ordinal: 1, sequence: 1,
+            offset: Some(100),
             value: "Position".into(),
             object_id: ObjectId::from_value(12),
         },
-        FeatureInputName {
+        FeatureInputName { feature_ref: None,
             id: "profile-name".into(),
             parent: "lane".into(),
-            ordinal: 2,
-            offset: 200,
+            ordinal: 2, sequence: 2,
+            offset: Some(200),
             value: "Profile".into(),
             object_id: ObjectId::from_value(58),
         },
@@ -1719,27 +1727,27 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     let mut alternate_lane = lane_with_position_reference(12);
     alternate_lane.native_payload.resize(300, 0);
     alternate_lane.names.extend([
-        FeatureInputName {
+        FeatureInputName { feature_ref: None,
             id: "alternate-position-name".into(),
             parent: "lane".into(),
-            ordinal: 1,
-            offset: 100,
+            ordinal: 1, sequence: 1,
+            offset: Some(100),
             value: "Position".into(),
             object_id: ObjectId::from_value(12),
         },
-        FeatureInputName {
+        FeatureInputName { feature_ref: None,
             id: "alternate-profile-name".into(),
             parent: "lane".into(),
-            ordinal: 2,
-            offset: 150,
+            ordinal: 2, sequence: 2,
+            offset: Some(150),
             value: "Alternate profile".into(),
             object_id: ObjectId::from_value(59),
         },
-        FeatureInputName {
+        FeatureInputName { feature_ref: None,
             id: "later-profile-name".into(),
             parent: "lane".into(),
-            ordinal: 3,
-            offset: 200,
+            ordinal: 3, sequence: 3,
+            offset: Some(200),
             value: "Profile".into(),
             object_id: ObjectId::from_value(58),
         },
@@ -1808,18 +1816,18 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
 fn parameter_class_supplies_an_operandless_scalar_unit() {
     let mut history = native_history();
     let mut lane = lane_with_position_reference(6);
-    lane.classes.push(FeatureInputClass {
+    lane.classes.push(FeatureInputClass { feature_ref: None,
         id: "angle-parameter-class".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 100,
+        ordinal: 0, sequence: 0,
+        offset: Some(100),
         name: "moAngleParameter_c".into(),
     });
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "angle-name".into(),
         parent: "lane".into(),
-        ordinal: 1,
-        offset: 120,
+        ordinal: 1, sequence: 1,
+        offset: Some(120),
         value: "D1".into(),
         object_id: None,
     });
@@ -1827,8 +1835,8 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         id: "angle-scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("native-hole".into()),
-        ordinal: 0,
-        offset: 150,
+        ordinal: 0, sequence: 0,
+        offset: Some(150),
         object_id: 1,
         name: "angle-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU)
@@ -1863,6 +1871,7 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
         &mut features,
         &[],
         &HoleTopology {
+            parameters: &[],
             surfaces: &surfaces,
             faces: &[],
             loops: &[],

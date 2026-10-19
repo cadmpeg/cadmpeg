@@ -450,7 +450,7 @@ fn exact_coil_face_selection(
         let id = scope.id.clone();
         let header = DesignRecordHeader {
             id,
-            byte_offset: u64::try_from(selection_start).ok()?,
+            byte_offset: Some(u64::try_from(selection_start).ok()?),
             class_tag: selection_class_tag.to_owned().try_into().ok()?,
             record_index: selection_record_index,
         };
@@ -727,7 +727,7 @@ pub(super) fn bind_coil_extent_from_parameters(
         .iter()
         .filter(|owner| {
             native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
+                && owner.scope_record_index() == Some(scope.record_index)
         })
         .filter_map(|owner| {
             parameters
@@ -736,7 +736,9 @@ pub(super) fn bind_coil_extent_from_parameters(
                     native_stream(&parameter.id) == Some(stream)
                         && parameter.record_index == owner.parameter_record_index()
                 })
-                .map(|parameter| (owner.local_ordinal(), parameter.source_kind().as_str()))
+                .and_then(|parameter| {
+                    Some((owner.local_ordinal()?, parameter.source_kind().as_str()))
+                })
         });
     let mut sorted = [(0, ""); 5];
     let mut count = 0usize;

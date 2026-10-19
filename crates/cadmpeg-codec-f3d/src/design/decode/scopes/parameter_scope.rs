@@ -102,12 +102,15 @@ pub(crate) fn decode_parameter_scopes(
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
+            let Some(header_offset) = header.byte_offset else {
+                continue;
+            };
             let Some(mut scope) = parse_parameter_scope(
                 bytes,
                 &records,
                 header.record_index,
                 &header.class_tag,
-                header.byte_offset,
+                header_offset,
             )?
             else {
                 continue;
@@ -776,7 +779,7 @@ pub(super) fn parameter_scope_candidate_headers(
             headers.push(RecordFrame {
                 record_index,
                 class_tag,
-                byte_offset,
+                byte_offset: Some(byte_offset),
             });
         }
     }

@@ -8,7 +8,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
@@ -85,7 +84,6 @@ fn placed_point_product() -> CadIr {
                 FiniteVector3::new(Vector3::new(x, 0.0, 0.0)).expect("finite offset"),
             ),
             linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

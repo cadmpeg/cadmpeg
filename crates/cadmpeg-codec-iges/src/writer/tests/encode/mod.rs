@@ -78,12 +78,10 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 }),
             "{version:?} output has no Type 102 entity"
         );
-        assert!(round_trip.ir().model.curves.iter().any(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .and_then(|source| source.name.as_deref())
-                == Some("COMPOSIT")
+        assert!(round_trip.ir().model.attributes.iter().any(|attribute| {
+            attribute.name == "name"
+                && attribute.values == [cadmpeg_ir::attributes::AttributeValue::String("COMPOSIT".to_owned())]
+                && matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if round_trip.ir().model.curves.iter().any(|curve| curve.id == *id))
         }));
         let validation =
             cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
@@ -298,13 +296,9 @@ fn encode_rejects_open_shells_before_iges_5_3() {
         )
         .unwrap();
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
-        let error = plan_at(version, decoded.ir(), None)
-            .expect_err("legacy target must reject an open shell");
-        assert!(
-            error
-                .to_string()
-                .contains("does not define emitted entity Type 514 Form 2"),
-            "{version:?}: {error}"
+        crate::writer::tests::assert_degraded_plan(
+            plan_at(version, decoded.ir(), None),
+            "does not define emitted entity Type 514 Form 2",
         );
     }
 }
@@ -423,38 +417,32 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
 }
 
 #[test]
-fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
+fn encode_omits_unsupported_curve_geometry_with_an_error_loss() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("unsupported curve geometry was accepted")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("does not encode this curve geometry"),
-        "{error}"
+    super::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, &ir, None),
+        "does not encode this curve geometry",
     );
 }
 
 #[test]
-fn encode_refuses_an_empty_source_less_model() {
+fn encode_writes_an_empty_source_less_model_with_a_loss() {
     let ir = CadIr::empty();
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("empty semantic output was accepted")
-    };
-    assert!(
-        error.to_string().contains("refuses an empty model"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("an empty document is writable");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
 }
 
 #[test]
-fn encode_refuses_a_native_curve_without_neutral_geometry() {
+fn encode_neutral_deletion_overrides_a_native_curve_without_neutral_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
@@ -467,19 +455,23 @@ fn encode_refuses_a_native_curve_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native curve was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native curve entity D1 without neutral geometry"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None)
+        .expect("neutral deletions take precedence over retained native records");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.curves.is_empty());
 }
 
 #[test]
-fn encode_refuses_a_native_point_without_neutral_geometry() {
+fn encode_neutral_deletion_overrides_a_native_point_without_neutral_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
@@ -490,34 +482,42 @@ fn encode_refuses_a_native_point_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native point was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native point entity D1 without neutral geometry"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None)
+        .expect("neutral deletions take precedence over retained native records");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.points.is_empty());
 }
 
 #[test]
-fn encode_refuses_a_native_surface_without_neutral_geometry() {
+fn encode_neutral_deletion_overrides_a_native_surface_without_neutral_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.surfaces.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native surface was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native surface entity D1 without neutral geometry"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None)
+        .expect("neutral deletions take precedence over retained native records");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.surfaces.is_empty());
 }
 
 #[test]
@@ -785,13 +785,9 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         },
     ]);
 
-    let error = plan_at(IgesVersion::V5_3, &ir, None)
-        .expect_err("standalone pointer-defined analytic surface must be refused");
-    assert!(
-        error.to_string().contains(
-            "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
-        ),
-        "{error}"
+    crate::writer::tests::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, &ir, None),
+        "requires B-rep topology",
     );
 }
 
@@ -818,13 +814,9 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         source_object: None,
     });
 
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("free analytic surface must not inherit B-rep eligibility");
-    assert!(
-        error
-            .to_string()
-            .contains("analytic surface test:model:surface#free-sphere requires B-rep topology"),
-        "{error}"
+    crate::writer::tests::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, decoded.ir(), None),
+        "requires B-rep topology",
     );
 }
 
@@ -837,13 +829,9 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
         )
         .unwrap();
 
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("a cylindrical face without axial bounds must be refused");
-    assert!(
-        error
-            .to_string()
-            .contains("boundary loop that repeats one seam edge without axial bounds"),
-        "{error}"
+    crate::writer::tests::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, decoded.ir(), None),
+        "without axial bounds",
     );
 }
 

@@ -77,7 +77,7 @@ pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
                 id: format!("{stream}:design-record-header#{index}"),
                 record_index: index,
                 class_tag: "277".to_owned().try_into().unwrap(),
-                byte_offset: offset,
+                byte_offset: Some(offset),
             });
         }
     }
@@ -147,7 +147,7 @@ fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check:
             id: "f3d:Design/BulkStream.dat:design-record-header#102".into(),
             record_index: 102,
             class_tag,
-            byte_offset,
+            byte_offset: Some(byte_offset),
         });
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();

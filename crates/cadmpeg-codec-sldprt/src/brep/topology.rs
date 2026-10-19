@@ -764,6 +764,7 @@ pub(crate) fn patch_point_values(
 }
 
 /// Replace one world-point record while preserving its framing.
+#[cfg(test)]
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
     let mut tables = scan_with_point_framing(buf, false, None, None);
     let Some(record) = tables.points.remove(&attr) else {

@@ -22,7 +22,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{
-    elide_local_digests, snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
+    snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
 };
 
 use super::FcstdCodec;
@@ -78,10 +78,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let mut result = EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
+            let result = EditableDecodeResult::from(result);
             let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = elided_native(&result.ir().native);
@@ -652,9 +649,25 @@ mod native_elision {
 /// arenas. Every input the codec admits is cut to geometry depth.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
-        &FcstdCodec,
-        &harness().fixture_inputs(),
-    );
+    let summary =
+        cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+            &FcstdCodec,
+            &harness().fixture_inputs(),
+            |decoded| {
+                let declared = crate::loss::unrepresented(
+                    &decoded.report().losses,
+                    decoded
+                        .ir()
+                        .native
+                        .namespace("fcstd")
+                        .expect("FreeCAD native source records"),
+                )
+                .expect("classify retained source records");
+                for class in declared {
+                    assert!(decoded.source_fidelity().unrepresented().contains(&class),
+                    "source loss left class {class} unrepresented without a fidelity declaration");
+                }
+            },
+        );
     assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
 }

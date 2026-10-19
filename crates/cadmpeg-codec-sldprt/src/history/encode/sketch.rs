@@ -19,7 +19,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             if sketch.is_some() {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes sketch-block geometry",
                     feature.id
                 )));
@@ -28,14 +28,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 feature_input_class(record, NativeClassKind::SketchBlockDefinition)
             });
             let Some(record) = record else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} requires a retained sketch-block definition",
                     feature.id
                 )));
             };
             NeutralFeatureEncoding {
                 kind: record.kind.clone(),
-                parameters: record.parameters.clone(),
+                parameters: self.base_parameters(),
                 properties: record.properties.clone(),
             }
         })
@@ -56,7 +56,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let block_source = block.and_then(|block| feature_sources.get(block).copied());
             let retained_placement = existing.and_then(sketch_block_placement);
             if retained_source != block_source || retained_placement.as_ref() != placement {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes sketch-block instance semantics",
                     feature.id
                 )));
@@ -64,14 +64,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let record = existing
                 .filter(|record| feature_input_class(record, NativeClassKind::SketchBlockInstance));
             let Some(record) = record else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} requires a retained sketch-block instance",
                     feature.id
                 )));
             };
             NeutralFeatureEncoding {
                 kind: record.kind.clone(),
-                parameters: record.parameters.clone(),
+                parameters: self.base_parameters(),
                 properties: record.properties.clone(),
             }
         })
@@ -93,25 +93,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let profile =
                 planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} references a missing wrap profile",
                             feature.id
                         ))
                     })?;
             let face = face_selection_value(face).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no wrap target face",
                     feature.id
                 ))
             })?;
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
+            let mut parameters = self.base_parameters();
             match mode {
                 WrapMode::Emboss { depth } | WrapMode::Deboss { depth } => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Depth"),
-                        format_length_mm((*depth).into()),
+                        format_length_mm(self.dimension(depth)?.into()),
                     );
                 }
                 WrapMode::Scribe => {
@@ -145,9 +143,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             require_same_family(existing, &feature.id, &["Sketch"])?;
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties: feature.source_properties.clone(),
             }
         })
@@ -160,9 +156,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             require_same_family(existing, &feature.id, &["Sketch"])?;
             NeutralFeatureEncoding {
                 kind: "3DSketch".into(),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties: feature.source_properties.clone(),
             }
         })

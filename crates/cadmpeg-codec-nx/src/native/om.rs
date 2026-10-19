@@ -628,15 +628,6 @@ pub(super) fn expression_length_in_millimeters(unit: &ExpressionUnit, value: f64
     }
 }
 
-pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> {
-    match unit {
-        "millimeter" => Some(value),
-        "inch" => Some(value * INCH_TO_MILLIMETERS),
-        "degree" => Some(value.to_radians()),
-        _ => None,
-    }
-}
-
 /// Named parameter declaration in a bounded NX expression object record.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "ExpressionDeclarationWire")]

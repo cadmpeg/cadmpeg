@@ -191,7 +191,6 @@ mod tests {
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [crate::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

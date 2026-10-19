@@ -6,7 +6,10 @@ use super::super::feature_definition_is_incomplete;
 #[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -297,7 +300,8 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies,
             removed_faces,
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
+            thickness: (Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()))
+                .map(Into::into),
             outward: Some(true),
             mode: None,
             join: None,
@@ -384,7 +388,7 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
             faces,
             merge_entities,
             create_solid,
-            gap_tolerance,
+            gap_tolerance: (gap_tolerance).map(Into::into),
         })
     };
     let faces = FaceSelection::Faces(vec!["test:model:face#1"

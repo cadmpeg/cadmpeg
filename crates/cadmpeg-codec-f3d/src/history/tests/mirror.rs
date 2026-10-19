@@ -40,7 +40,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
             AsmDeltaState {
                 id: "history:state#1".into(),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 1,
                 version_flag: 1,
                 state_flag: 0,
@@ -157,7 +157,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
             AsmDeltaState {
                 id: "history:state#1".into(),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 1,
                 version_flag: 1,
                 state_flag: 0,
@@ -269,7 +269,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             AsmDeltaState {
                 id: "history:state#1".into(),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 1,
                 version_flag: 1,
                 state_flag: 0,

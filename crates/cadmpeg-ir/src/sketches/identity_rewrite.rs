@@ -2,14 +2,14 @@
 //! Rewrite the identities owned by these fields.
 
 use super::{
-    NativeOperandField, OffsetParameter, OrderedMajorRadius, ReferenceLineDirection, SeededMembers,
-    Sketch, SketchAxis, SketchCircularPattern, SketchCircularPatternInstance, SketchConstraint,
+    NativeOperandField, OrderedMajorRadius, ReferenceLineDirection, SeededMembers, Sketch,
+    SketchAxis, SketchCircularPattern, SketchCircularPatternInstance, SketchConstraint,
     SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityUse, SketchFontWeight,
     SketchGeometry, SketchGeometryDefinition, SketchInternalAlignment, SketchLabelValue,
     SketchLocus, SketchNativeOperand, SketchOffsetPair, SketchPatternDirection,
-    SketchPatternDistance, SketchPatternInstance, SketchPlacement, SketchPlaneFrame, SketchPolygon,
-    SketchProfiles, SketchRectangularPattern, SketchSameCoordinate, SketchTextHorizontalAlignment,
+    SketchPatternInstance, SketchPlacement, SketchPlaneFrame, SketchPolygon, SketchProfiles,
+    SketchRectangularPattern, SketchSameCoordinate, SketchTextHorizontalAlignment,
     SketchTextVerticalAlignment, SpatialSketch, SpatialSketchConstraint,
     SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput, SpatialSketchEntity,
     SpatialSketchEntityPair, SpatialSketchEntityUse, SpatialSketchGeometry,
@@ -17,13 +17,12 @@ use super::{
 };
 
 rewrite_record!(NativeOperandField, []; {name, role});
-rewrite_record!(OffsetParameter, []; {id, negated});
 rewrite_scalar!(OrderedMajorRadius);
 rewrite_scalar!(ReferenceLineDirection);
 rewrite_record!(SeededMembers<T>, [T]; {members});
 rewrite_record!(Sketch, []; {id, name, configuration, visible, placement, profiles, native_ref});
 rewrite_scalar!(SketchAxis);
-rewrite_record!(SketchCircularPattern, []; {center, angle, angle_parameter, count_parameter, seed, instances});
+rewrite_record!(SketchCircularPattern, []; {center, angle, count, seed, instances});
 rewrite_record!(SketchCircularPatternInstance, []; {angle, entities});
 rewrite_record!(SketchConstraint, []; {id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref});
 rewrite_record!(SketchConstraintDefinition, []; (field0));
@@ -42,7 +41,7 @@ rewrite_enum!(SketchConstraintDefinitionInput, []; {
     Midpoint {point, entity},
     PointCoordinateValues {point, values},
     MidpointCoordinate {first, second, axis, value},
-    Offset {pairs, distance, parameter},
+    Offset {pairs, distance},
     ProjectedCopy {source, result},
     AtIntersection {point, first, second},
     Concentric {first, second},
@@ -63,8 +62,8 @@ rewrite_enum!(SketchConstraintDefinitionInput, []; {
     EllipseAngle {entity, angle},
     Distance {entities, parameter},
     DistanceLoci {first, second, parameter},
-    DistanceLociValue {first, second, distance, parameter},
-    PolarDistance {first, second, distance, angle, distance_parameter},
+    DistanceLociValue {first, second, distance},
+    PolarDistance {first, second, distance, angle},
     AngleDifference {first, second, difference, value},
     ScalarEquality {first, second},
     EqualDistance {first, second},
@@ -121,11 +120,7 @@ rewrite_enum!(SketchLocus, []; {
 });
 rewrite_record!(SketchNativeOperand, []; {native_kind, field, object_index, native_ref});
 rewrite_record!(SketchOffsetPair, []; {source, result, source_reversed});
-rewrite_record!(SketchPatternDirection, []; {direction, spacing, distance, count_parameter});
-rewrite_enum!(SketchPatternDistance, []; {
-    Spacing {parameter},
-    Span {parameter},
-});
+rewrite_record!(SketchPatternDirection, []; {direction, distance, count});
 rewrite_record!(SketchPatternInstance, []; {entities});
 rewrite_scalar!(SketchPlacement);
 rewrite_scalar!(SketchPlaneFrame);
@@ -138,7 +133,7 @@ rewrite_scalar!(SketchTextVerticalAlignment);
 rewrite_record!(SpatialSketch, []; {id, name, configuration, visible, profiles, native_ref});
 rewrite_record!(SpatialSketchConstraint, []; {id, sketch, definition, native_ref});
 rewrite_record!(SpatialSketchConstraintDefinition, []; (field0));
-rewrite_enum!(SpatialSketchConstraintDefinitionInput<U, L>, [U, L]; {
+rewrite_enum!(SpatialSketchConstraintDefinitionInput<U, L>, [U, L: crate::features::DimensionValue]; {
     Native {native_kind, native_state, parameter, operands},
     Coincident {first, second},
     Symmetric {first, second, axis},
@@ -152,7 +147,7 @@ rewrite_enum!(SpatialSketchConstraintDefinitionInput<U, L>, [U, L]; {
     ParallelLineDistance {first, second, parameter},
     RepeatedParallelLineDistance {pairs, parameter},
     ParallelLineSetDistance {first, second, parameter},
-    Offset {sources, results, normal, distance, parameter},
+    Offset {sources, results, normal, distance},
     ParallelToDirection {entity, direction},
     SplineGroup {entities},
 });

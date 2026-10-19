@@ -82,11 +82,12 @@ Native writing and replay:
 
 - `f3d_writer` parses IR, generates a source-less archive, inspects it, and
   decodes it.
-- `f3d_roundtrip` decodes an archive, replays it through the native writer, and
-  decodes the result.
+- `f3d_roundtrip` decodes an archive, passes its source fidelity to the native
+  writer, and decodes the result. Unrepresented source classes force synthesis.
 - `iges_writer` selects IGES 5.1, 5.2, or 5.3 from its control byte; exercises
-  source-less planning, topology synthesis, unsupported-native rejection,
-  inspection, semantic re-decode, validation, and byte-exact replay.
+  source-less planning, topology synthesis, native omission, inspection,
+  semantic re-decode, validation, and guarded byte-exact replay. Retained
+  unknown records cannot make a synthesized output carry absent content.
 
 Focused parser coverage. Focused codec parser targets import `::fuzz` only.
 

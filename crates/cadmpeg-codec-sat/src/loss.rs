@@ -227,8 +227,91 @@ pub(crate) fn binary_header_losses(
     }
 }
 
+/// Classes with source records represented only by bytes, rather than typed records.
+///
+/// Codes absent from this table describe retained typed content, metadata, or export
+/// loss. Native retention below is checked separately from neutral projection.
+#[cfg(test)]
+const UNREPRESENTED: &[(SatLossCode, cadmpeg_ir::ArenaClass)] = &[
+    (
+        SatLossCode::FramingRecordsUnread,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::GeometryFramedWithoutCarriers,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::GeometryProceduralSurfaceUntyped,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::GeometryUseCurveIntervalInvalid,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::SourceRecordExtensionsUnprojected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::SourceRecordNameUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::SourceStreamLayoutUnprojected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::TopologyFaceOwnerUnprojected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::TopologyShellUnprojected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        SatLossCode::TopologyWireOwnerUnprojected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+];
+
+/// Independent fixture oracle for codes that prove an omitted source record.
+/// Production fidelity is collected at actual decoding/retention branches.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
+) -> cadmpeg_ir::ArenaClasses {
+    let mut classes = cadmpeg_ir::ArenaClasses::default();
+    for (code, class) in UNREPRESENTED {
+        if losses.iter().any(|loss| loss.code == code.kind()) {
+            classes.insert(*class);
+        }
+    }
+    classes
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
+        let losses = [
+            super::SatLossCode::VertexToleranceUnresolved.note("typed record retained"),
+            super::SatLossCode::FramingTerminatorMissing.note("decode diagnostic"),
+        ];
+        assert!(super::unrepresented(&losses, None).is_empty());
+    }
+
+    #[test]
+    fn source_only_losses_declare_their_classes() {
+        for (code, class) in super::UNREPRESENTED {
+            let losses = [code.note("source record is not typed")];
+            let classes = super::unrepresented(&losses, None);
+            assert!(classes.contains(class), "{code:?} must declare {class:?}");
+        }
+        assert!(super::unrepresented(&[], None).is_empty());
+    }
+
     use super::SatLossCode;
     use std::collections::BTreeSet;
 

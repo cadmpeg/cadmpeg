@@ -41,7 +41,11 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
 `DecodeOptions::depth` to `DecodeDepth::Container` for archive metadata
 without B-rep decoding, or to `DecodeDepth::Geometry` for geometry and
-products without design intent.
+products without standalone design projection. Bodyless, image-bearing
+and F3Z routes can also deliver design because the same phase supplies model
+assets. The document declares its held classes in
+`ir.scope`. A total design-intent failure has the same scope and document
+content as a geometry-depth decode; the failure is recorded in the report.
 `F3dCodec::inspect` returns classified ZIP entries and B-rep header facts.
 
 ## Encode
@@ -69,10 +73,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Decode retains the source archive and a semantic baseline. Encoding with the
-retained `source_fidelity` sidecar replays an unchanged archive byte for byte
-and patches supported edits in place. Encoding `CadIr` without that sidecar
-writes a canonical archive for the supported source-less profile.
+Encoding authors content from the neutral arenas and supported typed native
+records. Neutral values take precedence over their native projections.
+Retained source bytes select layout only: replay and patch require empty
+`source_fidelity.unrepresented` and the same content that synthesis would
+produce. An unavailable image or an unsupported patch selects synthesis;
+`ExportReport` records `Synthesized` and the patch-decline cause.
+
+Synthesis writes supported B-rep geometry, appearances, scalar document
+parameters and configurations. Unsupported records are omitted locally and
+reported as export losses. Procedural definitions use their solved carrier
+when their native construction has no exact encoding. A document with no
+exportable body writes an empty geometry carrier and reports the existing
+no-exportable-solids loss. Read the export report before accepting a reduction.
 
 ## Data model
 
@@ -89,8 +102,9 @@ their native scale.
 Typed transfer covers analytic carriers, cached NURBS, selected procedural
 definitions, design and sketch records, typed ASM history, source attributes,
 and Protein appearances. Records that block faithful transfer land in
-`DecodeReport::losses`. Useful passthrough carrier bytes stay as
-`UnknownRecord` values. Failed SAB framing or geometry decoding still returns
+`DecodeReport::losses`. Opaque retained bytes stay outside the typed content model and do not
+author export content. The sidecar declares their unrepresented arena classes.
+Failed SAB framing or geometry decoding still returns
 container metadata and retained source data, with blocking geometry and
 topology losses.
 

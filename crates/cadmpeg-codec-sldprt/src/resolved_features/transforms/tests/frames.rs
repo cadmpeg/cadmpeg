@@ -47,7 +47,7 @@ use std::collections::{BTreeMap, HashMap};
 #[test]
 fn circle_dimension_driver_supplies_the_center_operand() {
     let operand = |index, marker: &str| FeatureInputOperand {
-        offset: u64::from(index),
+        offset: Some(u64::from(index)),
         reference_ref: format!("reference-{index}"),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_929D),
         entity_index: index,
@@ -57,8 +57,8 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         id: id.into(),
         parent: "lane".into(),
         feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
+        ordinal: 0, sequence: 0,
+        offset: Some(offset),
         object_id: 1,
         name: "dimension-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -164,8 +164,8 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -193,6 +193,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         ],
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -200,7 +201,6 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -363,6 +363,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -371,6 +372,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         native_ref: Some("native-feature".into()),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         name: "D1".into(),
@@ -381,14 +383,13 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("existing-driver".into()),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
     };
     let scalar = FeatureInputScalar {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("native-feature".into()),
-        ordinal: 0,
-        offset: 10,
+        ordinal: 0, sequence: 0,
+        offset: Some(10),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.012).expect("finite test scalar"),
@@ -421,8 +422,8 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 10,
+        ordinal: 0, sequence: 0,
+        offset: Some(10),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "native-feature".into(),
@@ -873,6 +874,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -917,8 +919,8 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         id: "circle-relation".into(),
         parent: "lane".into(),
         feature_ref: "feature-native".into(),
-        ordinal: 0,
-        offset: 80,
+        ordinal: 0, sequence: 0,
+        offset: Some(80),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "circle-class".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
@@ -952,6 +954,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         sketch_entities: vec![horizontal, vertical, center],
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#diameter").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         name: "D1".into(),
@@ -962,7 +965,6 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("circle-scalar".into()),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
     };
 
     DimensionedCircleFixture {
@@ -1134,24 +1136,24 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
 fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
         entity_ref: None,
     };
-    let class = FeatureInputClass {
+    let class = FeatureInputClass { feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 112,
+        ordinal: 0, sequence: 0,
+        offset: Some(112),
         name: "sgEntHandle".into(),
     };
     let reference = FeatureInputReference {
         id: operand.reference_ref.clone(),
         parent: "lane".into(),
         feature_ref: Some("feature-native".into()),
-        ordinal: 0,
+        ordinal: 0, sequence: 0,
         offset: operand.offset,
         kind,
         class_ref: Some(class.id.clone()),
@@ -1324,6 +1326,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -1332,6 +1335,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: Some("feature-native".into()),
     }];
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#diameter").expect("identity grammar"),
         owner: Some(features[0].id.clone()),
         ordinal: 0,
@@ -1339,24 +1343,23 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         expression: "10".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(10.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("parameter-scalar".into()),
     };
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
-        offset: 300,
+        offset: Some(300),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
         entity_ref: None,
     };
-    let class = FeatureInputClass {
+    let class = FeatureInputClass { feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 312,
+        ordinal: 0, sequence: 0,
+        offset: Some(312),
         name: "sgEntHandle".into(),
     };
     let mut center = marker("center", Some([0.010, 0.020]));

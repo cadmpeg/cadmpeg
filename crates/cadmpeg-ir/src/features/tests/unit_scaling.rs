@@ -28,8 +28,11 @@ fn arc(radii: [f64; 2]) -> FeatureEllipticArc {
         Point3::new(1.0, 2.0, 3.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
-        radii.map(|radius| PositiveLength::new(radius).expect("a positive radius")),
-        DirectedParameterRange::new([0.0, 1.0]).expect("a nonzero interval"),
+        (radii.map(|radius| PositiveLength::new(radius).expect("a positive radius")))
+            .map(Into::into),
+        (DirectedParameterRange::new([0.0, 1.0]).expect("a nonzero interval"))
+            .try_into()
+            .unwrap(),
     )
     .expect("an ordered arc fixture")
 }
@@ -44,7 +47,13 @@ fn an_elliptic_arc_scales_its_radii_in_order() {
     let scaled = arc([major, minor])
         .with_scaled_radii(scale(25.4))
         .expect("the radii keep their order");
-    assert_eq!(scaled.radii().map(PositiveLength::get), [48.26, 48.26]);
+    assert_eq!(
+        scaled
+            .radii()
+            .clone()
+            .map(|radius| radius.literal_radius().unwrap().get()),
+        [48.26, 48.26]
+    );
     assert_eq!(scaled.center(), arc([major, minor]).center());
     assert_eq!(scaled.angles(), arc([major, minor]).angles());
 
@@ -67,7 +76,8 @@ fn length(value: f64) -> Length {
 }
 
 fn wedge(bounds: [f64; 10]) -> PrimitiveSolid {
-    let [xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max] = bounds.map(length);
+    let [xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max] =
+        bounds.map(|value| crate::features::Dimension::Literal(length(value)));
     PrimitiveSolid::new(PrimitiveSolidKind::Wedge {
         xmin,
         ymin,
@@ -89,28 +99,28 @@ fn wedge(bounds: [f64; 10]) -> PrimitiveSolid {
 fn a_scaled_primitive_keeps_signs_non_strict_orders_and_angles() {
     let quarter = Angle::new(std::f64::consts::FRAC_PI_2).expect("a finite angle");
     let cone = PrimitiveSolid::new(PrimitiveSolidKind::Cone {
-        radius1: length(0.0),
-        radius2: length(2.0),
-        height: length(3.0),
-        angle: quarter,
+        radius1: (crate::features::Dimension::Literal(length(0.0))).into(),
+        radius2: (crate::features::Dimension::Literal(length(2.0))).into(),
+        height: crate::features::Dimension::Literal(length(3.0)),
+        angle: crate::features::Dimension::Literal(quarter),
     })
     .expect("a cone fixture");
     assert_eq!(
         cone.scaled(scale(25.4)),
         Ok(PrimitiveSolid::new(PrimitiveSolidKind::Cone {
-            radius1: length(0.0),
-            radius2: length(2.0 * 25.4),
-            height: length(3.0 * 25.4),
-            angle: quarter,
+            radius1: (crate::features::Dimension::Literal(length(0.0))).into(),
+            radius2: (crate::features::Dimension::Literal(length(2.0 * 25.4))).into(),
+            height: crate::features::Dimension::Literal(length(3.0 * 25.4)),
+            angle: crate::features::Dimension::Literal(quarter),
         })
         .expect("scaled cone fixture"))
     );
 
     let sphere = PrimitiveSolid::new(PrimitiveSolidKind::Sphere {
-        radius: length(2.0),
-        latitude1: Angle::new(-1.0).expect("a finite angle"),
-        latitude2: Angle::new(1.0).expect("a finite angle"),
-        longitude: quarter,
+        radius: (crate::features::Dimension::Literal(length(2.0))).into(),
+        latitude1: crate::features::Dimension::Literal(Angle::new(-1.0).expect("a finite angle")),
+        latitude2: crate::features::Dimension::Literal(Angle::new(1.0).expect("a finite angle")),
+        longitude: crate::features::Dimension::Literal(quarter),
     })
     .expect("a sphere fixture");
     let Ok(scaled) = sphere.scaled(scale(0.5)) else {
@@ -125,9 +135,15 @@ fn a_scaled_primitive_keeps_signs_non_strict_orders_and_angles() {
     else {
         panic!("a scaled sphere stays a sphere");
     };
-    assert_eq!(radius.get(), 1.0);
-    assert_eq!([latitude1.get(), latitude2.get()], [-1.0, 1.0]);
-    assert_eq!(longitude.get(), quarter.get());
+    assert_eq!(radius.literal_radius().unwrap().get(), 1.0);
+    assert_eq!(
+        [
+            latitude1.literal().unwrap().get(),
+            latitude2.literal().unwrap().get()
+        ],
+        [-1.0, 1.0]
+    );
+    assert_eq!(longitude.literal().unwrap().get(), quarter.get());
 
     let equal_upper = wedge([0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0]);
     assert!(equal_upper.scaled(scale(3.0e-7)).is_ok());
@@ -149,9 +165,9 @@ fn a_scaled_primitive_refuses_a_collapsed_extent_and_an_overflowing_length() {
     );
 
     let tiny = PrimitiveSolid::new(PrimitiveSolidKind::Box {
-        length: length(1.0e-320),
-        width: length(1.0),
-        height: length(1.0),
+        length: crate::features::Dimension::Literal(length(1.0e-320)),
+        width: crate::features::Dimension::Literal(length(1.0)),
+        height: crate::features::Dimension::Literal(length(1.0)),
     })
     .expect("a box fixture");
     assert_eq!(

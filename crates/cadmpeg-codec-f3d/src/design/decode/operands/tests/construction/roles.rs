@@ -101,7 +101,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
 
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:group#296501".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };

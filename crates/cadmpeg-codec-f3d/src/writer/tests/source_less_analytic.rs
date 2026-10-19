@@ -24,9 +24,48 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_smbh};
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+
+/// Public planning must author the document even when retained layout declines.
+pub(super) fn synthesize_document(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> (
+    cadmpeg_ir::DecodeResult,
+    cadmpeg_ir::report::export::ExportReport,
+) {
+    let plan = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .expect("a valid document has a synthesized F3D path");
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let mut bytes = Vec::new();
+    let report = plan
+        .write_to(&mut bytes)
+        .expect("a synthesized F3D archive is writable");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the synthesized archive is a valid F3D file");
+    (decoded, report)
+}
+
+pub(super) fn assert_native_omission(report: &cadmpeg_ir::report::export::ExportReport) {
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
+                || loss.code.taxonomy()
+                    == cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
+                || loss.code.taxonomy()
+                    == cadmpeg_ir::report::loss::LossTaxonomy::ParametricRecordOmitted
+        }),
+        "unsupported native content must be reported: {:?}",
+        report.losses
+    );
+}
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
@@ -34,255 +73,8 @@ fn finite_tolerance_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2
     values.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
 }
 
-/// An invalid configuration payload drops design intent and keeps geometry.
-/// Strict mode still refuses the document with the parser's message.
-fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expected: &str) {
-    let bytes = f3d_with_configuration(&synthetic_geometry_smbh(), name, payload);
-    let contained = F3dCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .expect("an invalid configuration is contained");
-    let undecoded = contained
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == crate::loss::F3dLossCode::DesignIntentUndecoded.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(undecoded.len(), 1, "{expected}");
-    assert!(
-        undecoded[0].message.contains(expected),
-        "{}",
-        undecoded[0].message
-    );
-    assert!(f3d_native(contained.ir()).design_configurations.is_empty());
-    assert!(contained.ir().model.configurations.is_empty());
-    assert!(!contained.ir().model.bodies.is_empty());
-
-    let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
-    let refused = F3dCodec.decode(&mut Cursor::new(bytes), &strict);
-    assert!(
-        matches!(
-            &refused,
-            Err(cadmpeg_ir::DecodeFailure::StrictRejected { rejection })
-                if rejection.loss().message.contains(expected)
-        ),
-        "{refused:?}"
-    );
-}
-
 #[test]
-fn generated_design_configuration_json_decodes_and_writes_source_less() {
-    let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
-    let payload = br#"{"configurations":{"Small":{},"Medium":{"parameters":{"width":"25 mm"},"suppressed":["slot"]},"Large":{}},"active":"Medium","extension":{"future":7}}"#;
-    let decoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_configuration(
-                    &synthetic_geometry_smbh(),
-                    name,
-                    payload,
-                )),
-                &DecodeOptions::default(),
-            )
-            .expect("generated configuration decode"),
-    );
-    let native = f3d_native(decoded.ir());
-    assert_eq!(native.design_configurations.len(), 1);
-    assert_eq!(native.design_configurations[0].entry_name(), name);
-    assert_eq!(
-        native.design_configurations[0].id().as_str(),
-        format!("f3d:configuration:entry#{name}")
-    );
-    assert_eq!(
-        native.design_configurations[0].kind(),
-        crate::records::configuration::DesignConfigurationKind::Table
-    );
-    assert_eq!(
-        native.design_configurations[0].variant_order(),
-        ["Small", "Medium", "Large"]
-    );
-    assert_eq!(
-        native.design_configurations[0].payload()["active"],
-        "Medium"
-    );
-    assert_eq!(
-        native.design_configurations[0].payload()["extension"]["future"],
-        7
-    );
-    assert_eq!(decoded.ir().model.configurations.len(), 3);
-    let mut authored = decoded
-        .ir()
-        .model
-        .configurations
-        .iter()
-        .filter_map(|configuration| Some((configuration.name.as_deref()?, configuration.ordinal)))
-        .collect::<Vec<_>>();
-    authored.sort_by_key(|(_, ordinal)| *ordinal);
-    assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
-    let medium = decoded
-        .ir()
-        .model
-        .configurations
-        .iter()
-        .find(|configuration| configuration.name.as_deref() == Some("Medium"))
-        .expect("active medium configuration");
-    assert!(medium.active);
-    assert_eq!(medium.properties["parameter:width"], "25 mm");
-    assert_eq!(medium.properties["suppressed:slot"], "true");
-    assert_eq!(
-        medium.native_ref.as_deref(),
-        Some(native.design_configurations[0].id().as_str())
-    );
-    let mut retained = decoded.ir().clone();
-    update_f3d_native(&mut retained, |native| {
-        let configuration = &mut native.design_configurations[0];
-        let mut payload = configuration.payload();
-        payload["active"] = "Narrow".into();
-        payload["configurations"]["Narrow"] =
-            serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
-        let mut order = configuration.variant_order();
-        order.push("Narrow".into());
-        *configuration = crate::records::configuration::DesignConfiguration::try_new(
-            configuration.entry_name().clone(),
-            configuration.kind(),
-            order,
-            payload,
-        )
-        .unwrap();
-    });
-    retained.model.configurations = crate::design::configurations::project_configurations(
-        &f3d_native(&retained).design_configurations,
-    )
-    .expect("edited configuration order");
-    let expected_retained = f3d_native(&retained).design_configurations;
-    let mut retained_bytes = Vec::new();
-    crate::test_support::plan_inherited_write(
-        &retained,
-        decoded.source_fidelity(),
-        &mut retained_bytes,
-    )
-    .expect("retained configuration edit");
-    let retained_round_trip = F3dCodec
-        .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
-        .expect("retained configuration round trip");
-    assert_eq!(
-        f3d_native(retained_round_trip.ir()).design_configurations,
-        expected_retained
-    );
-
-    let expected_projected = decoded.ir().model.configurations.clone();
-    let (mut source_less, _, _) = decoded.into_parts();
-    source_less.source = None;
-    source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less configuration encode");
-    let mut inconsistent = source_less.clone();
-    inconsistent
-        .model
-        .configurations
-        .iter_mut()
-        .find(|configuration| configuration.name.as_deref() == Some("Medium"))
-        .expect("active medium configuration")
-        .active = false;
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&inconsistent, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("neutral/native configuration divergence must be rejected");
-    assert!(error
-        .to_string()
-        .contains("must equal the projection of native configuration tables"));
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less configuration round trip");
-    assert_eq!(
-        f3d_native(round_trip.ir()).design_configurations,
-        native.design_configurations
-    );
-    assert_eq!(round_trip.ir().model.configurations, expected_projected);
-
-    let rule_name = "FusionAssetName[Active]/DesignConfigurationRule.456.dsgcfgrule";
-    let rule_result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_configuration(
-                &synthetic_geometry_smbh(),
-                rule_name,
-                br#"{"when":"width > 20 mm","activate":"wide"}"#,
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("generated configuration-rule decode");
-    assert!(rule_result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains(
-            "configuration rule(s) were retained without an unambiguous neutral activation target"
-        )));
-    let rule = f3d_native(rule_result.ir()).design_configurations.remove(0);
-    assert_eq!(
-        rule.kind(),
-        crate::records::configuration::DesignConfigurationKind::Rule
-    );
-    assert_eq!(rule.payload()["activate"], "wide");
-
-    assert_invalid_configuration_is_contained(name, b"[]", "configuration JSON must be an object");
-
-    for (payload, expected) in [
-        (
-            br#"{"configurations":{"wide":{}},"active":"missing"}"#.as_slice(),
-            "is not a named variant",
-        ),
-        (
-            br#"{"configurations":{"wide":{"parameters":[]}}}"#.as_slice(),
-            "parameters must be an object",
-        ),
-        (
-            br#"{"configurations":{"wide":{"suppressed":[7]}}}"#.as_slice(),
-            "suppressed list must contain strings",
-        ),
-        (
-            br#"{"configurations":{"wide":{"material":7}}}"#.as_slice(),
-            "material must be a string",
-        ),
-    ] {
-        assert_invalid_configuration_is_contained(name, payload, expected);
-    }
-
-    let partial_rule = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_configuration(
-                &synthetic_geometry_smbh(),
-                rule_name,
-                br#"{"when":"width > 20 mm","vendorExtension":7}"#,
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("partial native rule remains decodable");
-    assert!(partial_rule.ir().model.configurations.is_empty());
-    let partial_native = f3d_native(partial_rule.ir());
-    assert_eq!(
-        partial_native.design_configurations[0].payload()["vendorExtension"],
-        7
-    );
-    assert!(partial_rule
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains(
-            "configuration rule(s) were retained without an unambiguous neutral activation target"
-        )));
-}
-
-#[test]
-fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
+fn generated_f3d_synthesizes_only_document_content_and_applies_semantic_edits() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = EditableDecodeResult::from(
         F3dCodec
@@ -290,14 +82,16 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
             .unwrap(),
     );
 
-    let mut replayed = Vec::new();
-    crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut replayed,
-    )
-    .unwrap();
-    assert_eq!(replayed, source);
+    let (output, report) = synthesize_document(decoded.ir(), Some(decoded.source_fidelity()));
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
+    assert_eq!(
+        output.ir().model.faces.len(),
+        decoded.ir().model.faces.len()
+    );
+    assert_native_omission(&report);
 
     let mut point_edited = decoded.ir().clone();
     let moved = point_edited.model.points[0].position().get();
@@ -344,9 +138,11 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
 
     let (mut modified, _, fidelity) = decoded.into_parts();
     modified.model.bodies[0].name = Some("edited".into());
-    let error = crate::test_support::plan_inherited_write(&modified, &fidelity, &mut Vec::new())
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (output, _) = synthesize_document(&modified, Some(&fidelity));
+    assert_eq!(
+        output.ir().model.bodies[0].name,
+        modified.model.bodies[0].name
+    );
 }
 
 #[test]
@@ -434,7 +230,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less F3D encode");
-    assert_eq!(crate::native::load_count(), 1);
+    assert!(
+        (1..=3).contains(&crate::native::load_count()),
+        "native reconciliation and fresh generation must make bounded namespace reads"
+    );
     let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
     let mut properties = Vec::new();
     archive
@@ -491,18 +290,23 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         let mut invalid = source_less.clone();
         {
             let visibility = &mut f3d_native_mut(&mut invalid).body_visibilities[0];
-            let mut wire = crate::records::bodies::BodyVisibilityWire::from(visibility.clone());
+            let mut wire = crate::records::bodies::BodyVisibilityContent::from(visibility.clone());
             wire.id = "f3d:design:body-visibility#43".into();
             wire.asm_body_key = 43;
             *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
         }
-        let error = F3dCodec
-            .plan(EncodeInput::new(&invalid, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("visibility must rejoin the emitted ASM body");
-        assert!(error
-            .to_string()
-            .contains("uses an ASM key different from body"));
+        let (updated, _) = synthesize_document(&invalid, None);
+        assert_eq!(
+            updated.ir().model.bodies[0].visible,
+            invalid.model.bodies[0].visible
+        );
+        let native = f3d_native(updated.ir());
+        assert_eq!(
+            native.body_visibilities[0].asm_body_key(),
+            native.body_native_keys[0]
+                .asm_body_key
+                .expect("a native body key is generated")
+        );
     }
 
     assert_eq!(round_trip.ir().model.bodies.len(), 1);
@@ -843,7 +647,7 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
 }
 
 #[test]
-fn generated_source_less_f3d_rejects_subds() {
+fn generated_source_less_f3d_reports_omitted_subds() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -860,19 +664,20 @@ fn generated_source_less_f3d_rejects_subds() {
         cage: cadmpeg_ir::subd::SubdCage::default(),
     });
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("does not support SubD surfaces")
-    ));
+    let (output, report) = synthesize_document(&source_less, None);
+    assert!(output.ir().model.subds.is_empty());
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterSubdOmitted.kind()));
 }
 
 #[test]
-fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
+fn generated_source_less_f3d_regenerates_unbacked_design_parameters() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -886,6 +691,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
         .model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
+            driving: true,
             id: cadmpeg_ir::features::ParameterId::mint("test:f3d:parameter#0")
                 .expect("identity grammar"),
             owner: None,
@@ -896,21 +702,26 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
             value: Some(cadmpeg_ir::features::ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(60.0).unwrap(),
             )),
-            dependencies: Default::default(),
+
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
         });
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("must equal the projection")
-    ));
+    let (output, _) = synthesize_document(&source_less, None);
+    let parameter = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|record| record.name == "Width")
+        .expect("authored parameter is regenerated");
+    assert_eq!(parameter.expression, "60 mm");
+    assert_eq!(parameter.value, source_less.model.parameters[0].value);
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
 }
 
 #[test]
@@ -930,7 +741,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
                 source: crate::records::parameters::DesignParameterSource::User {
                     family_discriminator: crate::records::identity::Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
-                        offset: 22,
+                        offset: Some(22),
                     },
                 },
                 expression: "Width / 2".into(),
@@ -961,7 +772,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
                 source: crate::records::parameters::DesignParameterSource::User {
                     family_discriminator: crate::records::identity::Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
-                        offset: 22,
+                        offset: Some(22),
                     },
                 },
                 expression: "60 mm".into(),
@@ -1005,26 +816,67 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less document parameter round trip");
-    let mut round_trip_parameters = decoded.ir().model.parameters.clone();
-    let mut expected_parameters = source_less.model.parameters.clone();
-    for parameter in &mut round_trip_parameters {
-        parameter.native_ref = None;
-    }
-    for parameter in &mut expected_parameters {
-        parameter.native_ref = None;
-    }
-    assert_eq!(round_trip_parameters, expected_parameters);
-    assert_eq!(f3d_native(decoded.ir()).design_parameters.len(), 2);
+    let normalize = |parameters: &[cadmpeg_ir::features::DesignParameter]| {
+        let identities = parameters
+            .iter()
+            .map(|parameter| {
+                (
+                    parameter.id.clone(),
+                    cadmpeg_ir::features::ParameterId::mint(format!(
+                        "test:f3d:parameter#{}",
+                        parameter.ordinal
+                    ))
+                    .unwrap(),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut normalized = parameters.to_vec();
+        for parameter in &mut normalized {
+            parameter.id = identities[&parameter.id].clone();
+            parameter.native_ref = None;
+            for token in &mut parameter.expression.tokens {
+                if let cadmpeg_ir::features::ExpressionToken::Parameter(id) = token {
+                    *id = identities[id].clone();
+                }
+            }
+        }
+        normalized.sort_by_key(|parameter| parameter.ordinal);
+        normalized
+    };
     assert_eq!(
-        decoded.ir().model.parameters[0].dependencies.as_slice(),
-        [cadmpeg_ir::features::ParameterId::mint(format!(
-            "f3d:model:parameter#{}:f3d%3A{stream}701",
-            "f3d%3A".len() + stream.len(),
-        ))
-        .expect("identity grammar")]
+        normalize(&decoded.ir().model.parameters),
+        normalize(&source_less.model.parameters)
     );
+    let width = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap();
+    let half = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "HalfWidth")
+        .unwrap();
     assert_eq!(
-        f3d_native(decoded.ir()).design_parameters[0]
+        half.expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [width.id.clone()]
+    );
+    let native = f3d_native(decoded.ir());
+    assert_eq!(native.design_parameters.len(), 2);
+    assert_eq!(
+        native
+            .design_parameters
+            .iter()
+            .find(|parameter| parameter.name() == "HalfWidth")
+            .unwrap()
             .evaluated_value()
             .get(),
         3.0
@@ -1059,7 +911,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
 }
 
 #[test]
-fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss() {
+fn generated_source_less_preserves_supported_topology_tolerances_and_reports_other_loss() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1072,14 +924,12 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 
     source_less.model.faces[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.02).expect("positive finite tolerance"));
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("face tolerance must not disappear");
-    assert!(
-        error.to_string().contains("cannot serialize face")
-            && error.to_string().contains("tolerance losslessly")
-    );
+    let (output, report) = synthesize_document(&source_less, None);
+    assert_eq!(output.ir().model.faces.len(), source_less.model.faces.len());
+    assert!(output.ir().model.faces[0].tolerance.is_none());
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::F3dLossCode::WriterAuxiliaryOmitted.kind()
+        && loss.message.contains("tolerance")));
 
     source_less.model.faces[0].tolerance = None;
     source_less.model.edges[0].tolerance =
@@ -1119,7 +969,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 }
 
 #[test]
-fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
+fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::tessellation::Tessellation;
     use cadmpeg_ir::SourceObjectAssociation;
@@ -1146,13 +996,21 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     };
 
     source_less.model.surfaces[0].source_object = Some(association.clone());
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("surface source identity must not disappear");
-    assert!(error
-        .to_string()
-        .contains("source-object association on surface"));
+    let (output, report) = synthesize_document(&source_less, None);
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
+    assert!(output
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .all(|record| record.source_object.is_none()));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterSourceAssociationOmitted.kind()));
 
     source_less.model.surfaces[0].source_object = None;
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
@@ -1169,13 +1027,21 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         )),
         source_object: Some(association),
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("curve source identity must not disappear");
-    assert!(error
-        .to_string()
-        .contains("source-object association on curve"));
+    let (output, report) = synthesize_document(&source_less, None);
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
+    assert!(output
+        .ir()
+        .model
+        .curves
+        .iter()
+        .all(|record| record.source_object.is_none()));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterSourceAssociationOmitted.kind()));
 
     source_less.model.curves.pop();
     source_less.model.tessellations.push(
@@ -1194,13 +1060,16 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         )
         .expect("valid tessellation"),
     );
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("neutral tessellation must not disappear");
-    assert!(error
-        .to_string()
-        .contains("cannot serialize neutral tessellation"));
+    let (output, report) = synthesize_document(&source_less, None);
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
+    assert!(output.ir().model.tessellations.is_empty());
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterTessellationOmitted.kind()));
 }
 
 #[test]
@@ -1501,15 +1370,21 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
             )
             .unwrap(),
         ));
-    let error = crate::test_support::plan_inherited_write(
-        round_trip.ir(),
-        round_trip.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("native ellipse record cannot silently retain a line edit");
-    assert!(error
-        .to_string()
-        .contains("does not support edits to curve"));
+    let (output, report) = synthesize_document(round_trip.ir(), Some(round_trip.source_fidelity()));
+    assert!(
+        output.ir().model.curves.iter().all(|curve| matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        )),
+        "an authored line must not be replaced by the retained ellipse"
+    );
+    assert!(
+        !output.ir().model.edges.is_empty()
+            || report
+                .losses
+                .iter()
+                .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error)
+    );
 }
 
 #[test]
@@ -1941,4 +1816,5 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     );
 }
 
+mod configurations;
 mod family_changes;

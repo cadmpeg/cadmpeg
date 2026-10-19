@@ -281,10 +281,13 @@ pub(super) fn try_decode_geometry(
             refusals: nurbs_refusals,
         } = parsed.parse_nurbs(si);
         for refusal in nurbs_refusals {
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
-                "parasolid#{si} {} at byte {} states no carrier: {}",
-                refusal.family, refusal.pos, refusal.error
-            )));
+            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note({
+                scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+                format!(
+                    "parasolid#{si} {} at byte {} states no carrier: {}",
+                    refusal.family, refusal.pos, refusal.error
+                )
+            }));
         }
         let view = parsed.stream(si).view_for_geometry();
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
@@ -443,10 +446,6 @@ pub(super) fn try_decode_geometry(
                                     "source object_id must not be empty",
                                 )
                             })?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                     });
@@ -515,10 +514,6 @@ pub(super) fn try_decode_geometry(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             });
@@ -861,10 +856,6 @@ pub(super) fn try_decode_geometry(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             });
@@ -1110,6 +1101,7 @@ pub(super) fn try_decode_geometry(
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
         let initial_endpoint_witnesses = emit_topology(
+            &mut scan.source_untyped(),
             ctx,
             &mut ir,
             &crate::decode::emit::TopologyStream {

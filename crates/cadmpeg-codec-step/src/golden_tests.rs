@@ -19,7 +19,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, Branch, Harness};
+use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use super::{StepCodec, StepSchema};
 
@@ -99,9 +99,6 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     {
         Ok(result) => {
             let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
             serde_json::json!({
                 "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
                 "report": serde_json::to_value(result.report()).expect("serialize report"),
@@ -194,9 +191,20 @@ fn golden_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
         &StepCodec::default(),
         &harness().fixture_inputs(),
+        |result| {
+            let expected = crate::loss::unrepresented(
+                &result.report().losses,
+                result.ir().native.namespace("step"),
+            );
+            assert_eq!(
+                result.source_fidelity().unrepresented,
+                expected,
+                "every source-only loss must declare its arena class"
+            );
+        },
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
 }

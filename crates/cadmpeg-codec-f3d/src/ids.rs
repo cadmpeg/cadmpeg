@@ -73,10 +73,6 @@ pub(crate) fn design_segment(id: &str) -> Option<&str> {
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
-/// The fixed key of the single design-intent failure record a contained
-/// decode carries.
-pub(crate) const DESIGN_INTENT_FAILURE_ID: &str = "f3d:design:intent-failure#0";
-
 /// The fixed identity of the retained source image record.
 pub(crate) fn file_source_image_id() -> cadmpeg_ir::ids::UnknownId {
     cadmpeg_ir::ids::UnknownId::compose(
@@ -210,6 +206,17 @@ pub(crate) fn neutral_xref_occurrence_id(
         cadmpeg_ir::identity_key!("xref")
             .dash(reference_ordinal)
             .dash(occurrence_ordinal),
+    )
+}
+
+/// Neutral root product projected from one typed ACT document-root record.
+pub(crate) fn neutral_act_root_product_id(
+    root: &crate::records::act::ActRootComponent,
+) -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "component"),
+        cadmpeg_ir::identity_key!("act-root-")
+            .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(root.id())),
     )
 }
 

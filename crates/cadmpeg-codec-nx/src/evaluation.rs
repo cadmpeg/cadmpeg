@@ -715,8 +715,9 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     seeds,
-                    feature_completeness::operands::pattern_occurrence_count(pattern),
+                    feature_completeness::operands::pattern_occurrence_count(ir, pattern),
                     feature_completeness::operands::pattern_feature_is_incomplete(
+                        ir,
                         seeds,
                         pattern,
                         &feature.dependencies,

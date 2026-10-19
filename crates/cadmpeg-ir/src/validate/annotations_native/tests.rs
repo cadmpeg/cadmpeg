@@ -98,19 +98,11 @@ fn parameter_native_ref_must_resolve() {
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
-        pmi: Some(crate::features::ParameterPmi {
-            subtype: crate::features::PmiDimensionSubtype::Linear,
-            precision: 2,
-            display_text: None,
-            basic: false,
-            inspection: false,
-            reference_only: false,
-            native_ref: "native:pmi-missing#0".into(),
-        }),
+        pmi: Some(crate::ids::PmiId::mint("test:model:pmi#missing").unwrap()),
         native_ref: Some("native:missing#0".into()),
     });
     assert!(validate_neutral(&ir, Vec::new())
@@ -125,8 +117,8 @@ fn parameter_native_ref_must_resolve() {
         .findings
         .iter()
         .any(|finding| {
-            finding.check == Check::NativeLinks
-                && finding.message.contains("PMI native_ref")
+            finding.check == Check::ReferentialIntegrity
+                && finding.message.contains("parameter PMI reference")
                 && finding.entity.as_deref() == Some(id.as_str())
         }));
 }

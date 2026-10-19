@@ -27,6 +27,7 @@ fn parameter_scalar_binding_fixture() -> (
     let mut feature = compact_edge_projection_feature();
     feature.native_ref = Some("native-feature".into());
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#bound-parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -36,7 +37,6 @@ fn parameter_scalar_binding_fixture() -> (
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -175,8 +175,8 @@ fn display_relation_synthesis_fixture() -> (
         .push(FeatureInputRelationInstance {
             id: "sldprt:feature-input:relation-instance#lane:10".into(),
             parent: "lane".into(),
-            ordinal: 0,
-            offset: 10,
+            ordinal: 0, sequence: 0,
+            offset: Some(10),
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
             feature_ref: "native-feature".into(),
@@ -239,7 +239,9 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::DatumOffsetPlane {
                 reference: None,
-                distance: Length::new(2.0).expect("offset distance"),
+                distance: cadmpeg_ir::Dimension::Literal(
+                    Length::new(2.0).expect("offset distance"),
+                ),
             },
         ));
     let mut features = [thread, plane];
@@ -299,8 +301,8 @@ fn compact_generated_edges_match_the_linear_repeat_check() {
             .map(|ordinal| FeatureInputEdgeSelection {
                 id: format!("edge-{ordinal}"),
                 parent: "lane".into(),
-                ordinal,
-                offset: u64::from(ordinal),
+                ordinal, sequence: ordinal,
+                offset: Some(u64::from(ordinal)),
                 object_name_ref: "name".into(),
                 feature_ref: "fillet".into(),
                 local_edge_ids: (0..next(3)).map(|_| next(4)).collect(),
@@ -335,6 +337,7 @@ fn compact_edge_projection_feature() -> cadmpeg_ir::features::Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Fillet,
@@ -410,8 +413,8 @@ fn full_round_selection() -> FeatureInputSurfaceSelection {
     FeatureInputSurfaceSelection {
         id: "surface".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         selector: 0,
         kind: FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),

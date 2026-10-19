@@ -1058,6 +1058,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: 0,
         name: None,
@@ -1072,7 +1073,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native {
                     kind: "Form".into(),
-                    parameters: Default::default(),
+                    parameters: (Default::default()).into(),
                 },
             ),
         ),
@@ -1185,6 +1186,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: 0,
         name: None,
@@ -1199,7 +1201,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native {
                     kind: "Form".into(),
-                    parameters: Default::default(),
+                    parameters: (Default::default()).into(),
                 },
             ),
         ),

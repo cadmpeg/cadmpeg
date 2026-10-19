@@ -76,6 +76,7 @@ fn assert_valid(result: &EditableDecodeResult) {
 
 fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
     crate::decode::Scan {
+        source_untyped: Default::default(),
         container: crate::container::Container {
             data: Vec::new().into(),
             physical_size: 0,

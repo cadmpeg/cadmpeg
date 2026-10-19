@@ -59,7 +59,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
     let parent = "sldprt:feature-input:resolved-features#synthetic";
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let reference = |offset| FeatureInputOperand {
-        offset,
+        offset: Some(offset),
         reference_ref: format!("sldprt:feature-input:reference#synthetic:{offset}"),
         kind,
         entity_index: 0,
@@ -69,19 +69,19 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         id: "scalar".into(),
         parent: parent.into(),
         feature_ref: None,
-        ordinal: 0,
-        offset: 100,
+        ordinal: 0, sequence: 0,
+        offset: Some(100),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands: vec![reference(143), reference(287)],
     }];
-    let classes = [FeatureInputClass {
+    let classes = [FeatureInputClass { feature_ref: None,
         id: "sldprt:feature-input:class#synthetic:155".into(),
         parent: parent.into(),
-        ordinal: 0,
-        offset: 155,
+        ordinal: 0, sequence: 0,
+        offset: Some(155),
         name: "sgEntHandle".into(),
     }];
 
@@ -93,11 +93,11 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         .all(|reference| { reference.class_ref.as_deref() == Some(classes[0].id.as_str()) }));
 
     let mut ambiguous_classes = classes.to_vec();
-    ambiguous_classes.push(FeatureInputClass {
+    ambiguous_classes.push(FeatureInputClass { feature_ref: None,
         id: "sldprt:feature-input:class#synthetic:299".into(),
         parent: parent.into(),
-        ordinal: 1,
-        offset: 299,
+        ordinal: 1, sequence: 1,
+        offset: Some(299),
         name: "sgArcHandle".into(),
     });
     assert!(reference_cells(&scalars, &ambiguous_classes)
@@ -113,8 +113,8 @@ fn reference_cells_copy_operand_identity() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: None,
-        ordinal: 0,
-        offset: 100,
+        ordinal: 0, sequence: 0,
+        offset: Some(100),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
@@ -409,6 +409,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
@@ -514,6 +515,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
@@ -669,15 +671,15 @@ fn extended_object_indexed_spatial_point_uses_wide_coordinate_offset() {
 
 #[test]
 fn relation_binding_requires_family_operand_signature() {
-    let class = FeatureInputClass {
+    let class = FeatureInputClass { feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 10,
+        ordinal: 0, sequence: 0,
+        offset: Some(10),
         name: "sgLLDist".into(),
     };
     let operand = |kind, entity_index| FeatureInputOperand {
-        offset: 0,
+        offset: Some(0),
         reference_ref: String::new(),
         kind,
         entity_index,
@@ -687,8 +689,8 @@ fn relation_binding_requires_family_operand_signature() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset: 20,
+        ordinal: 0, sequence: 0,
+        offset: Some(20),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -721,15 +723,15 @@ fn relation_binding_requires_family_operand_signature() {
 
 #[test]
 fn relation_binding_with_ambiguous_declarations_is_withheld() {
-    let class = |offset: u64, name: &str| FeatureInputClass {
+    let class = |offset: u64, name: &str| FeatureInputClass { feature_ref: None,
         id: format!("class-{offset}"),
         parent: "lane".into(),
-        ordinal: 0,
-        offset,
+        ordinal: 0, sequence: 0,
+        offset: Some(offset),
         name: name.into(),
     };
     let operand = |entity_index| FeatureInputOperand {
-        offset: 0,
+        offset: Some(0),
         reference_ref: String::new(),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
@@ -739,8 +741,8 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset: 30,
+        ordinal: 0, sequence: 0,
+        offset: Some(30),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -760,15 +762,15 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
 
 #[test]
 fn scoped_relation_binding_does_not_cross_feature_interval() {
-    let class = FeatureInputClass {
+    let class = FeatureInputClass { feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 10,
+        ordinal: 0, sequence: 0,
+        offset: Some(10),
         name: "sgPntPntDist".into(),
     };
     let operand = |entity_index| FeatureInputOperand {
-        offset: 0,
+        offset: Some(0),
         reference_ref: String::new(),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
@@ -778,8 +780,8 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("second".into()),
-        ordinal: 0,
-        offset: 120,
+        ordinal: 0, sequence: 0,
+        offset: Some(120),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -1385,7 +1387,7 @@ fn reference_cells_index_classes_by_parent_and_offset() {
     let cell_offset = |index: u64| 1_000 + index * 32;
     let operands = (0..CELLS)
         .map(|index| FeatureInputOperand {
-            offset: cell_offset(index),
+            offset: Some(cell_offset(index)),
             reference_ref: format!("sldprt:feature-input:reference#synthetic:{index}"),
             kind,
             entity_index: 0,
@@ -1396,19 +1398,19 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         id: "scalar".into(),
         parent: parent.into(),
         feature_ref: None,
-        ordinal: 0,
-        offset: 100,
+        ordinal: 0, sequence: 0,
+        offset: Some(100),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands,
     }];
-    let class = |parent: &str, offset: u64, id: String| FeatureInputClass {
+    let class = |parent: &str, offset: u64, id: String| FeatureInputClass { feature_ref: None,
         id,
         parent: parent.into(),
-        ordinal: 0,
-        offset,
+        ordinal: 0, sequence: 0,
+        offset: Some(offset),
         name: "sgEntHandle".into(),
     };
     let mut classes = (0..CELLS)

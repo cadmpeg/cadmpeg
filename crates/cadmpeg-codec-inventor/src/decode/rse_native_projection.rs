@@ -22,6 +22,7 @@ pub(super) struct RseNativeProjection {
     pub(super) meta_types: Vec<MetaTypeRecord>,
     pub(super) segment_meta_issues: Vec<SegmentMetaIssueRecord>,
     pub(super) rse_records: Vec<RseRecordRecord>,
+    pub(super) layout: std::collections::BTreeMap<String, String>,
     pub(super) segment_bulk: Vec<SegmentBulkRecord>,
     pub(super) segment_bulk_issues: Vec<SegmentBulkIssueRecord>,
     pub(super) unpaired_segments: Vec<UnpairedSegmentRecord>,
@@ -39,6 +40,7 @@ pub(super) fn project(
         meta_types: Vec::new(),
         segment_meta_issues: Vec::new(),
         rse_records: Vec::new(),
+        layout: std::collections::BTreeMap::new(),
         segment_bulk: Vec::new(),
         segment_bulk_issues: Vec::new(),
         unpaired_segments: Vec::new(),
@@ -132,6 +134,13 @@ pub(super) fn project(
                             projection
                                 .rse_records
                                 .push(RseRecordRecord::from_frame(token, record)?);
+                            projection.layout.insert(
+                                format!(
+                                    "inventor:rse:record#{token}-{}.payload_offset",
+                                    record.ordinal
+                                ),
+                                record.payload_offset.to_string(),
+                            );
                         }
                         SegmentBulkFrame::Framed {
                             record_count: cadmpeg_core::decode::u64_from_index(table.records.len()),

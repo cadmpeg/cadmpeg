@@ -41,6 +41,10 @@ loss_codes! {
 /// string form (via [`CreoLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum CreoLossCode {
+    /// A source record cannot construct its required neutral counterpart.
+    NeutralRecordUnprojected,
+    /// An evaluated operation carrier disagrees with its canonical parameter.
+    EvaluationStale,
     /// PSB section census and prototype/instance transfer summary.
     ContainerCensus,
     /// A byte-bounded compressed section has invalid or incomplete LZW data.
@@ -206,6 +210,8 @@ impl CreoLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::NeutralRecordUnprojected => "projection.record-unprojected",
+            Self::EvaluationStale => "evaluation.stale",
             Self::ContainerCensus => "container.census",
             Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -319,7 +325,9 @@ impl CreoLossCode {
             | Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
-            Self::SectionSplineUnresolved
+            Self::NeutralRecordUnprojected
+            | Self::EvaluationStale
+            | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
             | Self::SourceDialectUnverified
@@ -372,6 +380,8 @@ impl CreoLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::NeutralRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
+            Self::EvaluationStale => LossTaxonomy::FeatureHistoryRetained,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerCensus
             | Self::CarrierVisibGeomPlanes
@@ -477,8 +487,178 @@ impl CreoLossCode {
     }
 }
 
+/// Classes with source records represented only by bytes, rather than typed records.
+///
+/// Codes absent from this table describe retained typed content, metadata, or export
+/// loss. Native retention below is checked separately from neutral projection.
+#[cfg(test)]
+const UNREPRESENTED: &[(CreoLossCode, cadmpeg_ir::ArenaClass)] = &[
+    (
+        CreoLossCode::BrepTransferIncomplete,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::CompressedSectionUnexpanded,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::CompressedSectionUnexpanded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::ConfigurationDriverUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::CurveExpressionTextCapped,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::ExtrusionBodyRejected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::GeometryInstanceCarriersGated,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::LegacyCompactRealUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacyContinuationFormUndefined,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacyIntegerValueUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacyObjectArrayIncomplete,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacyObjectPayloadUndefined,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacyRealValueUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacyStringArrayIncomplete,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacyStringContinuationUndefined,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::LegacySurfaceCarrierUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::LegacyUnsignedValueUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::NurbsBoundaryCarrierUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::PlaneSupportVariantsCapped,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::SectionIncidenceMissing,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::SectionRelationJoinMissing,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::SectionRelationMissing,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::SectionRelationTableMalformed,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::SectionSegmentMissing,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::SectionSolverVariableMissing,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::SectionSplineUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CreoLossCode::SurfacePrototypeFieldRetained,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (CreoLossCode::TocScanCapped, cadmpeg_ir::ArenaClass::Design),
+    (CreoLossCode::TocScanCapped, cadmpeg_ir::ArenaClass::Model),
+    (
+        CreoLossCode::TopologyIncompleteComponents,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::TopologyVertexIdentifierUnstatable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::VisibGeomCurveUntransferred,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CreoLossCode::VisibGeomSurfaceUntransferred,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+];
+
+/// Independent fixture oracle for codes that prove an omitted source record.
+/// Production fidelity is collected at actual decoding/retention branches.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
+) -> cadmpeg_ir::ArenaClasses {
+    let mut classes = cadmpeg_ir::ArenaClasses::default();
+    for (code, class) in UNREPRESENTED {
+        if losses.iter().any(|loss| loss.code == code.kind()) {
+            classes.insert(*class);
+        }
+    }
+
+    classes
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
+        let losses = [
+            super::CreoLossCode::FeatureNativeSemantics.note("typed record retained"),
+            super::CreoLossCode::ContainerCensus.note("decode diagnostic"),
+        ];
+        assert!(super::unrepresented(&losses, None).is_empty());
+    }
+
+    #[test]
+    fn source_only_losses_declare_their_classes() {
+        for (code, class) in super::UNREPRESENTED {
+            let losses = [code.note("source record is not typed")];
+            let classes = super::unrepresented(&losses, None);
+            assert!(classes.contains(class), "{code:?} must declare {class:?}");
+        }
+        assert!(super::unrepresented(&[], None).is_empty());
+    }
+
     use super::CreoLossCode;
     use std::collections::BTreeSet;
 
@@ -489,6 +669,8 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "projection.record-unprojected",
+                "evaluation.stale",
                 "container.census",
                 "container.compressed-section-unexpanded",
                 "source.dialect-unverified",

@@ -14,6 +14,7 @@ mod error;
 mod input;
 mod policy;
 mod probe;
+pub mod scope;
 mod space;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -34,6 +35,7 @@ pub use depth::DecodeDepth;
 pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
+pub use scope::{ArenaClass, ArenaClasses, ContentScope};
 pub use space::{ByteRange, SpaceId};
 pub use unique::unique_index;
 pub use view::{

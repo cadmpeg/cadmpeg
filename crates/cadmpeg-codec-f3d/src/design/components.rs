@@ -129,6 +129,32 @@ pub(crate) fn project_local_components(
     projector.finish()
 }
 
+/// Give a single-component document's ACT root label its neutral product home.
+/// Existing component definitions retain their independently proved ownership.
+pub(crate) fn project_single_root_component(
+    model: &mut cadmpeg_ir::document::Model,
+    roots: &[crate::records::act::ActRootComponent],
+) {
+    if !model.product_definitions.is_empty() || !model.occurrences.is_empty() {
+        return;
+    }
+    let [root] = roots else {
+        return;
+    };
+    model.product_definitions.push(ProductDefinition {
+        id: crate::ids::neutral_act_root_product_id(root),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: (!root.layout().display_name().trim().is_empty())
+            .then(|| root.layout().display_name().to_owned()),
+        description: None,
+        part_number: None,
+        bom_properties: BTreeMap::new(),
+        bodies: model.bodies.iter().map(|body| body.id.clone()).collect(),
+        native_ref: Some(root.id().clone()),
+    });
+}
+
 /// Reason a local occurrence carrier stays unplaced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Unplaced {
@@ -247,7 +273,6 @@ impl<'a> Projector<'a> {
                     ordinal: 0,
                     transform,
                     linked_prototype: None,
-                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                     name: None,
                     visible: None,
                     link: None,
@@ -350,7 +375,6 @@ impl<'a> Projector<'a> {
                         ordinal: 0,
                         transform: cadmpeg_ir::transform::Transform::identity(),
                         linked_prototype: None,
-                        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                         name: None,
                         visible: None,
                         link: None,
@@ -661,7 +685,6 @@ impl ComponentInserts {
                 ordinal,
                 transform: insert.transform,
                 linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                 name: Some(insert.name.clone()),
                 visible: None,
                 link: None,
@@ -669,6 +692,11 @@ impl ComponentInserts {
             });
         }
         Ok(occurrences)
+    }
+
+    /// Source occurrence records whose model content has no typed projection.
+    pub(crate) fn has_untyped_occurrences(&self) -> bool {
+        self.unplaced != 0 || self.unordered != 0
     }
 
     /// Losses for the inserts that project no occurrence.
@@ -1181,6 +1209,7 @@ mod tests {
         ));
 
         let mut feature = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
             ordinal: 1,
             name: None,
@@ -1193,7 +1222,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DerivedInstance".into(),
-                    parameters: std::collections::BTreeMap::new(),
+                    parameters: (std::collections::BTreeMap::new()).into(),
                 }),
             ),
             native_ref: None,
@@ -1385,6 +1414,7 @@ mod tests {
         );
         let occurrences = inserts.unresolved_occurrences(0).unwrap();
         let mut feature = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#insert").expect("identity grammar"),
             ordinal: 1,
             name: None,
@@ -1397,7 +1427,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "ComponentInsert".into(),
-                    parameters: std::collections::BTreeMap::new(),
+                    parameters: (std::collections::BTreeMap::new()).into(),
                 }),
             ),
             native_ref: Some(scope.id.clone()),

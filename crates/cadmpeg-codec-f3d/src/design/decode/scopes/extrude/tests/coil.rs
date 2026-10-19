@@ -155,14 +155,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             record_index: 12,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .unwrap()
@@ -781,14 +781,14 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
             record_index: 12,
             class_tag: crate::records::references::DesignClassTag::try_from("376".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .unwrap()
@@ -863,14 +863,14 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("compact shifted Extrude scope");
@@ -950,14 +950,14 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("compact mixed Extrude scope");
@@ -1071,14 +1071,14 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
             record_index: RECORD_INDEX,
             class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("class-415 scope envelope")
@@ -1233,14 +1233,14 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
             record_index: RECORD_INDEX,
             class_tag: crate::records::references::DesignClassTag::try_from("415".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("class-415 one-sided scope envelope")
@@ -1385,14 +1385,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
             record_index: RECORD_INDEX,
             class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("shifted reference-aware Extrude scope")
@@ -1448,14 +1448,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("357".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let invalid_scope = parse_parameter_scope(
         &invalid_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_tail),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope envelope remains parseable");
@@ -1481,14 +1481,16 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         id: "generated:scope-header#nonzero".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("349".to_owned()).unwrap(),
-        byte_offset: u64_from_index(prefix_length),
+        byte_offset: Some(u64_from_index(prefix_length)),
     };
     let nonzero_scope = parse_parameter_scope(
         &nonzero_start,
         &crate::design::test_support::indexed_record_offsets_for_test(&nonzero_start),
         nonzero_header.record_index,
         &nonzero_header.class_tag,
-        nonzero_header.byte_offset,
+        nonzero_header
+            .byte_offset
+            .expect("actual scanner header position"),
     )
     .unwrap()
     .expect("nonzero-start shifted reference-aware Extrude scope");
@@ -1594,14 +1596,14 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("shifted reference-aware class-323 Extrude scope");
@@ -1644,7 +1646,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_trailing_reference),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope envelope remains parseable");
@@ -1657,7 +1659,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_class),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope envelope remains parseable");
@@ -1752,7 +1754,7 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
@@ -1760,7 +1762,7 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("shifted reference-aware symmetric Extrude scope")

@@ -107,7 +107,7 @@ fn resolve_operand_marker_excluding<'a>(
                     .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
             })
             .collect::<Vec<_>>();
-        points.sort_unstable_by_key(|left| left.offset());
+        points.sort_unstable_by_key(|left| left.sequence());
         return points
             .get(usize::from(address))
             .copied()
@@ -296,7 +296,7 @@ fn resolve_operand_marker_excluding<'a>(
         .copied()
         .filter(|entity| operand_accepts_marker(kind, entity.kind()))
         .collect::<Vec<_>>();
-    compatible.sort_unstable_by_key(|left| left.offset());
+    compatible.sort_unstable_by_key(|left| left.sequence());
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
         if let Some(entity) = compatible

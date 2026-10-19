@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_FINGERPRINT_METADATA_KEY};
 use cadmpeg_ir::report::{
     decode::{TransferLedger, TransferOutcome},
     loss::LossNote,
@@ -419,10 +419,77 @@ fn decode_with_occurrence_limits(
     let projected_directory =
         projection_directory(&parse.directory, &quarantined_parameter_sequences);
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
-    let source_fidelity = source_fidelity(source_bytes, ctx)?;
+    let mut source_fidelity = source_fidelity(source_bytes, ctx)?;
+    let card_layout = parse
+        .scan
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(index, card)| {
+            let line = card.physical();
+            (
+                index + 1,
+                line.offset,
+                line.payload.len(),
+                line.line_ending().len(),
+            )
+        })
+        .collect::<Vec<_>>();
+    source_fidelity.metadata.insert(
+        "iges.card_layout".to_owned(),
+        serde_json::to_string(&card_layout).map_err(CodecError::malformed)?,
+    );
+    let entity_layout = parse
+        .directory
+        .iter()
+        .map(|entry| {
+            (
+                entry.sequence,
+                entry.parameter_start,
+                entry.parameter_line_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    source_fidelity.metadata.insert(
+        "iges.entity_layout".to_owned(),
+        serde_json::to_string(&entity_layout).map_err(CodecError::malformed)?,
+    );
+    let token_layout = parse
+        .parameters
+        .iter()
+        .map(|record| {
+            (
+                record.directory_sequence,
+                record.line_range.clone(),
+                record
+                    .tokens()
+                    .iter()
+                    .map(|token| token.span.clone())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    source_fidelity.metadata.insert(
+        "iges.parameter_layout".to_owned(),
+        serde_json::to_string(&token_layout).map_err(CodecError::malformed)?,
+    );
 
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
+    if let Some(source) = &mut ir.source {
+        for key in ["representation", "parameter_delimiter", "record_delimiter"] {
+            if let Some(value) = source.attributes.remove(key) {
+                source_fidelity
+                    .metadata
+                    .insert(format!("iges.{key}"), value);
+            }
+        }
+    }
+    ir.scope = if ctx.container_only() {
+        cadmpeg_ir::ContentScope::container()
+    } else {
+        cadmpeg_ir::ContentScope::full()
+    };
     let mut invalid_resolution = false;
     if let Some(context) = &length_context {
         match cadmpeg_ir::scalar::PositiveLength::new(context.minimum_resolution_mm()) {
@@ -448,6 +515,7 @@ fn decode_with_occurrence_limits(
     );
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     let native::NativeStoreResult {
+        projection_losses,
         occurrence_expansion: product_occurrence_expansion,
         ambiguous_parameter_boundaries,
         overdeclared_counts,
@@ -480,6 +548,7 @@ fn decode_with_occurrence_limits(
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
+    losses.extend(projection_losses);
     if invalid_resolution
         && !losses.iter().any(|loss| {
             loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
@@ -583,6 +652,15 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         );
     }
+    let untyped_records = native::untyped_records(&ir, ctx)?;
+    for record in &untyped_records {
+        losses.push(IgesLossCode::EntityRetainedUnprojected.note(format!(
+            "native record {record} contains source-only text or macro statements; their evidence is retained but their content is not typed"
+        )));
+    }
+    if !untyped_records.is_empty() {
+        source_fidelity.mark_untyped(crate::SOURCE_IMAGE_ID, [cadmpeg_ir::ArenaClass::Model])?;
+    }
     let global_table = parse.global.global_table();
     if !ctx.container_only() {
         let attributed_before_generic = attributed_sequences(&losses);
@@ -661,17 +739,40 @@ fn decode_with_occurrence_limits(
     let document_digest =
         document_local_sha256(ctx, &ir, ir.source.as_ref(), "iges", crate::SOURCE_IMAGE_ID)?;
     drop(verification_index);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            document_digest,
-        );
-    }
+    source_fidelity.metadata.insert(
+        DOCUMENT_FINGERPRINT_METADATA_KEY.to_owned(),
+        document_digest,
+    );
     let mut body = DecodeBody::new(if ctx.container_only() {
-        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
+        cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::container(),
+            geometry_transferred: false,
+        }
     } else {
-        cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
+        cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: geometry_transferred,
+        }
     });
+    body.transfer.scope = ir.scope;
+    // These source records were not delivered as typed geometry, or were
+    // quarantined before semantic admission. Declare that at the retention
+    // boundary; the independent loss table is only a conformance oracle.
+    let untyped_geometry = parse.directory.iter().any(|entry| {
+        matches!(
+            entry.entity_type,
+            100 | 102 | 104 | 108 | 110 | 112 | 114 | 116 | 118 | 120 | 122 | 126 | 128 | 130 | 140
+                ..=144 | 186 | 190 | 192 | 194 | 196 | 198 | 502 | 504 | 508 | 510 | 514
+        ) && (ctx.container_only()
+            || (!projection.decoded.contains(&entry.sequence)
+                && !projection.consumed.contains(&entry.sequence)))
+    });
+    if untyped_geometry
+        || !parse.quarantined_directory.is_empty()
+        || !parse.quarantined_parameters.is_empty()
+    {
+        source_fidelity.mark_untyped(crate::SOURCE_IMAGE_ID, [cadmpeg_ir::ArenaClass::Model])?;
+    }
     body.losses = losses;
     body.notes = notes;
     body.transfer_ledger = transfer_ledger;

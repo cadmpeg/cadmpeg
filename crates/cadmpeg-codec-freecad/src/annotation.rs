@@ -47,7 +47,14 @@ pub(crate) fn transfer(
             for property in &owned {
                 let name = property.name.clone();
                 if property.links().is_empty() {
-                    parameters.insert(name, property.xml.text().to_owned());
+                    let literal_text = schema.text.is_some_and(|carrier| {
+                        !carrier.has_format_spec && carrier.property == property.name
+                    });
+                    if !literal_text {
+                        if let Some(value) = crate::attributes::semantic_text(property) {
+                            parameters.insert(name, value);
+                        }
+                    }
                 } else {
                     let mut links = Vec::new();
                     for link in property.links() {
@@ -57,7 +64,7 @@ pub(crate) fn transfer(
                 }
             }
             let mut text = Vec::new();
-            if let Some(carrier) = schema.text {
+            if let Some(carrier) = schema.text.filter(|carrier| !carrier.has_format_spec) {
                 for property in owned
                     .iter()
                     .filter(|property| property.name == carrier.property)
@@ -150,7 +157,9 @@ pub(crate) fn transfer_neutral(
         }
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
-            parameters.insert(name.to_owned(), value.to_owned());
+            if !schema.owns_dedicated(name) {
+                parameters.insert(name.to_owned(), value.to_owned());
+            }
         }
         let mut assets = Vec::new();
         for name in &record.side_entries {
@@ -216,6 +225,25 @@ enum PositionCarrier {
         y_name: &'static str,
         type_names: &'static [&'static str],
     },
+}
+
+impl AnnotationSchema {
+    fn owns_dedicated(&self, name: &str) -> bool {
+        self.text.is_some_and(|carrier| carrier.property == name)
+            || match self.position {
+                PositionCarrier::Vector { name: position, .. } => position == name,
+                PositionCarrier::Coordinates { x_name, y_name, .. } => {
+                    name == x_name || name == y_name
+                }
+            }
+    }
+}
+
+pub(crate) fn consumes_property(record: &SemanticAnnotation, name: &str) -> bool {
+    record.parameters.keys().any(|key| key.as_str() == name)
+        || record.references.keys().any(|key| key.as_str() == name)
+        || AnnotationRuntimeType::from_label(&record.runtime_type)
+            .is_some_and(|runtime| annotation_schema(runtime).owns_dedicated(name))
 }
 
 const TECHDRAW_POSITION_TYPES: &[&str] = &[

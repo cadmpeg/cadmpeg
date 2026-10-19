@@ -14,6 +14,7 @@ pub mod admissibility;
 pub mod assembly;
 pub mod bytes;
 pub mod compound;
+pub mod contract;
 pub mod decode;
 pub mod depth;
 pub mod detection;

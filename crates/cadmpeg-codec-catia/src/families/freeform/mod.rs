@@ -1024,7 +1024,10 @@ pub(super) fn try_decode_freeform_surfaces(
         Some(Ok(FamilyOutput {
             ir,
             report: DecodeBody {
-                transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+                transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                    scope: cadmpeg_ir::ContentScope::full(),
+                    geometry_transferred: true,
+                },
                 coverage,
                 losses,
                 notes: Vec::new(),

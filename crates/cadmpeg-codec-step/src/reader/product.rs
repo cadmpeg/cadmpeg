@@ -390,7 +390,7 @@ pub(super) fn decode(
             ordinal: root_ordinal,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
             name: None,
             visible: None,
             link: None,
@@ -535,7 +535,7 @@ pub(super) fn decode(
                 ordinal: *ordinal,
                 transform,
                 linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
                 name: usage.name.as_deref().map(std::borrow::ToOwned::to_owned),
                 visible: None,
                 link: None,

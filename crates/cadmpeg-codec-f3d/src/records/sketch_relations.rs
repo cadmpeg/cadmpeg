@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch constraints, relations and patterns.
 
-use cadmpeg_ir::native::bytes::NativeBytes;
+use super::source_frame::SourceFrame;
 
-use super::{
-    identity::{Located, ReferenceRun},
-    references::DesignClassTag,
-};
+#[cfg(test)]
+use super::identity::Located;
+use super::{identity::ReferenceRun, references::DesignClassTag};
 use crate::records::serde_column::SliceColumn;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -149,19 +148,19 @@ pub(crate) struct SketchRelationMember {
     /// Indexed record or its resolved sketch identity.
     pub(crate) reference: SketchRelationReference,
     /// Payload offset of the member, relative to the record.
-    pub(crate) offset: u32,
+    pub(crate) offset: Option<u32>,
     /// Count of relations already recorded on this member, when retained by the wire.
     pub(crate) relation_ordinal: Option<u32>,
 }
 
 impl SketchRelationMember {
-    /// An unresolved member with zero offset and no retained ordinal.
+    /// An unresolved member without a source location or retained ordinal.
     #[must_use]
     #[cfg(test)]
     pub(crate) fn from_index(record_index: u32) -> Self {
         Self {
             reference: SketchRelationReference::Index(record_index),
-            offset: 0,
+            offset: None,
             relation_ordinal: None,
         }
     }
@@ -173,17 +172,17 @@ pub(crate) struct SketchRelationReturnMember {
     /// Indexed record or its resolved sketch identity.
     pub(crate) reference: SketchRelationReference,
     /// Payload offset of the return member, relative to the record.
-    pub(crate) offset: u32,
+    pub(crate) offset: Option<u32>,
 }
 
 impl SketchRelationReturnMember {
-    /// An unresolved return member with zero offset.
+    /// An unresolved return member without a source location.
     #[must_use]
     #[cfg(test)]
     pub(crate) fn from_index(record_index: u32) -> Self {
         Self {
             reference: SketchRelationReference::Index(record_index),
-            offset: 0,
+            offset: None,
         }
     }
 }
@@ -205,7 +204,7 @@ impl SketchRelationMembers {
 
             members.push(SketchRelationMember {
                 reference: SketchRelationReference::Index(record_index),
-                offset,
+                offset: Some(offset),
                 relation_ordinal: Some(relation_ordinal),
             });
         }
@@ -275,7 +274,7 @@ impl SketchRelationReturnMembers {
 
             members.push(SketchRelationReturnMember {
                 reference: SketchRelationReference::Index(record_index),
-                offset,
+                offset: Some(offset),
             });
         }
         Ok(Self(members))
@@ -436,9 +435,9 @@ pub(crate) struct SketchRelation {
     /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the constraint mask relative to the record start.
-    pub(crate) state_offset: u32,
+    pub(crate) state_offset: Option<u32>,
     /// Numeric design-entity suffix of the sketch container that owns this relation.
     pub(crate) owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
@@ -454,15 +453,15 @@ pub(crate) struct SketchRelation {
     /// Its order does not define relation operand order.
     members: SketchRelationMembers,
     /// Payload offset of `owner_reference`, relative to the record.
-    owner_reference_offset: u32,
+    owner_reference_offset: Option<u32>,
     /// Constraint mask and the payload it selects.
     pub(crate) definition: SketchRelationDefinition,
     /// `EntityGenesis` origin bitfield stored by the relation record, when present.
     pub(crate) entity_genesis: Option<u64>,
     /// Second reference run in semantic member order.
     return_members: SketchRelationReturnMembers,
-    /// Complete variable-width source record for native replay/write.
-    raw_bytes: NativeBytes<Vec<u8>>,
+    /// Source frame retained transiently for fidelity and patch admission.
+    raw_bytes: Option<SourceFrame>,
 }
 
 #[cfg(test)]
@@ -493,14 +492,12 @@ impl<T, U: Serialize> Serialize for FilteredColumn<'_, T, U> {
     }
 }
 
-struct ConstraintKinds(u64);
-
-impl Serialize for ConstraintKinds {
+struct AuxiliaryValues<'a>(&'a ReferenceRun<u32, u32>);
+impl Serialize for AuxiliaryValues<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(constraint_kinds_iter(self.0))
+        serializer.collect_seq(self.0.values())
     }
 }
-
 impl Serialize for SketchRelation {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -508,75 +505,115 @@ impl Serialize for SketchRelation {
             id: &'a str,
             record_index: u32,
             class_tag: &'a str,
-            byte_offset: u64,
-            state_offset: u32,
             owner_reference: u32,
             owner_entity_id: &'a str,
-            auxiliary_references: SliceColumn<'a, Located<u32, u32>, u32>,
-            auxiliary_reference_offsets: SliceColumn<'a, Located<u32, u32>, u32>,
+            auxiliary_references: AuxiliaryValues<'a>,
             #[serde(skip_serializing_if = "Option::is_none")]
             rectangular_counted_reference_count: Option<u32>,
             members: SliceColumn<'a, SketchRelationMember, u32>,
             resolved_members: FilteredColumn<'a, SketchRelationMember, &'a SketchRelationOperand>,
-            member_offsets: SliceColumn<'a, SketchRelationMember, u32>,
-            owner_reference_offset: u32,
             state: u64,
-            constraint_kinds: ConstraintKinds,
-            unknown_constraint_bits: u64,
             member_relation_ordinals: FilteredColumn<'a, SketchRelationMember, u32>,
             entity_genesis: Option<u64>,
             pattern: Option<&'a SketchPatternDefinition>,
             return_members: SliceColumn<'a, SketchRelationReturnMember, u32>,
             resolved_return_members:
                 FilteredColumn<'a, SketchRelationReturnMember, &'a SketchRelationOperand>,
-            return_member_offsets: SliceColumn<'a, SketchRelationReturnMember, u32>,
-            raw_bytes: NativeBytes<&'a [u8]>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            frame: Option<&'a SourceFrame>,
         }
-        let auxiliary = self.auxiliary_references.located_rows().ok_or_else(|| {
-            serde::ser::Error::custom("sketch relation auxiliary_references must be located")
-        })?;
-        let members = &self.members.0;
-        let returns = &self.return_members.0;
-        let state = self.definition.state();
         BorrowedWire {
             id: &self.id,
             record_index: self.record_index,
             class_tag: self.class_tag.as_str(),
-            byte_offset: self.byte_offset,
-            state_offset: self.state_offset,
             owner_reference: self.owner_reference,
             owner_entity_id: self
                 .owner_entity_id
                 .as_ref()
                 .map_or("", |owner| owner.as_str()),
-            auxiliary_references: SliceColumn::new(auxiliary, |row| row.value),
-            auxiliary_reference_offsets: SliceColumn::new(auxiliary, |row| row.offset),
+            auxiliary_references: AuxiliaryValues(&self.auxiliary_references),
             rectangular_counted_reference_count: self.rectangular_counted_reference_count,
-            members: SliceColumn::new(members, |row| row.reference.record_index()),
+            members: SliceColumn::new(&self.members.0, |row| row.reference.record_index()),
             resolved_members: FilteredColumn {
-                items: members,
+                items: &self.members.0,
                 value: |row| row.reference.resolved(),
             },
-            member_offsets: SliceColumn::new(members, |row| row.offset),
-            owner_reference_offset: self.owner_reference_offset,
-            state,
-            constraint_kinds: ConstraintKinds(state),
-            unknown_constraint_bits: state & !SKETCH_CONSTRAINT_MASK,
+            state: self.definition.state(),
             member_relation_ordinals: FilteredColumn {
-                items: members,
+                items: &self.members.0,
                 value: |row| row.relation_ordinal,
             },
             entity_genesis: self.entity_genesis,
             pattern: self.definition.pattern.as_ref(),
-            return_members: SliceColumn::new(returns, |row| row.reference.record_index()),
+            return_members: SliceColumn::new(&self.return_members.0, |row| {
+                row.reference.record_index()
+            }),
             resolved_return_members: FilteredColumn {
-                items: returns,
+                items: &self.return_members.0,
                 value: |row| row.reference.resolved(),
             },
-            return_member_offsets: SliceColumn::new(returns, |row| row.offset),
-            raw_bytes: (&self.raw_bytes).into(),
+            frame: self.raw_bytes.as_ref(),
         }
         .serialize(serializer)
+    }
+}
+/// Current sketch-relation content without a source byte frame.
+pub(crate) struct SketchRelationContent {
+    pub(crate) id: String,
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: DesignClassTag,
+    pub(crate) owner_reference: u32,
+    pub(crate) owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
+    pub(crate) auxiliary_references: ReferenceRun<u32, u32>,
+    pub(crate) rectangular_counted_reference_count: Option<u32>,
+    pub(crate) members: SketchRelationMembers,
+    pub(crate) definition: SketchRelationDefinition,
+    pub(crate) entity_genesis: Option<u64>,
+    pub(crate) return_members: SketchRelationReturnMembers,
+}
+impl SketchRelation {
+    pub(crate) fn authored(content: SketchRelationContent) -> Self {
+        Self {
+            #[cfg(test)]
+            clone_probe: SketchRelationCloneProbe,
+            id: content.id,
+            record_index: content.record_index,
+            class_tag: content.class_tag,
+            byte_offset: None,
+            state_offset: None,
+            owner_reference: content.owner_reference,
+            owner_entity_id: content.owner_entity_id,
+            auxiliary_references: ReferenceRun::unlocated(
+                content.auxiliary_references.values().copied().collect(),
+            ),
+            rectangular_counted_reference_count: content.rectangular_counted_reference_count,
+            members: SketchRelationMembers(
+                content
+                    .members
+                    .0
+                    .into_iter()
+                    .map(|mut row| {
+                        row.offset = None;
+                        row
+                    })
+                    .collect(),
+            ),
+            owner_reference_offset: None,
+            definition: content.definition,
+            entity_genesis: content.entity_genesis,
+            return_members: SketchRelationReturnMembers(
+                content
+                    .return_members
+                    .0
+                    .into_iter()
+                    .map(|mut row| {
+                        row.offset = None;
+                        row
+                    })
+                    .collect(),
+            ),
+            raw_bytes: None,
+        }
     }
 }
 
@@ -614,7 +651,7 @@ pub(crate) struct SketchRelationDraft {
     pub(crate) entity_genesis: Option<u64>,
     /// Second reference run in semantic member order.
     pub(crate) return_members: SketchRelationReturnMembers,
-    /// Complete variable-width source record for native replay/write.
+    /// Source frame retained transiently for fidelity and patch admission.
     pub(crate) raw_bytes: Vec<u8>,
 }
 
@@ -624,6 +661,15 @@ impl SketchRelation {
         if draft.raw_bytes.len() < 24 {
             return Err(SketchRelationPayloadError(
                 "sketch relation raw_bytes is shorter than 24 bytes".into(),
+            ));
+        }
+        if usize::try_from(draft.state_offset)
+            .ok()
+            .and_then(|offset| offset.checked_add(8))
+            .is_none_or(|end| end > draft.raw_bytes.len())
+        {
+            return Err(SketchRelationPayloadError(
+                "sketch relation state_offset exceeds raw_bytes".into(),
             ));
         }
         if draft.auxiliary_references.located_rows().is_none() {
@@ -639,11 +685,11 @@ impl SketchRelation {
                 draft
                     .auxiliary_references
                     .offsets()
-                    .map(|offset| ("auxiliary_reference_offsets", *offset)),
+                    .map(|offset| ("auxiliary_reference_offsets", Some(*offset))),
             )
             .chain(std::iter::once((
                 "owner_reference_offset",
-                draft.owner_reference_offset,
+                Some(draft.owner_reference_offset),
             )))
             .chain(
                 draft
@@ -652,6 +698,11 @@ impl SketchRelation {
                     .map(|row| ("return_member_offsets", row.offset)),
             )
         {
+            let offset = offset.ok_or_else(|| {
+                SketchRelationPayloadError(format!(
+                    "sketch relation {field} requires an actual source position"
+                ))
+            })?;
             if usize::try_from(offset)
                 .ok()
                 .and_then(|offset| offset.checked_add(4))
@@ -668,40 +719,45 @@ impl SketchRelation {
             id: draft.id,
             record_index: draft.record_index,
             class_tag: draft.class_tag,
-            byte_offset: draft.byte_offset,
-            state_offset: draft.state_offset,
+            byte_offset: Some(draft.byte_offset),
+            state_offset: Some(draft.state_offset),
             owner_reference: draft.owner_reference,
             owner_entity_id: draft.owner_entity_id,
             auxiliary_references: draft.auxiliary_references,
             rectangular_counted_reference_count: draft.rectangular_counted_reference_count,
             members: draft.members,
-            owner_reference_offset: draft.owner_reference_offset,
+            owner_reference_offset: Some(draft.owner_reference_offset),
             definition: draft.definition,
             entity_genesis: draft.entity_genesis,
             return_members: draft.return_members,
-            raw_bytes: (draft.raw_bytes).into(),
+            raw_bytes: Some(draft.raw_bytes.into()),
         })
     }
 
     /// Return the unchecked payload for a checked edit.
-    fn into_draft(self) -> SketchRelationDraft {
-        SketchRelationDraft {
+    fn into_draft(self) -> Result<SketchRelationDraft, SketchRelationPayloadError> {
+        let missing =
+            || SketchRelationPayloadError("sketch relation has no retained source frame".into());
+        Ok(SketchRelationDraft {
             id: self.id,
             record_index: self.record_index,
             class_tag: self.class_tag,
-            byte_offset: self.byte_offset,
-            state_offset: self.state_offset,
+            byte_offset: self.byte_offset.ok_or_else(missing)?,
+            state_offset: self.state_offset.ok_or_else(missing)?,
             owner_reference: self.owner_reference,
             owner_entity_id: self.owner_entity_id,
             auxiliary_references: self.auxiliary_references,
             rectangular_counted_reference_count: self.rectangular_counted_reference_count,
             members: self.members,
-            owner_reference_offset: self.owner_reference_offset,
+            owner_reference_offset: self.owner_reference_offset.ok_or_else(missing)?,
             definition: self.definition,
             entity_genesis: self.entity_genesis,
             return_members: self.return_members,
-            raw_bytes: self.raw_bytes.into_inner(),
-        }
+            raw_bytes: self
+                .raw_bytes
+                .and_then(|frame| frame.data().map(<[u8]>::to_vec))
+                .ok_or_else(missing)?,
+        })
     }
 
     /// Apply an edit only when the resulting byte frame is valid.
@@ -709,7 +765,7 @@ impl SketchRelation {
         &mut self,
         edit: impl FnOnce(&mut SketchRelationDraft),
     ) -> Result<(), SketchRelationPayloadError> {
-        let mut draft = self.clone().into_draft();
+        let mut draft = self.clone().into_draft()?;
         edit(&mut draft);
         *self = Self::try_new(draft)?;
         Ok(())
@@ -740,12 +796,12 @@ impl SketchRelation {
     }
 
     /// Retained raw bytes.
-    pub(crate) fn raw_bytes(&self) -> &[u8] {
-        &self.raw_bytes
+    pub(crate) fn raw_bytes(&self) -> Option<&[u8]> {
+        self.raw_bytes.as_ref().and_then(SourceFrame::data)
     }
 
     /// Owner reference offset within the retained bytes.
-    pub(crate) fn owner_reference_offset(&self) -> u32 {
+    pub(crate) fn owner_reference_offset(&self) -> Option<u32> {
         self.owner_reference_offset
     }
 
@@ -818,12 +874,10 @@ impl SketchRelation {
 
 fn zip_relation_members(
     members: Vec<u32>,
-    offsets: Vec<u32>,
     ordinals: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
 ) -> Result<SketchRelationMembers, SketchRelationPayloadError> {
     let len = members.len();
-    let offsets = pad_or_check("member_offsets", offsets, len)?;
     let resolved = pad_resolved("resolved_members", resolved, len)?;
     let ordinals = if ordinals.is_empty() {
         (0..len).map(|_| None).collect::<Vec<_>>()
@@ -834,67 +888,44 @@ fn zip_relation_members(
             "sketch relation member_relation_ordinals length does not match members".into(),
         ));
     };
-    (members
-        .into_iter()
-        .zip(offsets)
-        .zip(ordinals)
-        .zip(resolved)
-        .map(|(((record_index, offset), relation_ordinal), resolved)| {
+    (members.into_iter().zip(ordinals).zip(resolved).map(
+        |((record_index, relation_ordinal), resolved)| {
             Ok(SketchRelationMember {
                 reference: SketchRelationReference::from_wire(
                     record_index,
                     resolved,
                     "resolved_members",
                 )?,
-                offset,
+                offset: None,
                 relation_ordinal,
             })
-        }))
+        },
+    ))
     .collect::<Result<Vec<_>, _>>()?
     .try_into()
 }
 
 fn zip_return_members(
     members: Vec<u32>,
-    offsets: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
 ) -> Result<SketchRelationReturnMembers, SketchRelationPayloadError> {
     let len = members.len();
-    let offsets = pad_or_check("return_member_offsets", offsets, len)?;
     let resolved = pad_resolved("resolved_return_members", resolved, len)?;
     (members
         .into_iter()
-        .zip(offsets)
         .zip(resolved)
-        .map(|((record_index, offset), resolved)| {
+        .map(|(record_index, resolved)| {
             Ok(SketchRelationReturnMember {
                 reference: SketchRelationReference::from_wire(
                     record_index,
                     resolved,
                     "resolved_return_members",
                 )?,
-                offset,
+                offset: None,
             })
         }))
     .collect::<Result<Vec<_>, _>>()?
     .try_into()
-}
-
-fn pad_or_check(
-    name: &str,
-    values: Vec<u32>,
-    len: usize,
-) -> Result<Vec<u32>, SketchRelationPayloadError> {
-    if values.is_empty() {
-        Ok((0..len).map(|_| 0).collect())
-    } else if values.len() == len {
-        Ok(values)
-    } else {
-        Err(SketchRelationPayloadError(format!(
-            "sketch relation {name} length {} does not match members {len}",
-            values.len()
-        )))
-    }
 }
 
 fn pad_resolved(
@@ -914,21 +945,18 @@ fn pad_resolved(
     }
 }
 
-/// Wire form of [`SketchRelation`] with the historical flat field set.
+/// Semantic form of a sketch relation; offsets and payload bytes live in fidelity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SketchRelationSerde {
     id: String,
     record_index: u32,
     class_tag: String,
-    byte_offset: u64,
-    state_offset: u32,
     owner_reference: u32,
     #[serde(default)]
     owner_entity_id: String,
     #[serde(default)]
     auxiliary_references: Vec<u32>,
-    #[serde(default)]
-    auxiliary_reference_offsets: Vec<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -938,15 +966,7 @@ pub(crate) struct SketchRelationSerde {
     members: Vec<u32>,
     #[serde(default)]
     resolved_members: Vec<SketchRelationOperand>,
-    #[serde(default)]
-    member_offsets: Vec<u32>,
-    #[serde(default)]
-    owner_reference_offset: u32,
     state: u64,
-    #[serde(default)]
-    constraint_kinds: Vec<SketchConstraintKind>,
-    #[serde(default)]
-    unknown_constraint_bits: u64,
     #[serde(default)]
     member_relation_ordinals: Vec<u32>,
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
@@ -956,140 +976,169 @@ pub(crate) struct SketchRelationSerde {
     return_members: Vec<u32>,
     #[serde(default)]
     resolved_return_members: Vec<SketchRelationOperand>,
-    #[serde(default)]
-    return_member_offsets: Vec<u32>,
-    raw_bytes: NativeBytes<Vec<u8>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_relation_frame"
+    )]
+    frame: Option<SourceFrame>,
 }
-
 impl TryFrom<SketchRelationSerde> for SketchRelation {
     type Error = SketchRelationPayloadError;
-
     fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
-        Self::from_wire_inner(wire)
-    }
-}
-
-impl SketchRelation {
-    fn from_wire_inner(wire: SketchRelationSerde) -> Result<Self, SketchRelationPayloadError> {
-        let (derived_kinds, derived_unknown) = constraint_kinds_from_state(wire.state);
-        if !wire.constraint_kinds.is_empty() && wire.constraint_kinds != derived_kinds {
-            return Err(SketchRelationPayloadError(
-                "sketch relation constraint_kinds disagrees with state".into(),
-            ));
-        }
-        if wire.unknown_constraint_bits != 0 && wire.unknown_constraint_bits != derived_unknown {
-            return Err(SketchRelationPayloadError(
-                "sketch relation unknown_constraint_bits disagrees with state".into(),
-            ));
-        }
-        if wire.auxiliary_references.len() != wire.auxiliary_reference_offsets.len() {
-            return Err(SketchRelationPayloadError(
-                "sketch relation auxiliary_reference_offsets must locate every reference".into(),
-            ));
-        }
-        let definition = SketchRelationDefinition::new(wire.state, wire.pattern)?;
-        Self::try_new(SketchRelationDraft {
+        let mut relation = Self::authored(SketchRelationContent {
             id: wire.id,
             record_index: wire.record_index,
             class_tag: DesignClassTag::try_from(wire.class_tag)
                 .map_err(SketchRelationPayloadError)?,
-            byte_offset: wire.byte_offset,
-            state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
-            auxiliary_references: ReferenceRun::located(
-                wire.auxiliary_references
-                    .into_iter()
-                    .zip(wire.auxiliary_reference_offsets)
-                    .map(|(value, offset)| Located { value, offset })
-                    .collect::<Vec<_>>(),
-            ),
+            auxiliary_references: ReferenceRun::unlocated(wire.auxiliary_references),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 wire.members,
-                wire.member_offsets,
                 wire.member_relation_ordinals,
                 wire.resolved_members,
             )?,
-            owner_reference_offset: wire.owner_reference_offset,
-            definition,
+            definition: SketchRelationDefinition::new(wire.state, wire.pattern)?,
             entity_genesis: wire.entity_genesis,
-            return_members: zip_return_members(
-                wire.return_members,
-                wire.return_member_offsets,
-                wire.resolved_return_members,
-            )?,
-            raw_bytes: wire.raw_bytes.into_inner(),
-        })
+            return_members: zip_return_members(wire.return_members, wire.resolved_return_members)?,
+        });
+        relation.raw_bytes = wire.frame;
+        Ok(relation)
     }
 }
-
 #[cfg(test)]
 impl From<SketchRelation> for SketchRelationSerde {
     fn from(relation: SketchRelation) -> Self {
-        let (constraint_kinds, unknown_constraint_bits) =
-            constraint_kinds_from_state(relation.definition.state());
-        let (auxiliary_references, auxiliary_reference_offsets) =
-            relation.auxiliary_references.into_wire();
         Self {
             id: relation.id,
             record_index: relation.record_index,
             class_tag: relation.class_tag.into(),
-            byte_offset: relation.byte_offset,
-            state_offset: relation.state_offset,
             owner_reference: relation.owner_reference,
             owner_entity_id: relation
                 .owner_entity_id
                 .map(|owner| owner.as_str().to_owned())
                 .unwrap_or_default(),
-            auxiliary_references,
-            auxiliary_reference_offsets,
+            auxiliary_references: relation.auxiliary_references.values().copied().collect(),
             rectangular_counted_reference_count: relation.rectangular_counted_reference_count,
             members: relation
                 .members
                 .iter()
-                .map(|member| member.reference.record_index())
+                .map(|row| row.reference.record_index())
                 .collect(),
             resolved_members: relation
                 .members
                 .iter()
-                .filter_map(|member| member.reference.resolved().cloned())
+                .filter_map(|row| row.reference.resolved().cloned())
                 .collect(),
-            member_offsets: relation
-                .members
-                .iter()
-                .map(|member| member.offset)
-                .collect(),
-            owner_reference_offset: relation.owner_reference_offset,
             state: relation.definition.state(),
-            constraint_kinds,
-            unknown_constraint_bits,
             member_relation_ordinals: relation
                 .members
                 .iter()
-                .filter_map(|member| member.relation_ordinal)
+                .filter_map(|row| row.relation_ordinal)
                 .collect(),
             entity_genesis: relation.entity_genesis,
             pattern: relation.definition.pattern,
             return_members: relation
                 .return_members
                 .iter()
-                .map(|member| member.reference.record_index())
+                .map(|row| row.reference.record_index())
                 .collect(),
             resolved_return_members: relation
                 .return_members
                 .iter()
-                .filter_map(|member| member.reference.resolved().cloned())
+                .filter_map(|row| row.reference.resolved().cloned())
                 .collect(),
-            return_member_offsets: relation
-                .return_members
-                .iter()
-                .map(|member| member.offset)
-                .collect(),
-            raw_bytes: (relation.raw_bytes),
+            frame: relation.raw_bytes,
         }
     }
 }
+impl SketchRelation {
+    pub(crate) fn content_eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.record_index == other.record_index
+            && self.class_tag == other.class_tag
+            && self.owner_reference == other.owner_reference
+            && self.owner_entity_id == other.owner_entity_id
+            && self
+                .auxiliary_references
+                .values()
+                .eq(other.auxiliary_references.values())
+            && self.rectangular_counted_reference_count == other.rectangular_counted_reference_count
+            && self
+                .members
+                .iter()
+                .map(|row| (&row.reference, row.relation_ordinal))
+                .eq(other
+                    .members
+                    .iter()
+                    .map(|row| (&row.reference, row.relation_ordinal)))
+            && self.definition == other.definition
+            && self.entity_genesis == other.entity_genesis
+            && self
+                .return_members
+                .iter()
+                .map(|row| &row.reference)
+                .eq(other.return_members.iter().map(|row| &row.reference))
+    }
+    pub(crate) fn retain_source(
+        &self,
+        fidelity: &mut cadmpeg_ir::SourceFidelity,
+    ) -> Result<(), CodecError> {
+        for (name, value) in [
+            ("byte_offset", self.byte_offset),
+            ("state_offset", self.state_offset.map(u64::from)),
+            (
+                "owner_reference_offset",
+                self.owner_reference_offset.map(u64::from),
+            ),
+        ] {
+            if let Some(value) = value {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{name}", self.id), value.to_string());
+            }
+        }
+        for (index, offset) in self.auxiliary_references.offsets().enumerate() {
+            fidelity.metadata.insert(
+                format!("{}.auxiliary_reference_offsets.{index}", self.id),
+                offset.to_string(),
+            );
+        }
+        for (index, row) in self.members.iter().enumerate() {
+            if let Some(offset) = row.offset {
+                fidelity.metadata.insert(
+                    format!("{}.member_offsets.{index}", self.id),
+                    offset.to_string(),
+                );
+            }
+        }
+        for (index, row) in self.return_members.iter().enumerate() {
+            if let Some(offset) = row.offset {
+                fidelity.metadata.insert(
+                    format!("{}.return_member_offsets.{index}", self.id),
+                    offset.to_string(),
+                );
+            }
+        }
+        if let Some(frame) = &self.raw_bytes {
+            let stream = crate::ids::native_stream(&self.id)
+                .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))
+                .ok_or_else(|| {
+                    CodecError::malformed("sketch relation has no source stream identity")
+                })?;
+            let untyped = if self.definition.state() & !SKETCH_CONSTRAINT_MASK != 0 {
+                [cadmpeg_ir::document::ArenaClass::Design].into()
+            } else {
+                Default::default()
+            };
+            frame.retain(fidelity, &self.id, stream, self.byte_offset, untyped)?;
+        }
+        Ok(())
+    }
+}
+cadmpeg_core::named_optional_field!(deserialize_relation_frame, SourceFrame, "frame");
 
 /// One sketch-relation reference resolved against the indexed Design record graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

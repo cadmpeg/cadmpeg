@@ -71,10 +71,7 @@ pub(super) fn mark_supports(
                 format: CodecFormat::Step,
                 geometry_role: Some(role),
                 object_id,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
+
                 instance_path: Vec::new(),
             });
         } else if let Some(source) = source {

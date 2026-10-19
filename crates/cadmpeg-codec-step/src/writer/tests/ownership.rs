@@ -25,10 +25,7 @@ fn support_ownership_survives_the_absence_of_projected_topology() {
             format: cadmpeg_ir::CodecFormat::Iges,
             geometry_role: Some(role),
             object_id: cadmpeg_core::nonblank_literal!("D1"),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
+
             instance_path: Vec::new(),
         });
         ir.model.surfaces.push(surface);
@@ -227,10 +224,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                     format: cadmpeg_ir::CodecFormat::Fcstd,
                     geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Independent),
                     object_id: cadmpeg_core::nonblank_literal!("authored-plane"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
+
                     instance_path: Vec::new(),
                 });
             }

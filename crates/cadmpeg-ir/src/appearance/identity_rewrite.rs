@@ -7,6 +7,7 @@ rewrite_record!(Appearance, []; {id, name, asset_guid, library_id, visual_guid, 
 rewrite_record!(AppearanceBinding, []; {id, target, appearance, source_entity_id, object_type, visible, channels});
 rewrite_enum!(AppearanceTarget, []; {
     Body(field0),
+    Occurrence(field0),
     Face(field0),
     Edge(field0),
     Vertex(field0),

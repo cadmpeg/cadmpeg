@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
+mod assembly_local;
 mod attribute_colors;
 mod design_containment;
 mod history_deltas;
@@ -8,6 +9,7 @@ mod history_scale;
 mod inconsistent_records;
 mod optional_payloads;
 mod placement_history;
+mod root_product;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
@@ -296,15 +298,15 @@ fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
                     },
                 )
                 .expect("geometry-depth decode");
-            (*name, result.ir().decode_depth())
+            (*name, result.ir().scope)
         })
         .collect::<Vec<_>>();
     assert_eq!(
         delivered,
         [
-            ("standalone", cadmpeg_core::decode::DecodeDepth::Geometry),
-            ("no body source", cadmpeg_core::decode::DecodeDepth::Full),
-            ("archive", cadmpeg_core::decode::DecodeDepth::Full),
+            ("standalone", cadmpeg_ir::document::ContentScope::geometry()),
+            ("no body source", cadmpeg_ir::document::ContentScope::full()),
+            ("archive", cadmpeg_ir::document::ContentScope::full()),
         ]
     );
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
@@ -413,27 +415,19 @@ fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
     .to_string()
 }
 
-/// The flagship case: `convert in.f3d -o out.f3d` on an archive that is not the
-/// catalog row keeps the archive it was handed, and says so.
-///
-/// The command line builds `Inherit` for a same-format conversion, and the
-/// resolved dialect is then the source's by construction, so the replay law
-/// admits preservation. Before resolution the report named no dialect at all,
-/// so the bytes went out with the claim unstated.
+/// An unresolvable inherited target cannot replay source-only content.
 #[test]
-fn inherit_replays_an_off_catalog_dialect_and_names_it() {
-    let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");
-    let result = decode(source.clone());
-    let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
-
-    assert!(matches!(
-        plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+fn inherit_refuses_an_off_catalog_dialect_when_source_content_is_unrepresented() {
+    let result = decode(f3d_with_smbh_and_manifest_version(
+        &synthetic_geometry_smbh(),
+        "3-3-0-0",
     ));
-    assert_eq!(named_target(&plan), "f3d:unknown");
-    let mut written = Vec::new();
-    plan.write_to(&mut written).unwrap();
-    assert_eq!(written, source);
+    assert!(!result.source_fidelity().unrepresented().is_empty());
+    let error = plan(&result, true, TargetRequest::Inherit).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedTarget(_)
+    ));
 }
 
 /// A dialect this codec reads but cannot generate refuses under `Inherit` once
@@ -498,11 +492,9 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     assert_ne!(written, source, "the source archive must not be replayed");
 }
 
-/// A same-dialect `Inherit` still replays, and an explicit id naming the very
-/// dialect the source is still replays: the resolution gates preservation on
-/// the dialect compare and on nothing else.
+/// Same-dialect requests keep their target when source-only content selects synthesis.
 #[test]
-fn a_same_dialect_request_replays_under_both_spellings() {
+fn a_same_dialect_request_synthesizes_under_both_spellings() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let result = decode(source.clone());
     for request in [
@@ -513,28 +505,28 @@ fn a_same_dialect_request_replays_under_both_spellings() {
         let plan = plan(&result, true, request).expect("the source's own dialect is writable");
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
         assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
+        let plan_cause = plan.report().synthesis_cause().is_some();
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
-        assert_eq!(written, source, "{request:?}");
+        assert!(plan_cause, "{request:?}");
+        assert_ne!(written, source, "source-only archive content is omitted");
+        assert_eq!(
+            decode(written).ir().model.bodies.len(),
+            result.ir().model.bodies.len()
+        );
     }
 }
 
-/// The patch path names a dialect too, and it is the source's: patching
-/// rewrites members inside the retained archive and never its `Manifest.dat`,
-/// so the output is still whatever the source was.
+/// An edited off-catalog archive needs an explicit resolvable synthesis target.
 #[test]
-fn the_patch_path_names_the_preserved_dialect() {
+fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
     let result = decode(f3d_with_smbh_and_manifest_version(
         &synthetic_geometry_smbh(),
         "3-3-0-0",
     ));
-    assert!(
-        !result.ir().model.points.is_empty(),
-        "the patch lane needs an editable point"
-    );
     let mut edited = result.ir().clone();
     let moved = edited.model.points[0].position().get();
     edited.model.points[0].set_position(
@@ -543,36 +535,42 @@ fn the_patch_path_names_the_preserved_dialect() {
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point"),
+        .unwrap(),
     );
-
+    assert!(matches!(
+        F3dCodec.plan(
+            EncodeInput::new(&edited, Some(result.source_fidelity())),
+            TargetRequest::Inherit
+        ),
+        Err(cadmpeg_core::CodecError::UnsupportedTarget(_))
+    ));
     let plan = F3dCodec
         .plan(
             EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
         )
-        .expect("an edited archive still preserves its dialect");
+        .unwrap();
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Patched { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
-    assert_eq!(named_target(&plan), "f3d:unknown");
-
-    let mut written = Vec::new();
-    plan.write_to(&mut written).unwrap();
-    let redecoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(&mut Cursor::new(written), &DecodeOptions::default())
-            .expect("the patched archive decodes"),
+    assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = decode(bytes);
+    assert_eq!(
+        output.ir().model.points[0].position().get().x,
+        moved.x + 1.0
     );
     assert_eq!(
-        redecoded
+        output
             .report()
             .dialects()
-            .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .map(cadmpeg_core::dialect::DialectMatch::dialect)
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("f3d:unknown")
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "f3d:manifest-3-2-0-0"
     );
 }
 
@@ -593,26 +591,22 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
     ));
     let synthesized = decode(f3d_with_smbh(&synthetic_geometry_smbh()));
 
-    let replay_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
-        matches!(
-            path,
-            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
-        )
-    };
-    let synthesize_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
-        matches!(
-            path,
-            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-        )
-    };
-    for (label, result, fidelity, path_matches) in [
-        ("replay", &replayed, true, replay_matches),
-        ("synthesize", &synthesized, false, synthesize_matches),
+    for (label, result, fidelity, request) in [
+        ("inherited", &synthesized, true, TargetRequest::Inherit),
+        ("authored", &synthesized, false, TargetRequest::Inherit),
+        (
+            "displaced",
+            &replayed,
+            true,
+            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        ),
     ] {
-        let plan = plan(result, fidelity, TargetRequest::Inherit)
+        let plan = plan(result, fidelity, request)
             .unwrap_or_else(|error| panic!("{label} must plan, got {error}"));
-        let path = plan.report().write_path();
-        assert!(path_matches(path), "{label}: took the {path} path");
+        assert!(matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
         let claimed = named_target(&plan);
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();

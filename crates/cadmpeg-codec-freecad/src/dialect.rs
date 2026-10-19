@@ -41,22 +41,23 @@ use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");
 
-/// The synthesis catalog: the dialects this encoder produces for an input whose
-/// retained document graph already declares them.
-///
-/// Preservation is not listed here. [`crate::writer`] repacks the
-/// retained entry set and patches `Document.xml` in place, so it preserves every
-/// schema this codec reads — schema 2 included — while it regenerates none. The
-/// catalog is what an explicit `--to` may name; [`TargetRequest::Inherit`] asks
-/// for the retained document's own dialect instead, whatever that is.
-/// No row is a cross-format default because this writer cannot synthesize an
-/// `FCStd` document graph from another format.
-///
-/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::target::TargetRequest::Inherit
-pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: FcstdDialect::Schema4.id(),
-    aliases: &["4"],
-}];
+/// Schema vocabularies authored from neutral and typed native content.
+/// Schema 4 is the cross-format default; recorded source identities inherit
+/// their matching vocabulary.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: FcstdDialect::Schema4.id(),
+        aliases: &["4"],
+    },
+    TargetDescriptor {
+        id: FcstdDialect::Schema2.id(),
+        aliases: &["2"],
+    },
+    TargetDescriptor {
+        id: FcstdDialect::Schema3.id(),
+        aliases: &["3"],
+    },
+];
 
 /// Key of `Document/@SchemaVersion` in [`DialectMatch::declared`].
 ///

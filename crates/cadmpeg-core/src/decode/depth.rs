@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! How much of a source document a decode transfers.
+//! The classes a caller requests from a decoder.
 
 use std::fmt;
 
@@ -7,11 +7,10 @@ use std::fmt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// How much of the source document a decode transfers.
+/// The content a caller requests from a decoder.
 ///
-/// Depths are ordered: each one transfers everything a shallower depth
-/// transfers. A caller requests a depth through the decode context, and the
-/// codec records the depth it delivered on the decoded document.
+/// The delivered document declares its independent content scope. Missing or
+/// partially decoded content is described by the decode report.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
 )]
@@ -32,6 +31,15 @@ pub enum DecodeDepth {
 }
 
 impl DecodeDepth {
+    /// The classes a decoder must deliver to satisfy this request.
+    pub const fn required_scope(self) -> super::ContentScope {
+        match self {
+            Self::Container => super::ContentScope::container(),
+            Self::Geometry => super::ContentScope::geometry(),
+            Self::Full => super::ContentScope::full(),
+        }
+    }
+
     /// The wire name of this depth.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -58,6 +66,20 @@ mod tests {
         assert!(DecodeDepth::Container < DecodeDepth::Geometry);
         assert!(DecodeDepth::Geometry < DecodeDepth::Full);
         assert_eq!(DecodeDepth::default(), DecodeDepth::Full);
+    }
+
+    #[test]
+    fn requests_name_required_classes_without_constraining_delivery() {
+        use crate::decode::ContentScope;
+        assert_eq!(
+            DecodeDepth::Container.required_scope(),
+            ContentScope::container()
+        );
+        assert_eq!(
+            DecodeDepth::Geometry.required_scope(),
+            ContentScope::geometry()
+        );
+        assert_eq!(DecodeDepth::Full.required_scope(), ContentScope::full());
     }
 
     #[test]

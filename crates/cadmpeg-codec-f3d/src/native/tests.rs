@@ -12,8 +12,8 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -22,6 +22,7 @@ use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
+use crate::F3dCodec;
 use crate::loss::F3dLossCode;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
@@ -50,12 +51,11 @@ use crate::test_support::zip_test::{
     assert_revision_surface_round_trip, f3d_with_deflated_smbh, f3d_with_smbh,
     f3d_with_smbh_and_protein, set_zip_entry_uncompressed_size,
 };
-use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
-    use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
+    use crate::records::dimension_null_locus_wire::{OWNED_WIRE_CONVERSIONS, Wire};
     use crate::records::dimensions::DesignDimensionLocusPair;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -110,7 +110,7 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     let board = crate::history_records::AsmBulletinBoard {
         id: "f3d:native:bulletin#1".into(),
         parent: "f3d:native:missing-state#1".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         owner_ref: 0,
         number: 0,
         changes: Vec::new(),
@@ -135,7 +135,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 78);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 77);
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -267,13 +267,15 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
             .collect::<Vec<_>>(),
         vec![[0.25, 0.75]; 3]
     );
-    assert!(f3d_native(decoded.ir())
-        .tolerant_coedge_parameters
-        .iter()
-        .all(|parameters| matches!(
-            parameters.extension,
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None }
-        )));
+    assert!(
+        f3d_native(decoded.ir())
+            .tolerant_coedge_parameters
+            .iter()
+            .all(|parameters| matches!(
+                parameters.extension,
+                cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None }
+            ))
+    );
 
     decoded.ir_mut().model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     update_f3d_native(&mut decoded.ir_mut(), |native| {
@@ -532,9 +534,14 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let preserved = F3dCodec
         .decode(&mut Cursor::new(preserved), &DecodeOptions::default())
         .expect("embedded use-curve edit round trip");
-    assert!(preserved.ir().model.curves.iter().any(|curve| {
-        curve.id == use_curve
-            && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)) if *curve == expected)
+    assert!(preserved.ir().model.coedges.iter().any(|coedge| {
+        coedge.use_curve.as_ref().is_some_and(|use_| {
+            use_.parameter_range.endpoints() == [-2.0, 3.0]
+                && preserved.ir().model.curves.iter().any(|curve| {
+                    curve.id == use_.curve
+                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref nurbs)) if *nurbs == expected)
+                })
+        })
     }));
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -1017,12 +1024,14 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         )
         .unwrap();
     assert_eq!(actual, expected);
-    assert!(round_trip
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| curve.id == round_trip_base));
+    assert!(
+        round_trip
+            .ir()
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == round_trip_base)
+    );
 }
 
 #[test]
@@ -1345,12 +1354,14 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("an inconsistent cage must not fail the document decode");
     assert!(result.ir().model.subds.is_empty());
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains("T-spline control cage not decoded")));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
+                && loss.message.contains("T-spline control cage not decoded"))
+    );
 }
 
 #[test]

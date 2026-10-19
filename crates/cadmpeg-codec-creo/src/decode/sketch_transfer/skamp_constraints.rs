@@ -369,11 +369,12 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     {
                         SketchConstraintDefinitionInput::ArcAngle {
                             entity: sketch_entity_id(sketch, item.entity_id)?,
-                            angle: if kind == 10 {
+                            angle: (if kind == 10 {
                                 PositiveAngle::QUARTER_TURN
                             } else {
                                 PositiveAngle::HALF_TURN
-                            },
+                            })
+                            .into(),
                         }
                     }
                     (kind @ (12 | 13), [item])
@@ -1160,11 +1161,11 @@ mod tests {
         };
         let arc_angle = SketchConstraintDefinitionInput::ArcAngle {
             entity: target.clone(),
-            angle: PositiveAngle::QUARTER_TURN,
+            angle: (PositiveAngle::QUARTER_TURN).into(),
         };
         let ellipse_angle = SketchConstraintDefinitionInput::EllipseAngle {
             entity: target.clone(),
-            angle: PositiveAngle::QUARTER_TURN,
+            angle: (PositiveAngle::QUARTER_TURN).into(),
         };
         // Each row states whether the midpoint, arc-angle and ellipse-angle
         // relations admit the target geometry.

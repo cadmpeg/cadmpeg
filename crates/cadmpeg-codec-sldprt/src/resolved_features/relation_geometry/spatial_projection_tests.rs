@@ -28,6 +28,7 @@ fn project_with_policy() {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::SpatialSketch {
                 sketch: Some(sketch.id.clone()),

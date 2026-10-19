@@ -320,7 +320,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 }
 
 #[test]
-fn f3z_archive_without_merged_components_preserves_root_replay() {
+fn f3z_archive_without_merged_components_requires_a_resolved_synthesis_target() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = EditableDecodeResult::from(
@@ -336,32 +336,45 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .source_fidelity()
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_some());
-    let plan = F3dCodec
+    let error = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .expect("unmerged F3Z archive remains replayable");
-    let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-        plan.report(),
-        "identity/target",
-    )
-    .as_ref()
-    .expect("an F3D export names its target")
-    .clone();
-    let mut replayed = Vec::new();
-    plan.write_to(&mut replayed).unwrap();
-    assert_eq!(replayed, archive);
-
-    let redecode = F3dCodec
-        .decode(&mut Cursor::new(replayed), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedTarget(_)
+    ));
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        )
         .unwrap();
-    let primary = redecode
-        .report()
-        .dialects()
-        .expect("re-decoded F3Z archive has a primary layer")
-        .primary();
-    assert_eq!(primary.dialect(), &reported);
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
+    assert_eq!(
+        output
+            .report()
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "f3d:manifest-3-2-0-0"
+    );
 }
 
 #[test]
@@ -378,11 +391,11 @@ fn f3z_container_only_stamps_the_outer_document_digest() {
         )
         .unwrap();
 
-    let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(
-        source
-            .attributes
-            .get(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+        decoded
+            .source_fidelity()
+            .metadata
+            .get("document_local_sha256"),
         Some(&crate::decode::document_local_sha256(decoded.ir()).unwrap())
     );
 }
@@ -543,14 +556,7 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
     assert_eq!(resolved.rows()[0][3], 10.0);
     assert_eq!(resolved.rows()[1][3], 20.0);
     assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(
-        decoded.ir().model.bodies[0].transform.unwrap().rows()[0][3],
-        10.0
-    );
-    assert_eq!(
-        decoded.ir().model.bodies[0].transform.unwrap().rows()[1][3],
-        20.0
-    );
+    assert_eq!(decoded.ir().model.bodies[0].transform, None);
 }
 
 #[test]
@@ -644,7 +650,7 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
             expected
         );
         assert_eq!(ir.model.bodies.len(), 1);
-        assert_eq!(ir.model.bodies[0].transform.unwrap().rows(), expected);
+        assert_eq!(ir.model.bodies[0].transform, None);
     }
 }
 

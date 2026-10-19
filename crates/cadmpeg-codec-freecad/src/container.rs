@@ -96,10 +96,14 @@ pub(crate) struct Scan<'a> {
 pub(crate) struct UnreadableEntry {
     pub(crate) id: String,
     pub(crate) name: String,
+    #[serde(skip)]
     pub(crate) data_start: u64,
+    #[serde(skip)]
     pub(crate) data_end: u64,
-    #[serde(deserialize_with = "crate::native::deserialize_lowercase_native_bytes")]
+    #[serde(skip)]
     pub(crate) stored_data: NativeBytes,
+    pub(crate) byte_len: u64,
+    pub(crate) sha256: String,
     pub(crate) error: String,
 }
 
@@ -165,6 +169,8 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
                         data_start: range.start,
                         data_end: end,
                         stored_data: bytes.to_vec().into(),
+                        byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                        sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                         error: format!("{error}"),
                     });
                     continue;

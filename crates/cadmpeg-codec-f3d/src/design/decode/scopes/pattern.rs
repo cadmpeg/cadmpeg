@@ -46,7 +46,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         let stream = native_stream(&scope.id)?;
         let mut lanes = parameter_owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
+                && owner.scope_record_index() == Some(scope.record_index)
         });
         let mut ordered_lanes = [lanes.next()?, lanes.next()?, lanes.next()?, lanes.next()?];
         if lanes.next().is_some() {
@@ -57,7 +57,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         if [u_count, v_count, u_extent, v_extent]
             .iter()
             .enumerate()
-            .any(|(ordinal, owner)| u32::try_from(ordinal) != Ok(owner.local_ordinal()))
+            .any(|(ordinal, owner)| u32::try_from(ordinal).ok() != owner.local_ordinal())
         {
             return None;
         }
@@ -81,10 +81,10 @@ pub(super) fn exact_rectangular_pattern_construction(
                     v_extent.record_index(),
                 ],
                 value_offsets: [
-                    u_count.evaluated_value_offset(),
-                    v_count.evaluated_value_offset(),
-                    u_extent.evaluated_value_offset(),
-                    v_extent.evaluated_value_offset(),
+                    u_count.evaluated_value_offset()?,
+                    v_count.evaluated_value_offset()?,
+                    u_extent.evaluated_value_offset()?,
+                    v_extent.evaluated_value_offset()?,
                 ],
                 instances: None,
                 instance_search_cap: None,
@@ -414,8 +414,8 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         } = axis_candidates.into_iter().nth(axis_index)?;
         let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
             if native_stream(owner.id()) != native_stream(&scope.id)
-                || owner.scope_record_index() != scope.record_index
-                || owner.local_ordinal() != 0
+                || owner.scope_record_index() != Some(scope.record_index)
+                || owner.local_ordinal() != Some(0)
                 || owner.evaluated_value().get() <= 0.0
                 || owner.evaluated_value().get() > f64::from(u32::MAX)
                 || owner.evaluated_value().get().fract() != 0.0
@@ -425,7 +425,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             Some((
                 truncate_f64_to_u32(owner.evaluated_value().get())?,
                 owner.record_index(),
-                owner.evaluated_value_offset(),
+                owner.evaluated_value_offset()?,
             ))
         });
         let mut count_candidates = Vec::new();
@@ -448,13 +448,13 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         };
         let owner_angle_candidates = parameter_owners.iter().filter_map(|owner| {
             (native_stream(owner.id()) == native_stream(&scope.id)
-                && owner.scope_record_index() == scope.record_index
-                && owner.local_ordinal() == 1)
-                .then_some(())?;
+                && owner.scope_record_index() == Some(scope.record_index)
+                && owner.local_ordinal() == Some(1))
+            .then_some(())?;
             Some((
                 cadmpeg_ir::scalar::PositiveAngle::new(owner.evaluated_value().get())?,
                 owner.record_index(),
-                owner.evaluated_value_offset(),
+                owner.evaluated_value_offset()?,
             ))
         });
         let mut angle_candidates = Vec::new();

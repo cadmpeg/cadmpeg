@@ -62,22 +62,28 @@ fn attachment_failures(result: &EditableDecodeResult) -> Vec<&LossNote> {
         .collect()
 }
 
-fn assert_one_error_loss(result: &EditableDecodeResult) {
+fn assert_attachment_and_scope_losses(result: &EditableDecodeResult) {
     let errors = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.severity == Severity::Error)
         .collect::<Vec<_>>();
-    assert_eq!(errors.len(), 1, "{errors:#?}");
-    assert_eq!(attachment_failures(result).len(), 1);
-    assert_eq!(errors[0].code.namespace(), "nx");
-    assert_eq!(errors[0].code.local_code(), "native.attachment-failed");
-    assert!(
-        errors[0].message.contains(INJECTED_MESSAGE),
-        "{}",
-        errors[0].message
+    assert_eq!(errors.len(), 2, "{errors:#?}");
+    let attachment = attachment_failures(result);
+    assert_eq!(attachment.len(), 1);
+    assert_eq!(attachment[0].severity, Severity::Error);
+    assert!(attachment[0].message.contains(INJECTED_MESSAGE));
+    let missing = errors
+        .iter()
+        .filter(|loss| loss.code.local_code() == "depth.not-delivered")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        missing.len(),
+        1,
+        "the failed design projection is not delivered"
     );
+    assert!(missing[0].message.contains("design"));
 }
 
 #[test]
@@ -89,6 +95,21 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(!complete.ir().model.faces.is_empty());
 
     let contained = decode_failing_at(prt_with_arrangements(), Point::Exit);
+    assert_eq!(contained.ir().scope, cadmpeg_ir::ContentScope::geometry());
+    assert_eq!(contained.report().scope(), contained.ir().scope);
+    assert!(contained
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "depth.not-delivered"));
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Design));
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
     let (model, complete_model) = (&contained.ir().model, &complete.ir().model);
     assert_eq!(model.bodies, complete_model.bodies);
     assert_eq!(model.shells, complete_model.shells);
@@ -102,7 +123,7 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(model.configurations.is_empty());
     assert!(model.attributes.is_empty());
     assert!(model.features.is_empty());
-    assert_one_error_loss(&contained);
+    assert_attachment_and_scope_losses(&contained);
     assert_valid(&contained);
 }
 
@@ -120,12 +141,23 @@ fn attachment_failure_after_every_write_equals_failure_before_any_write() {
 #[test]
 fn attachment_failure_without_geometry_keeps_the_container_decode() {
     let complete = decode(composed_feature_history_prt());
-    assert!(!complete.ir().model.features.is_empty());
+    assert_eq!(complete.ir().scope, cadmpeg_ir::ContentScope::container());
+    assert!(
+        complete
+            .ir()
+            .native
+            .namespace("nx")
+            .is_some_and(|namespace| namespace
+                .arenas()
+                .get("feature_operation_records")
+                .is_some_and(|records| !records.is_empty())),
+        "the no-geometry route retains its typed native history inventory"
+    );
 
     let contained = decode_failing_at(composed_feature_history_prt(), Point::Exit);
     assert!(contained.ir().model.features.is_empty());
     assert!(contained.ir().model.faces.is_empty());
-    assert_one_error_loss(&contained);
+    assert_attachment_and_scope_losses(&contained);
 }
 
 /// A topology part whose Parasolid prologue states no schema token, so no

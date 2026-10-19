@@ -36,6 +36,7 @@ struct RenderUserdataDescriptor {
 #[derive(Debug, Serialize)]
 struct RevisionRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     created_by: String,
     created_utc_fields: [i32; 8],
@@ -47,6 +48,7 @@ struct RevisionRecord {
 #[derive(Debug, Serialize)]
 struct NotesRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     html: bool,
     text: String,
@@ -58,6 +60,7 @@ struct NotesRecord {
 #[derive(Debug, Serialize)]
 struct ApplicationRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     name: String,
     url: String,
@@ -67,12 +70,12 @@ struct ApplicationRecord {
 #[derive(Debug, Serialize)]
 struct DocumentSettingsRecord {
     id: String,
-    writer_version: Option<i64>,
     archive_file_name: Option<String>,
     model_url: Option<String>,
     current_layer_index: Option<i64>,
     current_material_index: Option<i32>,
     current_material_source: Option<i32>,
+    #[serde(serialize_with = "crate::wire::serialize_optional_color")]
     current_color: Option<NativeBytes<[u8; 4]>>,
     current_color_source: Option<i32>,
     current_wire_density: Option<i64>,
@@ -83,6 +86,7 @@ struct DocumentSettingsRecord {
 #[derive(Debug, Serialize)]
 struct PreviewRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     byte_len: u64,
     compressed: bool,
@@ -92,6 +96,7 @@ struct PreviewRecord {
 #[derive(Debug, Serialize)]
 struct SettingRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     byte_len: u64,
     typecode: String,
@@ -102,6 +107,7 @@ struct SettingRecord {
 #[derive(Debug, Serialize)]
 struct AnnotationSettingsRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     dimension_scale: FiniteReal,
     text_height_mm: FiniteReal,
@@ -131,6 +137,7 @@ struct AnnotationSettingsRecord {
 #[derive(Debug, Serialize)]
 struct GridDefaultsRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     grid_spacing_mm: FiniteReal,
     snap_spacing_mm: FiniteReal,
@@ -144,6 +151,7 @@ struct GridDefaultsRecord {
 #[derive(Debug, Serialize)]
 struct RenderSettingsRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(flatten)]
     image_flags: RenderImageFlags,
@@ -151,9 +159,12 @@ struct RenderSettingsRecord {
     image_height_pixels: i32,
     image_dpi: Option<f64>,
     image_unit_system: Option<u32>,
+    #[serde(serialize_with = "crate::wire::serialize_color")]
     ambient_light: NativeBytes<[u8; 4]>,
     background_style: i32,
+    #[serde(serialize_with = "crate::wire::serialize_color")]
     background_color: NativeBytes<[u8; 4]>,
+    #[serde(serialize_with = "crate::wire::serialize_optional_color")]
     background_bottom_color: Option<NativeBytes<[u8; 4]>>,
     background_bitmap_path: String,
     #[serde(flatten)]
@@ -601,7 +612,6 @@ pub(crate) fn install(
     let settings = &scan.metadata.settings;
     let document_settings = [DocumentSettingsRecord {
         id: "rhino:document:settings#current".to_owned(),
-        writer_version: properties.writer_version,
         archive_file_name: properties
             .as_file_name
             .as_deref()
@@ -646,6 +656,26 @@ pub(crate) fn install(
     let mut renders = Vec::new();
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
+    for (index, preview) in properties.previews.iter().enumerate() {
+        losses.push(
+            crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                "{}: preview image has no admitted typed image resource",
+                numbered_id("rhino:document:preview#", index)
+            )),
+        );
+        if let Some((table, record)) = scan.tables.iter().find_map(|table| {
+            table
+                .records
+                .iter()
+                .find(|record| record.range == preview.source.range)
+                .map(|record| (table, record))
+        }) {
+            opaque_records.push(OpaqueRecord {
+                table_typecode: table.typecode,
+                record: record.clone(),
+            });
+        }
+    }
     let mut render_settings_seen = false;
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
@@ -770,6 +800,61 @@ pub(crate) fn install(
             }
         }
     }
+    let mut source_layout = std::collections::BTreeMap::new();
+    if let Some(version) = properties.writer_version {
+        source_layout.insert(
+            "rhino.source.writer_version".to_owned(),
+            version.to_string(),
+        );
+    }
+    for record in &revisions {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &notes {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &applications {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &previews {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &setting_records {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &annotations {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &grids {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &renders {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "revisions", &revisions)?;
     namespace.set_arena(ctx, "document_notes", &notes)?;
@@ -781,6 +866,7 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "grid_defaults", &grids)?;
     namespace.set_arena(ctx, "render_settings", &renders)?;
     Ok(NativeInstall {
+        source_layout,
         losses,
         opaque_records,
     })

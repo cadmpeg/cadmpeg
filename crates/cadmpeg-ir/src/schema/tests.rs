@@ -96,6 +96,8 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: crate::features::NonEmptyMembers::one(FilletGroup {
@@ -106,7 +108,9 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                     )
                     .unwrap(),
                     radius: RadiusSpec::Constant {
-                        radius: crate::scalar::PositiveLength::new(1.0).unwrap(),
+                        radius: crate::features::Dimension::Literal(
+                            crate::scalar::PositiveLength::new(1.0).unwrap(),
+                        ),
                     },
                     tangency_weight: None,
                 }),
@@ -263,6 +267,7 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::SolidBodies,

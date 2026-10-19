@@ -17,7 +17,6 @@ pub(crate) const CLASS: Uuid = Uuid::from_canonical([
 
 #[derive(Debug, Clone)]
 pub(crate) struct Detail {
-    pub(crate) source_range: Range<usize>,
     pub(crate) view_range: Range<usize>,
     pub(crate) boundary: DecodedCurve,
     pub(crate) page_per_model_ratio: NonNegativeReal,
@@ -90,7 +89,6 @@ pub(crate) fn decode(
     })?;
     outer.skip_remaining()?;
     Ok(Detail {
-        source_range: range,
         view_range,
         boundary: DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),

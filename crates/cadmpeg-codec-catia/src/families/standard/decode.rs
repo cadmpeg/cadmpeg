@@ -1951,7 +1951,10 @@ fn try_decode_standard_populations(
             return Ok(None);
         }
         if output.report.transfer.geometry_transferred() {
-            merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+            merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: cadmpeg_ir::ContentScope::full(),
+                geometry_transferred: true,
+            };
         }
     }
 

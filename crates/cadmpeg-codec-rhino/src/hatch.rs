@@ -104,7 +104,6 @@ pub(crate) struct Gradient {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Hatch {
-    pub(crate) source_range: Range<usize>,
     pub(crate) plane: Plane,
     pub(crate) pattern_scale: PositiveReal,
     pub(crate) pattern_rotation: FiniteReal,
@@ -285,7 +284,6 @@ pub(crate) fn decode(
         Err(error) => return Err(refused(body.position(), &error)),
     };
     Ok(Hatch {
-        source_range: range,
         plane,
         pattern_scale,
         pattern_rotation,

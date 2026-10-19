@@ -69,7 +69,12 @@ fn append_design_intent_losses(
     ir: &cadmpeg_ir::document::CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    crate::decode::report::append_design_intent_losses(ir, losses).unwrap();
+    crate::decode::report::append_design_intent_losses(
+        &mut cadmpeg_ir::ArenaClasses::default(),
+        ir,
+        losses,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1341,6 +1346,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     let mut ir = CadIr::empty();
     for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint(format!("test:test:feature#{ordinal}")).expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
@@ -1354,13 +1360,14 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: kind.into(),
-                    parameters: Default::default(),
+                    parameters: (Default::default()).into(),
                 }),
             ),
             native_ref: None,
         });
     }
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#sketch").expect("identity grammar"),
         ordinal: 3,
         name: None,
@@ -1379,6 +1386,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#incomplete-delete").expect("identity grammar"),
         ordinal: 10,
         name: None,
@@ -1418,6 +1426,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     .enumerate()
     {
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint(format!("test:test:feature#unresolved-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal) + 4,
@@ -1434,6 +1443,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         });
     }
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#incomplete-block").expect("identity grammar"),
         ordinal: 9,
         name: None,
@@ -1454,6 +1464,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#incomplete-sweep").expect("identity grammar"),
         ordinal: 11,
         name: None,
@@ -1521,7 +1532,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     ]);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
 
     assert_eq!(losses.len(), 7);
     assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
@@ -1568,7 +1579,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
         }));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
     assert!(losses[4].message.contains("block (1)"));
@@ -1585,6 +1596,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#active").expect("identity grammar"),
             ordinal: 0,
             name: Some("active".into()),
@@ -1608,6 +1620,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive").expect("identity grammar"),
             ordinal: 1,
             name: Some("inactive".into()),
@@ -1630,6 +1643,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive-native").expect("identity grammar"),
             ordinal: 2,
             name: Some("inactive-native".into()),
@@ -1643,12 +1657,13 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DELETE".into(),
-                    parameters: Default::default(),
+                    parameters: (Default::default()).into(),
                 }),
             ),
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive-datum-csys").expect("identity grammar"),
             ordinal: 3,
             name: Some("inactive-datum-csys".into()),
@@ -1667,6 +1682,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive-sketch").expect("identity grammar"),
             ordinal: 4,
             name: Some("inactive-sketch".into()),
@@ -1687,7 +1703,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
     ]);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -1701,6 +1717,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#retained-input").expect("identity grammar"),
             ordinal: 0,
             name: Some("Retained history input".into()),
@@ -1724,6 +1741,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#unresolved").expect("identity grammar"),
             ordinal: 1,
             name: Some("unresolved".into()),
@@ -1737,7 +1755,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DELETE".into(),
-                    parameters: Default::default(),
+                    parameters: (Default::default()).into(),
                 }),
             ),
             native_ref: None,
@@ -1745,7 +1763,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     ]);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
 
     assert_eq!(losses.len(), 2);
     assert!(losses[0]
@@ -1771,6 +1789,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         "reference".to_string(),
     );
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#local-pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
@@ -1795,7 +1814,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1811,6 +1830,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     };
 
     let feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#pattern-construction").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
@@ -1833,7 +1853,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     ir.model.features.push(feature);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1846,7 +1866,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         "42".into(),
     );
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message
@@ -1861,6 +1881,7 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#construction-trim").expect("identity grammar"),
         ordinal: 0,
         name: Some("TRIMMED_SH".into()),
@@ -1888,14 +1909,14 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0].source_properties.insert(
         cadmpeg_core::nonblank_literal!("body_reference.0"),
         "42".into(),
     );
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message
@@ -1914,6 +1935,7 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         "reference".to_string(),
     );
     let mut feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#local-pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),

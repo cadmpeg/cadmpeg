@@ -201,7 +201,7 @@ fn exact_construction_operand_group(
         let header = RecordFrame {
             record_index,
             class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
-            byte_offset: u64::try_from(start).ok()?,
+            byte_offset: Some(u64::try_from(start).ok()?),
         };
         match parse_construction_operand_group(bytes, scope, scope_reference_ordinal, &header) {
             ConstructionOperandGroupParse::Complete(group) => {

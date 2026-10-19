@@ -172,7 +172,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let Some(scalar) = lane
                 .scalars
                 .iter()
-                .filter(|scalar| scalar.offset > u64_from_index(offset))
+                .filter(|scalar| {
+                    scalar
+                        .offset
+                        .is_some_and(|position| position > u64_from_index(offset))
+                })
                 .min_by_key(|scalar| scalar.offset)
             else {
                 continue;
@@ -283,7 +287,9 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 })
                                 .filter(|(scalar, name)| {
                                     value_only_scalar_offset(&lane.native_payload, name)
-                                        == usize::try_from(scalar.offset).ok()
+                                        == scalar
+                                            .offset
+                                            .and_then(|offset| usize::try_from(offset).ok())
                                 })
                                 .min_by_key(|(scalar, _)| scalar.offset)
                                 .map(|(scalar, _)| scalar.value.get());
@@ -468,7 +474,10 @@ fn compact_termination_face_vote(
     let reference = format!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}");
     let selection = lane.surface_selections.iter().find(|selection| {
         selection.feature_ref == feature_ref
-            && usize::try_from(selection.offset).ok() == Some(offset)
+            && selection
+                .offset
+                .and_then(|offset| usize::try_from(offset).ok())
+                == Some(offset)
     });
     let canonical_reference =
         selection.map(|selection| compact_surface_selection_value(&selection.components));
@@ -705,12 +714,17 @@ pub(crate) fn enrich_history_sweep_paths(
             };
             for class in &lane.classes {
                 if class.name != "moGeneralCurveRef_w"
-                    || class.offset < u64_from_index(start)
-                    || class.offset >= u64_from_index(end)
+                    || class
+                        .offset
+                        .is_some_and(|position| position < u64_from_index(start))
+                    || class
+                        .offset
+                        .is_some_and(|position| position >= u64_from_index(end))
                 {
                     continue;
                 }
-                let Ok(offset) = usize::try_from(class.offset) else {
+                let Some(offset) = class.offset.and_then(|offset| usize::try_from(offset).ok())
+                else {
                     continue;
                 };
                 observe_offset(offset);
@@ -793,7 +807,9 @@ fn history_object_offsets(
             continue;
         };
         let id = feature.id.clone();
-        objects.push((name.offset, id));
+        if let Some(position) = name.offset {
+            objects.push((position, id));
+        }
     }
     objects.sort_unstable_by_key(|left| left.0);
     objects
@@ -840,7 +856,10 @@ pub(crate) fn project_surface_sweep_profiles(
         else {
             continue;
         };
-        let Some(class_offset) = usize::try_from(reference_class.offset).ok() else {
+        let Some(class_offset) = reference_class
+            .offset
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         let Some(wrapper_token) = class_offset
@@ -858,8 +877,8 @@ pub(crate) fn project_surface_sweep_profiles(
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in &history_features {
-            if let Some(name) = names.of(feature) {
-                objects.push((name.offset, *feature));
+            if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                objects.push((position, *feature));
             }
         }
         objects.sort_unstable_by_key(|(left, _)| *left);

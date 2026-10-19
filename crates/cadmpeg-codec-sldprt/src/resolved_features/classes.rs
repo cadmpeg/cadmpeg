@@ -84,7 +84,9 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
             .map(|name| (name.offset, name))
             .collect::<HashMap<_, _>>();
         for class in &lane.classes {
-            let name_offset = class.offset + 6 + u64_from_index(class.name.len());
+            let name_offset = class
+                .offset
+                .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())));
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
@@ -120,7 +122,9 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
             .map(|name| (name.offset, name.value.as_str()))
             .collect::<HashMap<_, _>>();
         for class in &lane.classes {
-            let name_offset = class.offset + 6 + u64_from_index(class.name.len());
+            let name_offset = class
+                .offset
+                .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())));
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
@@ -173,7 +177,11 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
         let direct_name_offsets = lane
             .classes
             .iter()
-            .map(|class| class.offset + 6 + u64_from_index(class.name.len()))
+            .map(|class| {
+                class
+                    .offset
+                    .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())))
+            })
             .collect::<HashSet<_>>();
         let names = FeatureObjectNames::new(&lane.names);
         let mut groups = HashMap::<u16, Vec<&Feature>>::new();
@@ -190,8 +198,9 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
             }) else {
                 continue;
             };
-            let Some(token) = usize::try_from(name.offset)
-                .ok()
+            let Some(token) = name
+                .offset
+                .and_then(|offset| usize::try_from(offset).ok())
                 .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
                 .filter(|token| is_class_token(*token))
             else {
@@ -377,7 +386,9 @@ impl<'a> IndirectNameTokens<'a> {
                 lane.classes.iter().map(|class| {
                     (
                         lane.id.as_str(),
-                        class.offset + 6 + u64_from_index(class.name.len()),
+                        class.offset.and_then(|position| {
+                            position.checked_add(6 + u64_from_index(class.name.len()))
+                        }),
                     )
                 })
             })
@@ -399,8 +410,9 @@ impl<'a> IndirectNameTokens<'a> {
                 if direct_name_offsets.contains(&(lane.id.as_str(), name.offset)) {
                     continue;
                 }
-                let Some(token) = usize::try_from(name.offset)
-                    .ok()
+                let Some(token) = name
+                    .offset
+                    .and_then(|offset| usize::try_from(offset).ok())
                     .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
                 else {
                     continue;
@@ -497,7 +509,11 @@ fn legacy_repeated_hole_wizard_classes<'h, 'a>(
         let direct_name_offsets = lane
             .classes
             .iter()
-            .map(|class| class.offset + 6 + u64_from_index(class.name.len()))
+            .map(|class| {
+                class
+                    .offset
+                    .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())))
+            })
             .collect::<HashSet<_>>();
         let mut groups = HashMap::<u16, Vec<&Feature>>::new();
         for name in &lane.names {
@@ -507,8 +523,9 @@ fn legacy_repeated_hole_wizard_classes<'h, 'a>(
             let Some(feature) = by_name.get(name.value.as_str()).copied().flatten() else {
                 continue;
             };
-            let Some(token) = usize::try_from(name.offset)
-                .ok()
+            let Some(token) = name
+                .offset
+                .and_then(|offset| usize::try_from(offset).ok())
                 .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
                 .filter(|token| is_class_token(*token))
             else {
@@ -823,6 +840,7 @@ mod idless_history_binding_tests {
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -841,6 +859,7 @@ mod idless_history_binding_tests {
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Extrude {
                         profile: cadmpeg_ir::features::ProfileRef::Planar(
@@ -1199,10 +1218,12 @@ mod idless_history_binding_tests {
         .into_iter()
         .enumerate()
         .map(|(ordinal, name)| FeatureInputClass {
+            feature_ref: None,
             id: format!("class-{ordinal}"),
             parent: "lane".into(),
             ordinal: u32::try_from(ordinal).expect("test class ordinal fits u32"),
-            offset: u64_from_index(ordinal) * 100,
+            sequence: u32::try_from(ordinal).expect("test class ordinal fits u32"),
+            offset: Some(u64_from_index(ordinal) * 100),
             name: name.into(),
         })
         .collect();
@@ -1262,24 +1283,31 @@ mod idless_history_binding_tests {
             features: vec![unique, duplicate_a, duplicate_b],
         }];
         let class = |ordinal: u32, offset: u64, name: &str| FeatureInputClass {
+            feature_ref: None,
             id: format!("class-{ordinal}"),
             parent: "lane".into(),
             ordinal,
-            offset,
+            sequence: ordinal,
+            offset: Some(offset),
             name: name.into(),
         };
         let classes = vec![
             class(0, 100, "moCosmeticThread_c"),
             class(1, 200, "moRefAxis_c"),
         ];
-        let name = |ordinal: u32, class: &FeatureInputClass, value: &str| FeatureInputName {
-            id: format!("name-{ordinal}"),
-            parent: "lane".into(),
-            ordinal,
-            offset: class.offset + 6 + u64_from_index(class.name.len()),
-            object_id: None,
-            value: value.into(),
-        };
+        let name =
+            |ordinal: u32, class: &FeatureInputClass, value: &str| FeatureInputName {
+                feature_ref: None,
+                id: format!("name-{ordinal}"),
+                parent: "lane".into(),
+                ordinal,
+                sequence: ordinal,
+                offset: Some(class.offset.and_then(|position| {
+                    position.checked_add(6 + u64_from_index(class.name.len()))
+                })),
+                object_id: None,
+                value: value.into(),
+            };
         let names = vec![
             name(0, &classes[0], "unique generated name"),
             name(1, &classes[1], "duplicate name"),
@@ -1328,13 +1356,17 @@ mod idless_history_binding_tests {
             features: vec![direct, repeated, target],
         }];
         let class = FeatureInputClass {
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            sequence: 0,
+            offset: Some(100),
             name: "moHoleWzd_c".into(),
         };
-        let direct_offset = class.offset + 6 + u64_from_index(class.name.len());
+        let direct_offset = class
+            .offset
+            .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())));
         let names = vec![
             FeatureInputName {
                 id: "direct-name".into(),
@@ -1400,7 +1432,9 @@ mod idless_history_binding_tests {
                 lane.classes.iter().map(|class| {
                     (
                         lane.id.as_str(),
-                        class.offset + 6 + u64_from_index(class.name.len()),
+                        class.offset.and_then(|position| {
+                            position.checked_add(6 + u64_from_index(class.name.len()))
+                        }),
                     )
                 })
             })
@@ -1426,7 +1460,8 @@ mod idless_history_binding_tests {
                     name.object_id.and_then(ObjectId::value) == Some(object_id)
                 }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
             }) {
-                let Ok(offset) = usize::try_from(name.offset) else {
+                let Some(offset) = name.offset.and_then(|offset| usize::try_from(offset).ok())
+                else {
                     continue;
                 };
                 if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
@@ -1458,19 +1493,23 @@ mod idless_history_binding_tests {
                         .collect::<Vec<_>>();
                     let classes = (0..next(3))
                         .map(|ordinal| FeatureInputClass {
+                            feature_ref: None,
                             id: format!("class-{lane_index}-{ordinal}"),
                             parent: (*lane_id).into(),
                             ordinal: u32::try_from(ordinal).expect("ordinal"),
-                            offset: next(8),
+                            sequence: u32::try_from(ordinal).expect("ordinal"),
+                            offset: Some(next(8)),
                             name: "moX_c".into(),
                         })
                         .collect();
                     let names = (0..next(8))
                         .map(|ordinal| FeatureInputName {
+                            feature_ref: None,
                             id: format!("name-{lane_index}-{}", next(3)),
                             parent: (*lane_id).into(),
                             ordinal: u32::try_from(ordinal).expect("ordinal"),
-                            offset: next(30),
+                            sequence: u32::try_from(ordinal).expect("ordinal"),
+                            offset: Some(next(30)),
                             object_id: ObjectId::from_value(
                                 u32::try_from(next(4)).expect("object id"),
                             ),
@@ -1547,10 +1586,12 @@ mod idless_history_binding_tests {
             features: vec![first, second],
         }];
         let class = FeatureInputClass {
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            sequence: 0,
+            offset: Some(100),
             name: "moCosmeticThread_c".into(),
         };
         let names = histories[0]
@@ -1558,10 +1599,12 @@ mod idless_history_binding_tests {
             .iter()
             .enumerate()
             .map(|(index, feature)| FeatureInputName {
+                feature_ref: None,
                 id: format!("name-{index}"),
                 parent: "lane".into(),
                 ordinal: u32::try_from(index).expect("test name ordinal fits u32"),
-                offset: 300 + u64_from_index(index) * 100,
+                sequence: u32::try_from(index).expect("test name ordinal fits u32"),
+                offset: Some(300 + u64_from_index(index) * 100),
                 object_id: feature.source_value().and_then(ObjectId::from_value),
                 value: feature.name.clone(),
             })

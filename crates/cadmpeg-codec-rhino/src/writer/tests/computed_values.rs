@@ -8,7 +8,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 /// The writer refuses `written` with a `NotImplemented` error that names
 /// `field`, where it wrote an infinity.
 fn assert_refused(written: Result<Vec<u8>, CodecError>, field: &str) {
-    let Err(CodecError::NotImplemented(message)) = written else {
+    let Err(CodecError::UnsupportedContent(message)) = written else {
         panic!("{field}: {written:?}");
     };
     assert!(message.contains(field), "{message}");

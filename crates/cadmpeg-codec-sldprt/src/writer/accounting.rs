@@ -86,7 +86,17 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         ir.model
             .attributes
             .iter()
-            .filter(|attribute| !attribute.id.as_str().starts_with("sldprt:"))
+            .filter(|attribute| {
+                !attribute.id.as_str().starts_with("sldprt:")
+                    && !super::custom_properties::represents(attribute)
+                    && !(matches!(
+                        attribute.target,
+                        cadmpeg_ir::attributes::AttributeTarget::Pmi(_)
+                    ) && matches!(
+                        attribute.name.as_str(),
+                        "precision" | "basic" | "inspection" | "reference_only"
+                    ))
+            })
             .count(),
         SldprtLossCode::WriterAttributesOmitted,
         "attribute outside the sldprt namespace",
@@ -141,6 +151,46 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .count(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
+    );
+    losses
+}
+
+/// Charge whole arenas the SLDPRT format writer cannot encode.
+pub(super) fn arena_losses(
+    ir: &CadIr,
+    coverage: &cadmpeg_ir::codec::write::ArenaDispositions,
+) -> Vec<LossNote> {
+    use cadmpeg_ir::codec::write::ArenaDisposition;
+    let mut losses = Vec::new();
+    macro_rules! charge {
+        ($($arena:ident),* $(,)?) => {$(
+            if coverage.$arena == ArenaDisposition::Dropped && !ir.model.$arena.is_empty() {
+                losses.push(SldprtLossCode::WriterArenaOmitted.note(format!(
+                    "model.{}: {} record(s) omitted by the SLDPRT writer", stringify!($arena), ir.model.$arena.len()
+                )));
+            }
+        )*};
+    }
+    charge!(
+        subds,
+        assets,
+        feature_input_topologies,
+        feature_result_topologies,
+        spatial_sketch_constraints,
+        spreadsheets,
+        product_definitions,
+        occurrences,
+        assembly_joints,
+        drawings,
+        semantic_annotations,
+        presentation_documents,
+        view_presentations,
+        presentation_layers,
+        pmi,
+        pcurves,
+        procedural_curves,
+        procedural_surfaces,
+        configurations
     );
     losses
 }

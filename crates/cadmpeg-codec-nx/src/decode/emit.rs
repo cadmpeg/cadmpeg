@@ -81,6 +81,7 @@ pub(super) struct TopologyBudgets<'inputs> {
 }
 
 pub(super) fn emit_topology(
+    source_untyped: &mut cadmpeg_ir::ArenaClasses,
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     topology_stream: &TopologyStream<'_>,
@@ -696,7 +697,7 @@ pub(super) fn emit_topology(
         });
         if !ring_resolves {
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"),
+                { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face") },
             ));
             continue;
         }
@@ -1064,7 +1065,7 @@ pub(super) fn emit_topology(
             };
             let Some(ring) = ring else {
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
+                    { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face") },
                 ));
                 continue;
             };
@@ -1087,8 +1088,8 @@ pub(super) fn emit_topology(
     for pending in pending_faces {
         if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
-                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
-                pending.xmt),
+                { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
+                pending.xmt) },
             ));
         }
         let loops = face_loops.remove(&pending.id).unwrap_or_default();
@@ -1855,6 +1856,7 @@ mod tests {
 
     fn empty_source_scan() -> Scan<'static> {
         Scan {
+            source_untyped: Default::default(),
             container: Container {
                 data: Vec::new().into(),
                 physical_size: 0,

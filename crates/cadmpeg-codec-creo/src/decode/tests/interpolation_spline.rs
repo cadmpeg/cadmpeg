@@ -1827,6 +1827,7 @@ fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance
 #[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let feature = |definition, outputs: Vec<cadmpeg_ir::ids::BodyId>| Feature {
+        needs_recompute: false,
         id: IrFeatureId::mint("creo:model:feature#1".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1875,8 +1876,9 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
-                            .expect("nonzero length fixture"),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(1.0)
+                            .expect("nonzero length fixture"))
+                        .into(),
                     },
                     draft: None,
                 },

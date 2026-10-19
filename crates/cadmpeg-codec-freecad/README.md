@@ -9,8 +9,8 @@ Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-s
 
 <!-- /generated: capability fcstd -->
 
-Deterministic retained writes, checked edits, and source-less typed application
-graphs are extras above the schema-4/file-1 envelope.
+Neutral-first synthesis and guarded retained writes support document schemas
+2, 3, and 4; schema 4 is the default for authored and foreign documents.
 
 ## Install
 
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.FCStd")?;
     let result = FcstdCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    // Edit supported fields on the FCStd native document graph in result.ir().
+    // Edit neutral CADIR fields on a cloned document before planning an export.
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
@@ -68,14 +68,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Writing uses the FCStd native document graph on `CadIr`
-(`ir.native["fcstd"]`), not `SourceFidelity`. `Encoder::plan` ignores
-`fidelity` and returns `NotConsumed` when one is supplied. Retained
-schema-4/file-1 documents regenerate while preserving unedited XML records and
-named side entries. Checked leaf property edits and side-entry replacements
-update the native graph in place. `FcstdDocumentBuilder` builds source-less
-application graphs for the same write envelope. Unsupported schema or file
-targets are refused.
+The writer synthesizes current neutral geometry, feature history, sketches,
+constraints, parameters, spreadsheets, products, joints, and presentation.
+Its typed `fcstd` native namespace supplies values with no neutral form.
+Synthesis consumes no retained archive bytes. Unsupported content produces
+export losses. Feature edits retain the current evaluated BRep because the writer
+does not run a modeling kernel; `needs_recompute` writes the native object
+`Touched` declaration attribute.
+
+An unchanged, fully represented source can use the retained `Patched` path when
+its source fidelity is supplied. `SourceFidelity::unrepresented()` derives the union of source-only classes from
+retained source records and prevents patching opaque content. Edited documents, missing layout, or a declined
+patch use synthesis. `FcstdDocumentBuilder` also constructs source-less typed
+application graphs. See the format notes for arena dispositions and mappings.
 
 ## Data model
 

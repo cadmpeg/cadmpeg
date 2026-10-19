@@ -291,12 +291,14 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
-    assert!(error.to_string().contains("does not exactly match"));
+    assert!(error
+        .to_string()
+        .contains("disagrees with its directed planar C3 projection"));
     assert_eq!(output, [0xaa]);
 }
 
 #[test]
-fn multiple_pcurve_uses_are_rejected_before_output() {
+fn multiple_pcurve_uses_omit_the_unsupported_sheet_face() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -343,16 +345,21 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         },
     ];
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert_eq!(output, [0xaa]);
+        .expect("unsupported trim does not refuse the document");
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("valid archive writes");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("archive decodes");
+    assert!(decoded.ir().model.bodies.is_empty());
 }
 
 #[test]
@@ -476,10 +483,12 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
             "{version:?}"
         );
         assert_eq!(decoded.ir().model.pcurves.len(), 4, "{version:?}");
-        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| pcurve
-            .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get)
-            == Some(0.001)));
+        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| {
+            pcurve
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get)
+                == Some(0.001)
+        }));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -653,10 +662,12 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         assert_eq!(decoded.ir().model.curves[0].geometry, expected_curve);
         assert_eq!(decoded.ir().model.loops.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.pcurves.len(), 7, "{version:?}");
-        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| pcurve
-            .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get)
-            == Some(0.0001)));
+        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| {
+            pcurve
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get)
+                == Some(0.0001)
+        }));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -696,22 +707,27 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
 }
 
 #[test]
-fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
+fn nurbs_surface_without_boundary_pcurves_omits_the_unsupported_sheet_face() {
     let mut ir = rectangular_nurbs_patch();
     ir.model.pcurves.clear();
     for coedge in &mut ir.model.coedges {
         coedge.pcurves.clear();
     }
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("explicit pcurve"));
-    assert_eq!(output, [0xaa]);
+        .expect("unsupported trim does not refuse the document");
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("valid archive writes");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("archive decodes");
+    assert!(decoded.ir().model.bodies.is_empty());
 }
 
 /// The archive's pole lane states the figure `check_nurbs_surface` proved
@@ -778,11 +794,11 @@ fn admitted_degree_zero_nurbs_are_writer_limits() {
         .expect_err("Rhino requires positive NURBS degree");
     assert!(matches!(
         curve_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
+        cadmpeg_core::CodecError::UnsupportedContent(_)
     ));
     assert!(matches!(
         surface_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
+        cadmpeg_core::CodecError::UnsupportedContent(_)
     ));
 }
 
@@ -858,7 +874,6 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
     let explicit = WritablePcurve {
         source: &pcurve,
         payload: ([0; 16], vec![]),
-        domain_extent_points: uv,
     };
     validate_nurbs_trim(
         &surface,
@@ -934,7 +949,6 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
     let explicit = WritablePcurve {
         source: &pcurve,
         payload: ([0; 16], vec![]),
-        domain_extent_points: uv,
     };
     validate_nurbs_trim(
         &surface,

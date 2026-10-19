@@ -44,6 +44,56 @@ use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
+fn assert_pcurve_content(
+    actual: &[cadmpeg_ir::geometry::pcurve::Pcurve],
+    expected: &[cadmpeg_ir::geometry::pcurve::Pcurve],
+) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.geometry, expected.geometry);
+        assert_eq!(actual.metadata, expected.metadata);
+    }
+}
+
+fn assert_solved_curve_reduction(ir: &cadmpeg_ir::CadIr) {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("unsupported construction writes its held solved carrier");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterProceduralReduced.kind()));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("reduced curve decodes");
+    for original in ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| curve.geometry.procedural_construction().is_some())
+    {
+        let solved = original
+            .geometry
+            .solved()
+            .expect("fixture retains a solved carrier");
+        assert!(
+            decoded
+                .ir()
+                .model
+                .curves
+                .iter()
+                .any(|curve| curve.geometry.solved() == Some(solved)),
+            "held solved curve must survive synthesis"
+        );
+    }
+}
+
 #[test]
 fn generated_surface_offset_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
@@ -558,32 +608,72 @@ fn generated_deformable_curves_decode_and_write_source_less() {
 }
 
 #[test]
-fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
+fn generated_f3d_reports_unknown_curve_fit_tolerance_reduction() {
     let source = f3d_with_smbh(&synthetic_geometry_with_procedural_curve_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("generated procedural-curve decode");
+        .expect("procedural curve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
+    assert!(
+        matches!(
+            edited.model.procedural_curves[0].definition(),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
+        ),
+        "the fixture lacks intersection supports and holds an unknown construction"
+    );
+    let original = edited
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            curve.geometry.procedural_construction() == Some(&edited.model.procedural_curves[0].id)
+        })
+        .expect("construction owner")
+        .geometry
+        .solved()
+        .expect("held solved carrier")
+        .clone();
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.025))
         .unwrap();
-
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
-        .expect("procedural-curve fit regeneration");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated procedural-curve decode");
-    assert_eq!(
-        round_trip.ir().model.procedural_curves[0]
-            .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.025)
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("unknown construction degrades to its solved carrier");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterProceduralReduced.kind()));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("reduced curve decode");
+    assert!(
+        decoded
+            .ir()
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.geometry.solved() == Some(&original)),
+        "fit reduction must preserve the actual held curve"
     );
+    assert!(decoded
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .all(|construction| construction.cache_fit_tolerance().is_none()));
 }
 
 #[test]
-fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
+fn generated_source_less_reports_lossy_procedural_curve_fallbacks() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
     let decoded = F3dCodec
@@ -604,27 +694,14 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
             blend_surface: None,
         },
     );
-    let mut encoded = Vec::new();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect_err("typed intersection must not degrade to a cache-only curve");
-    assert!(error
-        .to_string()
-        .contains("lacks its native blend construction"));
+    assert_solved_curve_reduction(&source_less);
 
     source_less.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Unknown {
         native_kind: None,
         record: None,
         cache: None,
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("unknown construction must not degrade to a cache-only curve");
-    assert!(error
-        .to_string()
-        .contains("cannot be regenerated losslessly"));
+    assert_solved_curve_reduction(&source_less);
 }
 
 #[test]
@@ -699,7 +776,16 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
         .model
         .curves
         .iter()
-        .any(|curve| curve == &expected));
+        .any(
+            |curve| curve.geometry.solved() == expected.geometry.solved()
+                && curve.parameter_range == expected.parameter_range
+                && round_trip
+                    .ir()
+                    .model
+                    .edges
+                    .iter()
+                    .any(|edge| edge.curve() == Some(&curve.id))
+        ));
 }
 
 #[test]
@@ -1186,7 +1272,10 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected.clone()]);
+    assert_pcurve_content(
+        &round_trip.ir().model.pcurves,
+        std::slice::from_ref(&expected),
+    );
 }
 
 #[test]
@@ -1224,7 +1313,10 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated scoped pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected]);
+    assert_pcurve_content(
+        &round_trip.ir().model.pcurves,
+        std::slice::from_ref(&expected),
+    );
 }
 
 #[test]
@@ -1276,7 +1368,10 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated rational pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected]);
+    assert_pcurve_content(
+        &round_trip.ir().model.pcurves,
+        std::slice::from_ref(&expected),
+    );
 }
 
 #[test]
@@ -1350,7 +1445,10 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated ref-form pcurve decode");
-    assert_eq!(round_trip.ir().model.pcurves, [expected.clone()]);
+    assert_pcurve_content(
+        &round_trip.ir().model.pcurves,
+        std::slice::from_ref(&expected),
+    );
 
     edited.source = None;
     edited

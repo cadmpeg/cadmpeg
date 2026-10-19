@@ -789,8 +789,11 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
             && !diagnostic.diagnostic.message.contains("unsupported class")
     }));
     let container_only = crate::decode::seal_for_test(
-        crate::container::container_only_result(&scan)
-            .expect("container-only source metadata admitted"),
+        crate::container::container_only_result(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+        )
+        .expect("container-only source metadata admitted"),
         true,
     );
     assert!(container_only.report().losses.iter().any(|loss| {
@@ -872,76 +875,52 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.bodies.len(), 2);
-    assert_eq!(result.ir().model.points.len(), 2);
-    assert!(result
-        .ir()
-        .model
-        .bodies
-        .iter()
-        .all(|body| body.transform.is_none()));
+    let ir = result.ir();
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.model.points.len(), 1);
     assert_eq!(
-        result
-            .ir()
-            .model
-            .points
-            .iter()
-            .map(|point| point.position().get())
-            .collect::<Vec<_>>(),
-        vec![Point3::new(11.0, 2.0, 3.0), Point3::new(21.0, 2.0, 3.0)]
+        ir.model.points[0].position().get(),
+        Point3::new(1.0, 2.0, 3.0)
     );
-    let body_ids = result
-        .ir()
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.to_string())
-        .collect::<Vec<_>>();
-    assert_ne!(body_ids[0], body_ids[1]);
+    assert!(ir.model.bodies[0].transform.is_none());
+    assert_eq!(ir.model.product_definitions.len(), 1);
     assert_eq!(
-        result
-            .ir()
-            .native_unknowns("rhino")
-            .expect("required invariant")[0]
+        ir.model.product_definitions[0].bodies,
+        vec![ir.model.bodies[0].id.clone()]
+    );
+    assert_eq!(ir.model.occurrences.len(), 2);
+    assert_ne!(ir.model.occurrences[0].id, ir.model.occurrences[1].id);
+    assert_eq!(
+        ir.model.occurrences[0].transform.rows(),
+        transform(1.0, [10.0, 0.0, 0.0])
+    );
+    assert_eq!(
+        ir.model.occurrences[1].transform.rows(),
+        transform(1.0, [20.0, 0.0, 0.0])
+    );
+    let unknowns = ir.native_unknowns("rhino").expect("source records");
+    assert_eq!(
+        unknowns[0]
             .links
             .iter()
             .map(cadmpeg_ir::ids::Identity::as_str)
             .collect::<Vec<_>>(),
-        body_ids
+        vec![ir.model.bodies[0].id.as_str()]
     );
-    assert_eq!(
-        result
-            .ir()
-            .native_unknowns("rhino")
-            .expect("required invariant")[1]
-            .links
-            .len(),
-        1
-    );
-    assert_eq!(
-        result
-            .ir()
-            .native_unknowns("rhino")
-            .expect("required invariant")[2]
-            .links
-            .len(),
-        1
-    );
-    let native = result
-        .ir()
-        .native
-        .namespace("rhino")
-        .expect("required invariant");
+    assert!(unknowns[1].links.is_empty());
+    assert!(unknowns[2].links.is_empty());
+    let native = ir.native.namespace("rhino").expect("native graph");
     assert_eq!(native.arenas()["product_definitions"].len(), 1);
     assert_eq!(native.arenas()["product_occurrences"].len(), 2);
     assert_eq!(
-        native.arenas()["product_occurrences"][0].fields().unwrap()["definition_uuid"],
+        native.arenas()["product_occurrences"][0]
+            .fields()
+            .expect("fields")["definition_uuid"],
         Uuid::from_wire(definition_id).to_string()
     );
-    assert_eq!(
-        native.arenas()["product_occurrences"][0].fields().unwrap()["transform_units"],
-        "millimeter"
-    );
+    assert!(native.arenas()["product_occurrences"][0]
+        .field("transform")
+        .is_none());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 3/3 Rhino object records")));
@@ -953,7 +932,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
 }
 
 #[test]
-fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
+fn instance_placement_preserves_member_carriers_in_prototype_coordinates() {
     let archive = ArchiveVersion::V5;
     let point_id = [0x58; 16];
     let curve_id = [0x59; 16];
@@ -984,14 +963,19 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
 
     let result = crate::decode::decode_for_test(&scan);
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 11.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 1.0);
     assert!(result.ir().model.bodies[0].transform.is_none());
     let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
     else {
-        panic!("free member curve must remain a transformed solved carrier");
+        panic!("free member curve must remain a prototype-local solved carrier");
     };
-    assert_eq!(curve.control_points()[0].x, 11.0);
-    assert_eq!(curve.control_points()[1].x, 12.0);
+    assert_eq!(curve.control_points()[0].x, 1.0);
+    assert_eq!(curve.control_points()[1].x, 2.0);
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        result.ir().model.occurrences[0].transform.rows()[0][3],
+        10.0
+    );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -1057,40 +1041,35 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
         panic!("expected transformed NURBS");
     };
-    assert_eq!(nurbs.control_points()[0].x, 12.0);
-    assert_eq!(nurbs.control_points()[1].x, 14.0);
+    assert_eq!(nurbs.control_points()[0].x, 1.0);
+    assert_eq!(nurbs.control_points()[1].x, 2.0);
+    assert!(curve
+        .source_object
+        .as_ref()
+        .expect("source identity")
+        .instance_path
+        .is_empty());
+    let occurrences = &result.ir().model.occurrences;
+    assert_eq!(occurrences.len(), 2);
     assert_eq!(
-        curve
-            .source_object
-            .as_ref()
-            .expect("required invariant")
-            .instance_path,
-        vec![
-            Uuid::from_wire(world_reference_id).to_string(),
-            Uuid::from_wire(nested_reference_id).to_string()
-        ]
+        occurrences[0].transform.rows(),
+        transform(1.0, [10.0, 0.0, 0.0])
     );
     assert_eq!(
-        curve
-            .source_object
-            .as_ref()
-            .expect("required invariant")
-            .color,
-        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
+        occurrences[1].transform.rows(),
+        transform(2.0, [0.0, 0.0, 0.0])
     );
+    let graph = cadmpeg_ir::products::AssemblyGraph::new(occurrences).expect("assembly graph");
     assert_eq!(
-        curve
-            .source_object
-            .as_ref()
-            .expect("required invariant")
-            .visible,
-        Some(false)
+        graph
+            .effective_transform(&occurrences[1].id)
+            .expect("world pose")
+            .apply_point(nurbs.control_points()[0].get())
+            .expect("finite world point")
+            .get()
+            .x,
+        12.0
     );
-    assert!(curve.id.to_string().contains(&format!(
-        "{}.{}",
-        Uuid::from_wire(world_reference_id),
-        Uuid::from_wire(nested_reference_id)
-    )));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -1144,43 +1123,23 @@ pub(crate) fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments(
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.curves.len(), 4);
-    let ids = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .map(|curve| curve.id.to_string())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(ids.len(), 4);
-    let paths = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .map(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .expect("required invariant")
-                .instance_path
-                .clone()
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(paths.len(), 4);
-    assert!(paths
-        .iter()
-        .flatten()
-        .all(|segment| segment.starts_with("record-")));
+    assert_eq!(result.ir().model.curves.len(), 1);
+    let occurrences = &result.ir().model.occurrences;
+    assert_eq!(occurrences.len(), 4);
     assert_eq!(
-        result
-            .ir()
-            .native_unknowns("rhino")
-            .expect("required invariant")[0]
-            .links
+        occurrences
+            .iter()
+            .map(|occurrence| occurrence.id.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
             .len(),
         4
     );
+    assert!(result.ir().model.curves[0]
+        .source_object
+        .as_ref()
+        .expect("source identity")
+        .instance_path
+        .is_empty());
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -1225,18 +1184,19 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
 
     let result = crate::decode::decode_for_test(&scan);
     let mesh = &result.ir().model.tessellations[0];
-    assert_eq!(mesh.vertices()[0].x, 5.0);
-    assert_eq!(mesh.vertices()[1].x, 7.0);
+    assert_eq!(mesh.vertices()[0].x, 0.0);
+    assert_eq!(mesh.vertices()[1].x, 1.0);
     assert_eq!(
-        mesh.vertex_normals()[0],
-        cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
+        mesh.vertex_normals()[0].get(),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 1.0)
     );
+    assert_eq!(result.ir().model.occurrences[0].transform.rows(), rows);
     let subd = &result.ir().model.subds[0];
     assert_eq!(
         wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
             .point()
             .x,
-        7.0
+        1.0
     );
     assert_eq!(
         wire::field::<[f64; 2]>(
@@ -1260,7 +1220,7 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
 }
 
 #[test]
-fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
+fn missing_instance_member_preserves_decoded_local_mesh_and_budget() {
     let archive = ArchiveVersion::V5;
     let mesh_id = [0x54; 16];
     let missing_id = [0x99; 16];
@@ -1293,7 +1253,13 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         assert!(context.mesh_budget_used() > 0);
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert!(result.ir().model.tessellations.is_empty());
+        assert_eq!(result.ir().model.tessellations.len(), 1);
+        assert_eq!(result.ir().model.occurrences.len(), 1);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("is missing")));
         assert!(result.ir().model.bodies.is_empty());
     });
 }
@@ -1320,16 +1286,14 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
-    else {
-        panic!("nonuniform circle must become NURBS");
-    };
-    assert_eq!(nurbs.degree(), 2);
-    assert_eq!(nurbs.control_points()[0].x, 2.0);
-    assert_eq!(nurbs.control_points()[2].y, 1.0);
+    assert!(matches!(
+        result.ir().model.curves[0].geometry.solved(),
+        Some(SolvedCurveGeometry::Circle(_))
+    ));
+    assert_eq!(result.ir().model.occurrences.len(), 1);
     assert_eq!(
-        nurbs.weights().expect("required invariant")[1].get(),
-        std::f64::consts::FRAC_1_SQRT_2
+        result.ir().model.occurrences[0].transform.rows(),
+        transform(2.0, [0.0, 0.0, 0.0])
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -1366,12 +1330,11 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
 
     let result = crate::decode::decode_for_test(&scan);
     assert!(!result.ir().model.surfaces.is_empty());
-    assert!(result.ir().model.procedural_surfaces.is_empty());
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("exact solved carrier retained")));
+    assert!(!result.ir().model.procedural_surfaces.is_empty());
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert!(result.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("transformed procedural definition omitted")));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -1380,7 +1343,7 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
 }
 
 #[test]
-fn branching_instance_member_limit_retains_the_wide_reference() {
+fn branching_definitions_share_local_members_without_geometry_copies() {
     let archive = ArchiveVersion::V5;
     let first_member_id = [0x31; 16];
     let second_member_id = [0x32; 16];
@@ -1428,26 +1391,13 @@ fn branching_instance_member_limit_retains_the_wide_reference() {
             static_definition(narrow_definition, &[second_member_id]),
         ],
     );
-    crate::decode::with_expand(&scan, |expand| {
-        let mut context =
-            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
-        context.set_expansion_limits([16, 1, 128]);
-        context
-            .decode_geometry()
-            .expect("the wide reference exceeding one member is retained");
-        assert_eq!(expand.ctx().resource_refusal(), None);
-        let result =
-            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert_eq!(
-            result.ir().model.points.len(),
-            1,
-            "{:?}",
-            result.ir().model.points
-        );
-        assert!(result.report().losses.iter().any(|loss| loss
-            .message
-            .contains("instance member budget exceeded (MAX_INSTANCE_MEMBERS)")));
-    });
+    let result = crate::decode::decode_for_test(&scan);
+    assert_eq!(result.ir().model.points.len(), 2);
+    assert_eq!(result.ir().model.product_definitions[0].bodies.len(), 2);
+    assert_eq!(result.ir().model.product_definitions[1].bodies.len(), 1);
+    assert_eq!(result.ir().model.occurrences.len(), 2);
+    assert_eq!(result.ir().model.points[0].position().get().x, 1.0);
+    assert_eq!(result.ir().model.points[1].position().get().x, 2.0);
 }
 
 #[test]
@@ -1571,37 +1521,46 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.bodies.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
     assert!(result.ir().model.surfaces.is_empty());
-    assert!(result.ir().model.bodies[0].transform.is_none());
-    assert_eq!(
-        result.ir().model.points[0].position().get(),
-        Point3::new(33.0, 0.0, 0.0)
-    );
-    for unknown in &result
+    assert!(result
         .ir()
-        .native_unknowns("rhino")
-        .expect("required invariant")[6..15]
-    {
-        assert!(unknown.links.is_empty());
-    }
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.transform.is_none()));
     assert_eq!(
-        result
-            .ir()
-            .native_unknowns("rhino")
-            .expect("required invariant")[15]
-            .links
-            .len(),
-        1
+        result.ir().model.points[2].position().get(),
+        Point3::new(3.0, 0.0, 0.0)
     );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::RhinoLossCode::ObjectDecodeDiagnostic.kind()
-            && loss
-                .message
-                .contains("f9cfb638-b9d4-4340-87e3-c56e7865d96a:")
-            && loss.message.contains("decode warnings")
-    }));
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .any(|occurrence| matches!(
+            occurrence.prototype,
+            cadmpeg_ir::products::PrototypeReference::Unresolved {}
+        )));
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .any(|occurrence| matches!(
+            occurrence.prototype,
+            cadmpeg_ir::products::PrototypeReference::External { .. }
+        )));
+    for expected in ["cycle", "is missing", "repeats member", "is ambiguous"] {
+        assert!(
+            result.report().losses.iter().any(|loss| loss.code
+                == crate::loss::RhinoLossCode::ProductRecordUnprojected.kind()
+                && loss.message.contains(expected)),
+            "{expected}: {:?}",
+            result.report().losses
+        );
+    }
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -1664,7 +1623,7 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
 }
 
 #[test]
-fn instance_reference_limit_retains_the_reference() {
+fn missing_instance_prototype_has_an_unresolved_occurrence() {
     let archive = ArchiveVersion::V5;
     let reference = object_record_with_payload(
         archive,
@@ -1673,24 +1632,21 @@ fn instance_reference_limit_retains_the_reference() {
         &instance_reference_payload([0x41; 16], transform(1.0, [0.0; 3])),
     );
     let scan = scan_with_objects(&[reference]);
-    crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
-        context.set_expansion_limits([0, 16, 128]);
-        context
-            .decode_geometry()
-            .expect("a zero reference limit retains the reference");
-        assert_eq!(expand.ctx().resource_refusal(), None);
-        let result =
-            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert!(result.ir().model.bodies.is_empty());
-        assert!(result.report().losses.iter().any(|loss| loss
-            .message
-            .contains("instance reference budget exceeded (MAX_INSTANCE_REFERENCES)")));
-    });
+    let result = crate::decode::decode_for_test(&scan);
+    assert!(result.ir().model.bodies.is_empty());
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert!(matches!(
+        result.ir().model.occurrences[0].prototype,
+        cadmpeg_ir::products::PrototypeReference::Unresolved {}
+    ));
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::ProductRecordUnprojected.kind()
+        && loss.message.contains("prototype")
+        && loss.message.contains("is missing")));
 }
 
 #[test]
-fn instance_copy_element_limit_retains_references_and_stays_exhausted() {
+fn multiple_instance_uses_do_not_copy_local_carriers() {
     let archive = ArchiveVersion::V5;
     let small_definition = [0x43; 16];
     let large_definition = [0x44; 16];
@@ -1738,29 +1694,25 @@ fn instance_copy_element_limit_retains_references_and_stays_exhausted() {
             static_definition(large_definition, &large_member_ids),
         ],
     );
-    crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
-        // Two small copies fit; the large definition does not. A restored
-        // count would let the second small reference expand.
-        context.set_copy_element_limit(100);
-        context
-            .decode_geometry()
-            .expect("references over the copy element limit are retained");
-        assert_eq!(expand.ctx().resource_refusal(), None);
-        let result =
-            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        let points = &result.ir().model.points;
-        assert_eq!(points.len(), 1, "{points:?}");
-        assert_eq!(points[0].position().get(), Point3::new(11.0, 0.0, 0.0));
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.message.contains("2 decode warnings")
-                && loss.message.contains("MAX_INSTANCE_COPY_ELEMENTS")
-        }));
-    });
+    let result = crate::decode::decode_for_test(&scan);
+    assert_eq!(result.ir().model.points.len(), 65);
+    assert_eq!(result.ir().model.occurrences.len(), 3);
+    assert_eq!(
+        result.ir().model.points[0].position().get(),
+        Point3::new(1.0, 0.0, 0.0)
+    );
+    assert_eq!(result.ir().model.product_definitions[0].bodies.len(), 1);
+    assert_eq!(result.ir().model.product_definitions[1].bodies.len(), 64);
+    assert!(result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.transform.is_none()));
 }
 
 #[test]
-fn nested_instance_copy_limit_stops_exponential_expansion() {
+fn nested_instance_tree_obeys_the_global_entity_budget() {
     // Definition `level` holds two references to definition `level + 1`; the
     // last holds one point, so the top reference would make 2^16 copies.
     const LEVELS: u8 = 16;
@@ -1796,22 +1748,23 @@ fn nested_instance_copy_limit_stops_exponential_expansion() {
         set_identity(&mut scan, source_order, id, "nested", None, true);
     }
     install_definitions(&mut scan, definitions);
-    crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
-        context.set_copy_element_limit(1 << 12);
-        context
-            .decode_geometry()
-            .expect("the exponential reference is retained at the copy limit");
-        assert_eq!(expand.ctx().resource_refusal(), None);
-        let result =
-            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert!(result.ir().model.points.is_empty());
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("MAX_INSTANCE_COPY_ELEMENTS")));
-    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 4096;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+            .expect("source fits resource budget");
+    let expand = crate::mesh::MeshExpand::new(&ctx, root);
+    let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+    context
+        .decode_geometry()
+        .expect("one local prototype is cheap");
+    let error = context
+        .commit()
+        .expect_err("placed tree is bounded by the global entity budget");
+    assert!(
+        matches!(error,cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation=="rhino_product_occurrences")
+    );
 }
 
 #[test]
@@ -1858,10 +1811,8 @@ fn instance_local_depth_limit_retains_the_reference() {
         assert_eq!(expand.ctx().resource_refusal(), None);
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("instance nesting exceeds 64 levels")));
+        assert!(result.report().losses.iter().any(|loss| loss
+            .message
+            .contains("placed occurrence tree exceeds its local projection bound")));
     });
 }

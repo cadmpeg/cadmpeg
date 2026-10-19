@@ -290,6 +290,7 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };

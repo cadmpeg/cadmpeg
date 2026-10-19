@@ -73,3 +73,5 @@ Build and test operations:
   one `#[doc(hidden)] pub mod fuzz` entry point when
   `docs/codec-facade.toml` requires it. Read-only codecs
   do not invent encoders.
+
+- Read [the document contract](docs/document-contract.md) before changing codecs or writers. Scope and unrepresented are contracts; retained bytes never supply document content.

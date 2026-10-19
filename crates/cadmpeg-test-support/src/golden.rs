@@ -61,12 +61,12 @@
 //!   comparison holds. Comparing such a golden semantically — per archive entry,
 //!   with geometry compared numerically — is the only real remedy.
 //! - A **digest over decoded geometry** is a bitwise fingerprint of tolerantly
-//!   compared values, so it cannot agree across platforms either. See
-//!   [`elide_local_digests`].
+//!   compared values, so it cannot agree across platforms either. Such layout
+//!   metadata belongs in fidelity, outside the document content comparison.
 
 use std::path::{Path, PathBuf};
 
-use cadmpeg_ir::compare::{is_local_digest_attribute, values_agree};
+use cadmpeg_ir::compare::values_agree;
 
 /// One snapshot branch: a subdirectory of `tests/golden` and the function that
 /// produces the text pinned there.
@@ -469,20 +469,6 @@ pub const NATIVE_ELISION_KEY: &str = "__elided";
 /// Sentence the `FreeCAD` decode snapshot writes under [`NATIVE_ELISION_KEY`].
 pub const NATIVE_ELISION_MARKER: &str =
     "native arena values are omitted; the records are pinned by a digest over their canonical JSON";
-
-/// Replaces every machine-local digest attribute with [`ELIDED_DIGEST`].
-///
-/// `_local_sha256` digests cover decoded content and are machine-local. Digests
-/// over retained source bytes omit the suffix and stay pinned.
-pub fn elide_local_digests(
-    attributes: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
-    for (key, value) in attributes.iter_mut() {
-        if is_local_digest_attribute(key.as_str()) {
-            ELIDED_DIGEST.clone_into(value);
-        }
-    }
-}
 
 /// Serializes a value as the stable pretty JSON with trailing newline that the
 /// goldens hold.

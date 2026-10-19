@@ -39,8 +39,9 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(6.5)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },

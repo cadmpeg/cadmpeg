@@ -1,6 +1,5 @@
 //! Native lane validation findings.
 
-use super::assembly::is_supplemental_config_lane;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::{
@@ -147,59 +146,6 @@ pub(crate) fn validate_native(
                     severity: Severity::Error,
                     message: format!("SolidWorks history root omits feature {missing}"),
                     entity: Some(history.id.clone()),
-                });
-            }
-        }
-    }
-    let history_lanes = native
-        .feature_input_lanes
-        .iter()
-        .filter(|lane| !is_supplemental_config_lane(lane))
-        .collect::<Vec<_>>();
-    let expected_classes = crate::resolved_features::classes::history_classes(
-        &native.feature_histories,
-        &history_lanes,
-    );
-    for (feature, expected_class) in native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .zip(expected_classes)
-    {
-        if feature.input_class.as_deref() != expected_class {
-            findings.push(Finding {
-                related: Vec::new(),
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "SolidWorks history feature class does not match its feature-input index"
-                    .into(),
-                entity: Some(feature.id.clone()),
-            });
-        }
-    }
-    for (lane, expected_lane) in crate::native::lanes::expected_lanes(ctx, &native)? {
-        for (entity, expected_entity) in lane
-            .sketch_entities
-            .iter()
-            .zip(&expected_lane.sketch_entities)
-        {
-            if entity.feature_ref != expected_entity.feature_ref {
-                findings.push(Finding {
-                    related: Vec::new(),
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "SolidWorks sketch-input marker has inconsistent feature ownership"
-                        .into(),
-                    entity: Some(entity.id().to_owned()),
-                });
-            }
-            if entity.links != expected_entity.links {
-                findings.push(Finding {
-                    related: Vec::new(),
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "SolidWorks sketch-input marker has inconsistent local links".into(),
-                    entity: Some(entity.id().to_owned()),
                 });
             }
         }

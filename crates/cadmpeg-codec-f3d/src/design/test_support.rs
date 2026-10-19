@@ -97,6 +97,7 @@ pub(super) fn identity_matrix() -> [[f64; 4]; 4] {
 }
 
 pub(super) fn design_type(
+    class_tag: u32,
     type_guid: &str,
     base_type_guid: Option<&str>,
     version: u32,
@@ -104,18 +105,22 @@ pub(super) fn design_type(
     entity_ids: Vec<u64>,
 ) -> crate::records::entity_header::SegmentTypeData {
     crate::records::entity_header::SegmentTypeData {
-        byte_offset: 0,
+        class_tag: (class_tag)
+            .to_string()
+            .try_into()
+            .expect("fixture class tag"),
+        byte_offset: Some(0),
         type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-        type_guid_offset: 0,
+        type_guid_offset: Some(0),
         base_type_guid: base_type_guid.map_or(
             crate::records::entity_header::BaseTypeGuid::Absent,
             |value| crate::records::entity_header::BaseTypeGuid::Guid {
                 value: value.to_owned().try_into().expect("base GUID"),
-                offset: 0,
+                offset: Some(0),
             },
         ),
         version,
-        version_offset: 0,
+        version_offset: Some(0),
         module: module.into(),
         entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
     }

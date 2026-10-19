@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, HashMap};
 fn declared_entity_handle_precedes_generic_operand_resolution() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -191,7 +191,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80f7).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -306,7 +306,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
 fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E);
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 1,
@@ -532,7 +532,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             )
         );
         let operand = FeatureInputOperand {
-            offset: 100,
+            offset: Some(100),
             reference_ref: "reference".into(),
             kind,
             entity_index: 0,
@@ -646,7 +646,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
 fn declared_slot_handle_selects_indexed_dimension_center() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x88e7).unwrap());
     let operand = FeatureInputOperand {
-        offset: 150,
+        offset: Some(150),
         reference_ref: "reference".into(),
         kind,
         entity_index: 1,
@@ -800,11 +800,11 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let mut ambiguous_lane = lane.clone();
     ambiguous_lane.classes.insert(
         2,
-        FeatureInputClass {
+        FeatureInputClass { feature_ref: None,
             id: "second-slot-class".into(),
             parent: "lane".into(),
-            ordinal: 2,
-            offset: 240,
+            ordinal: 2, sequence: 2,
+            offset: Some(240),
             name: "sgSlotHandle".into(),
         },
     );
@@ -861,7 +861,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
 
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x69bd).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -1012,7 +1012,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
 fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witness() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8452).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -1156,7 +1156,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
 fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8263).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -1272,11 +1272,11 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     assert_eq!(unbound_carrier.marker.id(), "arc");
 
     let mut multiple_declared = lane.clone();
-    multiple_declared.classes.push(FeatureInputClass {
+    multiple_declared.classes.push(FeatureInputClass { feature_ref: None,
         id: "line-class".into(),
         parent: "lane".into(),
-        ordinal: 2,
-        offset: 45,
+        ordinal: 2, sequence: 2,
+        offset: Some(45),
         name: "sgLineHandle".into(),
     });
     let multiple_markers = multiple_declared
@@ -1491,7 +1491,7 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let operand = FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
             entity_index: 0,
@@ -1512,6 +1512,7 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
 #[test]
 fn radial_dimensions_normalize_radius_and_diameter_displays() {
     let parameter = |display, value| DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#radial").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#sketch").expect("identity grammar")),
         ordinal: 0,
@@ -1519,7 +1520,6 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
         expression: String::new(),
         display,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1549,8 +1549,8 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 42,
+        ordinal: 0, sequence: 0,
+        offset: Some(42),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: feature_ref.into(),
@@ -1605,6 +1605,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1613,6 +1614,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         native_ref: Some(feature_ref.into()),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
@@ -1620,7 +1622,6 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

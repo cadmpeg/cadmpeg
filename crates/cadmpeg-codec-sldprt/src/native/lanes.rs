@@ -3,135 +3,7 @@ use super::SldprtNative;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-
-pub(super) fn admit(
-    native: &SldprtNative,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for lane in &native.feature_input_lanes {
-        if !crate::resolved_features::names::class_declarations_match(
-            &lane.native_payload,
-            &lane.id,
-            &lane.classes,
-        ) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "SolidWorks feature-input class index does not match its native payload".into(),
-            ));
-        }
-        // Every field of an object-name record, the value included, states the
-        // payload bytes at `offset`. A rename is a write-side input, never an
-        // edit of a stored lane, so any disagreement here is a false statement
-        // about the payload and is refused.
-        if !crate::resolved_features::names::object_names_structure_match(
-            &lane.native_payload,
-            &lane.id,
-            &lane.names,
-        ) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "SolidWorks feature-input name structure does not match its native payload".into(),
-            ));
-        }
-        if let Some((index, actual, expected_units)) =
-            crate::resolved_features::names::first_object_name_value_mismatch(
-                &lane.native_payload,
-                &lane.names,
-            )
-        {
-            let expected: String = std::char::decode_utf16(
-                crate::resolved_features::names::utf16_units(expected_units),
-            )
-            .filter_map(Result::ok)
-            .collect();
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "SolidWorks feature-input name value does not match its native payload: \
-                 lane {} name {index} states {:?}, its payload states {:?}",
-                lane.id, actual.value, expected
-            )));
-        }
-        let mut entities = lane.sketch_entities.iter();
-        for (index, position) in (0..lane.native_payload.len())
-            .filter(|offset| {
-                crate::resolved_features::markers::sketch_marker_at(&lane.native_payload, *offset)
-            })
-            .enumerate()
-        {
-            let Some(entity) = entities.next() else {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "SolidWorks feature-input lane {} omits marker at offset {position}",
-                    lane.id
-                )));
-            };
-            if usize::try_from(entity.ordinal()).ok() != Some(index) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
-                    entity.ordinal()
-                )));
-            }
-            if entity.offset() != u64_from_index(position) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "SolidWorks feature-input lane {} omits marker at offset {position} \
-                     or has an extra or unordered entity",
-                    lane.id
-                )));
-            }
-        }
-        if entities.next().is_some() {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "SolidWorks sketch entity offset is outside its native payload marker set".into(),
-            ));
-        }
-    }
-    let expected = expected_lanes(ctx, native)?;
-    for (lane, expected_lane) in expected {
-        if !crate::resolved_features::scalars::scalar_indices_match(
-            &lane.scalars,
-            &expected_lane.scalars,
-        ) {
-            let mismatch =
-                lane.scalars
-                    .iter()
-                    .zip(&expected_lane.scalars)
-                    .find(|(actual, expected)| {
-                        !crate::resolved_features::scalars::scalar_indices_match(
-                            std::slice::from_ref(actual),
-                            std::slice::from_ref(expected),
-                        )
-                    });
-            return match mismatch {
-                Some((actual, expected)) => {
-                    Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "SolidWorks feature-input scalar index does not match its native payload: \
-                         {actual:?} != {expected:?}"
-                    )))
-                }
-                None => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "SolidWorks feature-input scalar index does not match its native payload: \
-                     count {} != {}",
-                    lane.scalars.len(),
-                    expected_lane.scalars.len()
-                ))),
-            };
-        }
-        if lane.relation_bindings != expected_lane.relation_bindings {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "SolidWorks feature-input relation bindings do not match the native payload".into(),
-            ));
-        }
-        if lane.relation_instances != expected_lane.relation_instances {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "SolidWorks feature-input relation instances do not match the native payload"
-                    .into(),
-            ));
-        }
-        if lane.references != expected_lane.references {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "SolidWorks feature-input reference index does not match its native payload".into(),
-            ));
-        }
-    }
-    Ok(())
-}
+use cadmpeg_core::decode::DecodeContext;
 
 pub(crate) fn expected_lanes<'a>(
     ctx: &DecodeContext<'_>,
@@ -153,6 +25,9 @@ pub(crate) fn expected_lanes<'a>(
         .iter_mut()
         .chain(&mut expected_supplemental_lanes)
     {
+        if lane.native_payload.is_empty() {
+            continue;
+        }
         let scalars = crate::resolved_features::scalars::named_scalars(
             &lane.native_payload,
             &lane.id,

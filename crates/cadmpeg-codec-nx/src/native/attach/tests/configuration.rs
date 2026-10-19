@@ -247,8 +247,9 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), Length::new(5.1).unwrap()))
         .collect();
     let chamfer = HoleKind::Chamfer {
-        diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
-        angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        diameter: (cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap()).into(),
+        angle: (cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap())
+            .into(),
     };
     let chamfers = operations
         .iter()
@@ -467,6 +468,7 @@ fn hole_package_projection_counts_uses_and_templates_over_many_packages() {
 #[test]
 fn active_configuration_retains_complete_evaluated_parameter_state() {
     let parameter = |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
+        driving: true,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal,
@@ -540,6 +542,7 @@ fn active_configuration_parameter_state_checks_long_dependency_chains_by_id() {
     };
     let parameters = (0..4096)
         .map(|ordinal| DesignParameter {
+            driving: true,
             id: id(ordinal),
             owner: None,
             ordinal,
@@ -599,6 +602,7 @@ fn active_configuration_parameter_state_checks_long_dependency_chains_by_id() {
 #[test]
 fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
     let parameter = |id: &str, value, dependencies: Vec<ParameterId>| DesignParameter {
+        driving: true,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -684,6 +688,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
 fn active_configuration_body_writers_close_false_suppression_through_dependencies() {
     let feature =
         |id: &str, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>, suppressed| Feature {
+            needs_recompute: false,
             id: FeatureId::mint(id).expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -770,6 +775,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
 fn current_body_writers_close_false_suppression_without_a_configuration() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -842,6 +848,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
 #[test]
 fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_atomically() {
     let producer = |dependency: &str| Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#writer").expect("identity grammar"),
         ordinal: 0,
         name: None,

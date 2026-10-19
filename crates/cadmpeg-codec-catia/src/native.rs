@@ -1161,7 +1161,7 @@ pub(crate) struct CatiaConsolidatedReferenceList {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct CatiaConsolidatedPcurve {
     /// Stable native-record identity.
-    id: String,
+    pub(crate) id: String,
     /// Byte offset of the framed record.
     byte_offset: u64,
     /// Consolidated framing family.
@@ -1390,7 +1390,7 @@ pub(crate) struct CatiaConsolidatedConeFace {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct CatiaConsolidatedEdgeRun {
     /// Stable native-record identity.
-    id: String,
+    pub(crate) id: String,
     /// Byte offset of the first pcurve frame.
     byte_offset: u64,
     /// Retained pcurve identities in serialized side order.
@@ -1593,11 +1593,21 @@ pub(crate) struct CatiaFinjplSegment {
     data: NativeBytes<Vec<u8>>,
 }
 
+/// A decoded display-color source fact, independent of its neutral binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CatiaDisplayColorRecord {
+    pub(crate) id: String,
+    pub(crate) appearance: cadmpeg_ir::ids::AppearanceId,
+    pub(crate) source_kind: String,
+    pub(crate) source_record: Option<String>,
+}
+
 /// One external CATIA document selected by a storage-property record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaExternalReference {
     /// Globally unique reference identity.
-    id: String,
+    pub(crate) id: String,
     /// File offset of the length-prefixed target string.
     pub(crate) byte_offset: u64,
     /// Referenced CATIA document name or path.
@@ -1610,7 +1620,7 @@ pub(crate) struct CatiaExternalReference {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaPreviewImage {
     /// Globally unique preview identity.
-    id: String,
+    pub(crate) id: String,
     /// JPEG SOI byte offset in the complete file.
     byte_offset: u64,
     /// Exact encoded length through JPEG EOI.
@@ -1622,7 +1632,7 @@ pub(crate) struct CatiaPreviewImage {
     /// JPEG component count.
     components: u8,
     /// Exact JPEG byte stream.
-    data: NativeBytes<Vec<u8>>,
+    pub(crate) data: NativeBytes<Vec<u8>>,
 }
 
 /// One exact outer `01 00 04 00` alias-row core.
@@ -1963,8 +1973,7 @@ impl CatiaValueSchemaSelection {
         }
     }
 
-    #[cfg(test)]
-    fn name(&self) -> Option<&str> {
+    pub(crate) fn name(&self) -> Option<&str> {
         match &self.kind {
             CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.name.as_str()),
             CatiaValueSchemaSelectionKind::Terminal => None,
@@ -2721,9 +2730,9 @@ pub(crate) struct CatiaFormulaRelation {
 pub(crate) struct CatiaRelationParameterDependency {
     /// UTF-8 byte offset of this occurrence within the source expression.
     #[serde(default)]
-    source_offset: u64,
+    pub(crate) source_offset: u64,
     /// Exact expression-local symbol occurrence.
-    symbol: String,
+    pub(crate) symbol: String,
     /// Entity incidences carrying matching named parameter bindings.
     #[serde(
         default,
@@ -7286,7 +7295,7 @@ pub(crate) struct CatiaZeroEntityOwnershipRoot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaZeroEntityRecord {
     /// Stable native-record identity.
-    id: String,
+    pub(crate) id: String,
     /// Byte offset of the framed record.
     pub(crate) byte_offset: u64,
     /// Exclusive logical byte end, including any inline continuation.
@@ -7316,8 +7325,7 @@ macro_rules! define_catia_arenas {
         /// The manifest states what `native_store_paths_cover_every_declared_arena`
         /// checks the store against, and nothing in the decode reads it, so it is
         /// built for that test alone.
-        #[cfg(test)]
-        const CATIA_ARENA_NAMES: &[&str] = &[
+        pub(crate) const ARENAS: &[&str] = &[
             $(stringify!($field)),+
         ];
 
@@ -7535,6 +7543,10 @@ macro_rules! define_catia_arenas {
 }
 
 define_catia_arenas! {
+    display_colors: CatiaDisplayColorRecord {
+        /// Typed display-color packets and FBB face colors.
+        pub(crate) stored;
+    },
     alias_rows: CatiaAliasRow {
         /// Exact outer alias-row cores in source order.
         pub(crate) stored;
@@ -9183,6 +9195,7 @@ impl CatiaNative {
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
         Ok(Self {
+            display_colors: Vec::new(),
             alias_rows,
             catalogs,
             consolidated_circles,
@@ -9232,6 +9245,7 @@ impl CatiaNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        debug_assert!(!ARENAS.is_empty());
         let projection = CatiaArenaProjection::from_owned(self);
         store_projection(ctx, &projection, namespace)
     }

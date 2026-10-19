@@ -24,7 +24,7 @@ fn round_sample_scan() -> crate::container::ContainerScan<'static> {
         .parameters
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 7,
-            body: token.raw.clone().into_inner(),
+            body: token.raw.to_vec(),
             scalar_tokens: vec![token],
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),

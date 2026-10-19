@@ -315,20 +315,20 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
     let features = ["feature-0", "feature-1", "feature-2"];
     for _ in 0..256 {
         lane.classes = (0..next(6))
-            .map(|ordinal| FeatureInputClass {
+            .map(|ordinal| FeatureInputClass { feature_ref: None,
                 id: format!("class-{ordinal}"),
                 parent: "lane".into(),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                offset: next(40),
+                ordinal: u32::try_from(ordinal).unwrap(), sequence: u32::try_from(ordinal).unwrap(),
+                offset: Some(next(40)),
                 name: "moLengthParameter_c".into(),
             })
             .collect();
         lane.names = (0..next(8))
-            .map(|ordinal| FeatureInputName {
+            .map(|ordinal| FeatureInputName { feature_ref: None,
                 id: format!("name-{ordinal}"),
                 parent: "lane".into(),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                offset: next(40),
+                ordinal: u32::try_from(ordinal).unwrap(), sequence: u32::try_from(ordinal).unwrap(),
+                offset: Some(next(40)),
                 object_id: None,
                 value: "D1".into(),
             })
@@ -339,8 +339,8 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 parent: "lane".into(),
                 feature_ref: (next(3) == 0)
                     .then(|| features[usize::try_from(next(3)).unwrap()].to_owned()),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                offset: next(40),
+                ordinal: u32::try_from(ordinal).unwrap(), sequence: u32::try_from(ordinal).unwrap(),
+                offset: Some(next(40)),
                 object_id: 0,
                 name: "name".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),

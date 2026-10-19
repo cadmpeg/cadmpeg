@@ -2,6 +2,40 @@
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/rhino.md`](../layouts/rhino.md), generated from `docs/layouts/rhino.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
+## cadmpeg output contract
+
+The cadmpeg writer synthesizes a Rhino archive from neutral model arenas and
+the typed Rhino records it can encode. A nonempty `native.rhino` namespace is
+not a refusal condition. Neutral geometry and edits take precedence over
+native counterparts. Retained archive bytes, unknown blobs, and callback-owned
+opaque payloads supply no output content.
+
+Unsupported neutral arenas are dropped with export losses. Unsupported
+geometry is degraded to an available solved carrier, omitted as an entity, or
+omitted with its containing body when that is required for a valid Brep; a
+structural omission reports an Error-severity loss. Supported independent
+objects remain writable. Empty output reports `NoExportableSolids`, leaving
+acceptance to the CLI's `--allow-empty` policy. Malformed or inconsistent input,
+format capacities, and an unresolvable archive target can still refuse output.
+Rigid body placements are baked into emitted geometry. A nonrigid placement
+that cannot be applied is omitted; geometry is written in its local frame with
+`BodyTransformNotApplied`. Solved procedural carriers and compound curves can
+be written with any reduction reported. Unsupported extra mesh channels are
+omitted with a warning while the mesh geometry remains writable.
+
+Neutral arena coverage is verified against one bounded decode of the newly
+synthesized archive. A populated topology or carrier arena is marked `Written`
+only when its complete records and references agree under one consistent,
+injective identity mapping. Numeric geometry uses the shared comparison
+tolerance; text remains exact. An unavailable verification or a difference
+keeps that arena `Reported`. This adds one decode to export planning and reads
+only the generated output.
+
+Native coverage marks only regenerated default document settings, byte-span
+layout records, default layers, and supported default object presentation as
+written. Other typed Rhino arenas are omitted with informational native
+losses.
+
 ## 1. Archive bands
 
 Rhino 3DM is a little-endian chunk stream. Archive versions select these
@@ -3612,9 +3646,10 @@ The native trim record has no repeated C2-use list or alternate parameter-space
 curve slot.
 
 CADIR writer decision: a neutral coedge with more than one ordered pcurve use
-is not representable by this trim record. The Rhino writer rejects that
-coedge before output; it does not select the first use or discard the other
-carriers, ranges, or tolerances.
+is not representable by this trim record. The Rhino writer reports an
+Error-severity export loss and omits the affected Brep when no valid exact
+encoding is available. It does not silently select the first use; independent
+objects can still be written.
 
 Each stored tolerance is a finite nonnegative value or an explicit unset
 sentinel. The unset sentinels are `-1.23432101234321e308` and

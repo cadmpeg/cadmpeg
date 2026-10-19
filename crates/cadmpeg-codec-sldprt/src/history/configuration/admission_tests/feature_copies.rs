@@ -3,9 +3,10 @@
 use super::{design_configuration, feature_input_lane};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::ConfigurationFeatureState;
 use cadmpeg_ir::features::{
-    ConfigurationEvaluation, ConfigurationFeatureState, DistinctMembers, Feature, FeatureContent,
-    FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, FeatureSourceContent,
+    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+    FeatureOperation, FeatureSourceContent,
 };
 use std::collections::BTreeMap;
 
@@ -17,7 +18,9 @@ fn model() -> cadmpeg_ir::CadIr {
         kind: "Retained native operation".into(),
         parameters: BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("Native parameter"),
-            "Parameter text".into(),
+            cadmpeg_ir::features::Dimension::Literal(cadmpeg_ir::features::Expression::text(
+                "Parameter text",
+            )),
         )]),
     });
     let outputs: DistinctMembers<cadmpeg_ir::ids::BodyId> =
@@ -28,12 +31,8 @@ fn model() -> cadmpeg_ir::CadIr {
         .unwrap();
     let dependencies: DistinctMembers<FeatureId> =
         cadmpeg_ir::features::DistinctMembers::try_from(vec![dependency.clone()]).unwrap();
-    let state = ConfigurationFeatureState {
+    let state = ConfigurationFeatureState::Definition {
         definition: definition.clone(),
-        dependencies: dependencies.clone(),
-        evaluation: ConfigurationEvaluation::Active {
-            outputs: outputs.clone(),
-        },
     };
     ir.model.features.push(Feature {
         id: id.clone(),
@@ -52,6 +51,7 @@ fn model() -> cadmpeg_ir::CadIr {
             FeatureSourceContent::Feature(dependency),
         ])
         .unwrap(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::new(definition, outputs),
         native_ref: Some("Native feature reference".into()),
     });

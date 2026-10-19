@@ -14,7 +14,7 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),
@@ -36,6 +36,7 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#roster-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -45,7 +46,6 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -82,7 +82,7 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointLineDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),
@@ -109,6 +109,7 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
         .unwrap(),
     );
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#roster-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -118,7 +119,6 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

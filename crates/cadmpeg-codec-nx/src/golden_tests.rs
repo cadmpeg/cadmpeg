@@ -412,6 +412,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 
     // Self-contained `.prt` images.
     f.push(("single_part_prt", single_part_prt()));
+    f.push((
+        "display_jt_tetrahedron",
+        crate::test_support::test_jt_mesh::tetrahedron_prt(),
+    ));
     f.push(("topology_part_prt", topology_part_prt()));
     f.push(("prt_with_arrangements", prt_with_arrangements()));
     f.push((
@@ -1058,7 +1062,34 @@ fn catalogue_arenas_match_known_arenas() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary =
-        cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&NxCodec, &inputs());
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+        &NxCodec,
+        &inputs(),
+        |result| {
+            let expected = crate::loss::unrepresented(
+                &result.report().losses,
+                result.ir().native.namespace("nx"),
+            );
+            assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
+        },
+    );
     assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+#[test]
+fn golden_mesh_only_jt_keeps_projected_neutral_content() {
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_jt_mesh::tetrahedron_prt()),
+            &DecodeOptions::default(),
+        )
+        .expect("authored mesh-only JT part");
+    assert!(result.ir().scope.model);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].triangle_count(), 4);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code().contains("tessellation-dropped")));
 }

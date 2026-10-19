@@ -44,6 +44,7 @@ fn custom_properties_are_document_attributes_not_model_features() {
         feature_histories: vec![history],
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
+        document_metadata: Vec::new(),
     });
     sync_neutral_features(
         &cadmpeg_ir::document::Model::default(),

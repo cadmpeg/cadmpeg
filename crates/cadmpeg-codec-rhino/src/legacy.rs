@@ -2558,6 +2558,10 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     // table, so no openNURBS writer-version stamp is declared.
     let primary = ArchiveVersion::V1.classify(None);
 
+    if ctx.container_only() {
+        return container_result(ctx, data, offset, primary);
+    }
+
     let mut ir = CadIr::decoded(crate::container::source_meta(
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
@@ -3026,22 +3030,80 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     ] {
         coverage.record(key, count);
     }
+    ir.scope = cadmpeg_ir::ContentScope::full();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let untyped_ids = opaque_records
+        .iter()
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     source_fidelity.retain_unknown_records(
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
     )?;
+    for id in untyped_ids {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+    }
+    crate::container::move_source_metadata(&mut ir, &mut source_fidelity);
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(
-                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
-            ),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: cadmpeg_ir::ContentScope::full(),
+                geometry_transferred: decoded > 0
+                    || decoded_curves > 0
+                    || decoded_meshes > 0
+                    || decoded_breps > 0,
+            },
             coverage,
             losses,
             notes,
             transfer_ledger: TransferLedger::default(),
         },
+        source_fidelity,
+    })
+}
+
+/// Read flat chunk boundaries without projecting their geometry or design.
+fn container_result(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    mut offset: usize,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> Result<Decoded, CodecError> {
+    let mut records = Vec::new();
+    let mut retained_bytes = 0;
+    let mut untyped_ids = Vec::new();
+    while offset < data.len() {
+        let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
+            .map_err(|error| malformed(&error))?;
+        if chunk.typecode == TCODE_ENDOFFILE {
+            break;
+        }
+        let untyped = !matches!(chunk.typecode, TCODE_ENDOFTABLE | TCODE_UNIT_AND_TOLERANCES);
+        let before = records.len();
+        push_v1_record(ctx, &mut records, data, &chunk, &mut retained_bytes)?;
+        if untyped {
+            untyped_ids.extend(records[before..].iter().map(|record| record.id().clone()));
+        }
+        offset = chunk.next_offset();
+    }
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    source_fidelity.retain_unknown_records("rhino", records)?;
+    for id in untyped_ids {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+    }
+    let mut ir = CadIr::decoded(crate::container::source_meta(
+        primary,
+        crate::container::SourceMetaDetail::FlatLegacyArchive,
+    )?);
+    ir.scope = cadmpeg_ir::ContentScope::container();
+    crate::container::move_source_metadata(&mut ir, &mut source_fidelity);
+    Ok(Decoded {
+        ir,
+        body: DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::container(),
+            geometry_transferred: false,
+        }),
         source_fidelity,
     })
 }
@@ -3921,6 +3983,28 @@ mod tests {
             decode_v1(&missing).is_err(),
             "unbounded chunk is still refused"
         );
+    }
+
+    #[test]
+    fn v1_container_request_keeps_geometry_only_as_source_bytes() {
+        let data = archive(&[[1.0, 2.0, 3.0]]);
+        let decoded = cadmpeg_ir::codec::Codec::decode(
+            &crate::RhinoCodec,
+            &mut std::io::Cursor::new(data),
+            &cadmpeg_ir::DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..cadmpeg_ir::DecodeOptions::default()
+            },
+        )
+        .expect("a V1 container request reads chunk boundaries");
+        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
+        assert_eq!(decoded.ir().model, cadmpeg_ir::document::Model::default());
+        assert!(!decoded.report().geometry_transferred());
+        assert!(decoded
+            .source_fidelity()
+            .unrepresented()
+            .contains(&cadmpeg_ir::ArenaClass::Model));
+        assert!(!decoded.source_fidelity().retained_records().is_empty());
     }
 
     #[test]

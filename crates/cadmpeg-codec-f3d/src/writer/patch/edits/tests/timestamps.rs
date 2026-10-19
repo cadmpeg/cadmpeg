@@ -75,14 +75,16 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
     );
-    let error = F3dCodec
+    let plan = F3dCodec
         .plan(
             EncodeInput::new(&unordered, Some(&fidelity)),
             TargetRequest::Inherit,
         )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("timestamp patch rejects the unsorted arena");
-    assert!(error.to_string().contains("unchanged timestamp-id set"));
+        .expect("an unsupported patch layout falls back to synthesis");
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
     let mut patched = Vec::new();
     let report = F3dCodec
         .plan(
@@ -93,7 +95,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         .expect("patch timestamps after record-list reordering");
     assert!(matches!(
         report.write_path(),
-        cadmpeg_ir::report::export::WritePath::Patched { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     let result = F3dCodec
         .decode(&mut Cursor::new(patched), &DecodeOptions::default())
@@ -103,5 +105,12 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         .into_iter()
         .map(|timestamp| (timestamp.id.clone(), timestamp))
         .collect::<BTreeMap<_, _>>();
-    assert_eq!(actual, expected);
+    // Native record identities and positions may be reminted by synthesis.
+    let values = |records: BTreeMap<_, CreationTimestamp>| {
+        records
+            .into_values()
+            .map(|record| (record.target, record.unix_microseconds))
+            .collect::<BTreeMap<_, _>>()
+    };
+    assert_eq!(values(actual), values(expected));
 }

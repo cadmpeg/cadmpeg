@@ -70,7 +70,12 @@ fn user_parameters_project_in_source_order_with_units_and_dependencies() {
         Some(ParameterValue::Length(Length::new(60.0).unwrap()))
     );
     assert_eq!(
-        projected[1].dependencies.as_slice(),
+        projected[1]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [projected[0].id.clone()]
     );
     assert_eq!(
@@ -223,7 +228,14 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
         .iter()
         .find(|parameter| parameter.name == "Half")
         .expect("dependent parameter");
-    assert_eq!(half.dependencies.as_slice(), [source.id.clone()]);
+    assert_eq!(
+        half.expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [source.id.clone()]
+    );
     let millimetres = projected
         .iter()
         .find(|parameter| parameter.name == "mm")
@@ -233,7 +245,12 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
         .find(|parameter| parameter.name == "BareUnitName")
         .expect("consumer of bare unit-named parameter");
     assert_eq!(
-        bare_unit_name.dependencies.as_slice(),
+        bare_unit_name
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [millimetres.id.clone()]
     );
 }
@@ -575,38 +592,75 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let document = by_name_and_owner("Width", 20);
     let local = by_name_and_owner("Width", 21);
     assert_eq!(
-        by_name_and_owner("Half", 22).dependencies.as_slice(),
+        by_name_and_owner("Half", 22)
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [local.id.clone()]
     );
     assert_eq!(
-        by_name_and_owner("Half", 23).dependencies.as_slice(),
+        by_name_and_owner("Half", 23)
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [document.id.clone()]
     );
     assert!(by_name_and_owner("DocumentHalf", 25)
-        .dependencies
-        .is_empty());
+        .expression
+        .dependencies()
+        .next()
+        .is_none());
     let document_forward = by_name_and_owner("DocumentForward", 26);
     let document_later = by_name_and_owner("Later", 27);
     assert_eq!(
-        document_forward.dependencies.as_slice(),
+        document_forward
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [document_later.id.clone()]
     );
     assert!(document_later.ordinal < document_forward.ordinal);
     let cycle_a = by_name_and_owner("CycleA", 28);
     let cycle_b = by_name_and_owner("CycleB", 29);
-    assert!(cycle_a.dependencies.is_empty());
-    assert_eq!(cycle_b.dependencies.as_slice(), [cycle_a.id.clone()]);
+    assert_eq!(
+        cycle_a
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        [cycle_b.id.clone()]
+    );
+    assert_eq!(
+        cycle_b
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [cycle_a.id.clone()]
+    );
     assert!(cycle_a.ordinal < cycle_b.ordinal);
     let preceding_shared = by_name_and_owner("Shared", 30);
     assert_eq!(
-        by_name_and_owner("SharedHalf", 31).dependencies.as_slice(),
+        by_name_and_owner("SharedHalf", 31)
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [preceding_shared.id.clone()]
     );
 }
 
 #[allow(clippy::large_stack_arrays)]
 #[test]
-fn parameter_expressions_project_feature_dependencies() {
+fn parameter_expressions_hold_forward_edges_without_copying_feature_dependencies() {
     let parameter = |owner_record_index, record_index, name: &str, expression: &str| {
         let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(owner_record_index),
@@ -721,14 +775,26 @@ fn parameter_expressions_project_feature_dependencies() {
         .find(|parameter| parameter.name == "Depth")
         .expect("Depth parameter");
     assert_eq!(
-        depth.dependencies.as_slice(),
+        depth
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         std::slice::from_ref(&width.id)
     );
     let premature = parameters
         .iter()
         .find(|parameter| parameter.name == "Premature")
         .expect("Premature parameter");
-    assert!(premature.dependencies.is_empty());
+    let future = parameters
+        .iter()
+        .find(|parameter| parameter.name == "Future")
+        .unwrap();
+    assert_eq!(
+        premature.expression.dependencies().collect::<Vec<_>>(),
+        [&future.id]
+    );
     let source = features
         .iter()
         .find(|feature| feature.id == width.owner.clone().expect("Width owner"))
@@ -737,10 +803,8 @@ fn parameter_expressions_project_feature_dependencies() {
         .iter()
         .find(|feature| feature.id == depth.owner.clone().expect("Depth owner"))
         .expect("target feature");
-    assert_eq!(
-        target.dependencies.as_slice(),
-        std::slice::from_ref(&source.id)
-    );
+    assert!(source.dependencies.is_empty());
+    assert!(target.dependencies.is_empty());
 }
 
 #[test]

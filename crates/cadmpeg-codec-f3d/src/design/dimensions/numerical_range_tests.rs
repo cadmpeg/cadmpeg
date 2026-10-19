@@ -41,7 +41,9 @@ fn numerical_0922_extension_requires_incidence() {
         let candidate = SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(endpoint.id().clone()),
             second: SketchLocus::Entity(detached.id().clone()),
-            parameter: ParameterId::mint("f3d:test:parameter#1").unwrap(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(
+                ParameterId::mint("f3d:test:parameter#1").unwrap(),
+            ),
         };
         let result = recipe_extension_point_dimension(
             &[candidate],

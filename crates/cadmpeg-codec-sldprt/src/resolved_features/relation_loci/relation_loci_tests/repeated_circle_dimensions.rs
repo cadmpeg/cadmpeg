@@ -35,8 +35,8 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -55,6 +55,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         }],
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -62,7 +63,6 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),
@@ -108,8 +108,8 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -128,6 +128,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         }],
     };
     let mut parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -135,7 +136,6 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -186,6 +186,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         entity("synthetic:test:id#second", 2.5),
     ];
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -193,7 +194,6 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),

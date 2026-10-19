@@ -32,7 +32,7 @@ fn nx_shell_completeness_requires_each_construction_field() {
         removed_faces: FaceSelection::Faces(vec![
             FaceId::mint("test:model:face#opening").expect("identity grammar")
         ]),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
+        thickness: (Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap())).map(Into::into),
         outward: Some(false),
         mode: Some(ShellMode::Skin),
         join: Some(ShellJoin::Intersection),

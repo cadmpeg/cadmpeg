@@ -165,7 +165,9 @@ pub(super) fn project(
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 controls: style.controls,
-                color_header: style.color_header.into(),
+                color_header_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                    &style.color_header,
+                ),
                 colors: style.colors,
                 color_tail: style.color_tail,
                 state: style.state,

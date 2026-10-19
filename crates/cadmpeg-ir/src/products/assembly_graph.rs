@@ -40,6 +40,14 @@ impl<'ir> Facts<'ir> {
         self.positions.get(id.as_str()).copied()
     }
 
+    pub(super) fn effective_transform(&self, id: &OccurrenceId) -> Option<Transform> {
+        let position = self.position(id)?;
+        match self.values[position].1 {
+            Resolution::Resolved(transform) => Some(transform),
+            Resolution::Pending | Resolution::Active => None,
+        }
+    }
+
     pub(super) fn occurrence(&self, id: &OccurrenceId) -> Option<&'ir Occurrence> {
         self.position(id).map(|position| self.values[position].0)
     }

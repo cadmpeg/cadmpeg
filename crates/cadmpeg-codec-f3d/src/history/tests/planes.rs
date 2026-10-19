@@ -109,7 +109,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             crate::history_records::AsmDeltaState {
                 id: format!("history:state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -313,7 +313,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
             AsmDeltaState {
                 id: format!("history:state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,

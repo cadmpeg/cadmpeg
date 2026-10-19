@@ -27,7 +27,7 @@ fn fixture() -> Value {
         "ir_sha256": DIGEST,
         "report": {
             "identity": {"classification": "unclassified", "format": "synthetic"},
-            "transfer": {"transfer": "full", "geometry_transferred": true},
+            "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": true},
             "coverage": {"source_records": 2},
             "losses": [
                 {

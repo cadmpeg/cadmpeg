@@ -88,7 +88,39 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
             add(item.id.as_str(), ());
         }
     });
+    let layers: std::collections::HashMap<_, _> = ir
+        .model
+        .presentation_layers
+        .iter()
+        .map(|layer| (layer.id.as_str(), layer))
+        .collect();
     for layer in &ir.model.presentation_layers {
+        let mut ancestors = std::collections::HashSet::new();
+        ancestors.insert(layer.id.as_str());
+        let mut parent = layer.parent.as_ref();
+        while let Some(id) = parent {
+            let Some(ancestor) = layers.get(id.as_str()) else {
+                record_finding(
+                    findings,
+                    Check::Presentation,
+                    Severity::Error,
+                    Some(layer.id.as_str()),
+                    format_args!("presentation layer references missing parent `{id}`"),
+                );
+                break;
+            };
+            if !ancestors.insert(id.as_str()) {
+                record_finding(
+                    findings,
+                    Check::Presentation,
+                    Severity::Error,
+                    Some(layer.id.as_str()),
+                    format_args!("presentation-layer parent cycle at `{id}`"),
+                );
+                break;
+            }
+            parent = ancestor.parent.as_ref();
+        }
         for item in &layer.items {
             let resolved = match item {
                 PresentationItem::Body { body } => {

@@ -1445,11 +1445,11 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
 
     assert_eq!(resolved[0].source_id, FeatureSource::from_value(233));
 
-    lane.names.push(FeatureInputName {
+    lane.names.push(FeatureInputName { feature_ref: None,
         id: "ambiguous-name".into(),
         parent: "lane".into(),
-        ordinal: 1,
-        offset: 1,
+        ordinal: 1, sequence: 1,
+        offset: Some(1),
         object_id: ObjectId::from_value(234),
         value: "Producer".into(),
     });

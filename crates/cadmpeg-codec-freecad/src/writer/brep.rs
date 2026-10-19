@@ -1,0 +1,744 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Neutral topology to subshape-first OCCT text `BRep`.
+
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::topology::{Body, BodyKind, Sense};
+use std::collections::HashMap;
+use std::fmt::Write as _;
+
+use super::geometry;
+mod reachable;
+use reachable::Reach;
+
+const LOCATION_SIMILARITY_TOLERANCE: f64 = 1.0e-12;
+
+struct Shape {
+    kind: &'static str,
+    geometry: String,
+    children: Vec<(usize, Sense)>,
+}
+
+/// A carrier that has no `FCStd` encoding is an entity loss, not an invalid
+/// document. The caller omits its containing body and reports the reason.
+pub(super) fn serialize(ir: &CadIr, bodies: &[&Body]) -> Result<Option<Vec<u8>>, CodecError> {
+    if bodies.iter().any(|body| {
+        body.transform
+            .is_some_and(|transform| !location_supported(transform))
+    }) {
+        return Ok(None);
+    }
+    serialize_inner(ir, bodies, false)
+}
+
+pub(super) fn unowned(
+    ir: &CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let reachable = Reach::unowned(ir);
+    for curve in ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| reachable.curves.contains(curve.id.as_str()))
+    {
+        if geometry::curve_record(ir, curve).is_none() {
+            losses.push(
+                crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                    "standalone curve {} has no OCCT encoding and is omitted",
+                    curve.id
+                )),
+            );
+        }
+    }
+    for surface in ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| reachable.surfaces.contains(surface.id.as_str()))
+    {
+        if geometry::surface_record(ir, surface).is_none() {
+            losses.push(
+                crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                    "standalone surface {} has no OCCT encoding and is omitted",
+                    surface.id
+                )),
+            );
+        }
+    }
+    for pcurve in ir.model.pcurves.iter().filter(|pcurve| {
+        !ir.model
+            .coedges
+            .iter()
+            .any(|coedge| coedge.pcurves.iter().any(|usage| usage.pcurve == pcurve.id))
+    }) {
+        losses.push(
+            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "unbound parameter-space curve {} is omitted",
+                pcurve.id
+            )),
+        );
+    }
+    let bytes = serialize_inner(ir, &[], true)?;
+    if bytes.is_none()
+        && (!reachable.faces.is_empty()
+            || !reachable.edges.is_empty()
+            || !reachable.vertices.is_empty())
+    {
+        losses.push(
+            crate::loss::FreecadLossCode::ExportGeometryNotTransferred
+                .note("independent topology has an unsupported required carrier and is omitted"),
+        );
+    }
+    Ok(bytes)
+}
+
+fn serialize_inner(
+    ir: &CadIr,
+    bodies: &[&Body],
+    free: bool,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let reachable = if free {
+        Reach::unowned(ir)
+    } else {
+        Reach::bodies(ir, bodies)
+    };
+    let Reach {
+        faces,
+        loops,
+        coedges,
+        edges,
+        vertices,
+        curves: curves_needed,
+        surfaces: surfaces_needed,
+        pcurves: _pcurves_needed,
+    } = reachable;
+    let mut locations = Vec::new();
+    let mut curves = Vec::new();
+    let mut curve_ids = HashMap::new();
+    let mut curve_slots = HashMap::new();
+    for curve in ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| curves_needed.contains(curve.id.as_str()))
+    {
+        if let Some((row, location)) = geometry::located_curve(ir, curve) {
+            if !location_supported(location)
+                || (free
+                    && location != cadmpeg_ir::transform::Transform::identity()
+                    && !ir.model.edges.iter().any(|edge| {
+                        edges.contains(edge.id.as_str()) && edge.curve() == Some(&curve.id)
+                    }))
+            {
+                continue;
+            }
+            let key = geometry::curve_layout_key(ir, curve);
+            let index = *curve_slots.entry(key).or_insert_with(|| {
+                curves.push(row);
+                curves.len()
+            });
+            curve_ids.insert(
+                curve.id.as_str(),
+                (index, register_location(location, &mut locations)),
+            );
+        }
+    }
+    let mut surfaces = Vec::new();
+    let mut surface_ids = HashMap::new();
+    let mut surface_slots = HashMap::new();
+    for surface in ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surfaces_needed.contains(surface.id.as_str()))
+    {
+        if let Some((row, location)) = geometry::located_surface(ir, surface) {
+            if !location_supported(location)
+                || (free
+                    && location != cadmpeg_ir::transform::Transform::identity()
+                    && !ir
+                        .model
+                        .faces
+                        .iter()
+                        .any(|face| faces.contains(face.id.as_str()) && face.surface == surface.id))
+            {
+                continue;
+            }
+            let affine = crate::brep::generated_surface_parameters(&row)?;
+            let Some(chart) = cadmpeg_ir::transform::Transform2::affine([
+                [1.0 / affine.u_scale, 0.0, -affine.u_offset / affine.u_scale],
+                [0.0, 1.0 / affine.v_scale, -affine.v_offset / affine.v_scale],
+            ]) else {
+                continue;
+            };
+            let key = geometry::surface_layout_key(ir, surface);
+            let index = *surface_slots.entry(key).or_insert_with(|| {
+                surfaces.push(row);
+                surfaces.len()
+            });
+            surface_ids.insert(
+                surface.id.as_str(),
+                (index, register_location(location, &mut locations), chart),
+            );
+        }
+    }
+    let mut pcurves = Vec::new();
+    let mut pcurve_ids = HashMap::new();
+    let mut shared_pcurves = HashMap::new();
+    for coedge in ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedges.contains(coedge.id.as_str()))
+    {
+        let Some(face) = ir
+            .model
+            .loops
+            .iter()
+            .find(|wire| wire.id == coedge.owner_loop)
+            .and_then(|wire| ir.model.faces.iter().find(|face| face.id == wire.face))
+        else {
+            continue;
+        };
+        let Some((_, _, chart)) = surface_ids.get(face.surface.as_str()) else {
+            continue;
+        };
+        for usage in &coedge.pcurves {
+            let Some(pcurve) = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == usage.pcurve)
+            else {
+                continue;
+            };
+            if pcurve_ids.contains_key(&(pcurve.id.as_str(), face.surface.as_str())) {
+                continue;
+            }
+            let domain = pcurve
+                .parameter_range()
+                .map(cadmpeg_ir::units::FiniteVector::get)
+                .or_else(|| {
+                    usage
+                        .parameter_range
+                        .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+                });
+            if let Some(row) = super::pcurves::serialize(&pcurve.geometry, domain, *chart) {
+                let index =
+                    if let Some(index) = shared_pcurves.get(&(pcurve.id.as_str(), row.clone())) {
+                        *index
+                    } else {
+                        pcurves.push(row.clone());
+                        shared_pcurves.insert((pcurve.id.as_str(), row), pcurves.len());
+                        pcurves.len()
+                    };
+                pcurve_ids.insert((pcurve.id.as_str(), face.surface.as_str()), index);
+            }
+        }
+    }
+    let mut shapes = Vec::new();
+    let mut indices = HashMap::new();
+    // OCCT carries a numeric tolerance. Zero preserves the absence of an
+    // entity-specific positive tolerance instead of inventing document defaults.
+    let tolerance = ir.tolerances.linear.get();
+    for vertex in ir
+        .model
+        .vertices
+        .iter()
+        .filter(|vertex| vertices.contains(vertex.id.as_str()))
+    {
+        let point = ir
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "vertex {} references absent point {}",
+                    vertex.id, vertex.point
+                ))
+            })?;
+        indices.insert(vertex.id.as_str(), shapes.len());
+        shapes.push(Shape {
+            kind: "Ve",
+            geometry: format!(
+                "{} {} 0 0",
+                vertex
+                    .tolerance
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                geometry::point(point.position().get())
+            ),
+            children: Vec::new(),
+        });
+    }
+    if free {
+        for point in ir.model.points.iter().filter(|point| {
+            !ir.model
+                .vertices
+                .iter()
+                .any(|vertex| vertex.point == point.id)
+        }) {
+            indices.insert(point.id.as_str(), shapes.len());
+            shapes.push(Shape {
+                kind: "Ve",
+                geometry: format!(
+                    "{tolerance} {} 0 0",
+                    geometry::point(point.position().get())
+                ),
+                children: Vec::new(),
+            });
+        }
+    }
+    for edge in ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edges.contains(edge.id.as_str()))
+    {
+        let Some(start) = indices.get(edge.start.as_str()).copied() else {
+            return Err(CodecError::malformed(format_args!(
+                "edge {} references absent start vertex",
+                edge.id
+            )));
+        };
+        let Some(end) = indices.get(edge.end.as_str()).copied() else {
+            return Err(CodecError::malformed(format_args!(
+                "edge {} references absent end vertex",
+                edge.id
+            )));
+        };
+        let degenerate = edge.curve().is_none()
+            || edge
+                .curve()
+                .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == *id))
+                .and_then(|curve| curve.geometry.solved())
+                .is_some_and(|curve| {
+                    matches!(
+                        curve,
+                        cadmpeg_ir::geometry::SolvedCurveGeometry::Degenerate(_)
+                    )
+                });
+        let mut representation = if degenerate {
+            String::new()
+        } else {
+            match edge.curve() {
+                Some(curve) => {
+                    let Some((curve, location)) = curve_ids.get(curve.as_str()) else {
+                        continue;
+                    };
+                    let Some(range) = edge.param_range() else {
+                        continue;
+                    };
+                    let range = range.get();
+                    format!("1 {curve} {location} {} {}", range[0], range[1])
+                }
+                None if start == end => String::new(),
+                None => continue,
+            }
+        };
+        let mut complete = true;
+        let mut seen = std::collections::HashSet::new();
+        let mut pcurve_groups =
+            std::collections::BTreeMap::<(usize, usize), Vec<(usize, [f64; 2], Sense)>>::new();
+        for coedge in ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id && coedges.contains(coedge.id.as_str()))
+        {
+            let face = ir
+                .model
+                .loops
+                .iter()
+                .find(|wire| wire.id == coedge.owner_loop)
+                .and_then(|wire| ir.model.faces.iter().find(|face| face.id == wire.face))
+                .ok_or_else(|| CodecError::malformed("coedge has an absent loop or face"))?;
+            let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str())
+            else {
+                complete = false;
+                continue;
+            };
+            for usage in &coedge.pcurves {
+                if !seen.insert((face.surface.as_str(), usage.pcurve.as_str())) {
+                    continue;
+                }
+                let Some(curve) = pcurve_ids.get(&(usage.pcurve.as_str(), face.surface.as_str()))
+                else {
+                    complete = false;
+                    continue;
+                };
+                let range = usage
+                    .parameter_range
+                    .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+                    .or_else(|| {
+                        ir.model
+                            .pcurves
+                            .iter()
+                            .find(|curve| curve.id == usage.pcurve)
+                            .and_then(cadmpeg_ir::geometry::pcurve::Pcurve::parameter_range)
+                            .map(cadmpeg_ir::units::FiniteVector::get)
+                    })
+                    .or_else(|| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get));
+                let Some(range) = range else {
+                    complete = false;
+                    continue;
+                };
+                if range[0] > range[1] {
+                    complete = false;
+                    continue;
+                }
+                pcurve_groups
+                    .entry((*surface, *surface_location))
+                    .or_default()
+                    .push((*curve, range, coedge.sense));
+            }
+        }
+        for ((surface, location), mut rows) in pcurve_groups {
+            rows.sort_by_key(|(_, _, sense)| *sense == Sense::Reversed);
+            match rows.as_slice() {
+                [(curve, range, _)] => write!(
+                    representation,
+                    " 2 {curve} {surface} {location} {} {}",
+                    range[0], range[1]
+                )
+                .expect("writing to String cannot fail"),
+                [(first, range, _), (second, other_range, _)] if range == other_range => {
+                    write!(
+                        representation,
+                        " 3 {first} {second} C0 {surface} {location} {} {}",
+                        range[0], range[1]
+                    )
+                    .expect("writing to String cannot fail");
+                }
+                _ => complete = false,
+            }
+        }
+        if !complete {
+            continue;
+        }
+        indices.insert(edge.id.as_str(), shapes.len());
+        shapes.push(Shape {
+            kind: "Ed",
+            geometry: format!(
+                "{} 1 1 {} {representation} 0",
+                edge.tolerance
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                u8::from(degenerate)
+            ),
+            children: vec![(start, Sense::Forward), (end, Sense::Reversed)],
+        });
+    }
+    for wire in ir
+        .model
+        .loops
+        .iter()
+        .filter(|wire| loops.contains(wire.id.as_str()))
+    {
+        let mut children = Vec::new();
+        let mut complete = true;
+        for coedge in wire.coedges() {
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|value| value.id == *coedge)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("loop {} references absent coedge", wire.id))
+                })?;
+            if let Some(index) = indices.get(coedge.edge.as_str()) {
+                children.push((*index, coedge.sense));
+            } else {
+                complete = false;
+            }
+        }
+        if complete {
+            indices.insert(wire.id.as_str(), shapes.len());
+            shapes.push(Shape {
+                kind: "Wi",
+                geometry: String::new(),
+                children,
+            });
+        }
+    }
+    for face in ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| faces.contains(face.id.as_str()))
+    {
+        let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str()) else {
+            continue;
+        };
+        let mut children = Vec::new();
+        let mut complete = true;
+        for wire in &face.loops {
+            if let Some(index) = indices.get(wire.as_str()) {
+                // Neutral coedge senses already include the face orientation.
+                // Cancel that parent orientation on the wire reference.
+                children.push((*index, face.sense));
+            } else {
+                complete = false;
+            }
+        }
+        if complete {
+            indices.insert(face.id.as_str(), shapes.len());
+            shapes.push(Shape {
+                kind: "Fa",
+                geometry: format!(
+                    "0 {} {surface} {surface_location}",
+                    face.tolerance
+                        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                ),
+                children,
+            });
+        }
+    }
+    let mut roots = Vec::new();
+    for body in bodies {
+        let mut regions = Vec::new();
+        for region_id in &body.regions {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|value| value.id == *region_id)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("body {} references absent region", body.id))
+                })?;
+            let mut shells = Vec::new();
+            for shell_id in &region.shells {
+                let shell = ir
+                    .model
+                    .shells
+                    .iter()
+                    .find(|value| value.id == *shell_id)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "region {} references absent shell",
+                            region.id
+                        ))
+                    })?;
+                let mut children = Vec::new();
+                for face_id in shell.faces() {
+                    let Some(index) = indices.get(face_id.as_str()) else {
+                        return Ok(None);
+                    };
+                    let face = ir
+                        .model
+                        .faces
+                        .iter()
+                        .find(|value| value.id == *face_id)
+                        .ok_or_else(|| CodecError::malformed("shell references absent face"))?;
+                    children.push((*index, face.sense));
+                }
+                for edge in shell.wire_edges() {
+                    let Some(index) = indices.get(edge.as_str()) else {
+                        return Ok(None);
+                    };
+                    children.push((*index, Sense::Forward));
+                }
+                for vertex in shell.free_vertices() {
+                    let Some(index) = indices.get(vertex.as_str()) else {
+                        return Ok(None);
+                    };
+                    children.push((*index, Sense::Forward));
+                }
+                let index = shapes.len();
+                shapes.push(Shape {
+                    kind: if shell.faces().is_empty() { "Co" } else { "Sh" },
+                    geometry: String::new(),
+                    children,
+                });
+                shells.push((index, Sense::Forward));
+            }
+            let index = shapes.len();
+            shapes.push(Shape {
+                kind: if body.kind == BodyKind::Solid
+                    || (body.kind == BodyKind::General
+                        && region.shells.iter().all(|id| {
+                            ir.model
+                                .shells
+                                .iter()
+                                .any(|shell| shell.id == *id && !shell.faces().is_empty())
+                        }))
+                {
+                    "So"
+                } else {
+                    "Co"
+                },
+                geometry: String::new(),
+                children: shells,
+            });
+            regions.push((index, Sense::Forward));
+        }
+        if regions.is_empty() {
+            return Ok(None);
+        }
+        let root = if regions.len() == 1 {
+            let region = regions[0].0;
+            if body.kind == BodyKind::Sheet && shapes[region].children.len() == 1 {
+                shapes[region].children[0].0
+            } else if body.kind == BodyKind::Wire {
+                let children = shapes[region]
+                    .children
+                    .iter()
+                    .flat_map(|(shell, _)| shapes[*shell].children.clone())
+                    .collect();
+                let root = shapes.len();
+                shapes.push(Shape {
+                    kind: "Wi",
+                    geometry: String::new(),
+                    children,
+                });
+                root
+            } else if body.kind == BodyKind::General && shapes[region].kind == "So" {
+                let root = shapes.len();
+                shapes.push(Shape {
+                    kind: "Co",
+                    geometry: String::new(),
+                    children: vec![(region, Sense::Forward)],
+                });
+                root
+            } else {
+                region
+            }
+        } else {
+            let root = shapes.len();
+            shapes.push(Shape {
+                kind: "Co",
+                geometry: String::new(),
+                children: regions,
+            });
+            root
+        };
+        let location = register_location(body.transform.unwrap_or_default(), &mut locations);
+        roots.push((root, location));
+    }
+    if free {
+        for point in ir.model.points.iter().filter(|point| {
+            !ir.model
+                .vertices
+                .iter()
+                .any(|vertex| vertex.point == point.id)
+        }) {
+            if let Some(index) = indices.get(point.id.as_str()) {
+                roots.push((*index, 0));
+            }
+        }
+        for face in ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| faces.contains(face.id.as_str()))
+        {
+            let Some(index) = indices.get(face.id.as_str()) else {
+                return Ok(None);
+            };
+            roots.push((*index, 0));
+        }
+        for wire in ir.model.loops.iter().filter(|wire| {
+            loops.contains(wire.id.as_str())
+                && !ir.model.faces.iter().any(|face| {
+                    faces.contains(face.id.as_str()) && face.loops.iter().any(|id| id == &wire.id)
+                })
+        }) {
+            let Some(index) = indices.get(wire.id.as_str()) else {
+                return Ok(None);
+            };
+            roots.push((*index, 0));
+        }
+        for edge in
+            ir.model.edges.iter().filter(|edge| {
+                edges.contains(edge.id.as_str())
+                    && !ir.model.coedges.iter().any(|coedge| {
+                        coedges.contains(coedge.id.as_str()) && coedge.edge == edge.id
+                    })
+            })
+        {
+            let Some(index) = indices.get(edge.id.as_str()) else {
+                return Ok(None);
+            };
+            roots.push((*index, 0));
+        }
+        for vertex in ir.model.vertices.iter().filter(|vertex| {
+            vertices.contains(vertex.id.as_str())
+                && !ir.model.edges.iter().any(|edge| {
+                    edges.contains(edge.id.as_str())
+                        && (edge.start == vertex.id || edge.end == vertex.id)
+                })
+        }) {
+            let Some(index) = indices.get(vertex.id.as_str()) else {
+                return Ok(None);
+            };
+            roots.push((*index, 0));
+        }
+        if roots.is_empty() && curves.is_empty() && surfaces.is_empty() {
+            return Ok(None);
+        }
+    }
+    let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {}\n{}\nTriangulations 0\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), surfaces.len(), surfaces.join("\n"), shapes.len());
+    for shape in &shapes {
+        write!(output, "{}\n{}\n\n0101101\n", shape.kind, shape.geometry)
+            .expect("writing to String cannot fail");
+        for (index, sense) in &shape.children {
+            write!(
+                output,
+                "{}{} 0 ",
+                if *sense == Sense::Forward { '+' } else { '-' },
+                shapes.len() - index
+            )
+            .expect("writing to String cannot fail");
+        }
+        output.push_str("*\n");
+    }
+    if roots.is_empty() {
+        output.push_str("*\n");
+    }
+    for (root, location) in roots {
+        writeln!(output, "+{} {location}", shapes.len() - root)
+            .expect("writing to String cannot fail");
+    }
+    Ok(Some(output.into_bytes()))
+}
+
+fn register_location(
+    transform: cadmpeg_ir::transform::Transform,
+    locations: &mut Vec<String>,
+) -> usize {
+    if transform == cadmpeg_ir::transform::Transform::identity() {
+        return 0;
+    }
+    let row = format!(
+        "1\n{}",
+        transform
+            .affine_rows()
+            .iter()
+            .map(|row| row
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" "))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    if let Some(index) = locations.iter().position(|existing| existing == &row) {
+        return index + 1;
+    }
+    locations.push(row);
+    locations.len()
+}
+
+/// OCCT Locations hold similarities, not arbitrary affine deformations.
+fn location_supported(transform: cadmpeg_ir::transform::Transform) -> bool {
+    let rows = transform.affine_rows();
+    let dot = |a: usize, b: usize| (0..3).map(|row| rows[row][a] * rows[row][b]).sum::<f64>();
+    let scale = dot(0, 0);
+    scale.is_finite()
+        && scale > 0.0
+        && (1..3)
+            .all(|axis| (dot(axis, axis) - scale).abs() <= LOCATION_SIMILARITY_TOLERANCE * scale)
+        && [(0, 1), (0, 2), (1, 2)]
+            .into_iter()
+            .all(|(a, b)| dot(a, b).abs() <= LOCATION_SIMILARITY_TOLERANCE * scale)
+}

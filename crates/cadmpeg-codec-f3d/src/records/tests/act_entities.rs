@@ -22,14 +22,16 @@ fn act_group_admission_rejects_invalid_names_counts_and_locations() {
         offset: 120,
     };
     for name in [String::new(), "x".repeat(129), "é".into()] {
-        assert!(ActChannelGroup::try_new(
-            100,
-            Some(200),
-            "261".to_owned().try_into().unwrap(),
-            BTreeMap::from([(name, channel.clone())]),
-            None
-        )
-        .is_err());
+        assert!(
+            ActChannelGroup::try_new(
+                100,
+                Some(200),
+                "261".to_owned().try_into().unwrap(),
+                BTreeMap::from([(name, channel.clone())]),
+                None
+            )
+            .is_err()
+        );
     }
     for count in [0, 1, 8, 9] {
         let channels = (0..count)
@@ -123,13 +125,15 @@ fn act_entity_edits_keep_keys_and_channel_locations_valid() {
         entity.channel_group().channels()["Appearance"].offset,
         offset
     );
-    assert!(entity
-        .set_channel_guid(
-            "Other",
-            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-                .to_owned()
-                .try_into()
-                .unwrap()
-        )
-        .is_err());
+    assert!(
+        entity
+            .set_channel_guid(
+                "Other",
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                    .to_owned()
+                    .try_into()
+                    .unwrap()
+            )
+            .is_err()
+    );
 }

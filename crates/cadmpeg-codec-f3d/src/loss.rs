@@ -36,6 +36,8 @@ pub(crate) enum F3dLossCode {
     ConfigurationFeatureSuppressionUnbound,
     /// Non-root `ACT` component links stay source-only; product role is unresolved.
     ActComponentLinkUnresolved,
+    /// ACT records whose semantic payload could not be decoded.
+    ActRecordUntyped,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
@@ -54,6 +56,8 @@ pub(crate) enum F3dLossCode {
     HistoryBindingWorkExceeded,
     /// A Design recipe side-sequence search exceeded its local work cap.
     RecipeSideSearchBudgetExceeded,
+    /// A dimension recipe retains prefix grouping outside its typed references.
+    RecipePrefixUntyped,
     /// Ordering one owner scope's Design parameters exceeded its local work cap.
     ParameterOrderBudgetExceeded,
     /// An ASM history span stays opaque because record framing failed.
@@ -80,6 +84,8 @@ pub(crate) enum F3dLossCode {
     ParameterUnitUntyped,
     /// Material Distance properties retain unit tags without a length conversion.
     MaterialDistanceUnitUntyped,
+    /// An embedded Design image remains outside the typed asset arena.
+    ImageAssetUntransferred,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
     /// Feature history-state dependency links were not projected.
@@ -214,6 +220,33 @@ pub(crate) enum F3dLossCode {
     ManifestMetadataUnresolved,
     /// An optional bounded archive payload is unreadable.
     ArchiveEntryUnreadable,
+    /// Typed native content without a supported synthesized record form.
+    WriterNativeRecordsOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterDesignRecordsOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterGeometryOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterAuxiliaryOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterProceduralReduced,
+    /// Content that the synthesized writer cannot represent.
+    WriterNoExportableSolids,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterSubdOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterAssetOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterTessellationOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterPcurveOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterPmiOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterProductOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterSourceAssociationOmitted,
+
     /// Design-intent decoding failed; its sketches, features and history were dropped.
     DesignIntentUndecoded,
 }
@@ -228,6 +261,7 @@ impl F3dLossCode {
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
+        Self::ActRecordUntyped,
         Self::LocalOccurrenceUnplaced,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
@@ -236,6 +270,7 @@ impl F3dLossCode {
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
         Self::RecipeSideSearchBudgetExceeded,
+        Self::RecipePrefixUntyped,
         Self::ParameterOrderBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
@@ -249,6 +284,7 @@ impl F3dLossCode {
         Self::ParameterOwnerUnrecognized,
         Self::ParameterUnitUntyped,
         Self::MaterialDistanceUnitUntyped,
+        Self::ImageAssetUntransferred,
         Self::ParameterExpressionUnbound,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
@@ -316,6 +352,19 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::ArchiveEntryUnreadable,
+        Self::WriterNativeRecordsOmitted,
+        Self::WriterDesignRecordsOmitted,
+        Self::WriterGeometryOmitted,
+        Self::WriterAuxiliaryOmitted,
+        Self::WriterProceduralReduced,
+        Self::WriterNoExportableSolids,
+        Self::WriterSubdOmitted,
+        Self::WriterAssetOmitted,
+        Self::WriterTessellationOmitted,
+        Self::WriterPcurveOmitted,
+        Self::WriterPmiOmitted,
+        Self::WriterProductOmitted,
+        Self::WriterSourceAssociationOmitted,
         Self::DesignIntentUndecoded,
     ];
 
@@ -333,6 +382,7 @@ impl F3dLossCode {
                 "configuration.feature-suppression-unbound"
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
+            Self::ActRecordUntyped => "act.record-untyped",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
@@ -341,6 +391,7 @@ impl F3dLossCode {
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
+            Self::RecipePrefixUntyped => "dimension.recipe-prefix-untyped",
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
@@ -354,6 +405,7 @@ impl F3dLossCode {
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
+            Self::ImageAssetUntransferred => "appearance.image-asset-untransferred",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
@@ -423,6 +475,20 @@ impl F3dLossCode {
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
+            Self::WriterDesignRecordsOmitted => "writer.design-records-omitted",
+            Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterAuxiliaryOmitted => "writer.auxiliary-omitted",
+            Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterNoExportableSolids => "writer.no-exportable-solids",
+            Self::WriterSubdOmitted => "writer.subd-omitted",
+            Self::WriterAssetOmitted => "writer.asset-omitted",
+            Self::WriterTessellationOmitted => "writer.tessellation-omitted",
+            Self::WriterPcurveOmitted => "writer.pcurve-omitted",
+            Self::WriterPmiOmitted => "writer.pmi-omitted",
+            Self::WriterProductOmitted => "writer.product-omitted",
+            Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
+
             Self::DesignIntentUndecoded => "design.intent-undecoded",
         }
     }
@@ -431,6 +497,21 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::WriterNativeRecordsOmitted => Severity::Warning,
+            Self::ImageAssetUntransferred => Severity::Warning,
+            Self::WriterDesignRecordsOmitted => Severity::Error,
+            Self::WriterGeometryOmitted => Severity::Error,
+            Self::WriterAuxiliaryOmitted => Severity::Warning,
+            Self::WriterProceduralReduced => Severity::Warning,
+            Self::WriterNoExportableSolids => Severity::Warning,
+            Self::WriterSubdOmitted => Severity::Warning,
+            Self::WriterAssetOmitted => Severity::Warning,
+            Self::WriterTessellationOmitted => Severity::Warning,
+            Self::WriterPcurveOmitted => Severity::Error,
+            Self::WriterPmiOmitted => Severity::Warning,
+            Self::WriterProductOmitted => Severity::Warning,
+            Self::WriterSourceAssociationOmitted => Severity::Warning,
+
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::BodylessDesignCarrier
             | Self::AssemblyComponentsExternal
@@ -453,11 +534,13 @@ impl F3dLossCode {
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::DimensionCompanionUntyped
+            | Self::RecipePrefixUntyped
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::ActRecordUntyped
             | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
@@ -532,6 +615,20 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
+            Self::WriterDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterAuxiliaryOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
+            Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterAssetOmitted => LossTaxonomy::AssetNotTransferred,
+            Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
+            Self::WriterPcurveOmitted => LossTaxonomy::PcurveOmitted,
+            Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
+            Self::WriterProductOmitted => LossTaxonomy::AssemblyComponentsExternal,
+            Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
+
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::HistoryRecordFramingFailed
@@ -543,7 +640,8 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::DrawingDocumentOmitted
-            | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
+            | Self::XrefTableUndecoded
+            | Self::ActRecordUntyped => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
@@ -555,6 +653,7 @@ impl F3dLossCode {
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
+            | Self::RecipePrefixUntyped
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
@@ -589,6 +688,7 @@ impl F3dLossCode {
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
+            Self::ImageAssetUntransferred => LossTaxonomy::AssetNotTransferred,
             Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown => LossTaxonomy::AssemblyPlacementsNotTransferred,
@@ -667,10 +767,432 @@ impl F3dLossCode {
     }
 }
 
+/// Whether a decode loss leaves source content without a typed representation.
+#[derive(Clone, Copy)]
+enum Representation {
+    Design,
+    Model,
+    Both,
+    /// The lost neutral projection still has a complete typed native record.
+    Typed,
+    /// A feature envelope counts only when its operation payload is typed.
+    ScopePayload,
+    /// Curve identity and framing alone do not represent the curve's shape.
+    SketchCurve,
+    Metadata,
+    Export,
+}
+
+/// Every local loss code has an explicit source-content disposition. Codes
+/// emitted from native projection-gap counts retain their actual typed rows;
+/// raw payloads, unresolved source owners and missing semantic records do not.
+const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
+    (F3dLossCode::ActRecordUntyped, Representation::Both),
+    (
+        F3dLossCode::DimensionCompanionUntyped,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::ConfigurationMemberUnassigned,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::ConfigurationRuleUnbound,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::ConfigurationParameterOverrideUnbound,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::ConfigurationFeatureSuppressionUnbound,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::ActComponentLinkUnresolved,
+        Representation::Model,
+    ),
+    (F3dLossCode::ImageAssetUntransferred, Representation::Model),
+    (F3dLossCode::LocalOccurrenceUnplaced, Representation::Typed),
+    (F3dLossCode::ComponentInsertUnplaced, Representation::Model),
+    (
+        F3dLossCode::ComponentInsertOrderUnknown,
+        Representation::Model,
+    ),
+    (F3dLossCode::AssemblyJointUnprojected, Representation::Model),
+    (F3dLossCode::DrawingDocumentOmitted, Representation::Model),
+    (
+        F3dLossCode::HistoryBindingBudgetExceeded,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::HistoryBindingWorkExceeded,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::RecipeSideSearchBudgetExceeded,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::ParameterOrderBudgetExceeded,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::HistoryRecordFramingFailed,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::DesignBodyBindingUnresolved,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::ReferenceImageNativeRetained,
+        Representation::Model,
+    ),
+    (F3dLossCode::DecalNativeRetained, Representation::Model),
+    (
+        F3dLossCode::EdgeReferenceLostUnrepaired,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureDefinitionIncomplete,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureScopeUnprojected,
+        Representation::ScopePayload,
+    ),
+    (
+        F3dLossCode::FeatureScopePayloadUninterpreted,
+        Representation::Design,
+    ),
+    (F3dLossCode::RecipePrefixUntyped, Representation::Design),
+    (F3dLossCode::ParameterUnprojected, Representation::Typed),
+    (
+        F3dLossCode::ParameterOwnerUnrecognized,
+        Representation::Design,
+    ),
+    (F3dLossCode::ParameterUnitUntyped, Representation::Typed),
+    (
+        F3dLossCode::MaterialDistanceUnitUntyped,
+        Representation::Model,
+    ),
+    (
+        F3dLossCode::ParameterExpressionUnbound,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::HistoryDependencyUnprojected,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::HistoryDependencyAmbiguous,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::HistoricalFaceSelectionUnbound,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::SketchRelationNativeRetained,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::SketchDimensionNativeRetained,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::SketchPlacementUnprojected,
+        Representation::Typed,
+    ),
+    (F3dLossCode::SketchPointUnprojected, Representation::Typed),
+    (
+        F3dLossCode::SketchCurveUnprojected,
+        Representation::SketchCurve,
+    ),
+    (F3dLossCode::SketchSurfaceUnprojected, Representation::Typed),
+    (F3dLossCode::SketchTextUnprojected, Representation::Typed),
+    (
+        F3dLossCode::SketchRelationUnprojected,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::SketchProfileSearchCapped,
+        Representation::Typed,
+    ),
+    (F3dLossCode::DimensionUnprojected, Representation::Design),
+    (
+        F3dLossCode::FeatureProfileSelectionNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureProfileArrangementCapped,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureProfileDensificationCapped,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeaturePathSelectionNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureFaceSelectionNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureFaceSelectionActiveSubstituted,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureBodySelectionNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureFaceOperandUnresolved,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureEdgeSelectionNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureEdgeOperandUnresolved,
+        Representation::Typed,
+    ),
+    (F3dLossCode::FeatureEdgeSelectionLost, Representation::Typed),
+    (
+        F3dLossCode::FeaturePatternInstanceSearchCapped,
+        Representation::Design,
+    ),
+    (F3dLossCode::BrepBlobUndecoded, Representation::Model),
+    (F3dLossCode::MeshContainerUnjoined, Representation::Model),
+    (F3dLossCode::MeshContainerUndecoded, Representation::Model),
+    (F3dLossCode::MeshContainerMissing, Representation::Model),
+    (
+        F3dLossCode::MeshAttributeNotTransferred,
+        Representation::Model,
+    ),
+    (F3dLossCode::XrefTableUndecoded, Representation::Model),
+    (F3dLossCode::XrefPlacementUndecoded, Representation::Model),
+    (F3dLossCode::XrefPlacementSuperseded, Representation::Model),
+    (
+        F3dLossCode::MeshVertexPrecisionReduced,
+        Representation::Typed,
+    ),
+    (F3dLossCode::BodylessDesignCarrier, Representation::Typed),
+    (
+        F3dLossCode::AssemblyComponentsExternal,
+        Representation::Typed,
+    ),
+    (F3dLossCode::NurbsSurfaceCarrier, Representation::Typed),
+    (F3dLossCode::NurbsCurveCarrier, Representation::Typed),
+    (
+        F3dLossCode::FaceSurfaceReferenceDangling,
+        Representation::Model,
+    ),
+    (F3dLossCode::SurfaceShapeNotDecoded, Representation::Model),
+    (F3dLossCode::MeshSurfaceSentinel, Representation::Typed),
+    (F3dLossCode::ProceduralCurveUndecoded, Representation::Model),
+    (F3dLossCode::PcurveUndecoded, Representation::Model),
+    (F3dLossCode::BlendSupportPartial, Representation::Model),
+    (F3dLossCode::SolvedRecordUntyped, Representation::Model),
+    (F3dLossCode::MaterialNotTransferred, Representation::Model),
+    (F3dLossCode::GeometryNotTransferred, Representation::Model),
+    (F3dLossCode::TopologyNotTransferred, Representation::Model),
+    (F3dLossCode::MissingGeometryStream, Representation::Model),
+    (F3dLossCode::XrefCycle, Representation::Model),
+    (F3dLossCode::XrefMemberMissing, Representation::Model),
+    (F3dLossCode::XrefMemberUndecoded, Representation::Model),
+    (F3dLossCode::TsplineRecordUntyped, Representation::Model),
+    (F3dLossCode::TsplineCageUndecoded, Representation::Model),
+    (
+        F3dLossCode::SourcePreservedImageUnavailable,
+        Representation::Export,
+    ),
+    (
+        F3dLossCode::SourceDialectUnverified,
+        Representation::Metadata,
+    ),
+    (
+        F3dLossCode::WriterAppearancePropertiesOmitted,
+        Representation::Export,
+    ),
+    (F3dLossCode::SourceDialectDisplaced, Representation::Export),
+    (
+        F3dLossCode::KernelDialectUnverified,
+        Representation::Metadata,
+    ),
+    (
+        F3dLossCode::KernelCarrierUnparseable,
+        Representation::Metadata,
+    ),
+    (F3dLossCode::DialectLayerCollision, Representation::Metadata),
+    (
+        F3dLossCode::TextHeaderNoncanonical,
+        Representation::Metadata,
+    ),
+    (
+        F3dLossCode::KernelHeaderToleranceUnresolved,
+        Representation::Model,
+    ),
+    (
+        F3dLossCode::KernelHeaderMetadataUnresolved,
+        Representation::Metadata,
+    ),
+    (
+        F3dLossCode::ManifestMetadataUnresolved,
+        Representation::Metadata,
+    ),
+    (F3dLossCode::ArchiveEntryUnreadable, Representation::Both),
+    (
+        F3dLossCode::WriterNativeRecordsOmitted,
+        Representation::Export,
+    ),
+    (
+        F3dLossCode::WriterDesignRecordsOmitted,
+        Representation::Export,
+    ),
+    (F3dLossCode::WriterGeometryOmitted, Representation::Export),
+    (F3dLossCode::WriterAuxiliaryOmitted, Representation::Export),
+    (F3dLossCode::WriterProceduralReduced, Representation::Export),
+    (F3dLossCode::WriterSubdOmitted, Representation::Export),
+    (F3dLossCode::WriterAssetOmitted, Representation::Export),
+    (
+        F3dLossCode::WriterTessellationOmitted,
+        Representation::Export,
+    ),
+    (F3dLossCode::WriterPcurveOmitted, Representation::Export),
+    (F3dLossCode::WriterPmiOmitted, Representation::Export),
+    (F3dLossCode::WriterProductOmitted, Representation::Export),
+    (
+        F3dLossCode::WriterSourceAssociationOmitted,
+        Representation::Export,
+    ),
+    (
+        F3dLossCode::WriterNoExportableSolids,
+        Representation::Export,
+    ),
+    (F3dLossCode::DesignIntentUndecoded, Representation::Design),
+];
+
+/// Classes with source records that have no typed document representation.
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    native: &crate::native::F3dNative,
+) -> cadmpeg_ir::document::ArenaClasses {
+    use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
+    let mut classes = ArenaClasses::default();
+    // Framing and references do not type the historical geometry payload.
+    if native
+        .asm_histories
+        .iter()
+        .flat_map(crate::history_records::AsmHistory::states)
+        .flat_map(|state| &state.records)
+        .any(|record| !record.raw_bytes.is_empty())
+    {
+        classes.insert(ArenaClass::Design);
+    }
+    // Indexed envelopes and raw recipe words do not supply the operation's
+    // semantic payload. Typed recipe clauses, rather than token framing, are
+    // required for native representation.
+    let raw_recipe = native.design_edge_operands.iter().any(|operand| {
+        !operand.recipe_program.is_empty()
+            && operand.recipe_structure.is_none()
+            && operand.surface_patch_recipe_structure.is_none()
+    }) || native.design_face_operands.iter().any(|operand| {
+        !operand.recipe_program.is_empty()
+            && (operand.recipe_nodes.is_empty()
+                || operand
+                    .recipe_nodes
+                    .iter()
+                    .any(|node| node.recipe_structure.is_none()))
+    });
+    let native_name_only = native.design_parameter_scopes.iter().any(|scope| {
+        matches!(
+            scope.payload(),
+            crate::records::feature::scope::DesignScopePayload::Native(_)
+        )
+    });
+    if raw_recipe || native_name_only {
+        classes.insert(ArenaClass::Design);
+    }
+    for &(code, disposition) in UNREPRESENTED {
+        if !losses.iter().any(|loss| loss.code == code.kind()) {
+            continue;
+        }
+        match disposition {
+            Representation::Design => {
+                classes.insert(ArenaClass::Design);
+            }
+            Representation::Model => {
+                classes.insert(ArenaClass::Model);
+            }
+            Representation::Both => {
+                classes.insert(ArenaClass::Model);
+                classes.insert(ArenaClass::Design);
+            }
+            Representation::ScopePayload => {
+                if native
+                    .design_parameter_scopes
+                    .iter()
+                    .any(|scope| scope.payload().is_uninterpreted())
+                {
+                    classes.insert(ArenaClass::Design);
+                }
+            }
+            Representation::SketchCurve => {
+                if native
+                    .sketch_curve_identities
+                    .iter()
+                    .any(|curve| curve.geometry.is_none())
+                {
+                    classes.insert(ArenaClass::Design);
+                }
+            }
+            Representation::Typed | Representation::Metadata | Representation::Export => {}
+        }
+    }
+    classes
+}
+
 #[cfg(test)]
 mod tests {
-    use super::F3dLossCode;
+    use super::{unrepresented, F3dLossCode, Representation, UNREPRESENTED};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn every_loss_has_a_source_representation_classification() {
+        assert_eq!(UNREPRESENTED.len(), F3dLossCode::ALL.len());
+        for code in F3dLossCode::ALL {
+            assert_eq!(
+                UNREPRESENTED
+                    .iter()
+                    .filter(|(entry, _)| entry == code)
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn every_source_only_loss_declares_its_missing_class() {
+        use cadmpeg_ir::document::ArenaClass::{Design, Model};
+        let native = crate::native::F3dNative::default();
+        for &(code, disposition) in UNREPRESENTED {
+            let classes = unrepresented(&[code.note("source-only test record")], &native);
+            match disposition {
+                Representation::Design => assert!(classes.contains(&Design), "{code:?}"),
+                Representation::Model => assert!(classes.contains(&Model), "{code:?}"),
+                Representation::Both => assert_eq!(classes, [Model, Design].into(), "{code:?}"),
+                Representation::Typed | Representation::Metadata | Representation::Export => {
+                    assert!(classes.is_empty(), "{code:?}");
+                }
+                Representation::ScopePayload | Representation::SketchCurve => {}
+            }
+        }
+    }
 
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
@@ -706,6 +1228,7 @@ mod tests {
                 "parameter.owner-unrecognized",
                 "parameter.unit-untyped",
                 "material.distance-unit-untyped",
+                "appearance.image-asset-untransferred",
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
@@ -773,6 +1296,19 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
+                "writer.native-records-omitted",
+                "writer.design-records-omitted",
+                "writer.geometry-omitted",
+                "writer.auxiliary-omitted",
+                "writer.procedural-reduced",
+                "writer.no-exportable-solids",
+                "writer.subd-omitted",
+                "writer.asset-omitted",
+                "writer.tessellation-omitted",
+                "writer.pcurve-omitted",
+                "writer.pmi-omitted",
+                "writer.product-omitted",
+                "writer.source-association-omitted",
                 "design.intent-undecoded",
             ]
         );

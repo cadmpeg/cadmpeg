@@ -74,7 +74,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         .unwrap();
         let record = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#100".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             class_tag: crate::records::references::DesignClassTag::try_from("331".to_owned())
                 .unwrap(),
             record_index: 100,
@@ -124,7 +124,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
         let member_record = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#200".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             class_tag: crate::records::references::DesignClassTag::try_from("290".to_owned())
                 .unwrap(),
             record_index: 200,
@@ -220,11 +220,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .unwrap();
         let identity = DesignConstructionOperandIdentity::try_new(
         crate::records::topology::construction::DesignConstructionOperandIdentityDraft {
+            ordinal: 0,
             id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
             group_record_index: 50,
             wrappers: vec![crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: 150,
-                byte_offset: 50,
+                byte_offset: Some(50),
                 class_tag: crate::records::references::DesignClassTag::try_from("289".to_owned())
                     .unwrap(),
             }],
@@ -261,6 +262,27 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         },
     )
     .unwrap();
+        // Overlapping identity prefixes keep their construction order after
+        // a CADIR reload, when no source position is held by either record.
+        let mut later_content = serde_json::to_value(&identity).unwrap();
+        later_content["id"] =
+            "f3d:Design/BulkStream.dat:design-construction-operand-identity#later".into();
+        later_content["ordinal"] = 1.into();
+        let mut earlier_content = later_content.clone();
+        earlier_content["id"] =
+            "f3d:Design/BulkStream.dat:design-construction-operand-identity#earlier".into();
+        earlier_content["ordinal"] = 0.into();
+        earlier_content["wrapper_record_indices"] = serde_json::json!([149, 150]);
+        earlier_content["wrapper_class_tags"] = serde_json::json!(["289", "289"]);
+        let earlier: DesignConstructionOperandIdentity =
+            serde_json::from_value(earlier_content).unwrap();
+        let later: DesignConstructionOperandIdentity =
+            serde_json::from_value(later_content).unwrap();
+        assert_eq!(earlier.following_byte_offset(), None);
+        assert_eq!(later.wrappers()[0].byte_offset, None);
+        let expected = [earlier.id.clone(), later.id.clone()];
+        bind_extrude_selection_identities(std::slice::from_mut(&mut member), &[later, earlier]);
+        assert_eq!(member.operand_identity_ids, expected);
         bind_extrude_selection_identities(
             std::slice::from_mut(&mut member),
             std::slice::from_ref(&identity),
@@ -309,8 +331,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             owner_reference: Some(172),
             class_tag: crate::records::references::DesignClassTag::try_from("270".to_owned())
                 .unwrap(),
-            byte_offset: 4000,
-            geometry_offset: 100,
+            byte_offset: None,
+            geometry_offset: None,
             entity_genesis: None,
             primary_id: std::num::NonZeroU64::new(586).unwrap(),
             secondary_id: 0,

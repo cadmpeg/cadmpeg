@@ -196,6 +196,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -206,7 +207,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
                     )
                     .unwrap(),
                 }),
-                distance: Length::new(4.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -268,12 +269,13 @@ fn generic_native_offset_plane_support_stays_native() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Face {
                     face: FaceSelection::Native(native.into()),
                 }),
-                distance: Length::new(4.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -335,6 +337,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -367,8 +370,8 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     let selection = |parent: &str, offset| FeatureInputSurfaceSelection {
         id: format!("selection-{parent}"),
         parent: parent.into(),
-        ordinal: 0,
-        offset,
+        ordinal: 0, sequence: 0,
+        offset: Some(offset),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -470,7 +473,9 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             panic!("expected cosmetic thread");
         };
         *face = cadmpeg_ir::features::FaceSelection::Unresolved;
-        *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
+        *diameter = Some(cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+        ));
     });
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
@@ -532,6 +537,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -562,8 +568,8 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
     let selection = |id: &str, tail: [u8; 12]| FeatureInputSurfaceSelection {
         id: id.into(),
         parent: id.into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -633,6 +639,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Unresolved,
@@ -695,6 +702,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -738,8 +746,8 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             .map(|(ordinal, local_id)| FeatureInputSurfaceSelection {
                 id: format!("selection-{ordinal}"),
                 parent: "lane".into(),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                offset: cadmpeg_core::decode::u64_from_index(ordinal),
+                ordinal: u32::try_from(ordinal).unwrap(), sequence: u32::try_from(ordinal).unwrap(),
+                offset: Some(cadmpeg_core::decode::u64_from_index(ordinal)),
                 selector: 0,
                 kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                 object_name_ref: "name".into(),
@@ -815,6 +823,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -852,8 +861,8 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         FeatureInputSurfaceSelection {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
-            ordinal,
-            offset: u64::from(ordinal),
+            ordinal, sequence: ordinal,
+            offset: Some(u64::from(ordinal)),
             selector,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "cut-name".into(),
@@ -940,6 +949,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -979,8 +989,8 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         |ordinal: u32, producer: &str, source: u32, local_id: u32| FeatureInputSurfaceSelection {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
-            ordinal,
-            offset: u64::from(ordinal),
+            ordinal, sequence: ordinal,
+            offset: Some(u64::from(ordinal)),
             selector: if ordinal == 0 { 6 } else { 4 },
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "plane-name".into(),
@@ -1066,6 +1076,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1098,8 +1109,8 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     let selection = |parent: &str, signature| FeatureInputSurfaceSelection {
         id: format!("selection-{parent}"),
         parent: parent.into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -1230,6 +1241,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1267,8 +1279,8 @@ fn split_face_collects_distinct_generated_target_faces() {
         FeatureInputSurfaceSelection {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
-            ordinal,
-            offset: u64::from(ordinal),
+            ordinal, sequence: ordinal,
+            offset: Some(u64::from(ordinal)),
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "split-name".into(),
@@ -1408,11 +1420,11 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         configurations: Vec::new(),
         features: vec![feature, next],
     };
-    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName { feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset,
+        ordinal: 0, sequence: 0,
+        offset: Some(offset),
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
@@ -1453,8 +1465,8 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     let selection = FeatureInputEdgeSelection {
         id: "edge".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 80,
+        ordinal: 0, sequence: 0,
+        offset: Some(80),
         object_name_ref: "feature-name".into(),
         feature_ref: "variable".into(),
         local_edge_ids: vec![7, 6, 1, 0],
@@ -1498,6 +1510,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -1599,11 +1612,11 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         configurations: Vec::new(),
         features: vec![feature, next],
     };
-    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName { feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset,
+        ordinal: 0, sequence: 0,
+        offset: Some(offset),
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
@@ -1644,8 +1657,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     let selection = FeatureInputEdgeSelection {
         id: "edge".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 80,
+        ordinal: 0, sequence: 0,
+        offset: Some(80),
         object_name_ref: "feature-name".into(),
         feature_ref: "variable".into(),
         local_edge_ids: vec![28, 29, 33, 4],
@@ -1717,8 +1730,8 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     let selection = FeatureInputEdgeSelection {
         id: "edge".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 80,
+        ordinal: 0, sequence: 0,
+        offset: Some(80),
         object_name_ref: "name".into(),
         feature_ref: "variable".into(),
         local_edge_ids: vec![28, 36, 4],
@@ -1765,8 +1778,8 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
         id: format!("{parent}-{offset}"),
         parent: parent.into(),
-        ordinal: 0,
-        offset,
+        ordinal: 0, sequence: 0,
+        offset: Some(offset),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),

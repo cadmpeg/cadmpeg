@@ -27,7 +27,7 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index: index,
@@ -61,6 +61,7 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
         );
     }
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#compact-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -70,7 +71,6 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

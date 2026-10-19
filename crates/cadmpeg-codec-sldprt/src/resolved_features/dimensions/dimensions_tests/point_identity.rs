@@ -53,7 +53,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         sketch_entities: vec![marker("center", 10, Some(10), Some(0), [0.010, 0.020])],
     };
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -191,7 +191,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let center = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 1,
@@ -312,7 +312,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,

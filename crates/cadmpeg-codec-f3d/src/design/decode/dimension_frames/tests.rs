@@ -823,7 +823,7 @@ fn companion_interval_ends_before_a_foreign_scope_member() {
         id: "f3d:native:record-header#55".into(),
         record_index: 55,
         class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
-        byte_offset: 70,
+        byte_offset: Some(70),
     };
     let admitted = super::companion_owned_interval(
         &companion,

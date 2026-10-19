@@ -4,3 +4,5 @@
 use super::DesignClassTag;
 
 rewrite_native_record!(DesignClassTag, []; (field0));
+
+rewrite_native_identity_record!(super::DesignMaterialAssignment; body_binding_id);

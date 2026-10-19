@@ -14,6 +14,7 @@ fn material_asset_attachment_preserves_tiff() {
         crate::native::om::material_texture::material_texture_assets(&container).unwrap();
     assert_eq!(textures.len(), 1);
     let scan = crate::decode::Scan {
+        source_untyped: Default::default(),
         container,
         streams: Vec::new(),
     };
@@ -45,6 +46,7 @@ fn material_asset_attachment_retains_the_tiff_copy() {
     let textures =
         crate::native::om::material_texture::material_texture_assets(&container).unwrap();
     let scan = crate::decode::Scan {
+        source_untyped: Default::default(),
         container,
         streams: Vec::new(),
     };

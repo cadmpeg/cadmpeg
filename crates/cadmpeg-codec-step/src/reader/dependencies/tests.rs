@@ -28,6 +28,16 @@ pub(crate) fn decode_reports_data_section_external_dependencies() {
         .notes
         .contains(&"external source https://example.invalid/library item fastener-table".into()));
 
+    assert_eq!(result.ir().model.assets.len(), 2);
+    assert!(result.ir().model.assets.iter().any(|asset| {
+        matches!(&asset.content, cadmpeg_ir::assets::AssetContent::External { uri }
+            if uri.as_str() == "SPEC-42")
+    }));
+    assert!(result.ir().model.assets.iter().any(|asset| {
+        matches!(&asset.content, cadmpeg_ir::assets::AssetContent::External { uri }
+            if uri.as_str() == "https://example.invalid/library")
+    }));
+
     let summary = StepCodec::default()
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect external document dependencies");
@@ -280,11 +290,11 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
     assert_eq!(
-        root_result.ir().source.as_ref().unwrap().attributes["entity_instances"],
+        root_result.source_fidelity().metadata["entity_instances"],
         "6"
     );
     assert_eq!(
-        target_result.ir().source.as_ref().unwrap().attributes["entity_instances"],
+        target_result.source_fidelity().metadata["entity_instances"],
         "6"
     );
 
@@ -793,7 +803,6 @@ fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
         .report()
         .notes
         .contains(&"external reference #11 -> https://example.invalid/./model.p21#shape".into()));
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
     assert!(!source
         .attributes
         .keys()
@@ -858,7 +867,6 @@ fn signed_resource_digest_and_timestamp_are_retained_without_cache_identity() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode signed cache witness without resource access");
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
     assert!(!source
         .attributes
         .keys()

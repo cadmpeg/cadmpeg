@@ -52,6 +52,29 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
     run(&ctx)
 }
 
+fn source_value<Q: cadmpeg_ir::features::DimensionValue>(
+    dimension: &cadmpeg_ir::Dimension<Q>,
+    features: &[Feature],
+) -> Q {
+    super::source_dimension_value(
+        dimension,
+        &[FeatureHistory {
+            id: "source-test".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: features.to_vec(),
+        }],
+    )
+    .expect("source control resolves from its actual source parameter")
+}
+
+fn source_binding<Q>(feature: &Feature, name: &str) -> cadmpeg_ir::Dimension<Q> {
+    super::parameter_dimension(feature, name)
+        .expect("source dimension has its canonical parameter identity")
+}
+
 #[test]
 fn feature_ids_preserve_native_key_escaping() {
     for (native, expected) in [
@@ -70,7 +93,7 @@ fn feature_ids_preserve_native_key_escaping() {
 }
 
 #[test]
-fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
+fn canonical_dependencies_participate_in_the_shared_regeneration_order() {
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -83,16 +106,17 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
         ],
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.features = project_features(&[history]).unwrap();
+    ir.model.features = project_features(std::slice::from_ref(&history)).unwrap();
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();
+    ir.model.features[0].dependencies.push(predecessor.clone());
     ir.model
         .configurations
         .push(cadmpeg_ir::features::DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId::mint("synthetic:test:id#configuration")
                 .expect("identity grammar"),
             ordinal: 0,
-            active: true,
+            active: false,
             source_index: None,
             name: Some("configuration".to_string()),
             material: None,
@@ -102,16 +126,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 consumer.clone(),
-                cadmpeg_ir::features::ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
-                    },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
-                        predecessor.clone(),
-                    ])
-                    .unwrap(),
-                    definition: ir.model.features[0].evaluation.definition().clone(),
-                },
+                cadmpeg_ir::features::ConfigurationFeatureState::Suppressed {},
             )]),
             native_ref: None,
         });
@@ -156,7 +171,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
                 }
             },
             ..
-        })) if actual_length.get() == 2.1
+        })) if source_value(&actual_length, std::slice::from_ref(&feature)).get() == 2.1
     ));
 }
 
@@ -182,7 +197,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
                 }
             },
             ..
-        })) if actual_length.get() == 6.4
+        })) if source_value(&actual_length, std::slice::from_ref(&feature)).get() == 6.4
     ));
 }
 
@@ -217,7 +232,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         features: vec![extrusion, profile],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:1"))
@@ -239,7 +254,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
             },
             op: BooleanOp::Join,
             ..
-        }) if (profile_ref == &profile.id) && actual_length.get() == 6.8
+        }) if (profile_ref == &profile.id) && source_value(actual_length, &history.features).get() == 6.8
     ));
 }
 
@@ -284,7 +299,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
         features: vec![extrusion, early_profile, origin_profile, preceding_profile],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:3"))
@@ -306,7 +321,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
             },
             op: BooleanOp::Cut,
             ..
-        }) if (profile_ref == &profile.id) && actual_length.get() == 4.2
+        }) if (profile_ref == &profile.id) && source_value(actual_length, &history.features).get() == 4.2
     ));
 }
 
@@ -398,14 +413,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&counterbore)
         .expect("read the hole sketch construction")
         .expect("required invariant");
-    assert_eq!(
-        construction.diameter,
-        cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
-    );
-    assert_eq!(
-        construction.depth,
-        Some(cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap())
-    );
+    assert_eq!(construction.diameter, source_binding(&counterbore, "e"));
+    assert_eq!(construction.depth, Some(source_binding(&counterbore, "d")));
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -415,7 +424,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
                 ..
             },
             ..
-        } if actual_diameter.get() == 9.0 && actual_depth.get() == 5.7
+        } if source_value(&actual_diameter, std::slice::from_ref(&counterbore)).get() == 9.0 && source_value(&actual_depth, std::slice::from_ref(&counterbore)).get() == 5.7
     ));
 
     let threaded = profile(&[
@@ -428,14 +437,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&threaded)
         .expect("read the hole sketch construction")
         .expect("required invariant");
-    assert_eq!(
-        construction.diameter,
-        cadmpeg_ir::scalar::PositiveLength::new(4.2).unwrap()
-    );
-    assert_eq!(
-        construction.depth,
-        Some(cadmpeg_ir::scalar::PositiveLength::new(12.4).unwrap())
-    );
+    assert_eq!(construction.diameter, source_binding(&threaded, "a"));
+    assert_eq!(construction.depth, Some(source_binding(&threaded, "b")));
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
@@ -443,7 +446,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
             thread_depth: actual_thread_depth,
             pitch: None,
             ..
-        } if actual_major_diameter.get() == 5.0 && actual_thread_depth.get() == 10.0
+        } if source_value(&actual_major_diameter, std::slice::from_ref(&threaded)).get() == 5.0 && source_value(&actual_thread_depth, std::slice::from_ref(&threaded)).get() == 10.0
     ));
 
     let tapered_thread = profile(&[
@@ -457,13 +460,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&tapered_thread)
         .expect("read the hole sketch construction")
         .expect("tapered thread profile");
-    assert_eq!(
-        construction.diameter,
-        cadmpeg_ir::scalar::PositiveLength::new(8.43).unwrap()
-    );
+    assert_eq!(construction.diameter, source_binding(&tapered_thread, "d"));
     assert_eq!(
         construction.depth,
-        Some(cadmpeg_ir::scalar::PositiveLength::new(11.62).unwrap())
+        Some(source_binding(&tapered_thread, "e"))
     );
     assert!(matches!(
         construction.construction,
@@ -472,18 +472,18 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
             thread_depth: actual_thread_depth,
             pitch: None,
             drill_point_angle: angle,
-        } if ((angle.get() - 118_f64.to_radians()).abs() < 1.0e-12) && actual_major_diameter.get() == 10.29 && actual_thread_depth.get() == 6.92
+        } if ((source_value(&angle, std::slice::from_ref(&tapered_thread)).get() - 118_f64.to_radians()).abs() < 1.0e-12) && source_value(&actual_major_diameter, std::slice::from_ref(&tapered_thread)).get() == 10.29 && source_value(&actual_thread_depth, std::slice::from_ref(&tapered_thread)).get() == 6.92
     ));
     assert_eq!(
         construction.bottom,
         Some(HoleBottom::Angled {
-            included_angle: cadmpeg_ir::scalar::InteriorAngle::new(118_f64.to_radians()).unwrap(),
+            included_angle: source_binding(&tapered_thread, "c"),
             depth_to_tip: false,
         })
     );
     assert_eq!(
         construction.taper_angle,
-        Some(cadmpeg_ir::scalar::InteriorAngle::new(3.43_f64.to_radians()).unwrap())
+        Some(source_binding(&tapered_thread, "a"))
     );
 
     let counterbore_with_exit_countersink = profile(&[
@@ -499,24 +499,24 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         .expect("dual-ended profile");
     assert_eq!(
         construction.diameter,
-        cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap()
+        source_binding(&counterbore_with_exit_countersink, "e")
     );
     assert_eq!(
         construction.depth,
-        Some(cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap())
+        Some(source_binding(&counterbore_with_exit_countersink, "d"))
     );
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-            depth: cadmpeg_ir::scalar::PositiveLength::new(4.6).unwrap()
+            diameter: source_binding(&counterbore_with_exit_countersink, "b"),
+            depth: source_binding(&counterbore_with_exit_countersink, "a")
         })
     );
     assert_eq!(
         construction.exit_kind,
         Some(HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.55).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            diameter: source_binding(&counterbore_with_exit_countersink, "f"),
+            angle: source_binding(&counterbore_with_exit_countersink, "c"),
         })
     );
 
@@ -532,30 +532,24 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&counterdrill)
         .expect("read the hole sketch construction")
         .expect("counterdrill profile");
-    assert_eq!(
-        construction.diameter,
-        cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
-    );
-    assert_eq!(
-        construction.depth,
-        Some(cadmpeg_ir::scalar::PositiveLength::new(12.4).unwrap())
-    );
+    assert_eq!(construction.diameter, source_binding(&counterdrill, "b"));
+    assert_eq!(construction.depth, Some(source_binding(&counterdrill, "a")));
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                cadmpeg_ir::scalar::PositiveLength::new(9.95).unwrap(),
-                Some(cadmpeg_ir::scalar::PositiveLength::new(10.05).unwrap())
+                source_binding(&counterdrill, "g"),
+                Some(source_binding(&counterdrill, "d"))
             )
             .unwrap(),
-            depth: cadmpeg_ir::scalar::PositiveLength::new(5.4).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            depth: source_binding(&counterdrill, "f"),
+            angle: source_binding(&counterdrill, "e"),
         })
     );
     assert_eq!(
         construction.bottom,
         Some(HoleBottom::Angled {
-            included_angle: cadmpeg_ir::scalar::InteriorAngle::new(118_f64.to_radians()).unwrap(),
+            included_angle: source_binding(&counterdrill, "c"),
             depth_to_tip: false,
         })
     );
@@ -602,7 +596,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let projected = project_hole(
         &native_owned,
         &HashMap::new(),
-        &[native_owned.clone(), native_profile],
+        &[native_owned.clone(), native_profile.clone()],
     )
     .expect("project hole")
     .unwrap();
@@ -613,7 +607,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
                 length: actual_length
             }),
             ..
-        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.6 && actual_length.get() == 9.4)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if source_value(actual_diameter, std::slice::from_ref(&native_profile)).get() == 6.6 && source_value(&actual_length, std::slice::from_ref(&native_profile)).get() == 9.4)));
 
     let mut canonical = feature("hole", Some("8"), 0);
     canonical.parameters = [
@@ -659,10 +653,18 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let Some(diameter) = &shape.diameter() else {
         panic!("expected canonical threaded hole: {projected:?}");
     };
-    assert!((diameter.get() - 4.2).abs() < 1.0e-12);
-    assert!((major_diameter.get() - 5.0).abs() < 1.0e-12);
-    assert!((thread_depth.get() - 10.0).abs() < 1.0e-12);
-    assert!((length.get() - 12.4).abs() < 1.0e-12);
+    assert!(
+        (source_value(&diameter, std::slice::from_ref(&canonical)).get() - 4.2).abs() < 1.0e-12
+    );
+    assert!(
+        (source_value(&major_diameter, std::slice::from_ref(&canonical)).get() - 5.0).abs()
+            < 1.0e-12
+    );
+    assert!(
+        (source_value(&thread_depth, std::slice::from_ref(&canonical)).get() - 10.0).abs()
+            < 1.0e-12
+    );
+    assert!((source_value(&length, std::slice::from_ref(&canonical)).get() - 12.4).abs() < 1.0e-12);
 }
 
 #[test]
@@ -1114,7 +1116,7 @@ fn length_plane_parameter_claims_offset_semantics() {
         .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
-            distance: Length::new(70.0).unwrap(),
+            distance: cadmpeg_ir::Dimension::Literal(Length::new(70.0).unwrap()),
         })
     );
 }
@@ -1340,11 +1342,16 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     let construction = hole_sketch_construction(&profile)
         .expect("read the hole sketch construction")
         .expect("fallback hole dimensions");
-    assert_eq!(construction.diameter.get(), 5.0);
     assert_eq!(
-        construction
-            .depth
-            .map(cadmpeg_ir::scalar::PositiveLength::get),
+        source_value(&construction.diameter, std::slice::from_ref(&profile)).get(),
+        5.0
+    );
+    assert_eq!(
+        construction.depth.as_ref().map(|dimension| source_value(
+            dimension,
+            std::slice::from_ref(&profile)
+        )
+        .get()),
         Some(9.0)
     );
     profile

@@ -11,6 +11,7 @@ fn predecessor_document() -> CadIr {
     let mut ir = CadIr::empty();
     for (key, ordinal) in [("0-parent", 0), ("1-child", 1)] {
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: format!("test:parent-wire:feature#{key}")
                 .try_into()
                 .unwrap(),

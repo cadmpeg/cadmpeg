@@ -114,6 +114,7 @@ pub(crate) fn transfer(
                 external_document: prototype_link.and_then(|link| link.document()).cloned(),
                 local_transform,
                 placement_property,
+                scale,
                 array: crate::native::LinkArray::try_new(
                     element_count,
                     parse_placement_list(&owned, entries)?,
@@ -134,7 +135,6 @@ pub(crate) fn transfer(
                     copy_on_change_touched,
                 )
                 .map_err(malformed)?,
-                scale,
             })),
             ProductKind::Group => ProductNode::Group(ContainerNode {
                 members,
@@ -257,6 +257,22 @@ pub(crate) fn transfer_neutral(
             }
         }
     }
+    // Explicit typed controls distinguish standalone product definitions from
+    // application objects used only to carry geometry or native organization.
+    for object in objects {
+        if crate::writer::products::metadata::included(properties, object.id().as_str(), true)?
+            == Some(true)
+        {
+            component_objects.push(object.id().as_str());
+        }
+    }
+    let mut controlled_components = Vec::new();
+    for object in component_objects {
+        if crate::writer::products::metadata::included(properties, object, true)? != Some(false) {
+            controlled_components.push(object);
+        }
+    }
+    let mut component_objects = controlled_components;
     component_objects.sort_unstable_by(Ord::cmp);
     component_objects.dedup();
 
@@ -290,11 +306,27 @@ pub(crate) fn transfer_neutral(
         OccurrenceId::mint(crate::native::model_id("occurrence", object, "container"))
             .map_err(CodecError::malformed)
     };
+    let parent_occurrence_id = |object: &str| -> Result<OccurrenceId, CodecError> {
+        if let Some(record) = record_by_object
+            .get(object)
+            .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
+        {
+            let key = if occurrence_count(record)?.get() > 1 {
+                "0"
+            } else {
+                "instance"
+            };
+            OccurrenceId::mint(crate::native::model_id("occurrence", object, key))
+                .map_err(CodecError::malformed)
+        } else {
+            container_occurrence_id(object)
+        }
+    };
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records.iter().filter(|record| {
         matches!(
             record.node,
-            ProductNode::Part(_) | ProductNode::LinkGroup { .. }
+            ProductNode::Part(_) | ProductNode::LinkGroup { .. } | ProductNode::Occurrence(_)
         )
     }) {
         // Ordinary document groups organize objects without owning placements.
@@ -319,10 +351,15 @@ pub(crate) fn transfer_neutral(
         .iter()
         .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
     {
+        if crate::writer::products::metadata::included(properties, &record.object, false)?
+            == Some(false)
+        {
+            continue;
+        }
         let count = occurrence_count(record)?.get();
         let parent = parent_by_object
             .get(record.object.as_str())
-            .map(|object| container_occurrence_id(object))
+            .map(|object| parent_occurrence_id(object))
             .transpose()?;
         let mut record_prototype_transform = None;
         for index in 0..count {
@@ -356,11 +393,15 @@ pub(crate) fn transfer_neutral(
             let base_scale = record.scale().unwrap_or([1.0; 3]);
             let scale: [f64; 3] =
                 std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
-            let [x, y, z] = scale.map(|value| {
-                cadmpeg_ir::scalar::FiniteReal::new(value)
-                    .ok_or_else(|| CodecError::Malformed("occurrence scale must be finite".into()))
-            });
-            let scale = [x?, y?, z?];
+            let scale_transform = Transform::affine([
+                [scale[0], 0.0, 0.0, 0.0],
+                [0.0, scale[1], 0.0, 0.0],
+                [0.0, 0.0, scale[2], 0.0],
+            ])
+            .ok_or_else(|| malformed("occurrence scale must be finite"))?;
+            let local_transform = local_transform
+                .compose(scale_transform)
+                .map_err(|error| malformed(error.to_string()))?;
             let copy_on_change = record
                 .copy_on_change_policy()
                 .map(|policy| {
@@ -418,9 +459,8 @@ pub(crate) fn transfer_neutral(
                 transform: local_transform,
                 linked_prototype: (record.link_transform() == Some(true))
                     .then_some(prototype_transform),
-                scale,
                 name: Some(record.object.clone()),
-                visible: None,
+                visible: record.element_visibility().get(index).copied(),
                 link: LinkState::new(
                     record.linked_subelements().to_vec(),
                     record
@@ -497,7 +537,12 @@ pub(crate) fn transfer_neutral(
             id: definition_id(object)?,
             kind,
             source_name: source_object.map(|object| object.name().to_owned()),
-            label: metadata_string(ctx, owned, "Label")?,
+            label: match metadata_string(ctx, owned, "CadmpegProductLabel")? {
+                Some(label) => {
+                    serde_json::from_str::<Option<String>>(&label).unwrap_or(Some(label))
+                }
+                None => metadata_string(ctx, owned, "Label")?,
+            },
             description: metadata_string(ctx, owned, "Description")?,
             part_number: metadata_string(ctx, owned, "PartNumber")?
                 .filter(|value| !value.is_empty())
@@ -509,6 +554,9 @@ pub(crate) fn transfer_neutral(
     }
 
     for object in &component_objects {
+        if crate::writer::products::metadata::included(properties, object, false)? == Some(false) {
+            continue;
+        }
         let record = record_by_object.get(*object).copied();
         let local_transform = record
             .and_then(ProductNodeRecord::local_transform)
@@ -518,7 +566,7 @@ pub(crate) fn transfer_neutral(
         let parent = parent_by_object.get(*object).copied();
         let parent = match parent {
             Some(parent) => OccurrenceParent::Occurrence {
-                occurrence: container_occurrence_id(parent)?,
+                occurrence: parent_occurrence_id(parent)?,
             },
             None => OccurrenceParent::Root {},
         };
@@ -531,7 +579,6 @@ pub(crate) fn transfer_neutral(
             ordinal: 0,
             transform: local_transform,
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some((*object).to_owned()),
             visible: None,
             link: None,
@@ -550,6 +597,7 @@ pub(crate) fn transfer_neutral(
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
     }
+    crate::writer::products::metadata::apply(properties, &mut definitions, &mut occurrences)?;
     Ok((definitions, occurrences))
 }
 

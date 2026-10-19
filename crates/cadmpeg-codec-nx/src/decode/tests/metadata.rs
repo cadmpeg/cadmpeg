@@ -27,7 +27,10 @@ fn decoded_unknown_limit_error(
         Vec::new(),
     );
     let body = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -77,11 +80,15 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
         })
         .expect("the cache is empty");
     let scan = super::super::Scan {
+        source_untyped: Default::default(),
         container,
         streams: Vec::new(),
     };
     let mut body = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),

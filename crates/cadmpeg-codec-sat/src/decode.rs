@@ -21,14 +21,32 @@ use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    match classify(bytes) {
+    let mut decoded = match classify(bytes) {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
         Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),
         None => Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         )),
+    }?;
+    if ctx.container_only() {
+        // The partition was not framed. Preserve the real source image's
+        // identity and state that its model records were not projected.
+        decoded.source_fidelity.insert_retained_record(
+            cadmpeg_ir::ids::UnknownId::mint("sat:source:omitted-partition#0")
+                .map_err(CodecError::malformed)?,
+            cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
+                "sat:source",
+                0,
+                cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
+                },
+            )?
+            .with_untyped([cadmpeg_ir::ArenaClass::Model].into_iter().collect()),
+        )?;
     }
+    Ok(decoded)
 }
 
 fn decode_asm_binary(
@@ -370,11 +388,18 @@ fn retain_source<'a>(
     extents: impl IntoIterator<Item = (&'a str, std::ops::Range<usize>)>,
 ) -> Result<(), CodecError> {
     let mut retained = Vec::new();
+    let mut untyped = Vec::new();
     for (id, span) in extents {
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(span.len()),
             "SAT recovered source bytes",
         )?;
+        if !matches!(
+            id,
+            "sat:source:header#0" | "sat:source:concatenated-streams#0"
+        ) {
+            untyped.push(id.to_owned());
+        }
         retained.push(cadmpeg_ir::UnknownRecord::retained(
             cadmpeg_ir::ids::UnknownId::mint(id.to_owned()).map_err(CodecError::malformed)?,
             cadmpeg_core::decode::u64_from_index(span.start),
@@ -387,7 +412,13 @@ fn retain_source<'a>(
     }
     result
         .source_fidelity
-        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)
+        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)?;
+    for id in untyped {
+        result
+            .source_fidelity
+            .mark_untyped(&id, [cadmpeg_ir::ArenaClass::Model])?;
+    }
+    Ok(())
 }
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
@@ -429,6 +460,11 @@ fn build_result(
             })?,
         cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
+    ir.scope = if ctx.container_only() {
+        cadmpeg_ir::ContentScope::container()
+    } else {
+        cadmpeg_ir::ContentScope::full()
+    };
     let mut losses = Vec::new();
     if text_dialect.is_none() {
         crate::loss::binary_header_losses(header, &mut losses);
@@ -457,7 +493,10 @@ fn build_result(
             ir,
             body: DecodeBody {
                 losses,
-                ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {})
+                ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+                    scope: cadmpeg_ir::ContentScope::container(),
+                    geometry_transferred: false,
+                })
             },
             source_fidelity: cadmpeg_ir::SourceFidelity::default(),
         });
@@ -499,7 +538,7 @@ fn build_result(
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     losses.extend(dialect_loss(kernel));
-    if !geometry_transferred {
+    if !geometry_transferred && !unknowns.is_empty() {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{}`.", terminator_line(dialect))
         });
@@ -537,9 +576,10 @@ fn build_result(
     let body = DecodeBody {
         coverage,
         losses,
-        ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(
-            geometry_transferred,
-        ))
+        ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: ir.scope,
+            geometry_transferred: geometry_transferred,
+        })
     };
 
     let mut annotations = AnnotationBuilder::new();
@@ -559,7 +599,19 @@ fn build_result(
         }
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
+    let untyped = unknowns
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            // Invalid native tolerance evidence does not omit the owning geometry.
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().to_string())
+        .collect::<Vec<_>>();
     source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
+    for id in untyped {
+        source_fidelity.mark_untyped(&id, [cadmpeg_ir::ArenaClass::Model])?;
+    }
     Ok(Decoded {
         ir,
         body,

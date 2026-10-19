@@ -23,7 +23,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
 use crate::application::artifact_store::{OptionalFileDestination, OutputDestinations};
-use crate::application::transcoder::{ConversionDestinations, DestinationPolicy, LossPolicy};
+use crate::application::transcoder::{
+    ConversionDestinations, DestinationPolicy, LossFloor, LossPolicy,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -172,6 +174,9 @@ enum Command {
             value_name = "SCOPE"
         )]
         reject_lossy: Option<LossPolicy>,
+        /// Minimum loss severity refused by --reject-lossy.
+        #[arg(long, value_enum, default_value = "info", value_name = "SEVERITY")]
+        reject_lossy_floor: LossFloor,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -405,11 +410,13 @@ fn main() -> ExitCode {
             allow_empty,
             full_decode,
             reject_lossy,
+            reject_lossy_floor,
             input_args,
             decode,
         } => {
             let conversion_args = commands::ConversionArgs {
                 losses: reject_lossy.unwrap_or_default(),
+                loss_floor: reject_lossy_floor,
                 allow_errors,
                 allow_empty,
                 full_decode,

@@ -186,3 +186,5 @@ fn parameter_summary_counts_an_empty_record_set() {
         ]
     );
 }
+
+mod document_wire;

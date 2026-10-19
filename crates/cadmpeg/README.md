@@ -99,6 +99,15 @@ IGES, and Rhino output decodes geometry and skips design intent, so the decode
 report lists no loss in sketches, features, or history. `--full-decode`, and
 every `--reject-lossy` scope, decode the whole source whatever the output.
 
+`--reject-lossy=decode` judges the current input decode. Reading CADIR is
+lossless; a decode report restored from its sidecar is printed as history.
+`--reject-lossy=export` judges export losses, and bare `--reject-lossy` judges
+both phases. `--reject-lossy-floor=info|warning|error|blocking` selects the
+minimum refused severity; the default is `info`. A document scope that excludes
+a content class prints a note under any loss policy and does not refuse the
+write. After editing CADIR, re-bind its sidecar with
+`DecodeSidecar::bind_sha256`; a stale sidecar still refuses the artifact.
+
 ## Inspect, dump, and check
 
 Inspect a native container without decoding its model:
@@ -125,10 +134,13 @@ cadmpeg check bracket.cadir.json
 cadmpeg check bracket.f3d --json
 ```
 
-`--container-only` stops native decoding before geometry and records container
-depth. It is useful for container diagnostics. `convert` writes such a document
-to CADIR only: every other output refuses it (`insufficient_depth`, exit 1),
-and `--allow-empty` does not override that.
+`--container-only` stops native decoding before geometry and delivers an empty
+content scope. It is useful for container diagnostics. The CLI permits only
+CADIR output with this flag; `--allow-empty` does not override this caller
+policy. Writers synthesize from what the document holds. Native patch and
+replay require all retained source
+records to have typed document representations; otherwise the writer uses
+synthesis.
 
 ## Read raw bytes
 

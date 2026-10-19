@@ -28,6 +28,23 @@ fn target_selected(target: &AttributeTarget, reachable: &HashSet<String>) -> boo
         AttributeTarget::Coedge(id) => id.as_str(),
         AttributeTarget::Edge(id) => id.as_str(),
         AttributeTarget::Vertex(id) => id.as_str(),
+        AttributeTarget::Region(id) => id.as_str(),
+        AttributeTarget::Surface(id) => id.as_str(),
+        AttributeTarget::Curve(id) => id.as_str(),
+        AttributeTarget::Point(id) => id.as_str(),
+        // This operation extracts a B-rep graph; owners outside that graph
+        // are retained by their own document projection, not this subset.
+        AttributeTarget::Feature(_)
+        | AttributeTarget::Sketch(_)
+        | AttributeTarget::Parameter(_)
+        | AttributeTarget::ProductDefinition(_)
+        | AttributeTarget::Occurrence(_)
+        | AttributeTarget::Tessellation(_)
+        | AttributeTarget::Pmi(_)
+        | AttributeTarget::SemanticAnnotation(_)
+        | AttributeTarget::Drawing(_)
+        | AttributeTarget::ViewPresentation(_)
+        | AttributeTarget::Source { .. } => return false,
     };
     reachable.contains(id)
 }

@@ -554,6 +554,17 @@ fn parse_properties(
         } else {
             Vec::new()
         };
+        if payload_error.is_none() {
+            if let Err(error) = validate_scalar_payload(node, &type_name) {
+                let detail = error.to_string();
+                losses.push(
+                    crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
+                        "property {owner}/{name} is unreadable: {detail}; exact XML retained"
+                    )),
+                );
+                payload_error = Some(detail);
+            }
+        }
         // Nested value elements copy overlapping XML ranges, so their total
         // is bounded per property. A larger payload stays as its exact XML.
         let value_xml_bytes = node
@@ -574,18 +585,24 @@ fn parse_properties(
             payload_error = Some(detail);
         }
         let mut values = Vec::new();
+        let mut value_indices = HashMap::new();
         for (value_order, value) in node
             .descendants()
             .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
             .enumerate()
         {
+            value_indices.insert(value.id(), value_order);
             values.push(ValueRecord {
+                parent: value
+                    .parent()
+                    .and_then(|parent| value_indices.get(&parent.id()).copied()),
                 tag: value.tag_name().name().to_owned(),
                 order: value_order,
                 attributes: value
                     .attributes()
                     .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
                     .collect(),
+                decoded_json: decode_python_json(value).map(Into::into),
                 text: value.text().map(str::to_owned),
                 raw_xml: text[value.range()].to_owned(),
             });
@@ -649,7 +666,7 @@ pub(crate) fn validate_link_property(
     parse_link_targets(property, grammar_type).map(|_| ())
 }
 
-fn parse_link_targets(
+pub(crate) fn parse_link_targets(
     property: roxmltree::Node<'_, '_>,
     type_name: &str,
 ) -> Result<Vec<Option<LinkTarget>>, CodecError> {
@@ -1031,5 +1048,143 @@ fn bool_attr(value: Option<&str>) -> Option<bool> {
     value.map(|value| matches!(value, "1" | "true" | "True" | "TRUE"))
 }
 
+pub(crate) fn scalar_value_tag(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        "App::PropertyBool" => Some("Bool"),
+        "App::PropertyEnumeration"
+        | "App::PropertyInteger"
+        | "App::PropertyIntegerConstraint"
+        | "App::PropertyPercent" => Some("Integer"),
+        "App::PropertyFloat"
+        | "App::PropertyFloatConstraint"
+        | "App::PropertyPrecision"
+        | "App::PropertyAcceleration"
+        | "App::PropertyAmountOfSubstance"
+        | "App::PropertyAngle"
+        | "App::PropertyArea"
+        | "App::PropertyCompressiveStrength"
+        | "App::PropertyCurrentDensity"
+        | "App::PropertyDensity"
+        | "App::PropertyDissipationRate"
+        | "App::PropertyDistance"
+        | "App::PropertyDynamicViscosity"
+        | "App::PropertyElectricalCapacitance"
+        | "App::PropertyElectricalConductance"
+        | "App::PropertyElectricalConductivity"
+        | "App::PropertyElectricalInductance"
+        | "App::PropertyElectricalResistance"
+        | "App::PropertyElectricCharge"
+        | "App::PropertySurfaceChargeDensity"
+        | "App::PropertyVolumeChargeDensity"
+        | "App::PropertyElectricCurrent"
+        | "App::PropertyElectricPotential"
+        | "App::PropertyElectromagneticPotential"
+        | "App::PropertyFrequency"
+        | "App::PropertyForce"
+        | "App::PropertyHeatFlux"
+        | "App::PropertyInverseArea"
+        | "App::PropertyInverseLength"
+        | "App::PropertyInverseVolume"
+        | "App::PropertyKinematicViscosity"
+        | "App::PropertyLength"
+        | "App::PropertyLuminousIntensity"
+        | "App::PropertyMagneticFieldStrength"
+        | "App::PropertyMagneticFlux"
+        | "App::PropertyMagneticFluxDensity"
+        | "App::PropertyMagnetization"
+        | "App::PropertyMass"
+        | "App::PropertyMoment"
+        | "App::PropertyPressure"
+        | "App::PropertyPower"
+        | "App::PropertyQuantity"
+        | "App::PropertyQuantityConstraint"
+        | "App::PropertyShearModulus"
+        | "App::PropertySpecificEnergy"
+        | "App::PropertySpecificHeat"
+        | "App::PropertySpeed"
+        | "App::PropertyStiffness"
+        | "App::PropertyStiffnessDensity"
+        | "App::PropertyStress"
+        | "App::PropertyTemperature"
+        | "App::PropertyThermalConductivity"
+        | "App::PropertyThermalExpansionCoefficient"
+        | "App::PropertyThermalTransferCoefficient"
+        | "App::PropertyTime"
+        | "App::PropertyUltimateTensileStrength"
+        | "App::PropertyVacuumPermittivity"
+        | "App::PropertyVelocity"
+        | "App::PropertyVolume"
+        | "App::PropertyVolumeFlowRate"
+        | "App::PropertyVolumetricThermalExpansionCoefficient"
+        | "App::PropertyWork"
+        | "App::PropertyYieldStrength"
+        | "App::PropertyYoungsModulus" => Some("Float"),
+        _ => None,
+    }
+}
+
+fn validate_scalar_payload(
+    node: roxmltree::Node<'_, '_>,
+    type_name: &str,
+) -> Result<(), CodecError> {
+    // Enumeration persistence also has typed label-list forms; only a numeric
+    // scalar's spelling is admitted here. Label-list enums remain native.
+    if type_name == "App::PropertyEnumeration" {
+        return Ok(());
+    }
+
+    let Some(tag) = scalar_value_tag(type_name) else {
+        return Ok(());
+    };
+    let value = single_value_element(node, tag, type_name)?
+        .attribute("value")
+        .ok_or_else(|| CodecError::malformed(format_args!("{type_name} {tag} value is absent")))?;
+    let valid = match tag {
+        "Float" => value.parse::<f64>().is_ok_and(f64::is_finite),
+        "Integer" => value.parse::<i64>().is_ok(),
+        "Bool" => crate::native::parse_bool(value).is_some(),
+        _ => true,
+    };
+    if !valid {
+        return Err(CodecError::malformed(format_args!(
+            "{type_name} {tag} value {value:?} is invalid"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// Pickled Python object state is opaque even when embedded in XML attributes.
+/// A typed XML tree does not turn a serialized language-object blob into a
+/// validated native construction record.
+pub(crate) fn opaque_python_payload(property: &PropertyRecord) -> bool {
+    property.type_name.contains("PropertyPythonObject")
+        && property.values().iter().any(|value| {
+            value.decoded_json.is_none()
+                && (value
+                    .text
+                    .as_ref()
+                    .is_some_and(|text| !text.trim().is_empty())
+                    || value.attributes.iter().any(|(key, value)| {
+                        !matches!(key.as_str(), "file" | "File" | "name" | "Name")
+                            && !value.is_empty()
+                    }))
+        })
+}
+
+/// JSON-mode Python persistence is inert data and is decoded without executing Python.
+fn decode_python_json(value: roxmltree::Node<'_, '_>) -> Option<serde_json::Value> {
+    use base64::Engine;
+    if value.tag_name().name() != "Python" || value.attribute("json") != Some("yes") {
+        return None;
+    }
+    let raw = value.attribute("value")?;
+    if value.attribute("encoded") == Some("yes") {
+        let decoded = base64::engine::general_purpose::STANDARD.decode(raw).ok()?;
+        serde_json::from_slice(&decoded).ok()
+    } else {
+        serde_json::from_str(raw).ok()
+    }
+}

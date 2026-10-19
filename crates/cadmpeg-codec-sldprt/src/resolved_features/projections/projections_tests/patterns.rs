@@ -23,6 +23,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };

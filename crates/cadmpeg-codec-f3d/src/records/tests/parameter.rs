@@ -17,7 +17,7 @@ fn draft() -> DesignParameterDraft {
         source: DesignParameterSource::User {
             family_discriminator: Located {
                 value: DesignParameterDiscriminator::Code0,
-                offset: 122,
+                offset: Some(122),
             },
         },
         expression: "-1 mm".into(),
@@ -35,26 +35,30 @@ fn draft() -> DesignParameterDraft {
 }
 
 #[test]
-fn parameter_rejects_empty_text_and_unlocated_units() {
+fn parameter_rejects_empty_text_and_source_layout_keys() {
     let wire = serde_json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
     for field in ["expression", "name", "unit"] {
         let mut invalid = wire.clone();
         invalid[field] = json!("");
-        assert!(serde_json::from_value::<DesignParameter>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains(field));
+        assert!(
+            serde_json::from_value::<DesignParameter>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field)
+        );
     }
     let mut invalid = wire;
-    invalid.as_object_mut().unwrap().remove("unit_offset");
-    assert!(serde_json::from_value::<DesignParameter>(invalid)
-        .unwrap_err()
-        .to_string()
-        .contains("unit_offset"));
+    invalid["unit_offset"] = json!(170);
+    assert!(
+        serde_json::from_value::<DesignParameter>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("unit_offset")
+    );
 }
 
 #[test]
-fn parameter_rejects_unordered_offsets_on_the_wire() {
+fn parameter_wire_rejects_source_layout_columns() {
     let wire = serde_json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
     for (field, value) in [
         ("byte_offset", 140),
@@ -93,19 +97,41 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
         assert_eq!(edited, parameter);
     }
     let mut edited = parameter.clone();
-    assert!(edited
-        .try_set_source(DesignParameterSource::User {
-            family_discriminator: Located {
-                value: DesignParameterDiscriminator::Code0,
-                offset: 121
-            }
-        })
-        .is_err());
+    assert!(
+        edited
+            .try_set_source(DesignParameterSource::User {
+                family_discriminator: Located {
+                    value: DesignParameterDiscriminator::Code0,
+                    offset: Some(121)
+                }
+            })
+            .is_err()
+    );
     assert_eq!(edited, parameter);
     assert!(edited.try_set_unit_value(String::new()).is_err());
     assert_eq!(edited, parameter);
     for value in [-1.0, -0.0, 0.0, f64::MAX] {
         edited.try_set_evaluated_value(value).unwrap();
         assert_eq!(edited.evaluated_value().get().to_bits(), value.to_bits());
+    }
+}
+
+#[test]
+fn source_parameter_admission_checks_actual_field_order() {
+    for (field, offset) in [
+        ("expression", 100),
+        ("expression", 160),
+        ("source_kind", 180),
+        ("name", 190),
+        ("evaluated", 180),
+    ] {
+        let mut input = draft();
+        match field {
+            "expression" => input.expression_offset = offset,
+            "source_kind" => input.source_kind_offset = offset,
+            "name" => input.name_offset = offset,
+            _ => input.evaluated_value_offset = offset,
+        }
+        assert!(DesignParameter::try_from(input).is_err(), "{field}");
     }
 }

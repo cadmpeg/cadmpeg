@@ -6,8 +6,8 @@
 //! [`DecodeDepth::Full`] and at [`DecodeDepth::Geometry`] through the public
 //! [`Codec::decode`] path and asserts that:
 //!
-//! - each document records at least the depth its decode requested;
-//! - a document below `Full` holds no record in a design arena;
+//! - each document holds every populated arena class;
+//! - missing requested classes have a `depth.not-delivered` loss;
 //! - the documents agree on every model arena outside the design class, on
 //!   units, on tolerances, and on source identity;
 //! - every validation finding over the geometry document, neutral and
@@ -17,23 +17,25 @@
 //!
 //! The comparison is exact. Both decodes run in one process over the same
 //! bytes, so a cut that leaves geometry untouched reproduces it bit for bit.
-//! Native namespaces are not compared: a cut may drop the native records that
-//! only design projection derives. Source attributes holding a local digest
-//! are not compared either: they fingerprint the whole document, design arenas
-//! included, as the replay baseline of the source format's own writer. A cut
-//! is therefore sound only in a codec whose own encoder needs `Full`.
+//! Native namespaces are not compared: a cut may omit typed native records
+//! produced only during design projection. Model PMI is compared through its
+//! resolved canonical nominal; attributes owned by design entities are outside
+//! the geometry projection. Every document source attribute remains content.
 //!
-//! A codec without a cut delivers `Full` for the geometry request and passes on
-//! the same terms; [`DepthSummary::cut`] counts the inputs where it did not.
+//! A cut is sound because source records absent from every typed arena are
+//! declared in `unrepresented`. Patch and replay cannot consume such a source;
+//! synthesis writes only content the document holds. The full decode's
+//! unrepresented classes must therefore be a subset of the geometry decode's.
+//! A codec may overdeliver design for a geometry request; [`DepthSummary::cut`]
+//! counts the inputs for which it delivers model scope without design.
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
-use cadmpeg_ir::compare::is_local_digest_attribute;
 use cadmpeg_ir::validate::validate_neutral;
-use cadmpeg_ir::{ArenaClass, ArenaName, CadIr};
+use cadmpeg_ir::{ArenaClass, CadIr};
 use serde_json::Value;
 
 /// Outcome counts of one depth-harness run.
@@ -41,7 +43,7 @@ use serde_json::Value;
 pub struct DepthSummary {
     /// Inputs compared.
     pub inputs: usize,
-    /// Inputs whose geometry request delivered [`DecodeDepth::Geometry`].
+    /// Inputs whose geometry request delivered model scope without design.
     pub cut: usize,
     /// Inputs both decodes refused with the same message.
     pub refused: usize,
@@ -62,6 +64,16 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
     codec: &dyn Codec,
     inputs: &[(N, Vec<u8>)],
 ) -> DepthSummary {
+    assert_geometry_agrees_with_full_with(codec, inputs, |_| {})
+}
+
+/// Compare both decode requests and check each successful result with the
+/// codec's own loss-classification assertions, without decoding inputs again.
+pub fn assert_geometry_agrees_with_full_with<N: AsRef<str>>(
+    codec: &dyn Codec,
+    inputs: &[(N, Vec<u8>)],
+    check: impl Fn(&DecodeResult),
+) -> DepthSummary {
     assert!(
         !inputs.is_empty(),
         "no input to compare; the depth harness would pass vacuously"
@@ -76,7 +88,9 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
             decode(codec, bytes, DecodeDepth::Geometry),
         ) {
             (Ok(full), Ok(geometry)) => {
-                if geometry.ir().decode_depth() == DecodeDepth::Geometry {
+                check(&full);
+                check(&geometry);
+                if geometry.ir().scope == cadmpeg_ir::ContentScope::geometry() {
                     summary.cut += 1;
                 }
                 failures.extend(
@@ -131,17 +145,35 @@ fn compare(
 ) -> Vec<String> {
     let mut failures = Vec::new();
     for (requested, result) in [(DecodeDepth::Full, full), (DecodeDepth::Geometry, geometry)] {
-        let delivered = result.ir().decode_depth();
-        if delivered < requested {
-            failures.push(format!("a {requested} request delivered {delivered} depth"));
+        if let Err(error) = result.ir().check_scope() {
+            failures.push(error.to_string());
         }
-        if delivered < DecodeDepth::Full {
-            if let Some(arena) = result.ir().model.populated_design_arena() {
-                failures.push(format!(
-                    "a {delivered}-depth document holds records in design arena `{arena}`"
-                ));
-            }
+        if result.ir().scope != result.report().scope() {
+            failures.push("document and report scopes differ".into());
         }
+        let required = requested.required_scope();
+        let expected = usize::from(!result.ir().scope.missing_from(required).is_empty());
+        let actual = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.to_string() == "decode/depth.not-delivered")
+            .count();
+        if actual != expected {
+            failures.push(format!(
+                "a {requested} request requires {expected} missing-class loss, found {actual}"
+            ));
+        }
+    }
+    if !full
+        .source_fidelity()
+        .unrepresented()
+        .iter()
+        .all(|class| geometry.source_fidelity().unrepresented().contains(class))
+    {
+        failures.push(
+            "the full decode has unrepresented classes absent from the geometry decode".into(),
+        );
     }
     if let Some(path) = first_difference(&outside_design(full.ir()), &outside_design(geometry.ir()))
     {
@@ -180,29 +212,9 @@ fn compare(
     failures
 }
 
-/// The document as JSON without its recorded depth, design arenas, native
-/// namespaces, and local-digest source attributes.
+/// Model projection with design-owned references closed before design is removed.
 fn outside_design(ir: &CadIr) -> Value {
-    let mut value = serde_json::to_value(ir).expect("serialize decoded document");
-    let Value::Object(document) = &mut value else {
-        panic!("a document serializes as a JSON object");
-    };
-    document.remove("decode_depth");
-    document.remove("native");
-    if let Some(Value::Object(model)) = document.get_mut("model") {
-        for arena in ArenaName::ALL {
-            if arena.class() == ArenaClass::Design {
-                model.remove(arena.as_str());
-            }
-        }
-    }
-    if let Some(Value::Object(attributes)) = document
-        .get_mut("source")
-        .and_then(|source| source.get_mut("attributes"))
-    {
-        attributes.retain(|key, _| !is_local_digest_attribute(key));
-    }
-    value
+    crate::contract::neutral_view(ir, &[ArenaClass::Design])
 }
 
 /// Every neutral and codec-native finding over `ir`, as `check: message`.
@@ -261,16 +273,16 @@ fn first_difference(left: &Value, right: &Value) -> Option<String> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
     use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
     use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
     use cadmpeg_ir::examples::{directed_subd_sum, unit_cube};
-    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+    use cadmpeg_ir::features::{DesignParameter, ParameterId};
     use cadmpeg_ir::report::decode::DecodeTransfer;
     use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
     use cadmpeg_ir::{CadIr, ContainerSummary, SourceFidelity};
 
-    use super::{assert_geometry_agrees_with_full, DepthSummary};
+    use super::{DepthSummary, assert_geometry_agrees_with_full};
 
     /// A backend whose decode at each requested depth is scripted by the test.
     struct ScriptedCodec(fn(DecodeDepth) -> Decoded);
@@ -303,7 +315,9 @@ mod tests {
         }
     }
 
-    fn decoded(ir: CadIr, transfer: DecodeTransfer) -> Decoded {
+    fn decoded(mut ir: CadIr, transfer: DecodeTransfer) -> Decoded {
+        ir.set_scope(transfer.scope)
+            .expect("scripted scope agrees with its arenas");
         Decoded {
             ir,
             body: DecodeBody::new(transfer),
@@ -325,7 +339,7 @@ mod tests {
             expression: "1mm".into(),
             display: None,
             value: None,
-            dependencies: DistinctMembers::default(),
+            driving: true,
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -336,9 +350,21 @@ mod tests {
     /// Full decodes carry a design parameter; geometry decodes cut it.
     fn sound_cut(depth: DecodeDepth) -> Decoded {
         if depth < DecodeDepth::Full {
-            decoded(cube(), DecodeTransfer::at(DecodeDepth::Geometry, true))
+            decoded(
+                cube(),
+                DecodeTransfer {
+                    scope: cadmpeg_ir::ContentScope::geometry(),
+                    geometry_transferred: true,
+                },
+            )
         } else {
-            decoded(cube_with_parameter(), DecodeTransfer::full(true))
+            decoded(
+                cube_with_parameter(),
+                DecodeTransfer {
+                    scope: cadmpeg_ir::ContentScope::full(),
+                    geometry_transferred: true,
+                },
+            )
         }
     }
 
@@ -365,7 +391,10 @@ mod tests {
             if depth < DecodeDepth::Full {
                 decoded(
                     directed_subd_sum().expect("valid subd fixture"),
-                    DecodeTransfer::at(DecodeDepth::Geometry, true),
+                    DecodeTransfer {
+                        scope: cadmpeg_ir::ContentScope::geometry(),
+                        geometry_transferred: true,
+                    },
                 )
             } else {
                 sound_cut(depth)
@@ -391,11 +420,17 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "a geometry request delivered container depth")]
+    #[should_panic(expected = "the documents differ outside the design arenas")]
     fn an_under_delivery_diverges() {
         fn delivers_container(depth: DecodeDepth) -> Decoded {
             if depth < DecodeDepth::Full {
-                decoded(CadIr::empty(), DecodeTransfer::ContainerOnly {})
+                decoded(
+                    CadIr::empty(),
+                    DecodeTransfer {
+                        scope: cadmpeg_ir::ContentScope::container(),
+                        geometry_transferred: false,
+                    },
+                )
             } else {
                 sound_cut(depth)
             }

@@ -52,17 +52,21 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             };
             shape
                 .try_edit(|_, _, diameter| {
-                    *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
+                    *diameter = Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                    ));
                 })
                 .unwrap();
             *extent = Some(LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(16.0).unwrap(),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroLength::new(16.0).unwrap(),
+                ),
             });
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -128,19 +132,10 @@ fn semantic_writer_retains_partial_native_hole_construction() {
                 ..
             }, Some(actual_diameter),) if (placements.is_none()) && actual_diameter.get() == 5.0)));
 
-    for (index, message) in [
-        (0, "unresolved hole diameter"),
-        (1, "unresolved hole entry construction"),
-    ] {
+    for index in 0..2 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = crate::test_support::plan_inherited_write(
-            &detached,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains(message));
+        crate::test_support::assert_synthesis_fallback(&detached, decoded.source_fidelity());
     }
     let mut detached = decoded.ir().clone();
     detached.model.features[2].native_ref = None;
@@ -165,13 +160,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     )
     .unwrap();
     updated_detached_evaluation.set_definition(updated_detached_definition);
-    let error = crate::test_support::plan_inherited_write(
-        &detached,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved hole termination"));
+    crate::test_support::assert_synthesis_fallback(&detached, decoded.source_fidelity());
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
         feature.name = Some(format!("Renamed hole {}", index + 1));
@@ -252,7 +241,7 @@ fn semantic_writer_round_trips_hole_placement() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -343,8 +332,12 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap(),
-            depth: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            diameter: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap(),
+            ),
+            depth: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            ),
         };
         *extent = Some(LinearTermination::ThroughAll {});
 
@@ -368,11 +361,17 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(11.0).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(90f64.to_radians()).unwrap(),
+            diameter: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(11.0).unwrap(),
+            ),
+            angle: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::InteriorAngle::new(90f64.to_radians()).unwrap(),
+            ),
         };
         *extent = Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap(),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap(),
+            ),
         });
 
         *shape = cadmpeg_ir::features::holes::HoleShape::new(
@@ -385,7 +384,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

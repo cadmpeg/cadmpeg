@@ -49,7 +49,7 @@ fn incomplete_construction_candidates_are_not_complete_groups() {
     let header = RecordFrame {
         record_index: 100,
         class_tag: DesignClassTag::try_from("332".to_owned()).expect("class tag"),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let mut candidates = vec![complete_group_bytes(true, true, true)];
     let truncated_length = candidates[0].len() - 9;
@@ -75,7 +75,7 @@ fn complete_construction_group_retains_each_reference_and_offset() {
     let header = RecordFrame {
         record_index: 100,
         class_tag: DesignClassTag::try_from("332".to_owned()).expect("class tag"),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let ConstructionOperandGroupParse::Complete(group) =
         parse_construction_operand_group(&bytes, &scope, 0, &header)

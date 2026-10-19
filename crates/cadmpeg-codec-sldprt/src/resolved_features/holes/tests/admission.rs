@@ -11,6 +11,7 @@ use cadmpeg_ir::sketches::SketchId;
 
 fn topology(surfaces: &[Surface]) -> HoleTopology<'_> {
     HoleTopology {
+        parameters: &[],
         surfaces,
         faces: &[],
         loops: &[],

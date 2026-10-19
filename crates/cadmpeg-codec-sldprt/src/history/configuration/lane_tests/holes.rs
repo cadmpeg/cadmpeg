@@ -27,6 +27,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
@@ -45,15 +46,23 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                 }]),
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
-                        diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-                        depth: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                        diameter: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                        ),
+                        depth: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                        ),
                     }),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
                 extent: Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                    length: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                    ),
                 }),
                 bottom: None,
                 taper_angle: None,
@@ -127,15 +136,23 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         }]),
         shape: cadmpeg_ir::features::holes::HoleShape::new(
             cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
-                diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-                depth: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                diameter: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                ),
+                depth: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                ),
             }),
             None,
-            Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+            Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            )),
         )
         .unwrap(),
         extent: Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+            ),
         }),
         bottom: None,
         taper_angle: None,
@@ -181,16 +198,20 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
                 depth: actual_depth,
             },
             ..
-        } if actual_diameter.get() == 8.0 && actual_depth.get() == 4.0
+        } if actual_diameter.literal().unwrap().get() == 8.0 && actual_depth.literal().unwrap().get() == 4.0
     ));
     assert_eq!(
-        diameter,
-        Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap())
+        diameter.cloned(),
+        Some(cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()
+        ))
     );
     assert_eq!(
         extent,
         Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap()
+            ),
         })
     );
 }
@@ -198,8 +219,8 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
 #[test]
 fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     use cadmpeg_ir::features::{
-        holes::HoleKind, ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition,
-        FeatureId, FeatureOperation, LinearTermination,
+        holes::HoleKind, Feature as NeutralFeature, FeatureDefinition, FeatureId, FeatureOperation,
+        LinearTermination,
     };
 
     let id = FeatureId::mint("test:model:feature#hole-lane").expect("identity grammar");
@@ -220,15 +241,23 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         }]),
         shape: cadmpeg_ir::features::holes::HoleShape::new(
             cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
-                diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-                depth: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                diameter: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                ),
+                depth: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                ),
             }),
             None,
-            Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+            Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            )),
         )
         .unwrap(),
         extent: Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+            ),
         }),
         bottom: None,
         taper_angle: None,
@@ -262,6 +291,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             base_definition,
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -269,14 +299,10 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         native_ref: None,
     });
     let mut configuration = design_configuration("configuration", 0, Some(0), None);
-    configuration.active = true;
+    configuration.active = false;
     configuration.feature_states.insert(
         id.clone(),
-        ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::DistinctMembers::default(),
-            },
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        cadmpeg_ir::features::ConfigurationFeatureState::Definition {
             definition: local_definition,
         },
     );
@@ -295,7 +321,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     .unwrap();
 
     assert!(matches!(
-    &ir.model.configurations[0].feature_states[&id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
+    ir.model.configurations[0].feature_states[&id].definition().unwrap(), FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
         extent: None,

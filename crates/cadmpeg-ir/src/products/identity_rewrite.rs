@@ -35,7 +35,7 @@ rewrite_enum!(JointOperands, []; {
     Pair {kind, connectors, offset_frames},
 });
 rewrite_record!(LinkState, []; {linked_subelements, element_component, claim_child, copy_on_change});
-rewrite_record!(Occurrence, []; {id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref});
+rewrite_record!(Occurrence, []; {id, prototype, parent, ordinal, transform, linked_prototype, name, visible, link, native_ref});
 rewrite_enum!(OccurrenceParent, []; {
     Root {},
     Occurrence {occurrence},

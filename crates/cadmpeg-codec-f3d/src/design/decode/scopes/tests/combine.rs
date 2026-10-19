@@ -106,14 +106,14 @@ fn combine_tools_keep_first_and_additional_records() {
         id: "generated:scope-header#0".into(),
         record_index: 90,
         class_tag: crate::records::references::DesignClassTag::try_from("382".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &records,
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("Combine scope");
@@ -202,14 +202,14 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         id: "generated:scope-header#0".into(),
         record_index: scope_record_index,
         class_tag: crate::records::references::DesignClassTag::try_from("382".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let mut scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("Combine scope");

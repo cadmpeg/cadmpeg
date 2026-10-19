@@ -40,7 +40,7 @@ fn compact_reference_fixture() -> (Vec<u8>, DesignRecordHeader, usize, u32) {
         id: String::new(),
         record_index,
         class_tag: crate::records::references::DesignClassTag::try_from("320".to_owned()).unwrap(),
-        byte_offset: u64_from_index(start),
+        byte_offset: Some(u64_from_index(start)),
     };
 
     (bytes, header, identity, reference)

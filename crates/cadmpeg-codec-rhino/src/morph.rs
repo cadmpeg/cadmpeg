@@ -793,6 +793,7 @@ pub(crate) fn project(
         ordinal,
         name,
         suppressed: Some(false),
+        needs_recompute: false,
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
@@ -802,7 +803,17 @@ pub(crate) fn project(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "morph_control".into(),
-                parameters,
+                parameters: parameters
+                    .into_iter()
+                    .map(|(name, expression)| {
+                        (
+                            name,
+                            cadmpeg_ir::features::Dimension::Literal(
+                                cadmpeg_ir::features::Expression::text(expression),
+                            ),
+                        )
+                    })
+                    .collect(),
             }),
         ),
         native_ref: Some(native_ref),
@@ -929,7 +940,13 @@ mod tests {
         else {
             panic!("expected a native morph definition");
         };
-        assert_eq!(parameters["captive_0_object"], "rhino:object:record#000007");
+        assert_eq!(
+            parameters["captive_0_object"]
+                .literal()
+                .and_then(|expression| expression.literal_text())
+                .as_deref(),
+            Some("rhino:object:record#000007")
+        );
     }
 
     #[test]

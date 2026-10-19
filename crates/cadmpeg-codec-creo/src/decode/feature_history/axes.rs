@@ -83,7 +83,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     else {
         return None;
     };
-    let angle = angle.get();
+    let angle = ir.dimension_value(angle)?.get();
 
     if (angle.abs() - std::f64::consts::TAU).abs() > EPS_FULL_TURN {
         return None;
@@ -304,8 +304,9 @@ mod full_turn_carrier_tests {
         }
         let extent = RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
-                    .expect("full-turn extent"),
+                angle: (cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                    .expect("full-turn extent"))
+                .into(),
             },
         };
         (scan, ir, extent)

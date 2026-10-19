@@ -23,31 +23,34 @@ fn parameter_real_admission_preserves_finite_signed_wire_values() {
 }
 
 #[test]
-fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
+fn parameter_dependencies_are_derived_only_from_ordered_expression_tokens() {
+    use crate::features::{Expression, ExpressionToken};
     let first = ParameterId::mint("test:test:parameter#first").unwrap();
     let second = ParameterId::mint("test:test:parameter#second").unwrap();
-    assert!(DistinctMembers::try_from(vec![first.clone(), first.clone()],).is_err());
-    let mut dependencies = DistinctMembers::try_from(vec![second.clone(), first.clone()]).unwrap();
-    assert!(!dependencies.insert(first.clone(),));
-    assert_eq!(dependencies.as_slice(), &[second.clone(), first.clone()]);
-    dependencies.retain(|id| id == &first);
-    assert_eq!(dependencies.as_slice(), std::slice::from_ref(&first));
-    dependencies.clear();
-    assert!(dependencies.is_empty());
-
+    let expression = Expression {
+        tokens: vec![
+            ExpressionToken::Parameter(second.clone()),
+            ExpressionToken::Text(" + ".into()),
+            ExpressionToken::Parameter(first.clone()),
+            ExpressionToken::Text(" + ".into()),
+            ExpressionToken::Parameter(second.clone()),
+        ],
+    };
+    assert_eq!(
+        expression.dependencies().collect::<Vec<_>>(),
+        vec![&second, &first, &second]
+    );
     let mut wire = serde_json::json!({
-        "id":"test:test:parameter#owner", "ordinal":0, "name":"value", "expression":"first+second",
-        "dependencies":[second, first]
+        "id":"test:test:parameter#owner", "ordinal":0, "name":"value",
+        "expression": expression, "driving":true,
     });
     let parameter: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(parameter).unwrap(), wire);
-    wire["dependencies"] = serde_json::json!([first, first]);
-    let error = serde_json::from_value::<DesignParameter>(wire.clone()).unwrap_err();
-    assert!(error.to_string().contains("dependencies"));
-    wire.as_object_mut().unwrap().remove("dependencies");
-    let parameter: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
-    assert!(parameter.dependencies.is_empty());
-    assert_eq!(serde_json::to_value(parameter).unwrap(), wire);
+    wire["dependencies"] = serde_json::json!([first, second]);
+    assert!(serde_json::from_value::<DesignParameter>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("dependencies"));
 }
 
 #[test]

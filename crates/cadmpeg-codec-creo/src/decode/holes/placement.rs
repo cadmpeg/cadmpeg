@@ -81,7 +81,7 @@ pub(in crate::decode) fn hole_extent_and_direction(
     Some((
         first_normal.map(|value| value * signed_length.signum()),
         LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(signed_length.abs())?,
+            length: (cadmpeg_ir::scalar::NonZeroLength::new(signed_length.abs())?).into(),
         },
     ))
 }

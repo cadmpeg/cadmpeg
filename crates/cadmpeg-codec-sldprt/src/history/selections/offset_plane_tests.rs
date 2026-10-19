@@ -4,8 +4,8 @@
 
 use crate::history::bind::order_features_for_regeneration;
 use crate::history::project::bind_offset_plane_references;
-use crate::history::project::datum::project_offset_plane;
 use crate::history::project::project_features;
+use crate::history::project::project_offset_plane;
 use crate::history::selections::resolve_offset_plane_face_selection;
 use crate::history::selections::resolve_planar_face_selection;
 use crate::history::selections::FaceSelectionContext;
@@ -73,13 +73,13 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: bound }),
             distance: actual_distance,
-        }) if (bound == &projected[0].id) && actual_distance.get() == 6.0
+        }) if (bound == &projected[0].id) && crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves").get() == 6.0
     ));
     assert_eq!(
         projected[1].dependencies.as_slice(),
@@ -141,13 +141,13 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: bound }),
             distance: actual_distance,
-        }) if (bound == &projected[0].id) && actual_distance.get() == 6.0
+        }) if (bound == &projected[0].id) && crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves").get() == 6.0
     ));
     assert_eq!(
         projected[1].dependencies.as_slice(),
@@ -167,6 +167,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -177,7 +178,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
                     )
                     .unwrap(),
                 }),
-                distance: Length::new(6.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(6.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -215,6 +216,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                 plane: cadmpeg_ir::features::PrincipalPlane::Right,
@@ -225,14 +227,14 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
     principal.native_ref = Some("sldprt:history:feature#0:right".into());
 
     let mut features = vec![offset, principal];
-    bind_offset_plane_references(&mut features);
+    bind_offset_plane_references(&mut features, &[]);
 
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        }) if (reference == &features[1].id) && actual_distance.get() == 6.0
+        }) if (reference == &features[1].id) && crate::history::project::source_dimension_value(actual_distance, &[]).expect("source length resolves").get() == 6.0
     ));
     assert_eq!(
         features[0].dependencies.as_slice(),
@@ -252,6 +254,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -276,12 +279,13 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature {
                     feature: base.id.clone(),
                 }),
-                distance: Length::new(0.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(0.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -308,6 +312,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -318,7 +323,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
                     )
                     .unwrap(),
                 }),
-                distance: Length::new(6.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(6.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -348,14 +353,14 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     );
 
     let mut features = vec![base, alias, offset];
-    bind_offset_plane_references(&mut features);
+    bind_offset_plane_references(&mut features, &[]);
 
     assert!(matches!(
         features[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        }) if (reference == &features[0].id) && actual_distance.get() == 6.0
+        }) if (reference == &features[0].id) && crate::history::project::source_dimension_value(actual_distance, &[]).expect("source length resolves").get() == 6.0
     ));
     assert_eq!(
         features[2].dependencies.as_slice(),
@@ -375,13 +380,14 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature {
                     feature: FeatureId::mint("synthetic:test:id#reference")
                         .expect("identity grammar"),
                 }),
-                distance: Length::new(6.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(6.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -411,6 +417,7 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -426,14 +433,14 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     reference.native_ref = Some("sldprt:history:feature#0:reference".into());
 
     let mut features = vec![offset, reference];
-    bind_offset_plane_references(&mut features);
+    bind_offset_plane_references(&mut features, &[]);
 
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        }) if (reference == &features[1].id) && actual_distance.get() == 6.0
+        }) if (reference == &features[1].id) && crate::history::project::source_dimension_value(actual_distance, &[]).expect("source length resolves").get() == 6.0
     ));
     assert_eq!(
         features[0].dependencies.as_slice(),
@@ -498,13 +505,13 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
         features: vec![reference, duplicate, offset],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             distance: actual_distance,
-        }) if actual_distance.get() == 6.0
+        }) if crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves").get() == 6.0
     ));
     assert!(projected[2].dependencies.is_empty());
 }
@@ -547,13 +554,13 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
-            distance: Length::ZERO,
-        })
+            distance: actual_distance,
+        }) if crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves") == Length::ZERO
     ));
 }
 
@@ -730,7 +737,22 @@ fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
             panic!("native face offset did not project as a face reference");
         };
         assert_eq!(face, FaceSelection::Native(native.into()));
-        assert_eq!(distance, expected_distance);
+        assert_eq!(
+            distance,
+            crate::history::project::parameter_dimension(&offset, "D1").unwrap()
+        );
+        let source = FeatureHistory {
+            id: "source".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset],
+        };
+        assert_eq!(
+            crate::history::project::source_dimension_value(&distance, &[source]).unwrap(),
+            expected_distance
+        );
     }
 }
 
@@ -763,13 +785,13 @@ fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
         features: vec![offset, principal],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: actual_distance,
-        }) if actual_distance.get() == 6.0
+        }) if crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves").get() == 6.0
     ));
     assert!(projected[0].dependencies.is_empty());
 }
@@ -801,7 +823,7 @@ fn explicit_offset_plane_reference_cannot_bind_itself() {
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
-        features: vec![offset],
+        features: vec![offset.clone()],
     }])
     .unwrap();
 
@@ -809,8 +831,8 @@ fn explicit_offset_plane_reference_cannot_bind_itself() {
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
-            distance: Length::ZERO,
-        })
+            distance: actual_distance,
+        }) if crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&FeatureHistory { id: "source".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(), features: vec![offset.clone()] })).expect("source length resolves") == Length::ZERO
     ));
     assert!(projected[0].dependencies.is_empty());
 }
@@ -847,13 +869,13 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
         features: vec![offset, principal],
     };
 
-    let mut projected = project_features(&[history]).unwrap();
+    let mut projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        }) if (reference == &projected[1].id) && actual_distance.get() == 6.0
+        }) if (reference == &projected[1].id) && crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves").get() == 6.0
     ));
     assert_eq!(
         projected[0].dependencies.as_slice(),
@@ -899,13 +921,13 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
         features: vec![offset, principal],
     };
 
-    let mut projected = project_features(&[history]).unwrap();
+    let mut projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        }) if (reference == &projected[1].id) && actual_distance.get() == 6.0
+        }) if (reference == &projected[1].id) && crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves").get() == 6.0
     ));
     assert!(
         with_test_ctx(|ctx| order_features_for_regeneration(ctx, &mut projected))
@@ -959,14 +981,14 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
         features: vec![offset, principal],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
-            distance: Length::ZERO,
-        })
+            distance: actual_distance,
+        }) if crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves") == Length::ZERO
     ));
     assert!(projected[0].dependencies.is_empty());
 }
@@ -1012,14 +1034,14 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
         features: vec![offset, reference],
     };
 
-    let mut projected = project_features(&[history]).unwrap();
+    let mut projected = project_features(std::slice::from_ref(&history)).unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        }) if (reference == &projected[1].id) && actual_distance.get() == 6.0
+        }) if (reference == &projected[1].id) && crate::history::project::source_dimension_value(actual_distance, std::slice::from_ref(&history)).expect("source length resolves").get() == 6.0
     ));
     assert!(
         with_test_ctx(|ctx| order_features_for_regeneration(ctx, &mut projected))

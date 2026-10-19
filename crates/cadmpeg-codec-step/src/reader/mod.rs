@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::DialectMatch;
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -40,6 +39,9 @@ pub(crate) mod tessellation;
 pub(crate) mod topology;
 mod validation;
 
+/// Typed native arenas retained by the STEP decoder.
+pub(crate) const NATIVE_ARENAS: &[&str] = &["drawing_targets", "unknowns"];
+
 /// Container facts available when the STEP source identity is authored.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Packaging {
@@ -59,7 +61,7 @@ enum DecodeMode {
 }
 
 impl Packaging {
-    fn add_source_attributes(self, attributes: &mut BTreeMap<NonBlankString, String>) {
+    fn add_fidelity_metadata(self, attributes: &mut BTreeMap<String, String>) {
         let Self::Zip {
             entry_count,
             root_data_offset,
@@ -67,20 +69,11 @@ impl Packaging {
         else {
             return;
         };
+        attributes.insert("container_kind".to_owned(), "iso-10303-21-zip".into());
+        attributes.insert("archive_root".to_owned(), crate::archive::ROOT_NAME.into());
+        attributes.insert("archive_entries".to_owned(), entry_count.to_string());
         attributes.insert(
-            cadmpeg_core::nonblank_literal!("container_kind"),
-            "iso-10303-21-zip".into(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("archive_root"),
-            crate::archive::ROOT_NAME.into(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("archive_entries"),
-            entry_count.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("archive_root_data_offset"),
+            "archive_root_data_offset".to_owned(),
             root_data_offset.to_string(),
         );
     }
@@ -120,7 +113,7 @@ impl<T> std::ops::DerefMut for StageOutcome<T> {
 struct StepDecodeSession<'ctx, 'arena> {
     ir: CadIr,
     matched: DialectMatch,
-    source_attributes: BTreeMap<NonBlankString, String>,
+    source_metadata: BTreeMap<String, String>,
     body: DecodeBody,
     typed_records: ClaimSets,
     admitted_ir_entities: u64,
@@ -135,37 +128,57 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         mode: DecodeMode,
     ) -> StepDecodeSession<'ctx, 'arena> {
         let mut attributes = BTreeMap::new();
+        attributes.insert("schema".to_owned(), exchange.joined_schema_identifiers());
         attributes.insert(
-            cadmpeg_core::nonblank_literal!("schema"),
-            exchange.joined_schema_identifiers(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("data_sections"),
+            "data_sections".to_owned(),
             exchange.data().len().to_string(),
         );
         attributes.insert(
-            cadmpeg_core::nonblank_literal!("entity_instances"),
+            "entity_instances".to_owned(),
             exchange.records().len().to_string(),
         );
         if let DecodeMode::Decode(packaging) = mode {
-            packaging.add_source_attributes(&mut attributes);
+            packaging.add_fidelity_metadata(&mut attributes);
         }
-        // The `schema` attribute above stays: it is the joined identifier list,
-        // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
-        let ir = CadIr::empty();
+        let mut ir = CadIr::empty();
+        ir.scope = if ctx.container_only() {
+            cadmpeg_ir::ContentScope::container()
+        } else {
+            cadmpeg_ir::ContentScope::full()
+        };
 
         let mut body = DecodeBody::new(if ctx.container_only() {
-            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
+            cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: cadmpeg_ir::ContentScope::container(),
+                geometry_transferred: false,
+            }
         } else {
-            cadmpeg_ir::report::decode::DecodeTransfer::full(false)
+            cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: cadmpeg_ir::ContentScope::full(),
+                geometry_transferred: false,
+            }
         });
         for entry in exchange.references() {
             body.notes.push(format!(
                 "external reference {} -> {}",
                 entry.name, entry.uri
             ));
+            if !ctx.container_only() && !entry.uri.starts_with('#') {
+                if let Some(uri) = cadmpeg_core::text::NonBlankString::new(entry.uri.clone()) {
+                    ir.model.assets.push(cadmpeg_ir::assets::Asset {
+                        id: cadmpeg_ir::assets::AssetId::from(ids::data(
+                            kind!("external-resource"),
+                            ir.model.assets.len(),
+                        )),
+                        name: cadmpeg_core::text::NonBlankString::new(entry.name.to_string()),
+                        media_type: None,
+                        content: cadmpeg_ir::assets::AssetContent::External { uri },
+                        native_ref: None,
+                    });
+                }
+            }
         }
         if let Some(loss) = dialect_loss {
             body.losses.push(loss);
@@ -226,7 +239,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         Self {
             ir,
             matched: primary,
-            source_attributes: attributes,
+            source_metadata: attributes,
             body,
             typed_records: ClaimSets::default(),
             admitted_ir_entities: 0,
@@ -257,13 +270,15 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 
     fn into_result(
         mut self,
-        source_fidelity: SourceFidelity,
+        mut source_fidelity: SourceFidelity,
         opaque_offsets: BTreeSet<usize>,
     ) -> AnalyzedExchange {
         self.ir.source = Some(SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(self.matched.clone()),
-            self.source_attributes,
+            BTreeMap::new(),
         ));
+        source_fidelity.metadata.extend(self.source_metadata);
+        self.body.transfer.scope = self.ir.scope;
         AnalyzedExchange {
             decoded: Decoded {
                 ir: self.ir,
@@ -338,7 +353,18 @@ fn decode_exchange_mode(
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
     if ctx.container_only() {
-        return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
+        let mut fidelity = SourceFidelity::default();
+        if matches!(mode, DecodeMode::Decode(_)) && !exchange.records().is_empty() {
+            let bytes = retained_source_copy(ctx, input, "step_container_source")?;
+            fidelity.insert_retained_record(
+                ids::source_image(),
+                cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole("step", bytes)
+                    .with_untyped(cadmpeg_ir::ArenaClasses::from([
+                        cadmpeg_ir::ArenaClass::Model,
+                    ])),
+            )?;
+        }
+        return Ok(session.into_result(fidelity, BTreeSet::new()));
     }
 
     let mut header_spans = Vec::new();
@@ -358,7 +384,7 @@ fn decode_exchange_mode(
     session.charge_pending_ir_entities("step_geometry_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
     session.charge_pending_ir_entities("step_dependency_decode")?;
-    let mut dependencies = dependencies::decode(exchange)?;
+    let mut dependencies = dependencies::decode(exchange, &mut session.ir)?;
     session.charge_pending_ir_entities("step_carrier_index")?;
     session.charge_pending_ir_entities("step_topology_decode")?;
 
@@ -453,7 +479,10 @@ fn decode_exchange_mode(
         || !session.ir.model.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
-        session.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+        session.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: true,
+        };
     }
 
     // Keep the established report order while every pass contributes through
@@ -593,6 +622,7 @@ fn decode_exchange_mode(
         let omitted_spans = exchange.omitted_spans().to_vec();
         let signature_spans = exchange.release_source_graph();
         let mut opaque = Vec::new();
+        let mut untyped_ids = Vec::new();
         for (span, omitted) in header_spans
             .iter()
             .map(|span| (span, false))
@@ -613,6 +643,9 @@ fn decode_exchange_mode(
                 ids::header(span.start)
             };
 
+            if omitted {
+                untyped_ids.push(id.as_str().to_owned());
+            }
             opaque.push(UnknownRecord::retained(
                 id,
                 u64_from_index(span.start),
@@ -621,6 +654,9 @@ fn decode_exchange_mode(
             ));
         }
         for source in opaque_sources {
+            // This entity was not admitted by any typed decode stage. Its
+            // retained syntax cannot count as represented model content.
+            untyped_ids.push(source.unknown_id.as_str().to_owned());
             let bytes = retained_source_copy(
                 session.ctx,
                 &input[source.span.clone()],
@@ -666,21 +702,23 @@ fn decode_exchange_mode(
             opaque,
             session.ctx,
         )?;
+        for id in untyped_ids {
+            source_fidelity.mark_untyped(&id, [cadmpeg_ir::ArenaClass::Model])?;
+        }
     }
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_structural"),
+    session.source_metadata.insert(
+        "bytes_structural".to_owned(),
         accounting.structural.to_string(),
     );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_typed"),
-        accounting.typed.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_named_opaque"),
+    session
+        .source_metadata
+        .insert("bytes_typed".to_owned(), accounting.typed.to_string());
+    session.source_metadata.insert(
+        "bytes_named_opaque".to_owned(),
         accounting.opaque.to_string(),
     );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_unclassified"),
+    session.source_metadata.insert(
+        "bytes_unclassified".to_owned(),
         accounting.unclassified.to_string(),
     );
     if accounting.unclassified > 0 {
@@ -959,7 +997,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && point.source_object.is_none() {
-            point.source_object = Some(step_source_association(id, None));
+            point.source_object = Some(step_source_association(id));
         }
     }
     for curve in &mut ir.model.curves {
@@ -967,7 +1005,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && curve.source_object.is_none() {
-            curve.source_object = Some(step_source_association(id, None));
+            curve.source_object = Some(step_source_association(id));
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -975,7 +1013,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && surface.source_object.is_none() {
-            surface.source_object = Some(step_source_association(id, None));
+            surface.source_object = Some(step_source_association(id));
         }
     }
 }
@@ -986,15 +1024,11 @@ fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
 }
 
 /// A source association for a STEP record.
-fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
+fn step_source_association(id: u64) -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id: step_source_id(id),
-        name,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }

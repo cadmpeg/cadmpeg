@@ -29,8 +29,14 @@ fn a_sketch_frame_holds_its_admitted_origin_axes_and_pattern_direction() {
         SketchPlacement::Unresolved {}.with_origin(moved),
         SketchPlacement::Unresolved {}
     );
-    let direction =
-        SketchPatternDirection::new([0.0, -1.0], Length::new(2.0).unwrap(), None, None).unwrap();
+    let direction = SketchPatternDirection::new(
+        [0.0, -1.0],
+        crate::sketches::SketchPatternDistance::Spacing {
+            distance: crate::features::Dimension::Literal(Length::new(2.0).unwrap()),
+        },
+        crate::features::Dimension::Literal(1),
+    )
+    .unwrap();
     assert_eq!(
         direction.direction(),
         UnitVector2::new([0.0, -1.0]).unwrap()

@@ -15,7 +15,7 @@ use crate::design::presentation::{
 };
 use crate::records::{
     entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION},
-    mesh::DesignGuidText,
+    mesh::DesignRelaxedGuidText,
 };
 
 use super::{
@@ -25,33 +25,22 @@ use super::{
 
 /// One type-table row after generated record types have been registered.
 pub(in crate::writer::generate) struct GeneratedDesignType {
-    pub(super) type_guid: DesignGuidText,
-    pub(super) base_type_guid: Option<DesignGuidText>,
+    pub(super) type_guid: DesignRelaxedGuidText,
+    pub(super) base_type_guid: Option<DesignRelaxedGuidText>,
     pub(super) version: u32,
     pub(super) module: String,
     pub(super) entity_ids: Vec<u64>,
 }
 
-impl TryFrom<&SegmentType> for GeneratedDesignType {
-    type Error = CodecError;
-    fn try_from(value: &SegmentType) -> Result<Self, Self::Error> {
-        Ok(Self {
-            type_guid: value
-                .type_guid
-                .as_str()
-                .to_owned()
-                .try_into()
-                .map_err(CodecError::NotImplemented)?,
-            base_type_guid: value
-                .base_type_guid
-                .value()
-                .map(|guid| DesignGuidText::try_from(guid.as_str().to_owned()))
-                .transpose()
-                .map_err(CodecError::NotImplemented)?,
+impl From<&SegmentType> for GeneratedDesignType {
+    fn from(value: &SegmentType) -> Self {
+        Self {
+            type_guid: value.type_guid.clone(),
+            base_type_guid: value.base_type_guid.value().cloned(),
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entities.values().copied().collect(),
-        })
+        }
     }
 }
 
@@ -121,7 +110,7 @@ impl GeneratedDesignRegistry {
             let asm_body_key = match metadata {
                 Some(metadata) => metadata.asm_body_key(),
                 None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
-                    |_| CodecError::NotImplemented("source-less ASM body key is negative".into()),
+                    |_| CodecError::Malformed("source-less ASM body key is negative".into()),
                 )?,
             };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
@@ -144,6 +133,12 @@ impl GeneratedDesignRegistry {
             .flat_map(|design_type| design_type.entities.values().copied())
             .filter_map(|entity| u32::try_from(entity).ok())
             .collect::<BTreeSet<_>>();
+        used_record_indices.extend(
+            native
+                .design_parameters
+                .iter()
+                .map(|parameter| parameter.record_index),
+        );
         used_record_indices.extend(
             native
                 .design_record_headers
@@ -170,7 +165,7 @@ impl GeneratedDesignRegistry {
                 .unwrap_or(0)
                 .checked_add(1)
                 .ok_or_else(|| {
-                    CodecError::NotImplemented("F3D Design record index space is full".into())
+                    CodecError::InvalidInput("F3D Design record index space is full".into())
                 })?
         };
 
@@ -197,8 +192,8 @@ impl GeneratedDesignRegistry {
         let mut types = native
             .design_types
             .iter()
-            .map(GeneratedDesignType::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(GeneratedDesignType::from)
+            .collect::<Vec<_>>();
         let body_map = body_map
             .map(|(entries, record_index)| {
                 let type_index = register_generated_type(
@@ -247,14 +242,14 @@ impl GeneratedDesignRegistry {
 fn allocate_record_index(used: &mut BTreeSet<u32>, next: &mut u32) -> Result<u32, CodecError> {
     while used.contains(next) {
         *next = next.checked_add(1).ok_or_else(|| {
-            CodecError::NotImplemented("F3D Design record index space is full".into())
+            CodecError::InvalidInput("F3D Design record index space is full".into())
         })?;
     }
     let allocated = *next;
     used.insert(allocated);
-    *next = next.checked_add(1).ok_or_else(|| {
-        CodecError::NotImplemented("F3D Design record index space is full".into())
-    })?;
+    *next = next
+        .checked_add(1)
+        .ok_or_else(|| CodecError::InvalidInput("F3D Design record index space is full".into()))?;
     Ok(allocated)
 }
 
@@ -329,7 +324,7 @@ pub(super) fn dynamic_class_tag(
         .and_then(|ordinal| ordinal.checked_add(256))
         .filter(|tag| *tag <= 999)
         .ok_or_else(|| {
-            CodecError::NotImplemented(
+            CodecError::InvalidInput(
                 "source-less F3D Design type registry exceeds three-digit class tags".into(),
             )
         })?;
@@ -375,7 +370,7 @@ mod tests {
     use super::{deterministic_guid, GeneratedDesignRegistry};
 
     #[test]
-    fn generated_type_rejects_relaxed_noncanonical_guid() {
+    fn generated_type_preserves_every_admitted_guid_spelling() {
         let mut source = body_map_type(vec![1]);
         source.set_type_guid(
             "____________________________________"
@@ -383,37 +378,47 @@ mod tests {
                 .try_into()
                 .unwrap(),
         );
-        assert!(super::GeneratedDesignType::try_from(&source).is_err());
+        assert_eq!(
+            super::GeneratedDesignType::from(&source).type_guid.as_str(),
+            source.type_guid.as_str()
+        );
         source = body_map_type(vec![1]);
         source.set_base_type_guid(crate::records::entity_header::BaseTypeGuid::Guid {
             value: "____________________________________"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            offset: 0,
+            offset: Some(0),
         });
-        assert!(super::GeneratedDesignType::try_from(&source).is_err());
+        assert_eq!(
+            super::GeneratedDesignType::from(&source)
+                .base_type_guid
+                .as_ref()
+                .map(|guid| guid.as_str()),
+            source.base_type_guid.value().map(|guid| guid.as_str())
+        );
     }
 
     fn body_map_type(entity_ids: Vec<u64>) -> crate::records::entity_header::SegmentType {
         crate::records::entity_header::SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#0".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 0,
+                class_tag: "256".to_owned().try_into().unwrap(),
+                byte_offset: Some(0),
                 type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                     value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
                         .to_owned()
                         .try_into()
                         .expect("base GUID"),
-                    offset: 0,
+                    offset: Some(0),
                 },
                 version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-                version_offset: 0,
+                version_offset: Some(0),
                 module: crate::records::entity_header::DESIGN_MODULE_BODY.into(),
                 entities: crate::records::identity::ReferenceRun::located(
                     entity_ids
@@ -430,21 +435,22 @@ mod tests {
         crate::records::entity_header::SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#0".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 0,
+                class_tag: "256".to_owned().try_into().unwrap(),
+                byte_offset: Some(0),
                 type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                     value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
                         .to_owned()
                         .try_into()
                         .expect("base GUID"),
-                    offset: 0,
+                    offset: Some(0),
                 },
                 version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-                version_offset: 0,
+                version_offset: Some(0),
                 module: crate::records::entity_header::DESIGN_MODULE_FUSION.into(),
                 entities: crate::records::identity::ReferenceRun::located(
                     entity_ids

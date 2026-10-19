@@ -333,7 +333,6 @@ pub(super) fn transfer_part_product(
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some(occurrence_name),
             visible: None,
             link: None,
@@ -589,10 +588,6 @@ pub(super) fn transfer_fc05_cap_circles(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -644,10 +639,6 @@ pub(super) fn transfer_fc05_cap_circles(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },

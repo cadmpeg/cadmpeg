@@ -15,6 +15,8 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod primitives;
+
 fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option<Vector3> {
     Some(Vector3::new(
         record.number_or(start, default.x)?,
@@ -161,7 +163,7 @@ pub(super) fn project(
             continue;
         };
         let factor = global.length_factor_mm();
-        if let Err(error) = resolve_transform(
+        let source_transform = match resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -170,14 +172,17 @@ pub(super) fn project(
             &mut BTreeSet::new(),
             ctx,
         ) {
-            error.non_resource()?;
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("primitive placement is invalid"),
-            );
-            continue;
-        }
+            Ok(transform) => transform,
+            Err(error) => {
+                error.non_resource()?;
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!("primitive placement is invalid"),
+                );
+                continue;
+            }
+        };
         let dimension_count = match entry.entity_type {
             150 | 156 | 168 => 3,
             152 => 4,
@@ -312,6 +317,59 @@ pub(super) fn project(
                 format_args!("primitive axes are not orthonormal"),
             );
             continue;
+        }
+        let z = z_axis.unwrap_or(Vector3::new(0.0, 0.0, 1.0)).unit();
+        let x = x_axis
+            .or_else(|| {
+                z.and_then(|z| {
+                    let reference = if z.x.abs() < z.y.abs() {
+                        Vector3::new(1.0, 0.0, 0.0)
+                    } else {
+                        Vector3::new(0.0, 1.0, 0.0)
+                    };
+                    reference.cross(z).unit()
+                })
+            })
+            .and_then(Vector3::unit);
+        let placement = x.zip(z).and_then(|(x, z)| {
+            let y = z.cross(x).unit()?;
+            let x = y.cross(z).unit()?;
+            let frame = cadmpeg_ir::transform::Transform::affine([
+                [x.x, y.x, z.x, origin.x * factor],
+                [x.y, y.y, z.y, origin.y * factor],
+                [x.z, y.z, z.z, origin.z * factor],
+            ])?;
+            cadmpeg_ir::features::FeatureRigidPlacement::new(source_transform.compose(frame).ok()?)
+        });
+        let operation = placement.and_then(|placement| {
+            primitives::operation(entry.entity_type, dimensions, factor, placement)
+        });
+        if let Some(operation) = operation {
+            ctx.charge_entities(1, "iges_primitive_features")?;
+            ir.model.features.push(cadmpeg_ir::features::Feature {
+                id: crate::ids::feature(&crate::ids::Stem::directory(entry.sequence)),
+                ordinal: u64::from(entry.sequence),
+                name: std::str::from_utf8(&entry.label)
+                    .ok()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned),
+                suppressed: None,
+                needs_recompute: false,
+                dependencies: Default::default(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                    cadmpeg_ir::features::FeatureDefinition::Operation(operation),
+                ),
+                native_ref: Some(format!("iges:solid:primitive#D{}", entry.sequence)),
+            });
+        } else {
+            losses.push(crate::loss::IgesLossCode::NeutralProjectionUnavailable.note(format!(
+                "iges:entity:directory#{}: analytic primitive type {} has no admitted neutral construction with this placement", entry.sequence, entry.entity_type
+            )).with_provenance(entry.loss_provenance()));
         }
         decoded.insert(entry.sequence);
     }

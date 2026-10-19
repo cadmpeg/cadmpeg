@@ -133,18 +133,13 @@ impl CodecBackend for NxCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn validate_native(
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         ir: &cadmpeg_ir::CadIr,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Ok(Vec::new());
         };
-        let admitted = native::display_jt::admission::DisplayJtGraph::from_namespace(
-            ctx, namespace,
-        )
-        .and_then(|_| {
-            native::structure::occurrences::FastLoadOccurrences::from_namespace(ctx, namespace)
-        });
+        let admitted = native::document_validation::validate(namespace, ir);
         Ok(match admitted {
             Ok(_) => Vec::new(),
             Err(error) => {

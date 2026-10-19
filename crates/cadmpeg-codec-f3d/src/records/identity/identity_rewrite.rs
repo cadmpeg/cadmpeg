@@ -14,7 +14,7 @@ rewrite_native_enum!(MaybeRecordedValue<T>, [T]; {
     Located(field0),
     Unlocated(field0),
 });
-rewrite_native_record!(RecordedValue<T>, [T]; {value, offset});
+rewrite_native_record!(RecordedValue<T,O>, [T,O]; {value, offset});
 rewrite_native_record!(ReferenceRun<T, O>, [T, O]; (field0));
 rewrite_native_enum!(ReferenceRunData<T, O>, [T, O]; {
     Unlocated(field0),

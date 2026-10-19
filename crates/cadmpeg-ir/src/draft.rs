@@ -1292,6 +1292,7 @@ mod tests {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -1339,6 +1340,7 @@ mod tests {
                     source_tag: None,
                     source_text: None,
                     source_content: crate::features::FeatureContent::default(),
+                    needs_recompute: false,
                     evaluation: crate::features::FeatureEvaluation::from_definition(
                         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                     ),

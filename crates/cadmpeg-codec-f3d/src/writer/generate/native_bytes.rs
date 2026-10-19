@@ -49,7 +49,7 @@ pub(super) fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), Code
 
 pub(super) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     let length = u16::try_from(value.len())
-        .map_err(|_| CodecError::NotImplemented("F3D native text exceeds u16".into()))?;
+        .map_err(|_| CodecError::InvalidInput("F3D native text exceeds u16".into()))?;
     bytes.push(0x08);
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(value.as_bytes());
@@ -83,7 +83,7 @@ pub(super) fn native_length_prefixed_string(
 
 fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecError> {
     let length = u8::try_from(value.len())
-        .map_err(|_| CodecError::NotImplemented("F3D native text exceeds 255 bytes".into()))?;
+        .map_err(|_| CodecError::InvalidInput("F3D native text exceeds 255 bytes".into()))?;
     bytes.extend_from_slice(&[tag, length]);
     bytes.extend_from_slice(value.as_bytes());
     Ok(())
@@ -96,9 +96,9 @@ pub(super) fn native_ref(bytes: &mut Vec<u8>, value: i64) {
 
 pub(super) fn native_record_index(base: i64, ordinal: usize) -> Result<i64, CodecError> {
     let ordinal = i64::try_from(ordinal)
-        .map_err(|_| CodecError::NotImplemented("F3D record ordinal exceeds i64".into()))?;
+        .map_err(|_| CodecError::InvalidInput("F3D record ordinal exceeds i64".into()))?;
     base.checked_add(ordinal)
-        .ok_or_else(|| CodecError::NotImplemented("F3D record index exceeds i64".into()))
+        .ok_or_else(|| CodecError::InvalidInput("F3D record index exceeds i64".into()))
 }
 
 pub(super) fn native_i64(bytes: &mut Vec<u8>, value: i64) {
@@ -172,7 +172,7 @@ pub(super) fn native_transform(
     Ok(())
 }
 
-fn derived_transform_hints(transform: Transform) -> [bool; 3] {
+pub(in crate::writer) fn derived_transform_hints(transform: Transform) -> [bool; 3] {
     let linear = [
         [
             transform.rows()[0][0],
@@ -215,13 +215,26 @@ pub(super) fn native_history_tail(
     bytes: &mut Vec<u8>,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
+    // Framing and reference signatures do not type the historical payload.
+    // Copying it would make retained bytes a content source.
+    if native
+        .asm_histories
+        .iter()
+        .flat_map(crate::history_records::AsmHistory::states)
+        .flat_map(|state| &state.records)
+        .any(|record| !record.raw_bytes.is_empty())
+    {
+        return Err(CodecError::UnsupportedContent(
+            "F3D historical payloads have no typed serializer".into(),
+        ));
+    }
     let histories = native.asm_histories.as_slice();
     if histories.is_empty() {
         native_ident(bytes, "delta_state")?;
         return Ok(());
     }
     if histories.len() != 1 {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D generation supports one ASM history stream".into(),
         ));
     }
@@ -276,9 +289,6 @@ pub(super) fn native_history_tail(
         }
         native_i64(bytes, 0);
         bytes.push(0x11);
-        for record in &state.records {
-            bytes.extend_from_slice(&record.raw_bytes);
-        }
     }
     Ok(())
 }

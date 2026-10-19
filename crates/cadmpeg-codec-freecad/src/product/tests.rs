@@ -178,18 +178,22 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
             .rows()[0][3],
         118.0
     );
-    assert_eq!(
-        link_occurrences[0]
-            .scale
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [2.0, 3.0, 4.0]
-    );
-    assert_eq!(
-        link_occurrences[1]
-            .scale
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [4.0, 6.0, 8.0]
-    );
+    for (occurrence, expected) in link_occurrences
+        .iter()
+        .zip([[2.0, 3.0, 4.0], [4.0, 6.0, 8.0]])
+    {
+        let rows = occurrence.transform.rows();
+        let scales = [0, 1, 2].map(|column| {
+            (0..3)
+                .map(|row| rows[row][column].powi(2))
+                .sum::<f64>()
+                .sqrt()
+        });
+        assert_eq!(
+            scales, expected,
+            "source scale is part of the sole local affine transform"
+        );
+    }
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
     assert_eq!(first_link.linked_subelements(), ["Face1"]);
     assert_eq!(link_occurrences[0].visible, None);
@@ -836,9 +840,13 @@ fn rejects_nonfinite_product_scale_at_source_admission() {
                 &DecodeOptions::default(),
             )
             .expect_err("nonfinite product scale");
-        assert!(error
-            .to_string()
-            .contains(&format!("invalid finite value for {name}")));
+        assert!(
+            matches!(
+                error,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+            ),
+            "{name}: {error}"
+        );
     }
 }
 

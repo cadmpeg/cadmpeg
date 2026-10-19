@@ -20,7 +20,7 @@ fn projection_caches_end_after_history_consumers() {
         AsmDeltaState {
             id: "f3d:test:history-state#2".into(),
             parent: "f3d:test:history#0".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id: 2,
             version_flag: 1,
             state_flag: 0,

@@ -33,6 +33,7 @@ fn planar_fixture() -> (Sketch, Feature, FeatureInputLane) {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Sketch {
                 sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
@@ -314,6 +315,7 @@ fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecErr
     )
     .with_geometry_ref(Some("relation".into()));
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -323,7 +325,6 @@ fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecErr
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -365,7 +366,7 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
         crate::records::FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index: index,
@@ -386,6 +387,7 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#point-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -395,7 +397,6 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -438,7 +439,7 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
         crate::records::FeatureInputRelationFamily::LineLineDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index: index,
@@ -460,6 +461,7 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#line-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -469,7 +471,6 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -529,6 +530,7 @@ fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), Cod
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -538,7 +540,6 @@ fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), Cod
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -580,7 +581,7 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         crate::records::FeatureInputRelationFamily::LineLineDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),
@@ -604,6 +605,7 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#line-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -613,7 +615,6 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -656,7 +657,7 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
         crate::records::FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),
@@ -702,6 +703,7 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
         entities.push(entity);
     }
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#marker-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -711,7 +713,6 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

@@ -58,8 +58,8 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     let relation = FeatureInputRelationInstance {
         id: "dimension".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -73,7 +73,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .into_iter()
             .enumerate()
             .map(|(index, marker)| FeatureInputOperand {
-                offset: cadmpeg_core::decode::u64_from_index(index),
+                offset: Some(cadmpeg_core::decode::u64_from_index(index)),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
                 entity_index: u16::try_from(index).expect("test index fits u16"),
@@ -82,6 +82,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .collect(),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#width").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -89,7 +90,6 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         expression: "5".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -144,6 +144,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -162,7 +163,9 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: EdgeSelection::Unresolved,
                     radius: RadiusSpec::Constant {
-                        radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                        radius: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                        ),
                     },
                     tangency_weight: None,
                 },
@@ -172,8 +175,8 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
         id: format!("selection-{ordinal}"),
         parent: "lane".into(),
-        ordinal,
-        offset,
+        ordinal, sequence: ordinal,
+        offset: Some(offset),
         object_name_ref: "name".into(),
         feature_ref: "target-native".into(),
         local_edge_ids,
@@ -240,8 +243,8 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
     let selection = |ordinal, producer: Option<&str>| FeatureInputEdgeSelection {
         id: format!("selection-{ordinal}"),
         parent: "lane".into(),
-        ordinal,
-        offset: u64::from(ordinal),
+        ordinal, sequence: ordinal,
+        offset: Some(u64::from(ordinal)),
         object_name_ref: "name".into(),
         feature_ref: "consumer".into(),
         local_edge_ids: vec![ordinal],
@@ -289,8 +292,8 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -384,6 +387,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -714,6 +718,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -897,6 +902,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -919,6 +925,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         native_ref: Some("lane".into()),
     }];
     let parameter = |ordinal: u32, diameter: f64| DesignParameter {
+        driving: true,
         id: ParameterId::mint(format!("synthetic:test:id#parameter-{ordinal}"))
             .expect("identity grammar"),
         owner: Some(feature.id.clone()),
@@ -930,7 +937,6 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(format!("scalar-{ordinal}")),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
     };
     let center = marker("center", Some([0.0, 0.0]));
     let mut first = marker("first", Some([0.005, 0.0]));
@@ -1096,6 +1102,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
@@ -1144,6 +1151,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Extrude {
                     profile: ProfileRef::Planar(PlanarProfileRef::Feature(

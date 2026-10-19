@@ -914,6 +914,7 @@ pub(in super::super) fn transfer_sketches(
             )?;
             ctx.charge_entities(1, "admit Creo model features")?;
             let feature = Feature {
+                needs_recompute: false,
                 id: feature_id,
                 ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
                 name: None,

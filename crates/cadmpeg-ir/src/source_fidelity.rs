@@ -124,6 +124,27 @@ pub enum RetainedBytes {
     },
 }
 
+/// Document-safe evidence identifying a source payload without carrying it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SourceEvidence {
+    /// Number of bytes in the source payload.
+    pub length: u64,
+    /// SHA-256 of those exact bytes.
+    pub sha256: Sha256Digest,
+}
+
+impl SourceEvidence {
+    /// Describe the exact bytes without retaining or copying their payload.
+    pub fn of(bytes: &[u8]) -> Self {
+        Self {
+            length: u64_from_index(bytes.len()),
+            sha256: Sha256Digest::digest(bytes),
+        }
+    }
+}
+
 impl RetainedBytes {
     /// Returns the number of source bytes.
     #[must_use]
@@ -168,6 +189,8 @@ pub struct RetainedSourceRecord {
     offset: u64,
     /// Retained image of the source bytes.
     bytes: RetainedBytes,
+    /// Content classes not represented by any typed document record.
+    untyped: crate::document::ArenaClasses,
 }
 
 #[derive(Deserialize)]
@@ -181,6 +204,8 @@ struct RetainedSourceRecordWire {
     offset: u64,
     /// Retained image of the source bytes.
     bytes: RetainedBytes,
+    /// Content classes not represented by any typed document record.
+    untyped: crate::document::ArenaClasses,
 }
 
 /// A source record's exclusive end offset exceeds the offset domain.
@@ -217,6 +242,7 @@ impl TryFrom<RetainedSourceRecordWire> for RetainedSourceRecord {
 
     fn try_from(wire: RetainedSourceRecordWire) -> Result<Self, Self::Error> {
         Self::from_bytes(wire.stream, wire.offset, wire.bytes)
+            .map(|record| record.with_untyped(wire.untyped))
     }
 }
 
@@ -228,6 +254,7 @@ impl RetainedSourceRecord {
             stream: stream.into(),
             offset: 0,
             bytes: RetainedBytes::Inline { data },
+            untyped: crate::document::ArenaClasses::new(),
         }
     }
 
@@ -243,7 +270,20 @@ impl RetainedSourceRecord {
             stream,
             offset,
             bytes,
+            untyped: crate::document::ArenaClasses::new(),
         })
+    }
+
+    /// Declare which source content survives in no typed document record.
+    #[must_use]
+    pub fn with_untyped(mut self, classes: crate::document::ArenaClasses) -> Self {
+        self.untyped = classes;
+        self
+    }
+
+    /// Content classes carried only by this retained source record.
+    pub const fn untyped(&self) -> &crate::document::ArenaClasses {
+        &self.untyped
     }
 
     /// Returns the source stream containing the record.
@@ -322,17 +362,78 @@ impl RetainedSourceRecord {
 /// let mut fidelity = cadmpeg_ir::SourceFidelity::default();
 /// fidelity.retained_records().clear();
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(with = "SourceFidelityWire"))]
+#[serde(try_from = "SourceFidelityWire")]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
-    #[serde(default)]
     pub annotations: Annotations,
+    /// Source layout and fingerprint facts, never document content or payload bytes.
+    pub metadata: BTreeMap<String, String>,
     /// Native records retained for recovery or replay, keyed by record id.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SourceFidelityWire {
+    /// Union of the retained records' untyped content classes.
+    #[serde(default)]
+    unrepresented: crate::document::ArenaClasses,
+    /// Sparse source locations and conversion exactness.
+    #[serde(default)]
+    annotations: Annotations,
+    /// Facts about source layout and fingerprints.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    metadata: BTreeMap<String, String>,
+    /// Native records retained for recovery or replay.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
+}
+
+impl TryFrom<SourceFidelityWire> for SourceFidelity {
+    type Error = String;
+
+    fn try_from(wire: SourceFidelityWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            annotations: wire.annotations,
+            metadata: wire.metadata,
+            retained_records: wire.retained_records,
+        };
+        let derived = value.unrepresented();
+        if wire.unrepresented != derived {
+            return Err(format!(
+                "unrepresented classes ({}) differ from retained records' untyped union ({derived})",
+                wire.unrepresented,
+            ));
+        }
+        Ok(value)
+    }
+}
+
+impl Serialize for SourceFidelity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(deny_unknown_fields)]
+        struct Wire<'a> {
+            unrepresented: crate::document::ArenaClasses,
+            annotations: &'a Annotations,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            metadata: &'a BTreeMap<String, String>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
+        }
+        Wire {
+            unrepresented: self.unrepresented(),
+            annotations: &self.annotations,
+            metadata: &self.metadata,
+            retained_records: &self.retained_records,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl SourceFidelity {
@@ -340,18 +441,55 @@ impl SourceFidelity {
     pub fn with_annotations(annotations: Annotations) -> Self {
         Self {
             annotations,
+            metadata: BTreeMap::new(),
             retained_records: std::collections::BTreeMap::new(),
         }
     }
 
     /// Consume the source metadata without copying its retained bytes.
-    pub fn into_parts(self) -> (Annotations, BTreeMap<UnknownId, RetainedSourceRecord>) {
-        (self.annotations, self.retained_records)
+    pub fn into_parts(
+        self,
+    ) -> (
+        Annotations,
+        BTreeMap<UnknownId, RetainedSourceRecord>,
+        BTreeMap<String, String>,
+    ) {
+        (self.annotations, self.retained_records, self.metadata)
+    }
+
+    /// Classes whose source content survives in no typed document record.
+    ///
+    /// This is derived from the retained records rather than set independently.
+    pub fn unrepresented(&self) -> crate::document::ArenaClasses {
+        self.retained_records
+            .values()
+            .flat_map(|record| record.untyped().iter().copied())
+            .collect()
+    }
+
+    /// Mark additional content on an existing retained source record as untyped.
+    pub fn mark_untyped(
+        &mut self,
+        id: &str,
+        classes: impl IntoIterator<Item = crate::document::ArenaClass>,
+    ) -> Result<(), NativeConvertError> {
+        let record = self.retained_records.get_mut(id).ok_or_else(|| {
+            NativeConvertError::InvalidCollection(format!("missing retained source record {id}"))
+        })?;
+        record.untyped.extend(classes);
+        Ok(())
     }
 
     /// Append source metadata after checking both tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
+        for key in other.metadata.keys() {
+            if self.metadata.contains_key(key) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate source fidelity metadata key {key}"
+                )));
+            }
+        }
         for id in other.retained_records.keys() {
             if self.retained_records.contains_key(id) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -361,6 +499,7 @@ impl SourceFidelity {
         }
         self.annotations.append(other.annotations)?;
         self.retained_records.append(&mut other.retained_records);
+        self.metadata.append(&mut other.metadata);
         Ok(())
     }
 
@@ -541,6 +680,73 @@ mod tests {
     use crate::report::decode::DecodeReport;
     use crate::unknown::UnknownRecord;
 
+    #[test]
+    fn unrepresented_classes_derive_from_retained_records_and_survive_sidecars() {
+        use crate::document::{ArenaClass, ArenaClasses};
+        let mut fidelity = SourceFidelity::default();
+        fidelity
+            .insert_retained_record(
+                id("design"),
+                record(b"unread design").with_untyped(ArenaClasses::from([ArenaClass::Design])),
+            )
+            .unwrap();
+        fidelity
+            .metadata
+            .insert("source_layout".into(), "partition-a".into());
+        let bytes = b"saved document";
+        let sidecar =
+            DecodeSidecar::bind_sha256(Sha256Digest::digest(bytes), report(), fidelity.clone());
+        let wire = serde_json::to_value(&sidecar).expect("valid contract fixture");
+        assert_eq!(
+            wire["fidelity"]["unrepresented"],
+            serde_json::json!(["design"])
+        );
+        let restored =
+            serde_json::from_value::<DecodeSidecar>(wire.clone()).expect("valid contract fixture");
+        assert_eq!(restored.fidelity, fidelity);
+        let mut tampered = wire;
+        tampered["fidelity"]["unrepresented"] = serde_json::json!([]);
+        let error = serde_json::from_value::<DecodeSidecar>(tampered)
+            .expect_err("a sidecar cannot hide untyped source classes");
+        assert!(error.to_string().contains("untyped union"));
+        let mut other = SourceFidelity::default();
+        other
+            .insert_retained_record(
+                id("model"),
+                record(b"unread model").with_untyped(ArenaClasses::from([ArenaClass::Model])),
+            )
+            .unwrap();
+        fidelity.append(other).expect("disjoint source records");
+        assert_eq!(
+            fidelity.unrepresented(),
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Design,])
+        );
+        fidelity.remove_retained_record(id("design").as_str());
+        assert_eq!(
+            fidelity.unrepresented(),
+            ArenaClasses::from([ArenaClass::Model])
+        );
+        fidelity.remove_retained_record(id("model").as_str());
+        assert!(fidelity.unrepresented().is_empty());
+    }
+
+    #[test]
+    fn source_metadata_collisions_leave_both_record_tables_unchanged() {
+        let mut left = SourceFidelity::default();
+        left.metadata
+            .insert("document_digest".into(), "left".into());
+        let original = left.clone();
+        let mut right = SourceFidelity::default();
+        right
+            .metadata
+            .insert("document_digest".into(), "right".into());
+        right
+            .insert_retained_record(id("right"), record(b"right"))
+            .unwrap();
+        assert!(left.append(right).is_err());
+        assert_eq!(left, original);
+    }
+
     fn record(data: &[u8]) -> RetainedSourceRecord {
         RetainedSourceRecord::whole("source", data.to_vec())
     }
@@ -552,7 +758,10 @@ mod tests {
     fn report() -> DecodeReport {
         DecodeReport::unclassified(
             "test",
-            crate::report::decode::DecodeTransfer::full(true),
+            crate::report::decode::DecodeTransfer {
+                scope: crate::document::ContentScope::full(),
+                geometry_transferred: true,
+            },
             std::collections::BTreeMap::default(),
             Vec::new(),
             Vec::new(),

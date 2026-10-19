@@ -9,9 +9,7 @@ use super::draft::{
     thicken_feature_definition,
 };
 use super::knit::{filled_surface_feature_definition, knit_surface_feature_definition};
-use super::outputs::{
-    feature_reference_name, insert_feature_source_property, sweep_output_kind, sweep_solid,
-};
+use super::outputs::{feature_reference_name, sweep_output_kind, sweep_solid};
 use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
@@ -29,7 +27,6 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
-use std::collections::BTreeMap;
 
 pub(in super::super) fn named_feature_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -439,26 +436,6 @@ pub(in super::super) fn reference_named_feature_definition(
         ));
     }
     None
-}
-
-pub(in super::super) fn retain_native_feature_parameters(
-    source_properties: &mut BTreeMap<String, String>,
-    definition: &IrFeatureDefinition,
-    parameters: &BTreeMap<String, String>,
-) {
-    if matches!(
-        definition,
-        IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
-    ) {
-        return;
-    }
-    for (name, value) in parameters {
-        insert_feature_source_property(
-            source_properties,
-            format_args!("native_parameter.{name}"),
-            value,
-        );
-    }
 }
 
 #[cfg(test)]

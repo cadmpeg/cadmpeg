@@ -959,7 +959,7 @@ fn parameter_companion_decode_emits_one_identified_companion() {
         id: crate::ids::native_design_record_header_id(STREAM, 0),
         record_index: 46,
         class_tag: crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -1036,7 +1036,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         id: crate::ids::native_design_record_header_id(stream, 0),
         record_index: 44,
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let mut exact = parameter_owner_frame();
@@ -1156,7 +1156,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
-        byte_offset,
+        byte_offset: Some(byte_offset),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
@@ -1206,7 +1206,7 @@ fn parameter_companion_binding_owns_its_recipe() {
     );
     let recipe = ConstructionRecipe {
         id: "f3d:native:construction-recipe#60".into(),
-        byte_offset: 60,
+        byte_offset: Some(60),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
@@ -1341,3 +1341,5 @@ fn design_parameter_text_fields_keep_the_name() {
     let parsed = super::parse_design_parameter(&payload).unwrap().unwrap();
     assert_eq!(parsed.name, "d71");
 }
+
+mod authored_links;

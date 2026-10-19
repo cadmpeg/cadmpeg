@@ -1352,6 +1352,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     ir.model.regions.push(region);
     ir.model.bodies[0].visible = Some(false);
     ir.model.presentation_layers.push(PresentationLayer {
+        parent: None,
         id: LayerId::mint("test:model:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
         description: None,
@@ -1681,6 +1682,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let point = ir.model.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        parent: None,
         id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
@@ -1753,7 +1755,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
             name: Some("Root assembly".into()),
             visible: None,
             link: None,
@@ -1773,7 +1775,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             ])
             .expect("affine transform"),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
             name: Some("Child occurrence".into()),
             visible: None,
             link: None,
@@ -1793,6 +1795,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         },
     });
     ir.model.presentation_layers.push(PresentationLayer {
+        parent: None,
         id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
         name: "mixed layer".into(),
         description: None,

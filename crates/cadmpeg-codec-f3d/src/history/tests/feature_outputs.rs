@@ -16,6 +16,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     };
     use cadmpeg_ir::ids::BodyId;
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:model:feature#feature").unwrap(),
         ordinal: 0,
         name: None,
@@ -49,7 +50,7 @@ fn state(
         crate::history_records::AsmDeltaState {
             id: format!("f3d:asm-delta-state#{state_id}"),
             parent: "f3d:asm-history#1".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id,
             version_flag: 1,
             state_flag: 0,

@@ -13,6 +13,7 @@ use crate::decode::Scan;
 mod attach;
 pub(crate) mod catalogue;
 pub(crate) mod display_jt;
+pub(crate) mod document_validation;
 mod features;
 pub(crate) mod hex;
 pub(crate) mod history;

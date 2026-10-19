@@ -22,12 +22,13 @@ fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
 
     let reference =
         |selector_offset, candidates: &[i64]| crate::records::dimensions::DesignRecipeReference {
+            clause_index: u32::try_from(selector_offset).expect("test clause index"),
             selector: 1,
-            selector_offset,
+            selector_offset: Some(selector_offset),
             token: "x".into(),
-            token_offset: selector_offset + 1,
+            token_offset: Some(selector_offset + 1),
             design_reference: 1,
-            design_reference_offset: selector_offset + 2,
+            design_reference_offset: Some(selector_offset + 2),
             candidate_faces: candidates
                 .iter()
                 .map(|face| {

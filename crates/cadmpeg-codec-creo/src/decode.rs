@@ -17,6 +17,7 @@ mod analytic;
 mod build;
 mod coverage;
 mod curve_expressions;
+mod document_projection;
 mod expanded;
 mod feature_history;
 mod holes;
@@ -28,6 +29,7 @@ mod sketch;
 mod sketch_ids;
 mod sketch_transfer;
 mod source_carriers;
+mod source_layout;
 mod surfaces;
 mod sweep;
 pub(crate) mod uniqueness;
@@ -73,7 +75,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     } else {
         build_ir(ctx, &scan, &classification)?
     };
+    ir.scope = if ctx.container_only() {
+        cadmpeg_ir::ContentScope::container()
+    } else {
+        cadmpeg_ir::ContentScope::full()
+    };
+    let mut untyped = cadmpeg_ir::ArenaClasses::default();
     let mut body = build_report(
+        &mut untyped,
         &scan,
         &classification,
         &ir,
@@ -82,8 +91,57 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx.container_only(),
     )?;
     body.losses.extend(transfer_losses);
+    for state in &scan.features.operation_states {
+        if state
+            .name
+            .stored_name_bytes()
+            .is_some_and(|bytes| std::str::from_utf8(bytes).is_err())
+        {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
+            body.losses.push(crate::loss::CreoLossCode::NeutralRecordUnprojected.note(format!(
+                "Feature operation {} state at {} has a stored name whose text encoding is not decoded; source bytes remain in fidelity.", state.feature_id, state.state_offset
+            )));
+        }
+    }
+    if !ctx.container_only() {
+        document_projection::project(ctx, &scan, &mut ir, &mut body.losses)?;
+    }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
+    if ctx.container_only() {
+        // Container mode retains expanded section bytes, not the typed modern
+        // geometry and history payloads emitted by build_ir.
+        if scan
+            .framing
+            .sections
+            .iter()
+            .any(|section| section.role() == crate::container::SectionRole::PsbGeometry)
+            || !scan.surfaces.rows.is_empty()
+            || !scan.curves.prototypes.is_empty()
+        {
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+        }
+        if !scan.features.rows.is_empty()
+            || !scan.features.definitions.is_empty()
+            || !scan.features.depdb_recipe_rows.is_empty()
+        {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
+        }
+    }
+    source_layout::move_layout(ctx, &mut ir, &mut source_fidelity)?;
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(root.window().len()),
+        "retain Creo source image outside CADIR",
+    )?;
+    source_fidelity.insert_retained_record(
+        cadmpeg_ir::ids::UnknownId::mint("creo:source:image#whole")
+            .map_err(CodecError::malformed)?,
+        cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole(
+            "creo:source",
+            root.window().to_vec(),
+        )
+        .with_untyped(untyped),
+    )?;
     Ok(Decoded {
         ir,
         body,

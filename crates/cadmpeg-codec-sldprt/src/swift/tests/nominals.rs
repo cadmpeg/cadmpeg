@@ -363,7 +363,10 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(5.0).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(5.0).expect("finite length"))
+    );
 }
 
 #[test]
@@ -442,7 +445,10 @@ fn counterbore_pattern_supplies_distinct_hole_diameter() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(6.0).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(6.0).expect("finite length"))
+    );
 }
 
 #[test]
@@ -492,7 +498,10 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(35.0).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(35.0).expect("finite length"))
+    );
 
     *root.features.entities.get_mut(1).expect("direct sphere") =
         feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 15.875);
@@ -518,7 +527,10 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(31.75).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(31.75).expect("finite length"))
+    );
 }
 
 #[test]
@@ -583,7 +595,10 @@ fn directional_plane_distance_supplies_location_nominal() {
     else {
         panic!("dimension tolerance");
     };
-    assert_eq!(*nominal, length(20.0).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(20.0).expect("finite length"))
+    );
     assert_eq!(*lower_deviation, length(-0.5).expect("finite length"));
     assert_eq!(*upper_deviation, length(0.5).expect("finite length"));
 
@@ -633,7 +648,10 @@ fn directional_compound_hole_axes_supply_location_nominal() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(75.0).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(75.0).expect("finite length"))
+    );
 }
 
 #[test]
@@ -708,7 +726,10 @@ fn closed_slot_end_feature_supplies_length_location_nominal() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(25.4).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(25.4).expect("finite length"))
+    );
 
     root.features
         .entities
@@ -822,7 +843,10 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(12.0).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(12.0).expect("finite length"))
+    );
 }
 
 #[test]
@@ -866,7 +890,10 @@ fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(12.7).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(12.7).expect("finite length"))
+    );
 
     root.features
         .entities

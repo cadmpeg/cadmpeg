@@ -193,7 +193,7 @@ fn blind_extrusion_from_carriers(
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(length)?).into(),
                 },
                 draft: None,
             },
@@ -917,7 +917,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     Ok(Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: LinearTermination::Blind { length },
+                termination: LinearTermination::Blind {
+                    length: (length).into(),
+                },
                 draft: None,
             },
         },
@@ -971,7 +973,7 @@ fn derived_blind_extrusion_span(
     else {
         return None;
     };
-    directed_blind_extrusion_span(transform.normal(), direction, length.get())
+    directed_blind_extrusion_span(transform.normal(), direction, length.literal()?.get())
 }
 
 pub(in super::super) fn resolved_feature_extrusion_span(

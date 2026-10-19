@@ -73,8 +73,8 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 id: format!("scalar-{}", next(5)),
                 parent: "lane".into(),
                 feature_ref: None,
-                ordinal,
-                offset: u64::from(ordinal),
+                ordinal, sequence: ordinal,
+                offset: Some(u64::from(ordinal)),
                 object_id: 1,
                 name: format!("name-{}", next(5)),
                 value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -83,11 +83,11 @@ fn indexed_relation_lookups_match_the_linear_scans() {
             })
             .collect();
         lane.names = (0..12)
-            .map(|ordinal| FeatureInputName {
+            .map(|ordinal| FeatureInputName { feature_ref: None,
                 id: format!("name-{}", next(5)),
                 parent: "lane".into(),
-                ordinal,
-                offset: u64::from(ordinal),
+                ordinal, sequence: ordinal,
+                offset: Some(u64::from(ordinal)),
                 value: format!("D{}", next(3)),
                 object_id: None,
             })
@@ -134,6 +134,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -158,6 +159,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                     );
                 }
                 DesignParameter {
+                    driving: true,
                     id: ParameterId::mint(format!("synthetic:test:id#parameter-{}", next(20)))
                         .expect("identity grammar"),
                     owner: (next(5) != 0).then(|| {
@@ -172,7 +174,6 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                     properties,
                     pmi: None,
                     native_ref: None,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 }
             })
             .collect::<Vec<_>>();

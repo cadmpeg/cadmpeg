@@ -24,7 +24,7 @@ use super::{RhinoArchiveVersion, RhinoCodec};
 const FIXTURE_EXTENSION: &str = "3dm";
 
 /// Crate-relative regeneration hint used in every failure message.
-const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-rhino golden";
+const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
 fn harness() -> Harness {
     Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
@@ -96,7 +96,10 @@ const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
 /// fixture's own archive word is. The `Inherit` path resolves against the source
 /// instead and so cannot be pinned per target; it is covered by the unit tests
 /// in `writer/tests/targets.rs`.
-fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<Vec<u8>, String>> {
+fn encode_outcome(
+    bytes: &[u8],
+    version: RhinoArchiveVersion,
+) -> Option<Result<(Vec<u8>, String), String>> {
     let decoded = EditableDecodeResult::from(
         RhinoCodec
             .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
@@ -110,7 +113,10 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
     )
     .and_then(|plan| plan.write_to(&mut encoded));
     Some(match written {
-        Ok(_) => Ok(encoded),
+        Ok(report) => Ok((
+            encoded,
+            snapshot_text(&serde_json::to_value(report).expect("export report")),
+        )),
         Err(error) => Err(error.to_string()),
     })
 }
@@ -124,14 +130,21 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
         for (target, version) in ENCODE_TARGETS {
             let archive = dir.join(format!("{name}.{target}.bin"));
             let refusal = dir.join(format!("{name}.{target}.err.txt"));
+            let report = dir.join(format!("{name}.{target}.report.json"));
             match encode_outcome(bytes, version) {
                 None => {}
-                Some(Ok(written)) => {
+                Some(Ok((written, report_text))) => {
                     produced.insert(format!("{name}.{target}.bin"));
+                    produced.insert(format!("{name}.{target}.report.json"));
                     if update {
                         write_golden(&archive, &written);
+                        write_golden(&report, report_text.as_bytes());
                         remove_golden(&refusal);
                         continue;
+                    }
+                    match std::fs::read_to_string(&report) {
+                        Ok(expected) if expected.replace("\r\n", "\n") == report_text => {}
+                        _ => failures.push(format!("fixture `{name}` target {target}: export report differs; regenerate with `{REGENERATE}`")),
                     }
                     match std::fs::read(&archive) {
                         Ok(expected) if expected == written => {}
@@ -152,6 +165,7 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
                     if update {
                         write_golden(&refusal, written.as_bytes());
                         remove_golden(&archive);
+                        remove_golden(&report);
                         continue;
                     }
                     match std::fs::read_to_string(&refusal) {
@@ -238,6 +252,12 @@ fn encode_goldens_hold() {
 fn encode_output_is_deterministic() {
     for (name, bytes) in harness().fixture_inputs() {
         for (target, version) in ENCODE_TARGETS {
+            if let Some(outcome) = encode_outcome(&bytes, version) {
+                assert!(
+                    outcome.is_ok(),
+                    "decoded fixture `{name}` target {target} must encode: {outcome:?}"
+                );
+            }
             assert!(
                 encode_outcome(&bytes, version) == encode_outcome(&bytes, version),
                 "fixture `{name}` target {target}: two encodes in one process disagree"
@@ -250,9 +270,20 @@ fn encode_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
         &RhinoCodec,
         &harness().fixture_inputs(),
+        |result| {
+            let expected = crate::loss::unrepresented(
+                &result.report().losses,
+                result.ir().native.namespace("rhino"),
+            );
+            assert_eq!(
+                result.source_fidelity().unrepresented(),
+                expected,
+                "every source-only loss must declare its arena class"
+            );
+        },
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
 }

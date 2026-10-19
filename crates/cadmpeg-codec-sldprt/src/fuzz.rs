@@ -62,7 +62,10 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         if record.item_count.get() != 1 {
             continue;
         }
-        let Ok(start) = usize::try_from(record.value_offset) else {
+        let Some(start) = record
+            .value_offset
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         let Some(end) = start.checked_add(8) else {

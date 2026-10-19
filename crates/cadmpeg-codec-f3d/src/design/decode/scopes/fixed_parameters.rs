@@ -86,7 +86,7 @@ pub(super) fn exact_fixed_extrude_parameters(
             .iter()
             .find(|owner| {
                 native_stream(owner.id()) == native_stream(&scope.id)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && owner.record_index() == record_index
             })
             .and_then(|owner| {
@@ -272,7 +272,7 @@ pub(super) fn exact_fixed_chamfer_parameters(
     if parameter_owners.iter().any(|owner| {
         stream.is_some()
             && native_stream(owner.id()) == stream
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
     }) {
         return None;
     }
@@ -312,13 +312,13 @@ pub(super) fn unique_revolve_angle_owner<'a>(
 ) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
         native_stream(owner.id()) == native_stream(&scope.id)
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
             && scope
                 .reference_members()
                 .values()
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
-            && owner.local_ordinal() == 0
+            && owner.local_ordinal() == Some(0)
             && owner.evaluated_value().get() > 0.0
     });
     let angle = candidates.next()?;

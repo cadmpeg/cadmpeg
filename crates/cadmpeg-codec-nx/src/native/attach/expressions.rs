@@ -1,4 +1,4 @@
-use super::feature_projection::{insert_parameter_property, parameter_consumer_identity};
+use super::feature_projection::insert_parameter_property;
 use super::{
     Angle, AnnotationBuilder, BTreeMap, CadIr, CodecError, DecodeContext, DesignParameter,
     DistinctMembers, Exactness, Feature, FeatureDefinition, FeatureId, FeatureOperation,
@@ -11,8 +11,8 @@ pub(in crate::native) fn attach_expression_parameters(
     ir: &mut CadIr,
     expressions: &[crate::native::om::ParameterFormula],
     declarations: &[crate::native::om::ExpressionDeclaration],
-    parameter_uses: &[crate::native::features::FeatureParameterUse],
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut declaration_index = BTreeMap::new();
     for declaration in declarations {
@@ -26,24 +26,6 @@ pub(in crate::native) fn attach_expression_parameters(
         table_expressions.push(expression);
     }
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let mut uses_by_expression =
-        BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
-    for parameter_use in parameter_uses {
-        let key = parameter_use.expression.as_str();
-
-        let uses = uses_by_expression.entry(key).or_default();
-        uses.push(parameter_use);
-    }
-    for uses in uses_by_expression.values_mut() {
-        uses.sort_by(|first, second| {
-            first
-                .bindings
-                .first()
-                .map(|binding| binding.source_offset)
-                .cmp(&second.bindings.first().map(|binding| binding.source_offset))
-                .then_with(|| first.id.cmp(&second.id))
-        });
-    }
     let mut ordered_tables = tables.into_iter().collect::<Vec<_>>();
     for (_, expressions) in &mut ordered_tables {
         expressions.sort_by(|first, second| {
@@ -62,7 +44,7 @@ pub(in crate::native) fn attach_expression_parameters(
     });
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
     for (table_ordinal, (table, mut expressions)) in ordered_tables.into_iter().enumerate() {
-        let ordered_count = order_expression_dependencies(ctx, &mut expressions)?;
+        order_expression_dependencies(ctx, &mut expressions)?;
         let feature_id: FeatureId = match table.split_once(":expression-table#") {
             None => IdScope::of(table)
                 .map(|scope| {
@@ -128,6 +110,7 @@ pub(in crate::native) fn attach_expression_parameters(
             ordinal,
             name: Some("NX expressions".to_string()),
             suppressed: Some(false),
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("hostglobalvariables".to_string()),
@@ -176,27 +159,21 @@ pub(in crate::native) fn attach_expression_parameters(
             annotations
                 .derived(id.as_str(), "native_ref")
                 .map_err(cadmpeg_core::CodecError::from)?;
-            let mut dependencies = Vec::new();
-            if ordinal < ordered_count {
-                for name in crate::native::om::expression_parameter_names(&expression.expression) {
-                    let Some([candidate]) = parameter_ids
-                        .get(&(name, &expression.unit))
-                        .map(Vec::as_slice)
-                    else {
-                        continue;
-                    };
-
-                    if dependencies.contains(candidate) {
-                        continue;
-                    }
-                    dependencies.push(candidate.clone());
+            let mut spans = Vec::new();
+            for name in crate::native::om::expression_parameter_names(&expression.expression) {
+                if let Some([candidate]) = parameter_ids
+                    .get(&(name, &expression.unit))
+                    .map(Vec::as_slice)
+                {
+                    let start = name.as_ptr().addr() - expression.expression.as_ptr().addr();
+                    spans.push((start..start + name.len(), candidate.clone()));
+                } else {
+                    losses.push(crate::loss::NxLossCode::ExpressionParameterIncomplete.note(format!("Expression {} identifier {name:?} has no unique neutral parameter; the source text remains held.", expression.id)));
                 }
             }
-            if !dependencies.is_empty() {
-                annotations
-                    .derived(id.as_str(), "dependencies")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-            }
+            let mut bound_expression =
+                cadmpeg_ir::features::Expression::from_spans(&expression.expression, spans)
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
             let value = expression.value.and_then(|value| match &expression.unit {
                 crate::native::om::ExpressionUnit::Millimeter => {
                     Some(ParameterValue::Length(Length::from_assigned_real(value)))
@@ -214,6 +191,14 @@ pub(in crate::native) fn attach_expression_parameters(
                 }
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });
+            // Stored bare numbers are source-unit literals. Normalize their
+            // spelling along with the parameter cache; do not replace an
+            // authored formula or token reference with its evaluated value.
+            if expression.expression.trim().parse::<f64>().is_ok() {
+                if let Some(value) = &value {
+                    bound_expression = value.literal_expression();
+                }
+            }
             let mut properties = BTreeMap::new();
             insert_parameter_property(
                 &mut properties,
@@ -242,26 +227,6 @@ pub(in crate::native) fn attach_expression_parameters(
                     .derived(id.as_str(), "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
-            for (consumer_ordinal, parameter_use) in uses_by_expression
-                .get(expression.id.as_str())
-                .into_iter()
-                .flatten()
-                .enumerate()
-            {
-                insert_parameter_property(
-                    &mut properties,
-                    format_args!("consumer.{consumer_ordinal}"),
-                    parameter_consumer_identity(&parameter_use.operation_label),
-                )?;
-                insert_parameter_property(
-                    &mut properties,
-                    format_args!("parameter_use.{consumer_ordinal}"),
-                    parameter_use.id.clone(),
-                )?;
-                annotations
-                    .derived(id.as_str(), "properties")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-            }
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 CodecError::malformed(format_args!(
                     "NX expression parameter ordinal {ordinal} exceeds u32"
@@ -272,11 +237,10 @@ pub(in crate::native) fn attach_expression_parameters(
                 owner: Some(feature_id.clone()),
                 ordinal,
                 name: expression.name.as_str().to_owned(),
-                expression: expression.expression.clone(),
+                expression: bound_expression,
                 display: None,
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-                    .map_err(cadmpeg_core::CodecError::from)?,
+                driving: true,
                 properties,
                 pmi: None,
                 native_ref: Some(expression.id.clone()),
@@ -334,68 +298,6 @@ fn order_expression_dependencies(
     }
     *expressions = order;
     Ok(ordered_count)
-}
-
-pub(super) fn attach_block_dimension_parameter_consumers(
-    ir: &mut CadIr,
-    dimensions: &[crate::native::features::FeatureBlockDimensions],
-    annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for dimension_set in dimensions {
-        let consumer = match dimension_set.operation_label.split_once("operation-label") {
-            Some((prefix, suffix)) => format!("{prefix}feature{suffix}"),
-            None => dimension_set.operation_label.clone(),
-        };
-        for (ordinal, dimension) in dimension_set.dimensions.iter().enumerate() {
-            let Some(parameter_id) = expression_parameter_id(&dimension.expression) else {
-                continue;
-            };
-            let Some(parameter) = ir
-                .model
-                .parameters
-                .iter_mut()
-                .rev()
-                .find(|parameter| parameter.id == parameter_id)
-            else {
-                continue;
-            };
-            insert_parameter_property(
-                &mut parameter.properties,
-                format_args!("block_dimension.{ordinal}"),
-                dimension_set.id.clone(),
-            )?;
-            if !parameter
-                .properties
-                .values()
-                .any(|value| value == &consumer)
-            {
-                // One more candidate than the map holds entries, so one of
-                // them is free; the `else` states that rather than asserting it.
-                let mut consumer_ordinal = None;
-                for candidate in 0..=parameter.properties.len() {
-                    let key = format!("consumer.{candidate}");
-                    if !parameter.properties.contains_key(key.as_str()) {
-                        consumer_ordinal = Some(candidate);
-                        break;
-                    }
-                }
-                let Some(consumer_ordinal) = consumer_ordinal else {
-                    return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                        "NX parameter properties hold no free consumer ordinal"
-                    )));
-                };
-                insert_parameter_property(
-                    &mut parameter.properties,
-                    format_args!("consumer.{consumer_ordinal}"),
-                    consumer.clone(),
-                )?;
-            }
-            annotations
-                .derived(parameter.id.as_str(), "properties")
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {

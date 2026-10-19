@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Diff: entity deltas, source metadata, and per-input reader selection.
 
+use std::fs;
+
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
@@ -116,49 +118,39 @@ fn diff_reports_dialect_admission_and_declaration_changes() {
         .stderr(predicate::str::is_empty());
 }
 
-/// A machine-local digest cannot agree across platforms, so a difference in one
-/// alone is reported without making the documents different.
+/// Every source attribute is content, regardless of its name.
 #[test]
-fn diff_reports_a_machine_local_digest_difference_without_a_verdict() {
+fn diff_counts_every_source_attribute_in_its_verdict() {
     let dir = tempdir().unwrap();
     let a = fixture(
         dir.path(),
         "a.json",
-        &cube_with_source(&[("document_local_sha256", &"0".repeat(64))]),
+        &cube_with_source(&[("document_local_sha256", "before")]),
     );
     let b = fixture(
         dir.path(),
         "b.json",
-        &cube_with_source(&[("document_local_sha256", &"1".repeat(64))]),
+        &cube_with_source(&[("document_local_sha256", "after")]),
     );
-
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("machine-local digests")
-                .and(predicate::str::contains("document_local_sha256"))
-                .and(predicate::str::contains("identical")),
-        );
-
+        .code(1)
+        .stdout(predicate::str::contains(
+            "source document_local_sha256: before → after",
+        ));
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
         .assert()
-        .success();
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.get_output().stdout).expect("diff --json emits JSON");
-    assert_eq!(value["different"], serde_json::json!(false));
+        .code(1);
+    let value: serde_json::Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
+    assert_eq!(value["different"], true);
     assert_eq!(
-        value["diff"]["source"]["local_digests"][0]["key"],
-        serde_json::json!("document_local_sha256")
+        value["diff"]["source"]["attributes"][0]["key"],
+        "document_local_sha256"
     );
-    assert!(value["diff"]["source"]["attributes"]
-        .as_array()
-        .expect("attributes is an array")
-        .is_empty());
 }
 
 /// A document with no source metadata against one that has some must not panic.
@@ -265,4 +257,93 @@ fn diff_input_format_forces_the_reader_per_input() {
         ])
         .assert()
         .code(2);
+}
+
+#[test]
+fn diff_reports_scope_changes_as_document_changes() {
+    let dir = tempdir().unwrap();
+    let full = unit_cube().unwrap();
+    let mut geometry = full.clone();
+    geometry
+        .set_scope(cadmpeg_ir::document::ContentScope::geometry())
+        .unwrap();
+    let left = fixture(dir.path(), "full.json", &full);
+    let right = fixture(dir.path(), "geometry.json", &geometry);
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", left.to_str().unwrap(), right.to_str().unwrap()])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("scope:"));
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            "--json",
+            left.to_str().unwrap(),
+            right.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1);
+    let report: serde_json::Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
+    assert_eq!(report["different"], true);
+    assert_eq!(
+        report["diff"]["scope_change"],
+        serde_json::json!([
+            {"model": true, "design": true}, {"model": true, "design": false}
+        ])
+    );
+}
+
+#[test]
+fn diff_reports_unrepresented_class_changes_even_when_cadir_is_identical() {
+    use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
+    let dir = tempdir().unwrap();
+    let native = minimal_rhino_archive(dir.path(), "source.3dm", "50");
+    let left = dir.path().join("left.cadir.json");
+    let right = dir.path().join("right.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "dump",
+            native.to_str().unwrap(),
+            "-o",
+            left.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    fs::copy(&left, &right).unwrap();
+    let mut sidecar =
+        DecodeSidecar::from_json(&fs::read_to_string(decode_sidecar_path(&left).unwrap()).unwrap())
+            .unwrap();
+    sidecar
+        .fidelity
+        .insert_retained_record(
+            "test:source:unknown#unread-design".try_into().unwrap(),
+            cadmpeg_ir::RetainedSourceRecord::whole("test:source", b"unread design".to_vec())
+                .with_untyped([cadmpeg_ir::document::ArenaClass::Design].into()),
+        )
+        .unwrap();
+    fs::write(
+        decode_sidecar_path(&right).unwrap(),
+        sidecar.to_canonical_json().unwrap(),
+    )
+    .unwrap();
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            "--json",
+            left.to_str().unwrap(),
+            right.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1);
+    let report: serde_json::Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
+    assert_eq!(report["different"], true);
+    assert_eq!(
+        report["source_fidelity"]["diff"]["unrepresented_changed"],
+        true
+    );
+    assert!(report["diff"]["scope_change"].is_null());
 }

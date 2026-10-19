@@ -3,8 +3,9 @@
 use super::{
     DesignClassTag, DesignCompanionPayload, DesignParameter, DesignParameterCompanion,
     DesignParameterCompanionWire, DesignParameterDiscriminator, DesignParameterDraft,
-    DesignParameterOwner, DesignParameterOwnerWire, DesignParameterSerde, DesignParameterSource,
-    PARAMETER_CLONE_COUNT, PARAMETER_COMPANION_CLONE_COUNT, PARAMETER_OWNER_CLONE_COUNT,
+    DesignParameterOwner, DesignParameterOwnerContent, DesignParameterOwnerWire,
+    DesignParameterSerde, DesignParameterSource, PARAMETER_CLONE_COUNT,
+    PARAMETER_COMPANION_CLONE_COUNT, PARAMETER_OWNER_CLONE_COUNT,
 };
 use crate::records::identity::{Located, RecordedValue};
 
@@ -15,7 +16,7 @@ fn parameter(owned: bool) -> DesignParameter {
         DesignParameterSource::User {
             family_discriminator: Located {
                 value: DesignParameterDiscriminator::Code0,
-                offset: 122,
+                offset: Some(122),
             },
         }
     };
@@ -106,7 +107,7 @@ fn companion(bound: bool) -> DesignParameterCompanion {
 #[test]
 fn parameter_owner_borrowed_wire_matches_owned_wire_bytes() {
     for record in [owner(None), owner(Some(0))] {
-        let owned = DesignParameterOwnerWire::from(record.clone());
+        let owned = DesignParameterOwnerContent::from(record.clone());
         assert_eq!(
             serde_json::to_vec(&record).unwrap(),
             serde_json::to_vec(&owned).unwrap()
@@ -145,4 +146,85 @@ fn parameter_companion_native_retained_limit_refuses_before_record_clone() {
         || PARAMETER_COMPANION_CLONE_COUNT.with(|count| count.set(0)),
         || PARAMETER_COMPANION_CLONE_COUNT.with(std::cell::Cell::get),
     );
+}
+
+#[test]
+fn authored_parameter_has_semantic_content_without_source_layout() {
+    use super::{DesignParameterContent, DesignParameterDiscriminator};
+    let source = DesignParameterSource::authored(
+        "User Parameter".into(),
+        None,
+        Some(DesignParameterDiscriminator::Code0),
+    )
+    .unwrap();
+    let parameter = DesignParameter::authored(DesignParameterContent {
+        id: "f3d:Design:design-parameter#12".into(),
+        class_tag: "365".try_into().unwrap(),
+        record_index: 12,
+        source_ordinal: 0,
+        source,
+        expression: "7 mm".into(),
+        unit: Some("mm".into()),
+        name: "Length".into(),
+        evaluated_value: 7.0,
+    })
+    .unwrap();
+    assert!(parameter.byte_offset().is_none());
+    assert!(parameter.evaluated_value_offset().is_none());
+    assert!(parameter.unit().unwrap().offset.is_none());
+    assert!(parameter.family_discriminator().unwrap().offset.is_none());
+    let wire = serde_json::to_value(&parameter).unwrap();
+    assert!(
+        wire.as_object()
+            .unwrap()
+            .keys()
+            .all(|key| !key.ends_with("_offset"))
+    );
+    let restored: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    parameter.retain_source(&mut fidelity);
+    assert!(fidelity.metadata.is_empty());
+    assert!(fidelity.retained_records().is_empty());
+}
+
+#[test]
+fn semantic_owner_preserves_absent_scope_and_cached_value() {
+    let mut value = serde_json::to_value(owner(None)).unwrap();
+    value.as_object_mut().unwrap().remove("scope_record_index");
+    value.as_object_mut().unwrap().remove("local_ordinal");
+    let restored: DesignParameterOwner = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(restored.scope_record_index(), None);
+    assert_eq!(restored.local_ordinal(), None);
+    assert_eq!(restored.evaluated_value().get(), 2.0);
+    assert_eq!(restored.byte_offset(), None);
+    assert_eq!(restored.evaluated_value_offset(), None);
+    assert_eq!(serde_json::to_value(&restored).unwrap(), value);
+    value["local_ordinal"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<DesignParameterOwner>(value).is_err());
+}
+
+#[test]
+fn semantic_companion_preserves_bound_empty_payload_without_source_layout() {
+    let unbound = serde_json::to_value(companion(false)).unwrap();
+    let bound = companion(false).bound(DesignCompanionPayload::new(240, 0, Vec::new()));
+    let bound = serde_json::to_value(bound).unwrap();
+    assert!(unbound.get("owned_recipe_ids").is_none());
+    assert_eq!(bound["owned_recipe_ids"], serde_json::json!([]));
+    for value in [unbound, bound] {
+        assert!(
+            value
+                .as_object()
+                .unwrap()
+                .keys()
+                .all(|key| !key.contains("offset") && !key.contains("length"))
+        );
+        let restored: DesignParameterCompanion = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(restored.byte_offset(), None);
+        assert_eq!(restored.timestamp_micros_offset(), None);
+        assert!(restored.payload().is_none_or(
+            |payload| payload.byte_offset().is_none() && payload.byte_length().is_none()
+        ));
+        assert_eq!(serde_json::to_value(restored).unwrap(), value);
+    }
 }

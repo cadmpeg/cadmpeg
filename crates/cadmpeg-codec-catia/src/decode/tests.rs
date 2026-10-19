@@ -296,7 +296,10 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
             Ok(Some(crate::families::FamilyOutput {
                 ir: cadmpeg_ir::CadIr::empty(),
                 report: cadmpeg_ir::codec::DecodeBody::new(
-                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+                    cadmpeg_ir::report::decode::DecodeTransfer {
+                        scope: cadmpeg_ir::ContentScope::container(),
+                        geometry_transferred: false,
+                    },
                 ),
                 annotations: cadmpeg_ir::Annotations::default(),
                 unknowns: Vec::new(),

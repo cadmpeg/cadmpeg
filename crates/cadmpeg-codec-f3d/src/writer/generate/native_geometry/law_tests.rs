@@ -89,17 +89,27 @@ fn assert_round_trip(ir: &CadIr) {
 }
 
 fn assert_refused(ir: &CadIr) {
-    let sentinel = b"existing output".to_vec();
-    let mut output = sentinel.clone();
-    let result = F3dCodec
+    // The exact native law serializer declines this entity; the public writer
+    // must still author the representable document and report the reduction.
+    let error = crate::writer::generate::write_new(ir, &mut Vec::new())
+        .expect_err("the exact law serializer cannot encode this grammar");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
+    let plan = F3dCodec
         .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut output));
-    assert!(
-        result.is_err(),
-        "unrepresentable law was written: {:?}",
-        layout(ir)
-    );
-    assert_eq!(output, sentinel, "refusal must precede output mutation");
+        .expect("an unsupported law is an export loss");
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(!plan.report().losses.is_empty());
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("degraded output");
+    F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("degraded output remains readable");
 }
 
 #[test]

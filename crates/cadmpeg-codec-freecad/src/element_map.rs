@@ -71,6 +71,7 @@ pub(crate) fn parse(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    mut fidelity: Option<&mut cadmpeg_ir::SourceFidelity>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     // Orphan carriers are diagnosed once; each marker still proves its own
     // framing so a damaged table cannot erase independently framed peers.
@@ -202,6 +203,14 @@ pub(crate) fn parse(
             .map_err(CodecError::Malformed)
         })();
         let payload = recover_metadata(parsed, losses, "StringHasher payload")?.flatten();
+        if payload.is_none() || save_all.is_none() || threshold.is_none() {
+            source_only(
+                &mut fidelity,
+                owner_property
+                    .as_deref()
+                    .unwrap_or(crate::fidelity::SOURCE_IMAGE),
+            )?;
+        }
         let mut record = match payload {
             Some(record) => record,
             None => StringTableRecord::try_new(index, None, save_all, threshold, None, None)
@@ -217,6 +226,8 @@ pub(crate) fn parse(
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
+        let mut untyped = false;
+        let mut carrier_present = false;
         let parsed = (|| {
             let property_xml = ctx
                 .parse_xml(property.xml.text(), "FreeCAD XML tree")
@@ -229,9 +240,13 @@ pub(crate) fn parse(
                         property.id
                     ))
                 })?;
+            carrier_present = property_xml
+                .descendants()
+                .any(|node| matches!(node.tag_name().name(), "ElementMap" | "ElementMap2"));
             let Some((part, carrier)) = direct_element_map(property_xml.root_element())? else {
                 return Ok(None);
             };
+            carrier_present = true;
             let version = part.attribute("ElementMap").unwrap_or("").to_owned();
             let mut hasher_index = part
                 .attribute("HasherIndex")
@@ -244,7 +259,9 @@ pub(crate) fn parse(
                 })
                 .transpose()?
                 .flatten();
+            untyped |= part.attribute("HasherIndex").is_some() && hasher_index.is_none();
             if hasher_index.is_some_and(|index| tables.get(index).is_none()) {
+                untyped = true;
                 recover_metadata::<()>(
                     Err(CodecError::Malformed(
                         "HasherIndex references an unavailable string table".into(),
@@ -266,6 +283,7 @@ pub(crate) fn parse(
                             )
                         })
                         .transpose()?;
+                    untyped |= declared_count == Some(None);
                     let source_entry = map_node
                         .attribute("file")
                         .filter(|name| !name.is_empty())
@@ -332,6 +350,7 @@ pub(crate) fn parse(
                         missing |= !known_ids.contains(id);
                     }
                     if missing {
+                        untyped = true;
                         recover_metadata::<()>(
                             Err(CodecError::Malformed(
                                 "mapped names reference unavailable persistent string IDs".into(),
@@ -355,11 +374,29 @@ pub(crate) fn parse(
                 maps: parsed.maps,
             }))
         })();
-        if let Some(map) = recover_metadata(parsed, losses, &property.id)?.flatten() {
+        let map = recover_metadata(parsed, losses, &property.id)?.flatten();
+        if untyped || (carrier_present && map.is_none()) {
+            source_only(&mut fidelity, &property.id)?;
+        }
+        if let Some(map) = map {
             maps.push(map);
         }
     }
     Ok((StringTables::try_from(tables)?, maps))
+}
+
+/// A parsed carrier with no typed payload still exists only in its source
+/// image. Record this at the recovery branch, independently of loss taxonomy.
+fn source_only(
+    fidelity: &mut Option<&mut cadmpeg_ir::SourceFidelity>,
+    record: &str,
+) -> Result<(), CodecError> {
+    if let Some(fidelity) = fidelity {
+        fidelity
+            .mark_untyped(record, [cadmpeg_ir::ArenaClass::Model])
+            .map_err(CodecError::malformed)?;
+    }
+    Ok(())
 }
 
 fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {

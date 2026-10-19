@@ -15,7 +15,7 @@ fn a_pole_whose_weighted_coordinate_overflows_is_refused() {
         }],
     };
     let written = crate::writer::homogeneous_poles(&poles, 0.001);
-    let Err(cadmpeg_core::CodecError::NotImplemented(message)) = written else {
+    let Err(cadmpeg_core::CodecError::UnsupportedContent(message)) = written else {
         panic!("{written:?}");
     };
     assert!(message.contains("pole 0"), "{message}");

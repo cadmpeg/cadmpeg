@@ -44,10 +44,6 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
         format: crate::CodecFormat::Step,
         object_id: cadmpeg_core::text::NonBlankString::new(object_id)
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -66,10 +62,6 @@ fn source_association_is_a_free_carrier_root() {
                 "00000000-0000-0000-0000-000000000000",
             )
             .expect("nonempty source identity"),
-            name: Some("curve".into()),
-            color: None,
-            visible: Some(true),
-            layer: Some("layer-0".into()),
             instance_path: Vec::new(),
         }),
     });

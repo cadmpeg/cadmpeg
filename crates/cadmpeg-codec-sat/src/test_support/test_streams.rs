@@ -10,6 +10,16 @@ pub(crate) fn text_sphere_stream(scale: f64) -> Vec<u8> {
     text_sphere_stream_with(23_200, scale, "End-of-ASM-data")
 }
 
+/// A body-owned generic ASM string attribute and direct display color.
+/// The attribute links use the same standard chain grammar as the kernel's
+/// attribute ownership tests; neither value creates a material appearance.
+pub(crate) fn attributed_sphere_stream() -> Vec<u8> {
+    let text = String::from_utf8(text_sphere_stream(1.0)).expect("ASCII sphere fixture");
+    text.replace("body $-1 -1", "body $6 -1")
+        .replace("End-of-ASM-data", "string_attrib-name_attrib-gen-attrib $-1 -1 $7 $-1 $1 1 3 1 1 @4 role @5 datum #\nrgb_color-st-attrib $-1 -1 $-1 $6 $1 0.25 0.5 0.75 #\nEnd-of-ASM-data")
+        .into_bytes()
+}
+
 /// The same solid under the `End-of-ACIS-data` terminator at
 /// `save_format_version`, so a text stream outside the verified Spatial ACIS
 /// band carries real geometry to recover.

@@ -309,9 +309,15 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
         .expect("decode STEP ZIP root");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
     assert_eq!(source.format(), "step");
-    assert_eq!(source.attributes["container_kind"], "iso-10303-21-zip");
-    assert_eq!(source.attributes["archive_root"], "ISO-10303.p21");
-    assert_eq!(source.attributes["archive_entries"], "3");
+    assert_eq!(
+        result.source_fidelity().metadata["container_kind"],
+        "iso-10303-21-zip"
+    );
+    assert_eq!(
+        result.source_fidelity().metadata["archive_root"],
+        "ISO-10303.p21"
+    );
+    assert_eq!(result.source_fidelity().metadata["archive_entries"], "3");
     assert!(result
         .report()
         .notes
@@ -482,10 +488,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode ZIP root without importing target");
-    assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["entity_instances"],
-        "6"
-    );
+    assert_eq!(result.source_fidelity().metadata["entity_instances"], "6");
     assert!(result
         .ir()
         .model
@@ -548,9 +551,8 @@ fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode root without parsing subsidiary");
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["archive_root"], ROOT_NAME);
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(result.source_fidelity().metadata["archive_root"], ROOT_NAME);
+    assert_eq!(result.source_fidelity().metadata["entity_instances"], "1");
     assert_eq!(
         result
             .ir()
@@ -602,8 +604,7 @@ fn codec_keeps_external_reference_graph_resource_local() {
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode root without composing subsidiary");
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(result.source_fidelity().metadata["entity_instances"], "1");
     assert_eq!(
         result
             .ir()
@@ -667,8 +668,7 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode valid root without composing subsidiary");
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(result.source_fidelity().metadata["entity_instances"], "1");
     assert_eq!(
         result
             .ir()
@@ -764,8 +764,7 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .expect("decode root without composing subsidiaries"),
     );
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(result.source_fidelity().metadata["entity_instances"], "1");
     let unknown = result
         .ir()
         .native_unknowns("step")
@@ -850,8 +849,7 @@ fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode root with valid forwarded target");
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(result.source_fidelity().metadata["entity_instances"], "1");
     assert_eq!(
         result
             .ir()

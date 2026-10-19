@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Curve-from-equation feature transfer and assignment parameter ordering.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -136,18 +136,18 @@ fn curve_expression_helix_feature_definition(
     let ProceduralCurveDefinition::Helix(helix_payload) = procedural else {
         return None;
     };
-    let pitch = helix_payload.pitch();
     let axis = helix_payload.axis();
-
-    let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
-    let pitch = cadmpeg_ir::scalar::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Operation(IrFeatureOperation::Helix {
         axis_origin: *helix_payload.center(),
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis.get())?,
-        radius: helix.radius,
-        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-        revolutions: helix.revolutions,
-        start_angle: helix.start_angle,
+        radius: helix.radius.into(),
+        shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+            law: cadmpeg_ir::features::HelixLaw::HeightRevolutions {
+                height: Length::new(helix.height.get())?.into(),
+                revolutions: helix.revolutions.into(),
+            },
+        },
+        start_angle: helix.start_angle.into(),
         clockwise: helix.clockwise,
         segment_turns: None,
         construction_style: None,
@@ -386,37 +386,15 @@ fn insert_curve_expression_property(
     properties.insert(key, value);
 }
 
-fn join_cyclic_dependency_names(names: &[&str]) -> String {
-    let mut joined = String::new();
-    for (index, name) in names.iter().enumerate() {
-        if index > 0 {
-            joined.push(',');
-        }
-        joined.push_str(name);
-    }
-    joined
-}
-
-fn curve_expression_source_text(lines: &[crate::curve::CurveExpressionLine]) -> String {
-    let mut text = String::new();
-    for (index, line) in lines.iter().enumerate() {
-        if index > 0 {
-            text.push('\n');
-        }
-        text.push_str(&line.text);
-    }
-    text
-}
-
 fn curve_expression_properties(
     assignment: &crate::curve::CurveExpressionAssignment,
     assignment_ordinal: usize,
     parameter: (&str, &ParameterId),
     indices: (&BTreeMap<String, Option<usize>>, &BTreeMap<String, usize>),
     dimension_parameters: &BTreeMap<String, ParameterId>,
-    cyclic_edges: &HashSet<(usize, usize)>,
+    _cyclic_edges: &HashSet<(usize, usize)>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
-    let (assignment_indices_by_name, unique_assignment_indices) = indices;
+    let (assignment_indices_by_name, _unique_assignment_indices) = indices;
 
     let (parameter_name, parameter_id) = parameter;
 
@@ -485,23 +463,6 @@ fn curve_expression_properties(
     if let Some(value) = intrinsic_dependencies {
         insert_curve_expression_property(&mut properties, "independent_variables", value);
     }
-    let mut cyclic_dependencies = Vec::new();
-    for name in &assignment.dependencies {
-        let mut key = name.clone();
-        key.make_ascii_lowercase();
-        if unique_assignment_indices
-            .get(&key)
-            .is_some_and(|dependency| cyclic_edges.contains(&(assignment_ordinal, *dependency)))
-        {
-            cyclic_dependencies.push(name.as_str());
-        }
-    }
-    cyclic_dependencies.sort_unstable_by(Ord::cmp);
-    cyclic_dependencies.dedup();
-    if !cyclic_dependencies.is_empty() {
-        let value = join_cyclic_dependency_names(&cyclic_dependencies);
-        insert_curve_expression_property(&mut properties, "cyclic_dependencies", value);
-    }
     cadmpeg_core::text::named_entries(parameter_id.as_str(), properties).map_err(Into::into)
 }
 
@@ -515,10 +476,20 @@ fn native_curve_expression_definition(
     let assignment_value = format!("{assignment_count}");
     let entity_key = cadmpeg_core::text::NonBlankString::new("entity_id".to_owned())
         .ok_or_else(|| CodecError::malformed("native entity key is blank"))?;
-    parameters.insert(entity_key, entity_value);
+    parameters.insert(
+        entity_key,
+        cadmpeg_ir::features::Dimension::Literal(cadmpeg_ir::features::Expression::text(
+            entity_value,
+        )),
+    );
     let assignment_key = cadmpeg_core::text::NonBlankString::new("assignment_count".to_owned())
         .ok_or_else(|| CodecError::malformed("native assignment key is blank"))?;
-    parameters.insert(assignment_key, assignment_value);
+    parameters.insert(
+        assignment_key,
+        cadmpeg_ir::features::Dimension::Literal(cadmpeg_ir::features::Expression::text(
+            assignment_value,
+        )),
+    );
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
         kind,
         parameters,
@@ -532,52 +503,38 @@ fn curve_expression_feature_labels(entity_id: u32) -> (String, String) {
     )
 }
 
-fn curve_expression_parameter_dependencies(
+fn curve_expression_parameter_expression(
     record: &crate::curve::CurveExpressionRecord,
     assignment_ordinal: usize,
     assignment_indices_by_name: &BTreeMap<String, Option<usize>>,
     unique_assignment_indices: &BTreeMap<String, usize>,
-    cyclic_edges: &HashSet<(usize, usize)>,
     dimension_parameters: &BTreeMap<String, ParameterId>,
-) -> Result<Vec<ParameterId>, CodecError> {
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<cadmpeg_ir::features::Expression, CodecError> {
     let assignment = &record.assignments[assignment_ordinal];
-    let mut seen = BTreeSet::new();
-    let mut dependencies = Vec::new();
-    let mut dimension_dependencies = Vec::new();
-    for name in &assignment.dependencies {
-        let mut key = name.clone();
-        key.make_ascii_lowercase();
-        if let Some(&dependency) = unique_assignment_indices.get(&key) {
-            if cyclic_edges.contains(&(assignment_ordinal, dependency))
-                || seen.contains(&dependency)
-            {
-                continue;
-            }
-            seen.insert(dependency);
-            dependencies.push(crate::identity::compose_checked::<ParameterId>(
+    let mut spans = Vec::new();
+    for span in crate::curve::expression_parameter_spans(&assignment.expression).unwrap_or_default()
+    {
+        let name = &assignment.expression[span.clone()];
+        let key = name.to_ascii_lowercase();
+        let parameter = if let Some(dependency) = unique_assignment_indices.get(&key) {
+            Some(crate::identity::compose_checked::<ParameterId>(
                 &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
                 format_args!("{}-{}-{dependency}", record.entity_id, record.offset),
-            )?);
-        }
-        if assignment_indices_by_name.contains_key(&key) {
-            continue;
-        }
-        let Some(parameter) = dimension_parameters.get(&key) else {
-            continue;
+            )?)
+        } else if assignment_indices_by_name.contains_key(&key) {
+            None
+        } else {
+            dimension_parameters.get(&key).cloned()
         };
-        if dependencies.contains(parameter) || dimension_dependencies.contains(&parameter) {
-            continue;
+        if let Some(parameter) = parameter {
+            spans.push((span, parameter));
+        } else {
+            losses.push(crate::loss::CreoLossCode::NeutralRecordUnprojected.note(format!("Curve-expression record {} assignment {} identifier {name:?} has no unique neutral parameter.", record.entity_id, assignment_ordinal)));
         }
-        dimension_dependencies.push(parameter);
     }
-    for parameter in dimension_dependencies {
-        let copied = parameter.as_str().to_owned();
-        let copied = ParameterId::try_from(copied).map_err(|_| {
-            CodecError::malformed("curve expression dimension parameter id is invalid")
-        })?;
-        dependencies.push(copied);
-    }
-    Ok(dependencies)
+    cadmpeg_ir::features::Expression::from_spans(&assignment.expression, spans)
+        .map_err(|error| CodecError::malformed(error.to_string()))
 }
 
 pub(super) fn transfer_curve_expression_features(
@@ -647,13 +604,13 @@ pub(super) fn transfer_curve_expression_features(
                     record.entity_id, record.offset
                 ),
             )?;
-            let dependencies = curve_expression_parameter_dependencies(
+            let expression = curve_expression_parameter_expression(
                 record,
                 assignment_ordinal,
                 &assignment_indices_by_name,
                 &unique_assignment_indices,
-                &cyclic_edges,
                 dimension_parameters,
+                &mut source_carriers.projection_losses,
             )?;
             annotate(
                 annotations,
@@ -691,11 +648,10 @@ pub(super) fn transfer_curve_expression_features(
                     owner: Some(crate::identity::copy_checked_id(feature_id.as_str())?),
                     ordinal,
                     name: parameter_name.to_owned(),
-                    expression: assignment.expression.clone(),
+                    expression,
                     display: None,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-                        .map_err(cadmpeg_core::CodecError::from)?,
+                    driving: true,
                     properties: BTreeMap::new(),
                     pmi: None,
                     native_ref: Some(curve_expression_record_id(record)),
@@ -791,10 +747,11 @@ pub(super) fn transfer_curve_expression_features(
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
                         axis_native_ref: cadmpeg_core::text::NonBlankString::new(axis_id)?,
-                        axial_rise: Length::new(helix.height.get())?,
-                        pitch: Length::new(helix.height.get() / helix.revolutions.get())?,
-                        revolutions: helix.revolutions,
-                        start_angle: helix.start_angle,
+                        law: cadmpeg_ir::features::HelixLaw::HeightRevolutions {
+                            height: Length::new(helix.height.get())?.into(),
+                            revolutions: helix.revolutions.into(),
+                        },
+                        start_angle: helix.start_angle.into(),
                         clockwise: helix.clockwise,
                     },
                 ))
@@ -821,6 +778,7 @@ pub(super) fn transfer_curve_expression_features(
             ctx,
             ir,
             Feature {
+                needs_recompute: false,
                 id: feature_id,
                 ordinal,
                 name: Some(name),
@@ -828,7 +786,7 @@ pub(super) fn transfer_curve_expression_features(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some(source_tag),
-                source_text: Some(curve_expression_source_text(&record.lines)),
+                source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::try_from(source_content)
                     .map_err(cadmpeg_core::CodecError::from)?,
 

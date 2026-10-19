@@ -38,10 +38,7 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
             .losses
             .iter()
             .any(|loss| loss.code == StepLossCode::MetadataStringInvalid.kind()));
-        assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
-        );
+        assert_eq!(result.source_fidelity().metadata["bytes_unclassified"], "0");
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
             .unwrap()
             .is_ok());
@@ -56,7 +53,7 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
         .expect("bounded defect and unreadable metadata remain recoverable");
     assert_eq!(decoded.ir().model.points.len(), 2);
     assert_eq!(
-        decoded.ir().source.as_ref().expect("source").attributes["bytes_unclassified"],
+        decoded.source_fidelity().metadata["bytes_unclassified"],
         "0"
     );
 }
@@ -413,7 +410,7 @@ pub(crate) fn decode_accounts_for_every_part21_byte() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode byte-accounting fixture");
-    let attributes = &result.ir().source.as_ref().unwrap().attributes;
+    let attributes = &result.source_fidelity().metadata;
     let count = |name: &str| attributes[name].parse::<usize>().unwrap();
 
     assert!(count("bytes_structural") > 0);
@@ -505,7 +502,7 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        let attributes = &result.source_fidelity().metadata;
         let count = |key: &str| attributes[key].parse::<usize>().unwrap();
         assert_eq!(count("bytes_unclassified"), 0, "{name}");
         assert_eq!(
@@ -717,7 +714,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
     );
     assert_eq!(provenance.tag.as_deref(), Some("schema_identifier"));
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["schema"],
+        result.source_fidelity().metadata["schema"],
         "AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"
     );
 }
@@ -809,10 +806,7 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     );
     assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
     assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);
-    assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["bytes_named_opaque"],
-        "0"
-    );
+    assert_eq!(result.source_fidelity().metadata["bytes_named_opaque"], "0");
 }
 
 #[test]

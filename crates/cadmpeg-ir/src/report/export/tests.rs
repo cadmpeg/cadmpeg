@@ -46,6 +46,8 @@ fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
         "identity": {"payload": "native", "target": "step:ap242-e3"},
         "census": { "basis": "target_records", "counts": {} },
         "write_path": { "path": "synthesized", "fidelity": { "status": "not_provided" } },
+        "coverage": {"coverage": "complete"},
+        "native_dispositions": {"namespaces": {}},
         "losses": [],
         "notes": [],
     });

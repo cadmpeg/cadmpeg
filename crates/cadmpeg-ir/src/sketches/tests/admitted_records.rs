@@ -16,8 +16,8 @@ fn length(value: f64) -> Length {
 fn planar_offset_parameter_setter_preserves_admitted_pairs() {
     use crate::features::ParameterId;
     use crate::sketches::{
-        OffsetParameter, SketchConstraintDefinition, SketchConstraintDefinitionInput,
-        SketchEntityId, SketchOffsetPair,
+        SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchEntityId,
+        SketchOffsetPair,
     };
 
     let source = SketchEntityId::mint("test:model:entity#source").unwrap();
@@ -30,18 +30,15 @@ fn planar_offset_parameter_setter_preserves_admitted_pairs() {
     let mut definition =
         SketchConstraintDefinition::try_from(SketchConstraintDefinitionInput::Offset {
             pairs: vec![pair.clone()],
-            distance: length(5.0),
-            parameter: None,
+            distance: crate::features::Dimension::Literal(length(5.0)),
         })
         .unwrap();
-    let parameter = OffsetParameter {
-        id: ParameterId::mint("test:model:parameter#distance").unwrap(),
-        negated: true,
-    };
-    assert!(definition.set_offset_parameter(parameter.clone()));
+    let parameter = ParameterId::mint("test:model:parameter#distance").unwrap();
+    let distance = crate::features::Dimension::Parameter(parameter);
+    assert!(definition.set_offset_dimension(distance.clone()));
     assert!(matches!(definition.kind(),
-        SketchConstraintDefinitionInput::Offset { pairs, parameter: Some(driving), .. }
-            if pairs == &[pair] && driving == &parameter));
+        SketchConstraintDefinitionInput::Offset { pairs, distance: driving}
+            if pairs == &[pair] && driving == &distance));
 }
 
 #[test]
@@ -238,14 +235,13 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
             SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#b").unwrap(),
         ],
         normal: Vector3::new(0.0, 1.0, 0.0),
-        distance: length(0.5),
-        parameter: None,
+        distance: crate::features::Dimension::Literal(length(0.5)),
     };
     let definition = SpatialSketchConstraintDefinition::try_from(offset.clone()).unwrap();
     let SpatialSketchConstraintDefinitionInput::Offset { distance, .. } = definition.kind() else {
         panic!("offset")
     };
-    assert_eq!(*distance, PositiveLength::new(0.5).unwrap());
+    assert_eq!(distance.literal().unwrap().get(), 0.5);
     assert_eq!(definition.kind().to_raw(), offset);
     for invalid in [
         SpatialSketchConstraintDefinitionInput::ParallelToDirection {
@@ -256,8 +252,7 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
             sources: vec![entity.clone()],
             results: vec![entity.clone()],
             normal: Vector3::new(0.0, 1.0, 0.0),
-            distance: length(0.0),
-            parameter: None,
+            distance: crate::features::Dimension::Literal(length(0.0)),
         },
     ] {
         assert_eq!(

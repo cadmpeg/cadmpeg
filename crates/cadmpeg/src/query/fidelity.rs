@@ -114,6 +114,7 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                         "offset": record.offset(),
                         "byte_len": record.byte_len(),
                         "data_retained": record.data().is_some(),
+                        "untyped": record.untyped(),
                     })
                 })
                 .collect();
@@ -124,6 +125,8 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                     "exactness": payload.annotations.exactness().len(),
                 },
                 "retained_records": records,
+                "unrepresented": payload.unrepresented(),
+                "metadata": payload.metadata,
             });
             print_json("fidelity", value)?;
             Ok(())
@@ -142,6 +145,9 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
             }
             if payload.retained_records().is_empty() {
                 eprintln!("(this sidecar retains no source records)");
+            }
+            if !payload.unrepresented().is_empty() {
+                eprintln!("unrepresented classes: {}", payload.unrepresented());
             }
             eprintln!(
                 "annotations: {} streams, {} provenance entries, {} exactness \

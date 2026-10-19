@@ -16,12 +16,13 @@ fn face_transition_requires_one_changed_surface_geometry() {
 
     let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).expect("identity grammar");
     let reference = |candidate_faces, alternate_selector_faces| DesignRecipeReference {
+        clause_index: 0,
         selector: 2,
-        selector_offset: 0,
+        selector_offset: Some(0),
         token: "1".into(),
-        token_offset: 0,
+        token_offset: Some(0),
         design_reference: 303,
-        design_reference_offset: 0,
+        design_reference_offset: Some(0),
         candidate_faces,
         candidate_edges: Vec::new(),
         alternate_selector_faces,

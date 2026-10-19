@@ -403,9 +403,9 @@ mod tests {
                 references: vec![
                     crate::records::topology::body_recipe::DesignBodyRecipeReference {
                         design_reference: 1,
-                        design_reference_offset: 1025,
+                        design_reference_offset: Some(1025),
                         form: 1,
-                        form_offset: 1033,
+                        form_offset: Some(1033),
                         candidate_faces: vec![face.clone()],
                         preceding_candidate_faces: Vec::new(),
                         preceding_body_slots: Vec::new(),
@@ -424,6 +424,7 @@ mod tests {
         )
         .unwrap();
         let feature = || Feature {
+            needs_recompute: false,
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,
             name: None,

@@ -35,18 +35,6 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) -> Result<()> {
             render_attribute(change.right.as_deref())
         );
     }
-    if source.local_digests.is_empty() {
-        return Ok(());
-    }
-    println!("  machine-local digests (informational, not a difference):");
-    for change in &source.local_digests {
-        println!(
-            "    {}: {} → {}",
-            change.key,
-            render_attribute(change.left.as_deref()),
-            render_attribute(change.right.as_deref())
-        );
-    }
     Ok(())
 }
 
@@ -71,6 +59,8 @@ pub(super) enum FidelitySummary {
 pub(super) struct FidelityDiff {
     annotations_changed: bool,
     retained_records_changed: bool,
+    unrepresented_changed: bool,
+    metadata_changed: bool,
 }
 
 impl FidelityDiff {
@@ -78,11 +68,16 @@ impl FidelityDiff {
         Self {
             annotations_changed: left.annotations != right.annotations,
             retained_records_changed: left.retained_records() != right.retained_records(),
+            unrepresented_changed: left.unrepresented() != right.unrepresented(),
+            metadata_changed: left.metadata != right.metadata,
         }
     }
 
     fn is_empty(&self) -> bool {
-        !self.annotations_changed && !self.retained_records_changed
+        !self.annotations_changed
+            && !self.retained_records_changed
+            && !self.unrepresented_changed
+            && !self.metadata_changed
     }
 }
 
@@ -156,6 +151,12 @@ pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
     }
     if diff.retained_records_changed {
         println!("    retained records changed");
+    }
+    if diff.metadata_changed {
+        println!("    layout metadata changed");
+    }
+    if diff.unrepresented_changed {
+        println!("    unrepresented classes changed");
     }
 }
 
@@ -265,6 +266,7 @@ pub(super) fn print_export_emission(
         }
         EmittedArtifact::Stdout => {}
     }
+    print_export_notes(writer, &emission.report)?;
     if !emission.report.losses.is_empty() {
         writeln!(writer, "{} export losses:", emission.report.format())?;
         for loss in &emission.report.losses {
@@ -276,6 +278,34 @@ pub(super) fn print_export_emission(
                 loss.message
             )?;
         }
+    }
+    Ok(())
+}
+
+pub(super) fn print_export_notes(writer: &mut impl Write, report: &ExportReport) -> io::Result<()> {
+    let reason = report.synthesis_cause().map(|cause| match cause {
+        cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason } => {
+            format!("patch was declined: {reason}")
+        }
+        cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { classes } => {
+            format!("retained source has records absent from typed arenas: {classes}")
+        }
+    });
+    if let Some(reason) = &reason {
+        writeln!(writer, "note: synthesized because {reason}")?;
+    }
+    for note in &report.notes {
+        if report.synthesis_cause().is_some_and(|cause| match cause {
+            cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason } => {
+                !reason.is_empty() && note.contains(reason)
+            }
+            cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { .. } => {
+                note.contains("retained source has records absent from typed arenas")
+            }
+        }) {
+            continue;
+        }
+        writeln!(writer, "note: {note}")?;
     }
     Ok(())
 }
@@ -432,11 +462,17 @@ pub(super) fn print_decode_report(
     writer: &mut impl Write,
     report: &DecodeReport,
 ) -> io::Result<()> {
+    let scope = report
+        .scope()
+        .classes()
+        .map(|class| class.to_string())
+        .collect::<Vec<_>>()
+        .join("+");
     writeln!(
         writer,
-        "decode report ({}): depth={}, geometry_transferred={}",
+        "decode report ({}): scope={}, geometry_transferred={}",
         report.format(),
-        report.depth(),
+        if scope.is_empty() { "{}" } else { &scope },
         report.geometry_transferred()
     )?;
     for line in crate::registry_view::dialect_lines(report.dialects()).map_err(io::Error::other)? {
@@ -511,6 +547,7 @@ mod tests {
             serde_json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
+                unrepresented_changed: false,
             }))
             .unwrap(),
             serde_json::json!({
@@ -518,7 +555,8 @@ mod tests {
                 "different": false,
                 "diff": {
                     "annotations_changed": false,
-                    "retained_records_changed": false
+                    "retained_records_changed": false,
+                    "unrepresented_changed": false
                 }
             })
         );
@@ -526,6 +564,7 @@ mod tests {
             serde_json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
+                unrepresented_changed: false,
             }))
             .unwrap(),
             serde_json::json!({
@@ -533,7 +572,8 @@ mod tests {
                 "different": true,
                 "diff": {
                     "annotations_changed": true,
-                    "retained_records_changed": false
+                    "retained_records_changed": false,
+                    "unrepresented_changed": false
                 }
             })
         );

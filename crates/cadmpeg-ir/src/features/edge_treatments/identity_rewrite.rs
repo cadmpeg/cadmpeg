@@ -4,5 +4,10 @@
 use super::{ChamferForm, ChamferSpec, RadiusForm};
 
 rewrite_scalar!(ChamferForm);
-rewrite_scalar!(ChamferSpec);
+rewrite_enum!(ChamferSpec, []; {
+    Unresolved { form },
+    Distance { distance },
+    TwoDistances { first, second },
+    DistanceAngle { distance, angle },
+});
 rewrite_scalar!(RadiusForm);

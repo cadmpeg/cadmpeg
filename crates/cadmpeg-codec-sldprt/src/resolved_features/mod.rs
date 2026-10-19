@@ -83,8 +83,6 @@ mod drafts;
 
 mod endpoints;
 
-pub(crate) mod hashes;
-
 mod helix;
 
 pub(crate) mod holes;
@@ -132,6 +130,10 @@ pub(crate) mod typed_relations;
 
 pub(crate) mod validate;
 
-mod write_generate;
+pub(crate) mod write_generate;
 
+pub(crate) mod write_feature_parameters;
 pub(crate) mod write_prepare;
+
+pub(crate) mod native_lane_write;
+mod native_selection_write;

@@ -66,6 +66,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
@@ -527,7 +528,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             .unwrap(),
             Some(SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(angle).unwrap(),
+                angle: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveAngle::new(angle).unwrap()
+                ),
             })
         );
         arc_angle.links.as_mut().unwrap().entries_mut()[0].entity_ref =
@@ -550,8 +553,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -565,7 +568,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             .into_iter()
             .enumerate()
             .map(|(index, marker)| FeatureInputOperand {
-                offset: cadmpeg_core::decode::u64_from_index(index),
+                offset: Some(cadmpeg_core::decode::u64_from_index(index)),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: u16::try_from(index).expect("test index fits u16"),
@@ -574,6 +577,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             .collect(),
     };
     let parameter = |id: &str, display| DesignParameter {
+        driving: true,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -581,7 +585,6 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         expression: String::new(),
         display,
         value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -785,6 +788,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
@@ -1019,6 +1023,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),

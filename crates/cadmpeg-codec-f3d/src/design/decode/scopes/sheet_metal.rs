@@ -891,7 +891,7 @@ pub(super) fn bind_hem_operation_from_parameters(
             .iter()
             .filter(|owner| {
                 native_stream(owner.id()) == Some(stream)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && owner.record_index() == record_index
                     && scope
                         .reference_members()

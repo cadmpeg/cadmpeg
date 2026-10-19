@@ -381,6 +381,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
     let parameter =
         ParameterId::mint("synthetic:test:id#configured-parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: parameter.clone(),
         owner: None,
         ordinal: 0,
@@ -388,7 +389,6 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         expression: "12mm".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -444,6 +444,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition.clone()),
         native_ref: None,
     });
@@ -461,14 +462,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
             ParameterId::mint("synthetic:test:id#missing").expect("identity grammar"),
             "1mm".into(),
         )]),
-        feature_states: BTreeMap::from([(
-            feature,
-            ConfigurationFeatureState {
-                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                definition,
-            },
-        )]),
+        feature_states: BTreeMap::from([(feature, ConfigurationFeatureState::Suppressed {})]),
         native_ref: Some("native:configuration".into()),
     });
     let mut report = super::empty_report(true);

@@ -406,7 +406,7 @@ pub(super) fn decode(
                 .find(|surface| surface.id.as_str() == surface_id.as_str())
             {
                 if surface.source_object.is_none() {
-                    surface.source_object = Some(super::step_source_association(id, None));
+                    surface.source_object = Some(super::step_source_association(id));
                 }
             }
         }
@@ -463,7 +463,7 @@ pub(super) fn decode(
             || item_bodies.get(&id).is_some_and(BTreeSet::is_empty)
             || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1)
         {
-            Some(super::step_source_association(id, None))
+            Some(super::step_source_association(id))
         } else {
             None
         };

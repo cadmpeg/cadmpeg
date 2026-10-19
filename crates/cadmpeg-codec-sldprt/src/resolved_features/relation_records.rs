@@ -31,8 +31,8 @@ pub(super) fn feature_intervals(
             if metadata.contains(feature) {
                 continue;
             }
-            if let Some(name) = names.of(feature) {
-                starts.push((name.offset, feature.id.clone()));
+            if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                starts.push((position, feature.id.clone()));
             }
         }
     }
@@ -52,9 +52,10 @@ pub(super) fn feature_intervals(
 /// the only interval that can contain `offset` is the last one starting at or
 /// before it.
 fn feature_at_offset(
-    offset: u64,
+    offset: impl Into<Option<u64>>,
     intervals: &[(u64, Option<u64>, String)],
 ) -> Option<&(u64, Option<u64>, String)> {
+    let offset = offset.into()?;
     let after = intervals.partition_point(|(start, _, _)| *start <= offset);
     intervals
         .get(after.checked_sub(1)?)
@@ -62,7 +63,10 @@ fn feature_at_offset(
 }
 
 /// The feature that owns `offset`, if one does.
-fn feature_name_at_offset(offset: u64, intervals: &[(u64, Option<u64>, String)]) -> Option<&str> {
+fn feature_name_at_offset(
+    offset: impl Into<Option<u64>>,
+    intervals: &[(u64, Option<u64>, String)],
+) -> Option<&str> {
     feature_at_offset(offset, intervals).map(|(_, _, feature)| feature.as_str())
 }
 
@@ -112,7 +116,7 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
                 relation_offsets
                     .entry(feature)
                     .or_default()
-                    .push(class.offset);
+                    .extend(class.offset);
             }
         }
         for offsets in relation_offsets.values_mut() {
@@ -139,7 +143,9 @@ fn relation_scope_end(
         .and_then(|feature| index.relation_offsets.get(feature))
         .and_then(|offsets| {
             offsets
-                .get(offsets.partition_point(|offset| *offset <= class.offset))
+                .get(offsets.partition_point(|offset| {
+                    class.offset.is_some_and(|position| *offset <= position)
+                }))
                 .copied()
         });
     // The interval the class sits in states its own end; a class in no
@@ -147,7 +153,10 @@ fn relation_scope_end(
     let (feature_end, unknown_feature_limit) = match class_interval {
         Some((_, end, _)) => (*end, None),
         None => {
-            let Some(limit) = class.offset.checked_add(UNKNOWN_FEATURE_SPAN) else {
+            let Some(limit) = class
+                .offset
+                .and_then(|offset| offset.checked_add(UNKNOWN_FEATURE_SPAN))
+            else {
                 return RelationScope::Unstatable;
             };
             (None, Some(limit))
@@ -218,7 +227,9 @@ fn relation_declaration_candidate<'a>(
         .scalars
         .iter()
         .skip(first_after)
-        .take_while(|scalar| scope_end.is_none_or(|end| scalar.offset < end))
+        .take_while(|scalar| {
+            scope_end.is_none_or(|end| scalar.offset.is_some_and(|position| position < end))
+        })
         .find(|scalar| {
             class_feature.is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
                 && if allow_dynamic {
@@ -474,14 +485,17 @@ pub(super) fn relation_instances(
         for (_, scalar) in &group.scalars {
             claimed_scalar_refs.insert(scalar.id.as_str());
         }
-        let offset = group.scalars[0].1.offset;
+        let Some(offset) = group.scalars[0].1.offset else {
+            continue;
+        };
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
         instances.push(FeatureInputRelationInstance {
             id: format!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"),
             parent: lane.id.clone(),
             ordinal,
-            offset,
+            sequence: ordinal,
+            offset: Some(offset),
             family: group.family,
             class_ref: group.class_ref.to_owned(),
             feature_ref: group.feature_ref.to_owned(),
@@ -518,13 +532,16 @@ pub(super) fn relation_instances(
             continue;
         }
         claimed_scalar_refs.insert(binding.scalar_ref.as_str());
+        let Some(position) = scalar.offset else {
+            continue;
+        };
         instances.push(FeatureInputRelationInstance {
-            id: format!(
-                "sldprt:feature-input:relation-instance#{lane_key}:{}",
-                scalar.offset
-            ),
+            id: format!("sldprt:feature-input:relation-instance#{lane_key}:{position}"),
             parent: lane.id.clone(),
             ordinal: u32::try_from(instances.len()).map_err(|_| {
+                CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
+            })?,
+            sequence: u32::try_from(instances.len()).map_err(|_| {
                 CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
             })?,
             offset: scalar.offset,
@@ -656,11 +673,11 @@ fn same_scalar_operands(left: &FeatureInputScalar, right: &FeatureInputScalar) -
 /// same name, feature and operands, after a declared entity handle and before
 /// the next relation class.
 pub(super) struct CircleHandleDrivers<'a> {
-    /// The first scalar with each id, in offset order.
+    /// The first scalar with each id, in typed content order.
     scalars: HashMap<&'a str, &'a FeatureInputScalar>,
-    relation_starts: Vec<u64>,
-    handles: Vec<u64>,
-    /// Adjacent display and driving scalars in offset order, by their shared
+    relation_starts: Vec<u32>,
+    handles: Vec<u32>,
+    /// Adjacent display and driving scalars in typed content order, by their shared
     /// feature and operands.
     pairs: HashMap<HandlePairKey<'a>, Vec<(&'a FeatureInputScalar, &'a FeatureInputScalar)>>,
 }
@@ -688,7 +705,7 @@ fn handle_pair_key(scalar: &FeatureInputScalar) -> HandlePairKey<'_> {
 impl<'a> CircleHandleDrivers<'a> {
     pub(super) fn new(lane: &'a FeatureInputLane) -> Self {
         let mut sorted = lane.scalars.iter().collect::<Vec<_>>();
-        sorted.sort_unstable_by_key(|left| left.offset);
+        sorted.sort_unstable_by_key(|left| left.sequence);
         let mut names = HashMap::new();
         for name in &lane.names {
             names.insert(name.id.as_str(), name.value.as_str());
@@ -726,7 +743,7 @@ impl<'a> CircleHandleDrivers<'a> {
                 .classes
                 .iter()
                 .filter(|class| keep(class))
-                .map(|class| class.offset)
+                .map(|class| class.sequence)
                 .collect::<Vec<_>>();
             offsets.sort_unstable();
             offsets
@@ -755,18 +772,18 @@ impl<'a> CircleHandleDrivers<'a> {
             .and_then(|id| self.scalars.get(id.as_str()))
             .copied()
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)?;
-        let next_after = |offsets: &[u64]| {
+        let next_after = |offsets: &[u32]| {
             offsets
-                .get(offsets.partition_point(|offset| *offset <= first.offset))
+                .get(offsets.partition_point(|offset| *offset <= first.sequence))
                 .copied()
         };
         let handle = next_after(&self.handles)?;
         // No following relation class states no upper bound on this relation.
         let next_relation = next_after(&self.relation_starts);
         let pairs = self.pairs.get(&handle_pair_key(first))?;
-        let start = pairs.partition_point(|(display, _)| display.offset <= handle);
+        let start = pairs.partition_point(|(display, _)| display.sequence <= handle);
         let end = next_relation.map_or(pairs.len(), |limit| {
-            pairs.partition_point(|(_, driving)| driving.offset < limit)
+            pairs.partition_point(|(_, driving)| driving.sequence < limit)
         });
         let [(_, driving)] = pairs.get(start..end)? else {
             return None;
@@ -1031,7 +1048,7 @@ impl<'a> RelationOperandIndex<'a> {
         }
         for entities in feature_entities.values_mut() {
             entities.sort_unstable_by(|left, right| {
-                (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal()))
+                (left.sequence(), left.ordinal()).cmp(&(right.sequence(), right.ordinal()))
             });
         }
         Self {
@@ -1609,7 +1626,7 @@ mod binary_relation_operand_tests {
 
     fn operand(entity_index: u16) -> FeatureInputOperand {
         FeatureInputOperand {
-            offset: u64::from(entity_index),
+            offset: Some(u64::from(entity_index)),
             reference_ref: format!("reference#{entity_index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index,
@@ -1622,7 +1639,8 @@ mod binary_relation_operand_tests {
             id: "relation#0".to_string(),
             parent: "lane#0".to_string(),
             ordinal: 0,
-            offset: 0,
+            sequence: 0,
+            offset: Some(0),
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class#0".to_string(),
             feature_ref: "feature#0".to_string(),
@@ -1710,10 +1728,12 @@ mod relation_records_tests {
 
     fn class(offset: u64, name: &str) -> FeatureInputClass {
         FeatureInputClass {
+            feature_ref: None,
             id: format!("class-{offset}"),
             parent: "lane".into(),
             ordinal: 0,
-            offset,
+            sequence: 0,
+            offset: Some(offset),
             name: name.into(),
         }
     }
@@ -1723,7 +1743,7 @@ mod relation_records_tests {
             .into_iter()
             .enumerate()
             .map(|(ordinal, entity_index)| FeatureInputOperand {
-                offset: offset + cadmpeg_core::decode::u64_from_index(ordinal),
+                offset: Some(offset + cadmpeg_core::decode::u64_from_index(ordinal)),
                 reference_ref: format!("reference-{offset}-{ordinal}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
                 entity_index,
@@ -1735,7 +1755,8 @@ mod relation_records_tests {
             parent: "lane".into(),
             feature_ref: Some("sketch".into()),
             ordinal: 0,
-            offset,
+            sequence: 0,
+            offset: Some(offset),
             object_id: 1,
             name: "dimension".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -1840,7 +1861,14 @@ mod relation_records_tests {
                     .min();
                 let (feature_end, unknown_feature_limit) = match interval {
                     Some((_, end, _)) => (*end, None),
-                    None => (None, Some(class.offset.checked_add(UNKNOWN_FEATURE_SPAN)?)),
+                    None => (
+                        None,
+                        Some(
+                            class
+                                .offset
+                                .and_then(|offset| offset.checked_add(UNKNOWN_FEATURE_SPAN))?,
+                        ),
+                    ),
                 };
                 let scope_end = [next_class, feature_end, unknown_feature_limit]
                     .into_iter()
@@ -1850,7 +1878,9 @@ mod relation_records_tests {
                     .iter()
                     .filter(|scalar| {
                         scalar.offset > class.offset
-                            && scope_end.is_none_or(|end| scalar.offset < end)
+                            && scope_end.is_none_or(|end| {
+                                scalar.offset.is_some_and(|position| position < end)
+                            })
                             && class_feature.is_none_or(|feature| {
                                 scalar.feature_ref.as_deref() == Some(feature)
                             })
@@ -1953,7 +1983,8 @@ mod relation_records_tests {
             parent: "lane".into(),
             feature_ref: Some("sketch".into()),
             ordinal: 0,
-            offset,
+            sequence: 0,
+            offset: Some(offset),
             object_id: 1,
             name: name.into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -2021,7 +2052,7 @@ mod relation_records_tests {
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, entity_index)| FeatureInputOperand {
-                    offset: cadmpeg_core::decode::u64_from_index(ordinal),
+                    offset: Some(cadmpeg_core::decode::u64_from_index(ordinal)),
                     reference_ref: format!("reference-{ordinal}"),
                     kind,
                     entity_index,
@@ -2183,10 +2214,12 @@ mod relation_records_tests {
         let driving = scalar(200, FeatureInputScalarRole::Driving);
         let mut lane = lane(vec![relation_class], vec![driving.clone()]);
         lane.names.push(FeatureInputName {
+            feature_ref: None,
             id: "name-sketch".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            sequence: 0,
+            offset: Some(0),
             object_id: None,
             value: "Sketch".into(),
         });
@@ -2209,10 +2242,12 @@ mod relation_records_tests {
         let driving = scalar(200, FeatureInputScalarRole::Driving);
         let mut lane = lane(vec![first, second.clone()], vec![driving]);
         lane.names.push(FeatureInputName {
+            feature_ref: None,
             id: "name-sketch".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            sequence: 0,
+            offset: Some(0),
             object_id: None,
             value: "Sketch".into(),
         });
@@ -2513,7 +2548,8 @@ mod relation_records_tests {
             id: "binding-11".into(),
             parent: lane.id.clone(),
             ordinal: 1,
-            offset: 11,
+            sequence: 1,
+            offset: Some(11),
             class_ref: "class-11".into(),
             family: FeatureInputRelationFamily::LineLineDistance,
             scalar_ref: "scalar-30".into(),
@@ -2590,10 +2626,12 @@ mod relation_records_tests {
             .into_iter()
             .enumerate()
             .map(|(ordinal, (id, value))| FeatureInputName {
+                feature_ref: None,
                 id: id.into(),
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).expect("test index fits u32"),
-                offset: 20 + cadmpeg_core::decode::u64_from_index(ordinal) * 10,
+                sequence: u32::try_from(ordinal).expect("test index fits u32"),
+                offset: Some(20 + cadmpeg_core::decode::u64_from_index(ordinal) * 10),
                 object_id: None,
                 value: value.into(),
             })
@@ -2718,10 +2756,12 @@ mod relation_records_tests {
             let mut lane = lane(classes, scalars);
             lane.names = (0..5)
                 .map(|ordinal| FeatureInputName {
+                    feature_ref: None,
                     id: format!("name-{}", ordinal % 4),
                     parent: "lane".into(),
                     ordinal,
-                    offset: u64::from(ordinal),
+                    sequence: ordinal,
+                    offset: Some(u64::from(ordinal)),
                     object_id: None,
                     value: format!("D{}", next(2)),
                 })
@@ -2737,7 +2777,8 @@ mod relation_records_tests {
                     id: format!("relation-{ordinal}"),
                     parent: "lane".into(),
                     ordinal,
-                    offset: 0,
+                    sequence: ordinal,
+                    offset: Some(0),
                     family: if next(10) == 0 {
                         FeatureInputRelationFamily::LineLineDistance
                     } else {
@@ -2906,7 +2947,7 @@ mod relation_records_tests {
             .iter()
             .enumerate()
             .map(|(ordinal, entity_index)| FeatureInputOperand {
-                offset: offset + cadmpeg_core::decode::u64_from_index(ordinal),
+                offset: Some(offset + cadmpeg_core::decode::u64_from_index(ordinal)),
                 reference_ref: format!("reference-{offset}-{ordinal}"),
                 kind,
                 entity_index: *entity_index,

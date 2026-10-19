@@ -3,7 +3,6 @@
 use super::super::literals::{
     dimension_display, format_f64_literal, parse_length_mm, parse_parameter_literal,
 };
-use super::super::write::parameters::rewrite_parameter_expression;
 use super::eval;
 use super::eval::{
     compare_parameter_values, exact_integer_f64, exponentiate_parameter_value,
@@ -369,10 +368,14 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
 }
 
 #[test]
-fn expression_rewrite_quotes_hyphenated_identifiers() {
-    let aliases = std::collections::HashMap::from([("Width".into(), "Wall-Gauge".into())]);
+fn expression_render_quotes_hyphenated_identifiers() {
+    let id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#width").unwrap();
+    let expression =
+        cadmpeg_ir::features::Expression::from_spans("Width * 2", [(0..5, id.clone())]).unwrap();
     assert_eq!(
-        rewrite_parameter_expression("Width * 2", &aliases).as_deref(),
+        expression
+            .render_with(|target| (target == &id).then(|| super::render_identifier("Wall-Gauge")))
+            .as_deref(),
         Some("\"Wall-Gauge\" * 2")
     );
 }

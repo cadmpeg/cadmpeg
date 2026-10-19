@@ -9,7 +9,7 @@ use serde_json::json;
 fn point(parameter: f64, radius: f64) -> VariableRadius {
     VariableRadius {
         parameter,
-        radius: Length::new(radius).unwrap(),
+        radius: Length::new(radius).unwrap().into(),
     }
 }
 
@@ -39,9 +39,9 @@ fn variable_radius_law_admits_ordered_nonnegative_samples() {
         points
     );
     let wire = json!({"kind":"variable","points":[
-        {"parameter":0.2,"radius":0.0},
-        {"parameter":0.4,"radius":2.0},
-        {"parameter":0.8,"radius":0.0}
+        {"parameter":0.2,"radius":{"kind":"literal","value":0.0}},
+        {"parameter":0.4,"radius":{"kind":"literal","value":2.0}},
+        {"parameter":0.8,"radius":{"kind":"literal","value":0.0}}
     ]});
     let radius = RadiusSpec::Variable { points: admitted };
     assert_eq!(serde_json::to_value(&radius).unwrap(), wire);
@@ -51,23 +51,23 @@ fn variable_radius_law_admits_ordered_nonnegative_samples() {
 #[test]
 fn edge_treatment_wire_rejects_invalid_dimensions_and_laws() {
     for wire in [
-        json!({"kind":"constant","radius":0.0}),
-        json!({"kind":"chordal","chord_length":-1.0}),
-        json!({"kind":"asymmetric","offset_one":1.0,"offset_two":0.0}),
+        json!({"kind":"constant","radius":{"kind":"literal","value":0.0}}),
+        json!({"kind":"chordal","chord_length":{"kind":"literal","value":-1.0}}),
+        json!({"kind":"asymmetric","offset_one":{"kind":"literal","value":1.0},"offset_two":{"kind":"literal","value":0.0}}),
         json!({"kind":"variable","points":[]}),
-        json!({"kind":"variable","points":[{"parameter":0.0,"radius":1.0}]}),
-        json!({"kind":"variable","points":[{"parameter":0.5,"radius":1.0},{"parameter":0.25,"radius":2.0}]}),
-        json!({"kind":"variable","points":[{"parameter":0.0,"radius":0.0},{"parameter":1.0,"radius":0.0}]}),
-        json!({"kind":"variable","points":[{"parameter":0.0,"radius":-1.0},{"parameter":1.0,"radius":2.0}]}),
+        json!({"kind":"variable","points":[{"parameter":0.0,"radius":{"kind":"literal","value":1.0}}]}),
+        json!({"kind":"variable","points":[{"parameter":0.5,"radius":{"kind":"literal","value":1.0}},{"parameter":0.25,"radius":{"kind":"literal","value":2.0}}]}),
+        json!({"kind":"variable","points":[{"parameter":0.0,"radius":{"kind":"literal","value":0.0}},{"parameter":1.0,"radius":{"kind":"literal","value":0.0}}]}),
+        json!({"kind":"variable","points":[{"parameter":0.0,"radius":{"kind":"literal","value":-1.0}},{"parameter":1.0,"radius":{"kind":"literal","value":2.0}}]}),
     ] {
         assert!(serde_json::from_value::<RadiusSpec>(wire).is_err());
     }
     for wire in [
-        json!({"kind":"distance","distance":0.0}),
-        json!({"kind":"two_distances","first":1.0,"second":-1.0}),
-        json!({"kind":"distance_angle","distance":1.0,"angle":0.0}),
-        json!({"kind":"distance_angle","distance":1.0,"angle":std::f64::consts::PI}),
-        json!({"kind":"distance_angle","distance":-1.0,"angle":1.0}),
+        json!({"kind":"distance","distance":{"kind":"literal","value":0.0}}),
+        json!({"kind":"two_distances","first":{"kind":"literal","value":1.0},"second":{"kind":"literal","value":-1.0}}),
+        json!({"kind":"distance_angle","distance":{"kind":"literal","value":1.0},"angle":{"kind":"literal","value":0.0}}),
+        json!({"kind":"distance_angle","distance":{"kind":"literal","value":1.0},"angle":{"kind":"literal","value":std::f64::consts::PI}}),
+        json!({"kind":"distance_angle","distance":{"kind":"literal","value":-1.0},"angle":{"kind":"literal","value":1.0}}),
     ] {
         assert!(serde_json::from_value::<ChamferSpec>(wire).is_err());
     }
@@ -81,9 +81,9 @@ fn edge_treatment_wire_preserves_resolved_and_unresolved_forms() {
         json!({"kind":"unresolved","form":"chordal"}),
         json!({"kind":"unresolved","form":"asymmetric"}),
         json!({"kind":"unresolved","form":"variable"}),
-        json!({"kind":"constant","radius":1.0}),
-        json!({"kind":"chordal","chord_length":1.0}),
-        json!({"kind":"asymmetric","offset_one":1.0,"offset_two":2.0}),
+        json!({"kind":"constant","radius":{"kind":"literal","value":1.0}}),
+        json!({"kind":"chordal","chord_length":{"kind":"literal","value":1.0}}),
+        json!({"kind":"asymmetric","offset_one":{"kind":"literal","value":1.0},"offset_two":{"kind":"literal","value":2.0}}),
     ] {
         let radius: RadiusSpec = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(radius).unwrap(), wire);
@@ -93,9 +93,9 @@ fn edge_treatment_wire_preserves_resolved_and_unresolved_forms() {
         json!({"kind":"unresolved","form":"distance"}),
         json!({"kind":"unresolved","form":"two_distances"}),
         json!({"kind":"unresolved","form":"distance_angle"}),
-        json!({"kind":"distance","distance":1.0}),
-        json!({"kind":"two_distances","first":1.0,"second":2.0}),
-        json!({"kind":"distance_angle","distance":1.0,"angle":1.0}),
+        json!({"kind":"distance","distance":{"kind":"literal","value":1.0}}),
+        json!({"kind":"two_distances","first":{"kind":"literal","value":1.0},"second":{"kind":"literal","value":2.0}}),
+        json!({"kind":"distance_angle","distance":{"kind":"literal","value":1.0},"angle":{"kind":"literal","value":1.0}}),
     ] {
         let spec: ChamferSpec = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(spec).unwrap(), wire);
@@ -112,11 +112,11 @@ fn variable_radii_hold_admitted_samples_and_take_admitted_parts() {
     );
     assert_eq!(
         admitted.as_slice()[1].radius,
-        NonNegativeLength::new(2.0).unwrap()
+        super::Dimension::Literal(NonNegativeLength::new(2.0).unwrap())
     );
     let sample = |parameter: f64, radius: f64| VariableRadius {
         parameter: Fraction::new(parameter).unwrap(),
-        radius: NonNegativeLength::new(radius).unwrap(),
+        radius: NonNegativeLength::new(radius).unwrap().into(),
     };
     assert_eq!(
         VariableRadii::from_parts(vec![sample(0.0, 0.0), sample(1.0, 2.0)]).unwrap(),
@@ -150,7 +150,10 @@ fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
         doubled
             .as_slice()
             .iter()
-            .map(|sample| (sample.parameter.get(), sample.radius.get()))
+            .map(|sample| (
+                sample.parameter.get(),
+                sample.radius.literal().expect("literal sample").get()
+            ))
             .collect::<Vec<_>>(),
         vec![(0.0, 0.0), (0.5, 2.0e-320), (1.0, 4.0)]
     );
@@ -195,3 +198,43 @@ fn owned_variable_radius_mapping_keeps_its_sample_storage() {
 mod construction;
 
 const SMALL_RADIUS_SCALE: f64 = 1.0e-10;
+
+#[test]
+fn bound_variable_radii_keep_their_parameter_and_visit_its_identity() {
+    use crate::features::{Dimension, ParameterId};
+    use crate::scalar::{Fraction, NonNegativeLength};
+    use crate::schema::rewrite::typed::RewriteIdentities;
+    let parameter = ParameterId::mint("test:model:parameter#radius").expect("parameter id");
+    let law = VariableRadii::from_parts(vec![
+        VariableRadius {
+            parameter: Fraction::new(0.0).expect("fraction"),
+            radius: Dimension::Parameter(parameter.clone()),
+        },
+        VariableRadius {
+            parameter: Fraction::new(1.0).expect("fraction"),
+            radius: Dimension::Literal(NonNegativeLength::ZERO),
+        },
+    ])
+    .expect("bound positivity is checked after parameter resolution");
+    let mut calls = 0;
+    let mapped = law
+        .try_map_radii(|radius| {
+            calls += 1;
+            Ok::<_, ()>(radius)
+        })
+        .expect("bound radius retained");
+    assert_eq!(calls, 1);
+    assert_eq!(mapped.as_slice()[0].radius.parameter(), Some(&parameter));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    let mut references = Vec::new();
+    mapped
+        .visit_identity_references(&ctx, &mut |id| {
+            references.push(id.to_owned());
+            Ok(())
+        })
+        .expect("visit");
+    assert_eq!(references, vec![parameter.as_str()]);
+}

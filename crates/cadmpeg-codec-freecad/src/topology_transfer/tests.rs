@@ -1085,7 +1085,12 @@ Co 1001000 +2 0 *
         .model
         .coedges
         .iter()
-        .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A2%3A1") }));
+        .all(|coedge| coedge.pcurves.iter().all(|usage| result
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .any(|curve| curve.id == usage.pcurve))));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(

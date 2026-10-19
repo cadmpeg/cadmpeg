@@ -39,11 +39,11 @@ fn lane(names: &[(&str, Option<u32>)]) -> FeatureInputLane {
         classes: Vec::new(),
         names: names
             .iter()
-            .map(|(name, source)| FeatureInputName {
+            .map(|(name, source)| FeatureInputName { feature_ref: None,
                 id: format!("name:{name}"),
                 parent: "lane".into(),
-                ordinal: 0,
-                offset: 0,
+                ordinal: 0, sequence: 0,
+                offset: Some(0),
                 object_id: source.and_then(ObjectId::from_value),
                 value: (*name).into(),
             })

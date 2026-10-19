@@ -121,21 +121,34 @@ fn only_enclosed(offsets: &[(u64, usize)], start: u64, end: Option<u64>) -> Opti
 struct SortedOffsets(Vec<u64>);
 
 impl SortedOffsets {
-    fn new(offsets: impl IntoIterator<Item = u64>) -> Self {
-        let mut offsets = offsets.into_iter().collect::<Vec<_>>();
+    fn new<P: Into<Option<u64>>>(offsets: impl IntoIterator<Item = P>) -> Self {
+        let mut offsets = offsets
+            .into_iter()
+            .filter_map(Into::into)
+            .collect::<Vec<_>>();
         offsets.sort_unstable();
         Self(offsets)
     }
 
     /// The offsets in `start..end`.
-    fn within(&self, start: u64, end: u64) -> &[u64] {
+    fn within(&self, start: impl Into<Option<u64>>, end: impl Into<Option<u64>>) -> &[u64] {
+        let (Some(start), Some(end)) = (start.into(), end.into()) else {
+            return &[];
+        };
         let first = self.0.partition_point(|&offset| offset < start);
         let last = self.0.partition_point(|&offset| offset < end);
         self.0.get(first..last).unwrap_or_default()
     }
 
     /// Whether an offset lies strictly between `start` and `end`.
-    fn any_strictly_between(&self, start: u64, end: u64) -> bool {
+    fn any_strictly_between(
+        &self,
+        start: impl Into<Option<u64>>,
+        end: impl Into<Option<u64>>,
+    ) -> bool {
+        let (Some(start), Some(end)) = (start.into(), end.into()) else {
+            return false;
+        };
         let first = self.0.partition_point(|&offset| offset <= start);
         self.0.get(first).is_some_and(|&offset| offset < end)
     }
@@ -225,7 +238,9 @@ pub(crate) fn bind_sketch_profiles(
                 continue;
             };
             let ordinal = starts.len();
-            starts.push((name.offset, ordinal, feature));
+            if let Some(position) = name.offset {
+                starts.push((position, ordinal, feature));
+            }
         }
         starts.sort_unstable_by_key(|left| (left.0, left.1));
         for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
@@ -458,11 +473,11 @@ pub(crate) fn project_compact_sketch_profiles(
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
-                let start = names.of(feature).map(|name| name.offset).or_else(|| {
+                let start = names.of(feature).and_then(|name| name.offset).or_else(|| {
                     markers_by_feature
                         .get(feature.id.as_str())?
                         .iter()
-                        .map(|marker| marker.offset())
+                        .filter_map(|marker| marker.offset())
                         .min()
                 })?;
                 Some((start, feature))
@@ -533,7 +548,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 let Some(first_marker) = owned_markers
                     .iter()
                     .copied()
-                    .filter(|marker| marker.offset() <= *line_class_offset)
+                    .filter(|marker| {
+                        marker
+                            .offset()
+                            .is_some_and(|position| position <= *line_class_offset)
+                    })
                     .max_by_key(|marker| marker.offset())
                 else {
                     continue;
@@ -980,9 +999,11 @@ impl<'a> TerminalRelationCarriers<'a> {
     fn new(lane: &'a FeatureInputLane) -> Self {
         let mut classes_by_offset = HashMap::new();
         for class in &lane.classes {
-            classes_by_offset
-                .entry(class.offset)
-                .or_insert(class.id.as_str());
+            if let Some(position) = class.offset {
+                classes_by_offset
+                    .entry(position)
+                    .or_insert(class.id.as_str());
+            }
         }
         let relations = lane
             .relation_instances
@@ -1007,7 +1028,7 @@ impl<'a> TerminalRelationCarriers<'a> {
         let Some(feature_ref) = marker.feature_ref.as_deref() else {
             return false;
         };
-        let Some(offset) = index_from_u64(marker.offset()) else {
+        let Some(offset) = marker.offset().and_then(index_from_u64) else {
             return false;
         };
         let Some(class_offset) = terminal_relation_class_offset(&self.lane.native_payload, offset)
@@ -1061,8 +1082,11 @@ pub(crate) fn project_marker_backed_sketches(
         }
         let names = FeatureObjectNames::new(&lane.names);
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);
-        let marker_offsets =
-            SortedOffsets::new(lane.sketch_entities.iter().map(SketchInputEntity::offset));
+        let marker_offsets = SortedOffsets::new(
+            lane.sketch_entities
+                .iter()
+                .filter_map(SketchInputEntity::offset),
+        );
         let terminal_carriers = TerminalRelationCarriers::new(lane);
         let mut objects = Vec::new();
         for feature in native_features
@@ -1070,11 +1094,11 @@ pub(crate) fn project_marker_backed_sketches(
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
         {
             let Some((start, feature)) = (|| {
-                let start = names.of(feature).map(|name| name.offset).or_else(|| {
+                let start = names.of(feature).and_then(|name| name.offset).or_else(|| {
                     markers_by_feature
                         .get(feature.id.as_str())?
                         .iter()
-                        .map(|marker| marker.offset())
+                        .filter_map(|marker| marker.offset())
                         .min()
                 })?;
                 Some((start, feature))
@@ -1112,7 +1136,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .into_iter()
                 .flatten()
             {
-                if marker.offset() < end {
+                if marker.offset().is_some_and(|position| position < end) {
                     object_markers.push(marker);
                 }
             }
@@ -1168,7 +1192,7 @@ pub(crate) fn project_marker_backed_sketches(
                 ) {
                     continue;
                 }
-                if let Some(offset) = index_from_u64(marker.offset()) {
+                if let Some(offset) = marker.offset().and_then(index_from_u64) {
                     if legacy_unlocated_geometry_handle(&lane.native_payload, offset)
                         || auxiliary_profile_record(&lane.native_payload, offset)
                         || relation_reference_curve_record(
@@ -1306,8 +1330,9 @@ pub(crate) fn project_marker_backed_sketches(
                         ))
                     };
                     let is_recovered_legacy_profile_point = |endpoint: &SketchInputEntity| {
-                        usize::try_from(endpoint.offset())
-                            .ok()
+                        endpoint
+                            .offset()
+                            .and_then(|offset| usize::try_from(offset).ok())
                             .is_some_and(|offset| {
                                 legacy_140_profile_point_variant_coordinates(
                                     &lane.native_payload,
@@ -1494,7 +1519,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     endpoints.or_else(|| {
                                         compact_legacy_142_profile_curve_endpoints(
                                             &lane.native_payload,
-                                            index_from_u64(marker.offset())?,
+                                            marker.offset().and_then(index_from_u64)?,
                                         )
                                         .map(|endpoints| {
                                             endpoints.map(cadmpeg_ir::units::FiniteVector::get)
@@ -1638,7 +1663,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 .ok()
                                 .ok_or(MarkerGeometryFailure::Absent)?
                             } else if let Some([center, start, end]) =
-                                index_from_u64(marker.offset()).and_then(|offset| {
+                                marker.offset().and_then(index_from_u64).and_then(|offset| {
                                     inline_arc_coordinates(&lane.native_payload, offset)
                                 })
                             {
@@ -1670,7 +1695,9 @@ pub(crate) fn project_marker_backed_sketches(
                                         project(start).ok_or(MarkerGeometryFailure::Absent)?,
                                         project(end).ok_or(MarkerGeometryFailure::Absent)?,
                                     );
-                                    let offset = index_from_u64(marker.offset())
+                                    let offset = marker
+                                        .offset()
+                                        .and_then(index_from_u64)
                                         .ok_or(MarkerGeometryFailure::Absent)?;
                                     if extended_wide_construction_line_roster_indices(
                                         &lane.native_payload,
@@ -1917,21 +1944,33 @@ pub(crate) fn project_marker_backed_sketches(
                         geometry.definition(),
                         SketchGeometryDefinition::Native { .. }
                     ) && marker.coordinates_m.is_some()
-                        && index_from_u64(marker.offset()).is_none_or(|offset| {
-                            !marker_is_geometry_locus(&lane.native_payload, offset)
-                        })
+                        && marker
+                            .offset()
+                            .and_then(index_from_u64)
+                            .is_none_or(|offset| {
+                                !marker_is_geometry_locus(&lane.native_payload, offset)
+                            })
                     {
                         return Err(MarkerGeometryFailure::Absent);
                     }
-                    let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
-                        (marker_is_selected_construction_line(&lane.native_payload, offset)
-                            || current_compact_roster_selected_axis(&lane.native_payload, offset))
-                            && !(matches!(
-                                geometry.definition(),
-                                SketchGeometryDefinition::Circle { .. }
-                            ) && marker_profile_curve_role(&lane.native_payload, offset)
-                                == Some(1))
-                    });
+                    let construction =
+                        marker
+                            .offset()
+                            .and_then(index_from_u64)
+                            .is_some_and(|offset| {
+                                (marker_is_selected_construction_line(&lane.native_payload, offset)
+                                    || current_compact_roster_selected_axis(
+                                        &lane.native_payload,
+                                        offset,
+                                    ))
+                                    && !(matches!(
+                                        geometry.definition(),
+                                        SketchGeometryDefinition::Circle { .. }
+                                    ) && marker_profile_curve_role(
+                                        &lane.native_payload,
+                                        offset,
+                                    ) == Some(1))
+                            });
                     Ok((geometry, construction))
                 })();
                 let entity = match entity {
@@ -1975,7 +2014,7 @@ pub(crate) fn project_marker_backed_sketches(
                 let mut rectangle_marker_refs = HashSet::new();
                 for marker in &object_markers {
                     let Some(marker_id) = (|| {
-                        let offset = index_from_u64(marker.offset())?;
+                        let offset = marker.offset().and_then(index_from_u64)?;
                         compact_legacy_curve_endpoint_indices(&lane.native_payload, offset)
                             .or_else(|| {
                                 compact_legacy_code_one_line_endpoint_indices(
@@ -3194,7 +3233,9 @@ fn legacy_config_collinear_sketch(
         let [negative_curve, first_curve, second_curve, third_curve] = curves.as_slice() else {
             return None;
         };
-        let negative_offset = usize::try_from(negative_curve.offset()).ok()?;
+        let negative_offset = negative_curve
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())?;
         if lane
             .native_payload
             .get(negative_offset + 56..negative_offset + 58)
@@ -3434,6 +3475,7 @@ mod detached_legacy_sketch_tests {
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -3519,6 +3561,7 @@ mod detached_legacy_sketch_tests {
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
                 native_ref: Some(native.id.clone()),
+                needs_recompute: false,
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -3644,6 +3687,7 @@ mod detached_legacy_sketch_tests {
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -3912,7 +3956,8 @@ mod detached_legacy_sketch_tests {
                     parent: "lane".into(),
                     feature_ref: None,
                     ordinal: u32::try_from(ordinal).unwrap(),
-                    offset: ordinal,
+                    sequence: u32::try_from(ordinal).unwrap(),
+                    offset: Some(ordinal),
                     object_id: 0,
                     name: "name".into(),
                     value: cadmpeg_ir::scalar::FiniteReal::new(
@@ -3931,7 +3976,8 @@ mod detached_legacy_sketch_tests {
                         id: format!("relation-{ordinal}"),
                         parent: "lane".into(),
                         ordinal: u32::try_from(ordinal).unwrap(),
-                        offset: ordinal,
+                        sequence: u32::try_from(ordinal).unwrap(),
+                        offset: Some(ordinal),
                         family: families[usize::try_from(xorshift(&mut state, 4)).unwrap()],
                         class_ref: "class".into(),
                         feature_ref: feature_ids[usize::try_from(xorshift(&mut state, 3)).unwrap()]
@@ -4081,6 +4127,7 @@ mod detached_legacy_sketch_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -4180,6 +4227,7 @@ mod detached_legacy_sketch_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -4276,6 +4324,7 @@ mod detached_legacy_sketch_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),

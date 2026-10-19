@@ -620,6 +620,7 @@ fn positions_by_id_prefix<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<&'a
 /// `LPatternN` whose sole seed is consumed by exactly one later Hole feature.
 pub(crate) fn pattern_hole_nominal_context(
     features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
 ) -> BTreeMap<String, PositiveReal> {
     let mut first_ordinals = HashMap::<&cadmpeg_ir::features::FeatureId, u64>::new();
     let mut native_holes = HashMap::<_, Vec<_>>::new();
@@ -641,7 +642,12 @@ pub(crate) fn pattern_hole_nominal_context(
         else {
             continue;
         };
-        let diameter = shape.diameter().map(PositiveReal::from_assigned_length);
+        let diameter = shape
+            .diameter()
+            .and_then(|diameter| {
+                crate::resolved_features::parameters::dimension_value(diameter, parameters)
+            })
+            .map(PositiveReal::from_assigned_length);
         for dependency in &feature.dependencies {
             native_holes
                 .entry(dependency)
@@ -1531,7 +1537,7 @@ fn project_dimension(
     };
     let Ok(dimension) = cadmpeg_ir::pmi::PmiDimension::new(
         dimension,
-        nominal.map(|value| PmiValue::from_parts(value, quantity)),
+        nominal.map(|value| PmiValue::from_parts(value, quantity).into()),
         tolerance,
     ) else {
         return Ok(None);

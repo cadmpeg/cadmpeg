@@ -248,6 +248,7 @@ pub(crate) fn legacy_as_built_421_generation(
 /// Assembly joints and the losses of the joint scopes that do not project.
 #[derive(Debug, Default)]
 pub(crate) struct AssemblyJointProjection {
+    pub(crate) untyped: bool,
     pub(crate) joints: Vec<AssemblyJoint>,
     pub(crate) losses: Vec<LossNote>,
 }
@@ -302,6 +303,7 @@ pub(crate) fn project_assembly_joints(
         )));
     }
     AssemblyJointProjection {
+        untyped: unprojected != 0,
         joints: joints.into_values().collect(),
         losses,
     }
@@ -416,16 +418,17 @@ fn project_assembly_joint(
 
 /// Bind each native `Assemble` feature to the joint that product projection
 /// emitted for its scope.
-pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &[AssemblyJoint]) {
-    let joints = joints
+pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &mut [AssemblyJoint]) {
+    let joints_by_scope = joints
         .iter()
-        .filter_map(|joint| Some((joint.native_ref.as_deref()?, &joint.id)))
+        .enumerate()
+        .filter_map(|(index, joint)| Some((joint.native_ref.as_deref()?.to_owned(), index)))
         .collect::<BTreeMap<_, _>>();
     for feature in features {
-        let Some(joint) = feature
+        let Some(index) = feature
             .native_ref
             .as_deref()
-            .and_then(|scope| joints.get(scope))
+            .and_then(|scope| joints_by_scope.get(scope))
         else {
             continue;
         };
@@ -435,11 +438,15 @@ pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &[A
         ) {
             continue;
         }
+        let joint = &mut joints[*index];
+        if let Some(suppressed) = feature.suppressed.take() {
+            joint.suppressed = suppressed;
+        }
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::AssemblyJoint {
-                    joint: (*joint).clone(),
+                    joint: joint.id.clone(),
                 },
             ));
     }
@@ -652,6 +659,7 @@ mod tests {
 
     fn feature(native_ref: &str, definition: FeatureDefinition) -> Feature {
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint(format!(
                 "test:model:feature#{}",
                 native_ref.replace('#', ":")
@@ -1193,7 +1201,7 @@ mod tests {
     fn assemble_features_bind_only_to_projected_joints() {
         let native = FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "Assemble".into(),
-            parameters: BTreeMap::new(),
+            parameters: (BTreeMap::new()).into(),
         });
         let scope = "f3d:Design/BulkStream.dat:design-parameter-scope#3";
         let mut features = [
@@ -1226,8 +1234,11 @@ mod tests {
             None,
         );
         joint.native_ref = Some(scope.into());
+        features[0].suppressed = Some(true);
 
-        super::bind_assembly_joint_features(&mut features, std::slice::from_ref(&joint));
+        super::bind_assembly_joint_features(&mut features, std::slice::from_mut(&mut joint));
+        assert!(features[0].suppressed.is_none());
+        assert!(joint.suppressed);
 
         assert_eq!(
             *features[0].evaluation.definition(),

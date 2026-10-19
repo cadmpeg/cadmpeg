@@ -493,14 +493,14 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         FeatureInputOperand {
             kind: FeatureInputOperandKind::D6,
             entity_index: 0,
-            offset: 0,
+            offset: Some(0),
             reference_ref: "first-ref".into(),
             entity_ref: None,
         },
         FeatureInputOperand {
             kind: FeatureInputOperandKind::D6,
             entity_index: 2,
-            offset: 0,
+            offset: Some(0),
             reference_ref: "second-ref".into(),
             entity_ref: None,
         },
@@ -520,7 +520,7 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         FeatureInputOperand {
             kind: FeatureInputOperandKind::D6,
             entity_index: 1,
-            offset: 0,
+            offset: Some(0),
             reference_ref: "known-second-ref".into(),
             entity_ref: None,
         },

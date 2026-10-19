@@ -113,11 +113,10 @@ fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
     let validation =
         cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
-        panic!("shared wire vertex was accepted");
-    };
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("shared wire vertex"), "{error}");
+    crate::writer::tests::assert_degraded_plan(
+        plan_at(IgesVersion::V5_0, decoded.ir(), None),
+        "shared wire vertex",
+    );
 }
 
 #[test]
@@ -211,11 +210,13 @@ fn synthesized_wire_refuses_shared_vertex_identity() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert_eq!(ir.model.edges[0].start, ir.model.edges[1].start);
 
-    let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
-        .err()
-        .expect("shared wire vertex must be refused");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("shared wire vertex"), "{error}");
+    let synthesis = crate::writer::synthesize(&ir, IgesVersion::V5_3)
+        .expect("wire geometry survives an ownership reduction");
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::WriterEntityOmitted.kind()
+            && loss.message.contains("shared wire vertex")));
 }
 
 #[test]
@@ -229,11 +230,13 @@ fn synthesized_owned_wire_refuses_unrepresented_body() {
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
-    let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
-        .err()
-        .expect("owned wire body must be refused");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("owned wire body"), "{error}");
+    let synthesis = crate::writer::synthesize(&ir, IgesVersion::V5_3)
+        .expect("wire geometry survives an ownership reduction");
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::WriterEntityOmitted.kind()
+            && loss.message.contains("owned wire body")));
 }
 
 #[test]

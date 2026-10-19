@@ -41,8 +41,11 @@ fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
     SumSquaresUnitVector3::new(Vector3::new(x, y, z)).map(SumSquaresUnitVector3::normalized)
 }
 
-pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<UnitVector3> {
-    let class_offset = usize::try_from(class_offset).ok()?;
+pub(super) fn line_reference_direction(
+    payload: &[u8],
+    class_offset: impl Into<Option<u64>>,
+) -> Option<UnitVector3> {
+    let class_offset = usize::try_from(class_offset.into()?).ok()?;
     let direction_at = |offset: usize| {
         square_sum_unit_direction([
             View::f64_le_at(payload, offset)?,
@@ -80,12 +83,15 @@ pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Opt
 
 pub(super) fn declared_line_reference_directions(
     payload: &[u8],
-    class_offset: u64,
+    class_offset: impl Into<Option<u64>>,
     object_end: usize,
 ) -> Vec<UnitVector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
 
-    let Ok(class_offset) = usize::try_from(class_offset) else {
+    let Some(class_offset) = class_offset
+        .into()
+        .and_then(|position| usize::try_from(position).ok())
+    else {
         return Vec::new();
     };
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
@@ -169,13 +175,17 @@ pub(super) fn linear_pattern_display_directions(
             let mut records = names.iter().filter(|name| {
                 name.object_id == Some(ObjectId::Absent)
                     && name.value == dimension_name
-                    && (u64_from_index(object_start)..u64_from_index(end)).contains(&name.offset)
+                    && name.offset.is_some_and(|position| {
+                        (u64_from_index(object_start)..u64_from_index(end)).contains(&position)
+                    })
             });
             let name = records.next()?;
             if records.next().is_some() {
                 return None;
             }
-            let offset = usize::try_from(name.offset).ok()?;
+            let offset = name
+                .offset
+                .and_then(|offset| usize::try_from(offset).ok())?;
             let value_offset = offset.checked_add(VALUE_OFFSET)?;
             let direction_offset = offset.checked_add(DIRECTION_OFFSET)?;
             if direction_offset.checked_add(24)? > end {
@@ -206,15 +216,20 @@ pub(super) fn typed_linear_pattern_dimensions(
     let parameter = |class_name: &str| {
         let mut classes = lane.classes.iter().filter(|class| {
             class.name == class_name
-                && (u64_from_index(object_start)..u64_from_index(object_end))
-                    .contains(&class.offset)
+                && class.offset.is_some_and(|position| {
+                    (u64_from_index(object_start)..u64_from_index(object_end)).contains(&position)
+                })
         });
         let class = classes.next().filter(|_| classes.next().is_none())?;
-        let class_offset = usize::try_from(class.offset).ok()?;
+        let class_offset = class
+            .offset
+            .and_then(|offset| usize::try_from(offset).ok())?;
         let name_end = class_offset.checked_add(128)?.min(object_end);
         let mut names = lane.names.iter().filter(|name| {
             name.object_id == Some(ObjectId::Absent)
-                && (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&name.offset)
+                && name.offset.is_some_and(|position| {
+                    (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&position)
+                })
                 && feature.parameters.contains_key(name.value.as_str())
         });
         let name = names.next().filter(|_| names.next().is_none())?;
@@ -923,8 +938,8 @@ pub(crate) fn enrich_history_revolution_inputs(
         for history in histories.iter() {
             let mut objects = Vec::new();
             for feature in &history.features {
-                if let Some(name) = names.of(feature) {
-                    objects.push((name.offset, feature));
+                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                    objects.push((position, feature));
                 }
             }
             objects.sort_unstable_by_key(|(left, _)| *left);
@@ -1119,7 +1134,7 @@ pub(crate) fn bind_profile_revolution_axes(
             construction.extent(),
             Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                 termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
-            }) if (angle.get().abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
+            }) if crate::history::project::source_dimension_value(angle, histories).is_some_and(|angle| (angle.get().abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9)
         ) {
             surfaces
         } else {
@@ -1196,7 +1211,7 @@ fn profile_roster_construction_axis(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
-        let Some(offset) = index_from_u64(marker.offset()) else {
+        let Some(offset) = marker.offset().and_then(index_from_u64) else {
             continue;
         };
         if !marker_is_selected_construction_line(&lane.native_payload, offset) {
@@ -1622,7 +1637,10 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     let coordinate_rosters =
         super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(markers);
     let curve_candidates = markers.iter().copied().filter(|marker| {
-        let Ok(offset) = usize::try_from(marker.offset()) else {
+        let Some(offset) = marker
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             return false;
         };
         if marker.feature_ref.as_deref() != Some(profile_native) {
@@ -1665,9 +1683,12 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .iter()
         .copied()
         .filter(|marker| {
-            index_from_u64(marker.offset()).is_some_and(|offset| {
-                lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
-            })
+            marker
+                .offset()
+                .and_then(index_from_u64)
+                .is_some_and(|offset| {
+                    lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
+                })
         })
         .take(3)
         .collect::<Vec<_>>();
@@ -1711,10 +1732,14 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
-        if !index_from_u64(candidate.offset()).is_some_and(|offset| {
-            extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
-                .is_some()
-        }) {
+        if !candidate
+            .offset()
+            .and_then(index_from_u64)
+            .is_some_and(|offset| {
+                extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
+                    .is_some()
+            })
+        {
             continue;
         }
         let endpoints =

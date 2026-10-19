@@ -511,6 +511,7 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
         )
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -518,7 +519,6 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -572,6 +572,7 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let second = point("synthetic:test:id#second", 5.0, 20.0);
     let unrelated = point("synthetic:test:id#unrelated", 100.0, 100.0);
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -579,7 +580,6 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -640,6 +640,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(21.0, 21.0),
     );
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -647,7 +648,6 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -766,6 +766,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(21.0, 21.0),
     );
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#angle").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -775,7 +776,6 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         value: Some(ParameterValue::Angle(
             Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -896,6 +896,7 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(100.0, 30.0),
     );
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -903,7 +904,6 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

@@ -272,11 +272,11 @@ fn extrusion_delimiters_end_every_successor_through_all() {
             text: None,
             content: Vec::new(),
         });
-        names.push(FeatureInputName {
+        names.push(FeatureInputName { feature_ref: None,
             id: format!("name#{index}"),
             parent: "lane".into(),
-            ordinal: index,
-            offset: u64::try_from(offset).unwrap(),
+            ordinal: index, sequence: index,
+            offset: Some(u64::try_from(offset).unwrap()),
             object_id: ObjectId::from_value(source),
             value: name,
         });

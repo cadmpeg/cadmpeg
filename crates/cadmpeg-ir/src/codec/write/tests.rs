@@ -5,8 +5,8 @@ use cadmpeg_test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, DepthNeed,
-    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
+    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
@@ -59,7 +59,7 @@ struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
-    const NEEDS: DepthNeed = DepthNeed::Recorded;
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -118,7 +118,7 @@ struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
     const FORMAT: FormatId = FormatId::new("test");
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
+    const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
 
@@ -159,62 +159,41 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
 
 fn recorded_at(depth: DecodeDepth) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.set_decode_depth(depth);
+    ir.set_scope(match depth {
+        DecodeDepth::Container => crate::ContentScope::container(),
+        DecodeDepth::Geometry => crate::ContentScope::geometry(),
+        DecodeDepth::Full => crate::ContentScope::full(),
+    })
+    .unwrap();
     ir
 }
 
 #[test]
-fn a_full_need_encoder_refuses_a_geometry_document() {
+fn synthesized_writers_accept_scopes_and_report_absent_consumed_classes() {
     let ir = recorded_at(DecodeDepth::Geometry);
-    let error = F3dCoverageEncoder(ArenaCoverage::Complete)
+    let plan = F3dCoverageEncoder(ArenaCoverage::Complete)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            CodecError::InsufficientDepth {
-                format: "f3d",
-                needed: DecodeDepth::Full,
-                recorded: DecodeDepth::Geometry,
-            }
-        ),
-        "{error}"
-    );
-}
-
-#[test]
-fn a_geometry_need_encoder_admits_geometry_and_refuses_container() {
-    let geometry = recorded_at(DecodeDepth::Geometry);
-    CatalogEncoder
-        .plan(
-            EncodeInput::new(&geometry, None),
-            TargetRequest::Explicit("new"),
-        )
         .unwrap();
-    let container = recorded_at(DecodeDepth::Container);
-    let error = CatalogEncoder
-        .plan(
-            EncodeInput::new(&container, None),
-            TargetRequest::Explicit("new"),
-        )
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            CodecError::InsufficientDepth {
-                format: "test",
-                needed: DecodeDepth::Geometry,
-                recorded: DecodeDepth::Container,
-            }
-        ),
-        "{error}"
-    );
+    assert!(plan
+        .report()
+        .notes
+        .iter()
+        .any(|note| note.contains("scope excludes design")));
+    assert!(plan.report().losses.is_empty());
+    let ir = recorded_at(DecodeDepth::Container);
+    let plan = CatalogEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
+        .unwrap();
+    assert!(plan
+        .report()
+        .notes
+        .iter()
+        .any(|note| note.contains("scope excludes model")));
 }
 
 #[test]
-fn the_cadir_encoder_writes_the_depth_a_document_records() {
-    assert_eq!(CadirEncoder.needs(), DepthNeed::Recorded);
-    assert_eq!(CadirEncoder.needs().request(), DecodeDepth::Full);
+fn the_cadir_encoder_writes_the_scope_a_document_holds() {
+    assert_eq!(CadirEncoder.request(), DecodeDepth::Full);
     for depth in [
         DecodeDepth::Container,
         DecodeDepth::Geometry,
@@ -227,7 +206,7 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
         let mut encoded = Vec::new();
         plan.write_to(&mut encoded).unwrap();
         let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(written["decode_depth"], depth.as_str());
+        assert_eq!(written["scope"], serde_json::to_value(ir.scope).unwrap());
     }
 }
 
@@ -320,7 +299,7 @@ struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
-    const NEEDS: DepthNeed = DepthNeed::Recorded;
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -400,7 +379,7 @@ struct F3dCoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for F3dCoverageEncoder {
     const FORMAT: FormatId = FormatId::new("f3d");
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -518,4 +497,181 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
     for plan in [f3d, complete] {
         assert_eq!(plan.carried_errors(&ir, &report), vec![&report.findings[0]]);
     }
+}
+
+struct PathEncoder(WritePath);
+
+impl EncoderBackend for PathEncoder {
+    const FORMAT: FormatId = FormatId::new("test");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        if input.fidelity.is_some() {
+            body.write_path = self.0.clone();
+        }
+        Ok(body)
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_synthesizes_instead_of_exposing_untyped_source_bytes() {
+    let ir = CadIr::empty();
+    let mut fidelity = SourceFidelity::default();
+    fidelity
+        .insert_retained_record(
+            crate::ids::UnknownId::mint("test:source#image").unwrap(),
+            crate::RetainedSourceRecord::whole("", b"unread design".to_vec())
+                .with_untyped(crate::ArenaClasses::from([crate::ArenaClass::Design])),
+        )
+        .unwrap();
+    for path in [
+        WritePath::VerbatimReplay,
+        WritePath::Patched {
+            consumption: PatchConsumption::Replayed,
+        },
+    ] {
+        let plan = PathEncoder(path)
+            .plan(
+                EncodeInput::new(&ir, Some(&fidelity)),
+                TargetRequest::Inherit,
+            )
+            .expect("unrepresented source content selects synthesis, never refusal");
+        assert!(matches!(
+            plan.report().write_path(),
+            crate::report::export::WritePath::Synthesized { .. }
+        ));
+        assert!(matches!(
+            plan.report().synthesis_cause(),
+            Some(super::SynthesisCause::SourceUnrepresented { classes })
+                if classes == &crate::ArenaClasses::from([crate::ArenaClass::Design])
+        ));
+    }
+    CadirEncoder
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+}
+
+#[test]
+fn declared_native_omission_is_informational_and_written_records_are_not_charged() {
+    let mut ir = CadIr::empty();
+    ir.native.namespace_mut("test").arenas_mut().insert(
+        "records".into(),
+        vec![crate::native::NativeRecord::new(
+            crate::ids::Identity::new("test:native:record#0").unwrap(),
+            [("value".into(), serde_json::json!(1))]
+                .into_iter()
+                .collect(),
+        )
+        .unwrap()],
+    );
+    let plan = PathEncoder(WritePath::Synthesized {
+        consumption: Consumption::NotConsumed,
+    })
+    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+    .unwrap();
+    let losses = &plan.report().losses;
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "native.records-omitted");
+    assert_eq!(losses[0].severity, Severity::Info);
+    let written = super::NativeDispositions::written(&ir);
+    assert!(written.omission_losses(&ir, "test").is_empty());
+    assert_eq!(
+        super::NativeDispositions::default()
+            .omission_losses(&ir, "test")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn patch_decline_is_reported_once_as_structured_synthesis_metadata() {
+    struct Declined;
+    impl EncoderBackend for Declined {
+        const FORMAT: FormatId = FormatId::new("test");
+        const REQUEST: DecodeDepth = DecodeDepth::Full;
+        type Target = DialectFree;
+        const TARGET: DialectFree = DialectFree;
+        fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+            let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+            body.synthesis_cause = Some(super::SynthesisCause::PatchDeclined {
+                reason: "edited design".into(),
+            });
+            Ok(body)
+        }
+    }
+    let ir = CadIr::empty();
+    let plan = Declined
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(
+        matches!(plan.report().synthesis_cause(), Some(super::SynthesisCause::PatchDeclined { reason }) if reason == "edited design")
+    );
+    assert!(plan.report().notes.is_empty());
+}
+
+#[test]
+fn foreign_native_content_uses_the_wrappers_typed_arena_boundary() {
+    let mut ir = CadIr::empty();
+    let format = FormatId::new("test");
+    assert!(!EncodeInput::new(&ir, None).has_foreign_native_content(format));
+    let record = || {
+        crate::native::NativeRecord::new(
+            crate::ids::Identity::new("foreign:native:record#0").unwrap(),
+            [("value".into(), serde_json::json!(1))]
+                .into_iter()
+                .collect(),
+        )
+        .unwrap()
+    };
+    ir.native
+        .namespace_mut("test")
+        .arenas_mut()
+        .insert("records".into(), vec![record()]);
+    ir.native
+        .namespace_mut("foreign")
+        .arenas_mut()
+        .insert("records".into(), Vec::new());
+    ir.native
+        .namespace_mut("foreign")
+        .arenas_mut()
+        .insert("unknowns".into(), vec![record()]);
+    assert!(!EncodeInput::new(&ir, None).has_foreign_native_content(format));
+    let mut dispositions = super::NativeDispositions::for_namespace(
+        "test",
+        ["records"],
+        super::NativeDisposition::Written,
+    );
+    dispositions.complete(&ir);
+    assert_eq!(dispositions.dropped_counts(&ir)["foreign"]["unknowns"], 1);
+    ir.native
+        .namespace_mut("foreign")
+        .arenas_mut()
+        .insert("records".into(), vec![record()]);
+    assert!(EncodeInput::new(&ir, None).has_foreign_native_content(format));
+    let losses = dispositions.omission_losses(&ir, "test");
+    assert_eq!(losses.len(), 2);
+    assert!(losses[0].message.contains("foreign"));
+    assert_eq!(losses[0].code.local_code(), "native.records-omitted");
+}
+
+#[test]
+fn malformed_scope_is_rejected_at_the_writer_boundary() {
+    let mut ir = unit_cube().unwrap();
+    // A caller can bypass set_scope through the public field, but cannot
+    // export the resulting contradiction through a backend that ignores it.
+    ir.scope = crate::ContentScope::container();
+    let error = NeutralEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap_err();
+    let CodecError::Malformed(message) = error else {
+        panic!("expected malformed document state: {error}");
+    };
+    assert!(message.contains("scope excludes model"), "{message}");
+    assert!(message.contains("bodies"), "{message}");
 }

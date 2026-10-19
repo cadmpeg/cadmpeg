@@ -6,6 +6,7 @@
 mod identity_rewrite;
 
 pub(crate) mod act;
+pub(crate) mod act_table;
 pub(crate) mod bodies;
 pub(crate) mod canvas;
 pub(crate) mod configuration;
@@ -22,6 +23,7 @@ pub(crate) mod parameters;
 pub(crate) mod recipes;
 pub(crate) mod references;
 pub(crate) mod serde_column;
+pub(crate) mod source_frame;
 pub(crate) mod sketch_geometry;
 pub(crate) mod sketch_links;
 pub(crate) mod sketch_placement;

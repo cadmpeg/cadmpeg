@@ -27,7 +27,10 @@ use cadmpeg_ir::{
             HoleBottom, HoleConstruction, HoleKind, HoleProfileFilter, HoleSpecification,
             HoleThreadDepth, ThreadHand,
         },
-        patterns::{PatternKind, PatternScaleCenter, PatternSeed, PatternStage, PatternTransform},
+        patterns::{
+            CircularPatternDistribution, PatternAngle, PatternDistance, PatternKind,
+            PatternScaleCenter, PatternSeed, PatternStage, PatternTransform,
+        },
         AngularTermination, BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset,
         BinderOffsetJoin, BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp,
         DesignParameter, DistinctMembers, EdgeSelection, ExtrudeExtent, ExtrudeSide,
@@ -46,6 +49,8 @@ use cadmpeg_ir::{
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod dependencies;
+pub(crate) mod dimensions;
 mod sketch_cache;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
@@ -121,18 +126,23 @@ pub(crate) fn transfer(
     for body in &ir.model.bodies {
         body_ids.push(body.id.clone());
     }
-    let (feature_ordinals, mut cycle_affected) =
+    let (feature_ordinals, cycle_affected) =
         feature_ordinals(objects, &properties_by_owner, &parent_by_member)?;
-    let mut ordinal_by_feature = HashMap::new();
-    for object in objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-    {
-        ordinal_by_feature.insert(feature_id(object)?, feature_ordinals[object.id().as_str()]);
-    }
 
     for object in objects {
+        if object.type_name == "App::VarSet" {
+            let owned = properties_by_owner
+                .get(object.id().as_str())
+                .map_or(&[][..], Vec::as_slice);
+            append_custom_parameters(&mut ir.model.parameters, object, owned, None)?;
+            continue;
+        }
         if !is_design_object(&object.type_name) {
+            if is_design_kind(&object.type_name) {
+                losses.push(crate::loss::FreecadLossCode::FeatureObjectUnprojected.note(format!(
+                    "design object {} of type {} was not projected into neutral features; its typed native object and properties remain", object.name(), object.type_name
+                )));
+            }
             continue;
         }
         let source = properties_by_owner
@@ -141,7 +151,7 @@ pub(crate) fn transfer(
         let mut owned = Vec::new();
         owned.extend_from_slice(source);
         let id = feature_id(object)?;
-        let mut definition = if is_spreadsheet(&object.type_name) {
+        let definition = if is_spreadsheet(&object.type_name) {
             ir.model.spreadsheets.push(append_spreadsheet(
                 ctx,
                 &mut ir.model.parameters,
@@ -330,9 +340,6 @@ pub(crate) fn transfer(
         } else {
             native_definition(ctx, &object.type_name, &owned)?
         };
-        if cycle_affected.contains(object.id().as_str()) {
-            definition = native_definition(ctx, &object.type_name, &owned)?;
-        }
         let mut semantic_dependencies = Vec::new();
         if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &definition {
             for seed in seeds {
@@ -343,6 +350,13 @@ pub(crate) fn transfer(
         }
         let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
         append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
+        append_custom_parameters(
+            &mut ir.model.parameters,
+            object,
+            &owned,
+            Some(&feature_id(object)?),
+        )?;
+        let definition = dimensions::bind(definition, &feature_id(object)?, &ir.model.parameters)?;
         let mut outputs = Vec::new();
         for payload in payloads
             .iter()
@@ -356,13 +370,7 @@ pub(crate) fn transfer(
                 outputs.push(body.clone());
             }
         }
-        let cycle_affected = cycle_affected.contains(object.id().as_str());
-        let dependencies = if cycle_affected {
-            // The native object and property arenas retain the exact cycle.
-            // A neutral edge would require a decoder-owned cycle break and
-            // would change when persisted declaration order changes.
-            Vec::new()
-        } else {
+        let dependencies = {
             let mut dependency_objects = Vec::new();
             if !is_body(&object.type_name) {
                 for dependency in &object.dependencies {
@@ -378,27 +386,17 @@ pub(crate) fn transfer(
             }
             let mut seen_dependencies = BTreeSet::new();
             let mut dependencies = Vec::new();
-            for (dependency, declared) in dependency_objects {
+            for (dependency, _declared) in dependency_objects {
                 if seen_dependencies.contains(dependency) {
                     continue;
                 }
                 seen_dependencies.insert(dependency);
                 if let Some(feature) = feature_ids.get(dependency) {
-                    if declared
-                        || ordinal_by_feature.get(feature).is_some_and(|ordinal| {
-                            *ordinal < feature_ordinals[object.id().as_str()]
-                        })
-                    {
-                        dependencies.push(feature.clone());
-                    }
+                    dependencies.push(feature.clone());
                 }
             }
             for dependency in semantic_dependencies {
-                if !dependencies.contains(&dependency)
-                    && ordinal_by_feature
-                        .get(&dependency)
-                        .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id().as_str()])
-                {
+                if !dependencies.contains(&dependency) {
                     dependencies.push(dependency);
                 }
             }
@@ -409,10 +407,20 @@ pub(crate) fn transfer(
         ir.model.features.push(Feature {
             id,
             ordinal: feature_ordinals[object.id().as_str()],
-            name: Some(object.name().to_owned()),
+            name: property(&owned, "Label")
+                .map(|property| string_property_value(ctx, property))
+                .transpose()?
+                .flatten()
+                .filter(|name| !name.trim().is_empty())
+                .or_else(|| Some(object.name().to_owned())),
             suppressed: bool_property(ctx, &owned, "Suppressed")?,
+            needs_recompute: object
+                .attributes
+                .get("Touched")
+                .and_then(|value| crate::native::parse_bool(value))
+                .unwrap_or(false),
             dependencies: dependency_members,
-            source_properties: feature_state(ctx, object.id(), &owned)?,
+            source_properties: BTreeMap::new(),
             source_tag: Some(object.type_name.clone()),
             source_text: None,
             source_content: FeatureContent::default(),
@@ -424,40 +432,16 @@ pub(crate) fn transfer(
             native_ref: Some(object.id().to_owned()),
         });
     }
-    let mut initial_cycle_affected_features = BTreeSet::new();
-    for object in objects
-        .iter()
-        .filter(|object| cycle_affected.contains(object.id().as_str()))
-    {
-        initial_cycle_affected_features.insert(feature_id(object)?);
-    }
-    let parameter_cycle_features = bind_parameter_dependencies(
+    losses.extend(bind_parameter_dependencies(
         &mut ir.model.parameters,
         objects,
-        &initial_cycle_affected_features,
-    )?;
-    for object in objects {
-        if !parameter_cycle_features.contains(&feature_id(object)?) {
-            continue;
-        }
-        cycle_affected.insert(object.id().to_owned());
-        if let Some(feature) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.native_ref.as_deref() == Some(object.id().as_str()))
-        {
-            feature.evaluation.set_definition(native_definition(
-                ctx,
-                &object.type_name,
-                properties_by_owner
-                    .get(object.id().as_str())
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
-            )?);
-            feature.dependencies.clear();
-        }
-    }
+        &ir.model.features,
+        &ir.model.sketch_constraints,
+        properties,
+    )?);
+    crate::parameter_names::apply(ir, properties)?;
+    losses.extend(crate::control_links::apply(ir, properties)?);
+    dependencies::structural(ctx, ir, properties)?;
     Ok((cycle_affected, losses))
 }
 
@@ -685,7 +669,7 @@ fn design_object_dependencies(
         .flat_map(|property| property.values())
         .filter_map(|value| value.attributes.get("expression"))
         .flat_map(|expression| expression_identifiers(expression))
-        .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
+        .filter_map(|(_, identifier)| identifier.split_once('.').map(|(owner, _)| owner))
         .filter_map(|owner| object_by_name.get(owner))
         .filter(|dependency| dependency.id() != object.id())
     {
@@ -889,19 +873,12 @@ fn append_spreadsheet(
         let content = cell.attribute("content").unwrap_or_default();
         let name = cell.attribute("alias").unwrap_or(address);
         let mut retained = BTreeMap::new();
-        retained.insert(
-            cadmpeg_core::nonblank_literal!("address"),
-            address.to_owned(),
-        );
         for attribute in [
-            cadmpeg_core::nonblank_literal!("alias"),
             cadmpeg_core::nonblank_literal!("alignment"),
             cadmpeg_core::nonblank_literal!("style"),
             cadmpeg_core::nonblank_literal!("foregroundColor"),
             cadmpeg_core::nonblank_literal!("backgroundColor"),
             cadmpeg_core::nonblank_literal!("displayUnit"),
-            cadmpeg_core::nonblank_literal!("rowSpan"),
-            cadmpeg_core::nonblank_literal!("colSpan"),
         ] {
             if let Some(value) = cell.attribute(attribute.as_str()) {
                 retained.insert(attribute, value.to_owned());
@@ -929,6 +906,23 @@ fn append_spreadsheet(
                 merged_ranges.push(range);
             }
         }
+        let value = if content.starts_with('=') {
+            None
+        } else {
+            Some(
+                content
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+                    .map_or_else(
+                        || ParameterValue::String(content.to_owned()),
+                        ParameterValue::Real,
+                    ),
+            )
+        };
+        let expression = value
+            .as_ref()
+            .map_or_else(|| content.into(), cadmpeg_ir::features::Expression::literal);
         parameters.push(DesignParameter {
             id,
             owner: Some(feature_id(object)?),
@@ -936,18 +930,10 @@ fn append_spreadsheet(
                 CodecError::malformed(format_args!("FreeCAD ordinal {index} exceeds u32"))
             })?,
             name: name.to_owned(),
-            expression: content.to_owned(),
+            expression,
             display: None,
-            value: (!content.starts_with('='))
-                .then(|| {
-                    content
-                        .parse::<f64>()
-                        .ok()
-                        .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-                        .map(ParameterValue::Real)
-                })
-                .flatten(),
-            dependencies: DistinctMembers::default(),
+            value,
+            driving: true,
             properties: retained,
             pmi: None,
             native_ref: Some(property.id.clone()),
@@ -1151,6 +1137,108 @@ fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
     CellAddress::parse(address).is_some_and(|address| range.contains(address))
 }
 
+/// `VarSet` globals and dynamic properties are scalar document content. They
+/// retain their owning feature where one exists, without inventing history
+/// nodes for the parameter container itself.
+fn append_custom_parameters(
+    parameters: &mut Vec<DesignParameter>,
+    object: &ObjectRecord,
+    properties: &[&PropertyRecord],
+    owner: Option<&FeatureId>,
+) -> Result<(), CodecError> {
+    for property in properties {
+        if crate::property_policy::is_projection_metadata(property) {
+            continue;
+        }
+        if matches!(
+            property.name.as_str(),
+            "Label" | "Label2" | "Visibility" | "Suppressed"
+        ) || parameters
+            .iter()
+            .any(|parameter| parameter.owner.as_ref() == owner && parameter.name == property.name)
+        {
+            continue;
+        }
+        if owner.is_some()
+            && !matches!(
+                &property.body,
+                crate::native::PropertyBody::Persisted {
+                    dynamic: Some(_),
+                    ..
+                }
+            )
+        {
+            continue;
+        }
+        let Some(tag) = crate::persistence::scalar_value_tag(&property.type_name) else {
+            continue;
+        };
+        let Some(raw) = property
+            .values()
+            .iter()
+            .find(|value| value.tag == tag)
+            .and_then(|value| value.attributes.get("value"))
+        else {
+            continue;
+        };
+        let value = match tag {
+            "String" => Some(ParameterValue::String(raw.clone())),
+            "Bool" => match raw.as_str() {
+                "1" | "true" => Some(ParameterValue::Boolean(true)),
+                "0" | "false" => Some(ParameterValue::Boolean(false)),
+                _ => None,
+            },
+            "Integer" => raw.parse().ok().map(ParameterValue::Integer),
+            "Float" => raw
+                .parse::<f64>()
+                .ok()
+                .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+                .map(|value| {
+                    if property.type_name.contains("Angle") {
+                        ParameterValue::Angle(
+                            cadmpeg_ir::scalar::Angle::new(value.get().to_radians())
+                                .expect("finite radians"),
+                        )
+                    } else if property.type_name.contains("Length") {
+                        ParameterValue::Length(Length::from_assigned_real(value))
+                    } else {
+                        ParameterValue::Real(value)
+                    }
+                }),
+            _ => None,
+        };
+        if value.is_none() {
+            continue;
+        }
+        let expression = expression_binding(properties, &property.name).map_or_else(
+            || cadmpeg_ir::features::Expression::literal(value.as_ref().expect("value admitted")),
+            |(_, expression)| expression.into(),
+        );
+        parameters.push(DesignParameter {
+            id: ParameterId::mint(design_identity_text(
+                "parameter",
+                object,
+                format_args!(
+                    ":{}",
+                    cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
+                ),
+            ))
+            .map_err(CodecError::malformed)?,
+            owner: owner.cloned(),
+            ordinal: u32::try_from(property.order).map_err(CodecError::malformed)?,
+            name: property.name.clone(),
+            expression: expression.into(),
+            display: None,
+            value,
+            driving: true,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(property.id.clone()),
+        });
+    }
+    Ok(())
+}
+
 fn append_operation_parameters(
     ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
@@ -1159,7 +1247,39 @@ fn append_operation_parameters(
 ) -> Result<(), CodecError> {
     const NAMES: &[&str] = &[
         "Angle",
+        "Angle0",
+        "MajorRadius",
+        "MinorRadius",
+        "Circumradius",
+        "Polygon",
+        "MaxDegree",
+        "UniformScale",
+        "XScale",
+        "YScale",
+        "ZScale",
+        "SegmentLength",
+        "Rotations",
+        "Xmin",
+        "Ymin",
+        "Zmin",
+        "Xmax",
+        "Ymax",
+        "Zmax",
+        "X2min",
+        "Z2min",
+        "X2max",
+        "Z2max",
+        "Angle1",
         "Angle2",
+        "Angle3",
+        "Width",
+        "Height",
+        "Radius1",
+        "Radius2",
+        "Radius3",
+        "TaperAngle",
+        "TaperAngle2",
+        "Offset",
         "Radius",
         "Size",
         "Size2",
@@ -1177,6 +1297,15 @@ fn append_operation_parameters(
         "ThreadDiameter",
         "ThreadDepth",
         "CustomThreadClearance",
+        "Pitch",
+        "Growth",
+        "Turns",
+        "Tolerance",
+        "Factor",
+        "Occurrences",
+        "Occurrences2",
+        "Offset2",
+        "FuzzyTolerance",
     ];
     let owner = feature_id(object)?;
     for property in properties
@@ -1192,21 +1321,48 @@ fn append_operation_parameters(
         let Some(value) = scalar_value(ctx, property)? else {
             continue;
         };
+        // FreeCAD's ellipsoid Radius3=0 is a sentinel: the Y radius follows
+        // Radius2. It is not a second authored zero-length dimension.
+        if object.type_name.ends_with("Ellipsoid")
+            && property.name == "Radius3"
+            && value.get() == 0.0
+        {
+            continue;
+        }
         let expression = expression_binding(properties, &property.name);
         let is_angle = property.type_name.contains("Angle");
-        let mut retained = BTreeMap::new();
-        if let Some((native_ref, _)) = &expression {
-            retained.insert(
-                cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                native_ref.to_owned(),
-            );
-        }
-        let expression = match expression {
-            Some((_, expression)) => expression,
-            None => match scalar_text(ctx, property, str::to_owned)? {
-                Some(text) => text,
-                None => format!("{}", value.get()),
-            },
+        let retained = BTreeMap::new();
+        let value = if is_angle {
+            cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
+        } else if matches!(
+            property.name.as_str(),
+            "Occurrences" | "Occurrences2" | "Polygon" | "MaxDegree"
+        ) {
+            direct_root_value(ctx, property, "Integer", "value", str::parse::<i64>)?
+                .and_then(Result::ok)
+                .map(ParameterValue::Integer)
+        } else if matches!(
+            property.name.as_str(),
+            "Turns"
+                | "Tolerance"
+                | "Factor"
+                | "UniformScale"
+                | "XScale"
+                | "YScale"
+                | "ZScale"
+                | "SegmentLength"
+                | "Rotations"
+        ) {
+            Some(ParameterValue::Real(value))
+        } else {
+            Some(ParameterValue::Length(Length::from_assigned_real(value)))
+        };
+        let Some(value) = value else {
+            continue;
+        };
+        let expression: cadmpeg_ir::features::Expression = match expression {
+            Some((_, expression)) => expression.into(),
+            None => cadmpeg_ir::features::Expression::literal(&value),
         };
         parameters.push(DesignParameter {
             id: ParameterId::mint(design_identity_text(
@@ -1226,14 +1382,10 @@ fn append_operation_parameters(
                 ))
             })?,
             name: property.name.clone(),
-            expression,
+            expression: expression.into(),
             display: None,
-            value: if is_angle {
-                cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
-            } else {
-                Some(ParameterValue::Length(Length::from_assigned_real(value)))
-            },
-            dependencies: DistinctMembers::default(),
+            value: Some(value),
+            driving: true,
             properties: retained,
             pmi: None,
             native_ref: Some(property.id.clone()),
@@ -1895,54 +2047,6 @@ fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), Codec
     Ok(())
 }
 
-fn feature_state(
-    ctx: &DecodeContext<'_>,
-    object: &str,
-    properties: &[&PropertyRecord],
-) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
-    const STATE_NAMES: &[&str] = &[
-        "Active",
-        "Frozen",
-        "Invalid",
-        "MapMode",
-        "Support",
-        "Suppressed",
-        "Tip",
-        "Touched",
-        "Visibility",
-    ];
-    let mut state = BTreeMap::new();
-    for property in properties
-        .iter()
-        .filter(|property| STATE_NAMES.contains(&property.name.as_str()))
-    {
-        let value = if let Some(link) = property
-            .links()
-            .first()
-            .and_then(|link| link.as_ref()?.object())
-        {
-            link.to_owned()
-        } else if let Some(value) = scalar_text(ctx, property, str::to_owned)? {
-            value
-        } else {
-            property.xml.text().to_owned()
-        };
-        let name = property.name.clone();
-        let Some(name) = NonBlankString::new(name) else {
-            return Err(CodecError::malformed(format_args!(
-                "{object} states a property with a blank key"
-            )));
-        };
-        if state.contains_key(&name) {
-            return Err(CodecError::malformed(format_args!(
-                "{object} states the property {name} a second time"
-            )));
-        }
-        state.insert(name, value);
-    }
-    Ok(state)
-}
-
 fn bool_property(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
@@ -2066,7 +2170,7 @@ fn direct_fuzzy_tolerance(
     .and_then(FiniteReal::new));
     Ok(Some(
         match cadmpeg_ir::scalar::PositiveLength::from_assigned_real(value) {
-            Some(explicit) => FuzzyTolerance::Explicit(explicit),
+            Some(explicit) => FuzzyTolerance::Explicit(cadmpeg_ir::Dimension::Literal(explicit)),
             None if value.get() < 0.0 => FuzzyTolerance::Automatic,
             None => FuzzyTolerance::KernelDefault,
         },
@@ -2171,26 +2275,10 @@ fn parse_constraints(
                     };
                     let path = format!("Constraints[{index}]");
                     let expression = expression_binding(properties, &path);
-                    let mut parameter_properties = BTreeMap::new();
-                    parameter_properties.insert(
-                        cadmpeg_core::nonblank_literal!("is_driving"),
-                        (node.attribute("IsDriving").unwrap_or("1")).to_owned(),
-                    );
-                    if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
-                        parameter_properties.insert(
-                            cadmpeg_core::nonblank_literal!("source_name"),
-                            name.to_owned(),
-                        );
-                    }
-                    if let Some((native_ref, _)) = &expression {
-                        parameter_properties.insert(
-                            cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                            native_ref.to_owned(),
-                        );
-                    }
-                    let expression = match expression {
-                        Some((_, expression)) => expression,
-                        None => node.attribute("Value").unwrap_or_default().to_owned(),
+                    let parameter_properties = BTreeMap::new();
+                    let expression: cadmpeg_ir::features::Expression = match expression {
+                        Some((_, expression)) => expression.into(),
+                        None => cadmpeg_ir::features::Expression::literal(&value),
                     };
                     parameters.push(DesignParameter {
                         id: id.clone(),
@@ -2201,10 +2289,13 @@ fn parse_constraints(
                             ))
                         })?,
                         name: format!("Constraint{}", index + 1),
-                        expression,
+                        expression: expression.into(),
                         display: None,
                         value: Some(value),
-                        dependencies: DistinctMembers::default(),
+                        driving: node
+                            .attribute("IsDriving")
+                            .and_then(crate::native::parse_bool)
+                            .unwrap_or(true),
                         properties: parameter_properties,
                         pmi: None,
                         native_ref: Some(property.id.clone()),
@@ -2336,6 +2427,7 @@ fn parse_constraints(
                     neutral_constraint(type_code, &resolved, parameter.as_ref(), all_resolved)?;
             }
         }
+        let parameter_bound = parameter.is_some();
         let definition = if let Some(definition) = definition {
             definition
         } else {
@@ -2364,7 +2456,11 @@ fn parse_constraints(
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             name: nonempty_attr(node, "Name"),
-            driving: bool_attr(node, "IsDriving"),
+            driving: if parameter_bound {
+                None
+            } else {
+                bool_attr(node, "IsDriving")
+            },
             active: bool_attr(node, "IsActive"),
             virtual_space: bool_attr(node, "IsInVirtualSpace"),
             visible: bool_attr(node, "IsVisible"),
@@ -2474,42 +2570,98 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
 fn bind_parameter_dependencies(
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
-    cycle_affected_features: &BTreeSet<FeatureId>,
-) -> Result<BTreeSet<FeatureId>, CodecError> {
+    features: &[Feature],
+    constraints: &[SketchConstraint],
+    properties: &[PropertyRecord],
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let mut object_names = HashMap::new();
     for object in objects {
-        object_names.insert(feature_id(object)?, object.name().as_str());
+        object_names.insert(feature_id(object)?, object);
     }
     let mut candidates = Vec::new();
     for parameter in parameters.iter() {
-        let source_name = parameter
-            .properties
-            .get("source_name")
-            .filter(|source_name| *source_name != &parameter.name);
-        let mut names = Vec::new();
-        names.push(parameter.name.clone());
-        if let Some(source_name) = source_name {
-            names.push(source_name.to_owned());
+        let mut names = vec![parameter.name.clone()];
+        for constraint in constraints {
+            if constraint
+                .definition
+                .kind()
+                .dimension_parameters()
+                .map_err(CodecError::malformed)?
+                .contains(&parameter.id)
+            {
+                if let Some(name) = &constraint.name {
+                    names.push(name.clone());
+                    names.push(format!("Constraints.{name}"));
+                }
+                // The actual source row is stated by its property ordinal.
+                // Named aliases and numeric selectors reference the same ID.
+                names.push(format!("Constraints[{}]", parameter.ordinal));
+            }
         }
         candidates.push((parameter.id.clone(), parameter.owner.clone(), names));
     }
-    let mut local_candidates = HashMap::<(FeatureId, String), Vec<ParameterId>>::new();
+    let mut local_candidates = HashMap::<(Option<FeatureId>, String), Vec<ParameterId>>::new();
     let mut qualified_candidates = HashMap::<String, Vec<ParameterId>>::new();
-    for (id, owner, names) in &candidates {
-        let Some(owner) = owner else { continue };
-        for name in names {
-            let key = (owner.clone(), name.to_owned());
-            let bucket = local_candidates.entry(key).or_default();
-            bucket.push(id.clone());
-            if let Some(object) = object_names.get(owner) {
-                let key = format!("{object}.{name}");
-                let bucket = qualified_candidates.entry(key).or_default();
-                bucket.push(id.clone());
+    for (id, owner, aliases) in &candidates {
+        let parameter = parameters
+            .iter()
+            .find(|parameter| parameter.id == *id)
+            .expect("candidate came from parameters");
+        let object = owner
+            .as_ref()
+            .and_then(|owner| object_names.get(owner).copied())
+            .or_else(|| {
+                parameter
+                    .native_ref
+                    .as_ref()
+                    .and_then(|native| properties.iter().find(|property| &property.id == native))
+                    .and_then(|property| {
+                        objects
+                            .iter()
+                            .find(|object| object.id().as_str() == property.owner)
+                    })
+            });
+        for name in aliases {
+            local_candidates
+                .entry((owner.clone(), name.to_owned()))
+                .or_default()
+                .push(id.clone());
+            if let Some(object) = object {
+                qualified_candidates
+                    .entry(format!("{}.{name}", object.name()))
+                    .or_default()
+                    .push(id.clone());
+                if let Some(label) = properties
+                    .iter()
+                    .find(|property| {
+                        property.owner == object.id().as_str() && property.name == "Label"
+                    })
+                    .and_then(|property| {
+                        property.values().iter().find(|value| value.tag == "String")
+                    })
+                    .and_then(|value| value.attributes.get("value"))
+                {
+                    qualified_candidates
+                        .entry(format!("<<{label}>>.{name}"))
+                        .or_default()
+                        .push(id.clone());
+                }
+            }
+            if let Some(label) = owner
+                .as_ref()
+                .and_then(|owner| features.iter().find(|feature| feature.id == *owner))
+                .and_then(|feature| feature.name.as_deref())
+            {
+                qualified_candidates
+                    .entry(format!("<<{label}>>.{name}"))
+                    .or_default()
+                    .push(id.clone());
             }
         }
     }
     let mut local = HashMap::new();
     for (key, ids) in local_candidates {
+        let ids = ids.into_iter().collect::<BTreeSet<_>>();
         if ids.len() == 1 {
             local.insert(
                 key,
@@ -2521,6 +2673,7 @@ fn bind_parameter_dependencies(
     }
     let mut qualified = HashMap::new();
     for (key, ids) in qualified_candidates {
+        let ids = ids.into_iter().collect::<BTreeSet<_>>();
         if ids.len() == 1 {
             qualified.insert(
                 key,
@@ -2530,36 +2683,35 @@ fn bind_parameter_dependencies(
             );
         }
     }
+    let mut losses = Vec::new();
     for parameter in parameters.iter_mut() {
-        let mut dependencies = BTreeSet::new();
-        for identifier in expression_identifiers(&parameter.expression) {
-            let dependency = if let Some(qualified) = qualified.get(identifier) {
-                Some(qualified)
-            } else if let Some(owner) = parameter.owner.as_ref() {
-                local.get(&(owner.clone(), identifier.to_owned()))
-            } else {
-                None
-            };
-            if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
-                if !dependencies.contains(dependency) {
-                    dependencies.insert(dependency.clone());
-                }
+        let text = parameter
+            .expression
+            .literal_text()
+            .unwrap_or_default()
+            .to_owned();
+        let mut spans = Vec::new();
+        for (span, identifier) in expression_identifiers(&text) {
+            let dependency = qualified
+                .get(identifier)
+                .or_else(|| local.get(&(parameter.owner.clone(), identifier.to_owned())));
+            if let Some(dependency) = dependency {
+                spans.push((span, dependency.clone()));
+            } else if !identifier
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_digit)
+                && !matches!(
+                    identifier,
+                    "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad" | "true" | "false" | "pi" | "e"
+                )
+                && !text[span.end..].trim_start().starts_with('(')
+            {
+                losses.push(crate::loss::FreecadLossCode::ExpressionReferenceUnresolved.note(format!("parameter {} expression identifier {identifier:?} has no unique parameter target and remains literal text", parameter.id)));
             }
         }
-        parameter.dependencies = if parameter
-            .owner
-            .as_ref()
-            .is_some_and(|owner| cycle_affected_features.contains(owner))
-        {
-            // The native property record retains the expression. A neutral
-            // parameter edge would create an invented evaluation order for
-            // a history that FreeCAD itself could not topologically sort.
-            DistinctMembers::default()
-        } else {
-            let mut members = Vec::new();
-            members.extend(dependencies);
-            DistinctMembers::try_from(members).map_err(CodecError::from)?
-        };
+        parameter.expression = cadmpeg_ir::features::Expression::from_spans(&text, spans)
+            .map_err(CodecError::malformed)?;
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
     for parameter in parameters.iter() {
@@ -2570,19 +2722,7 @@ fn bind_parameter_dependencies(
     for ordinals in owner_ordinals.values_mut() {
         ordinals.sort_unstable_by(Ord::cmp);
     }
-    let parameter_cycle_features = order_parameters_by_dependencies(parameters);
-    for parameter in parameters.iter_mut() {
-        if parameter
-            .owner
-            .as_ref()
-            .is_some_and(|owner| parameter_cycle_features.contains(owner))
-        {
-            // The native property record retains the expression. A neutral
-            // parameter edge would create an invented evaluation order for
-            // a history that FreeCAD itself could not topologically sort.
-            parameter.dependencies.clear();
-        }
-    }
+    let _cycle_owners = order_parameters_by_dependencies(parameters);
     let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
     for parameter in parameters {
         let owner = parameter.owner.clone();
@@ -2590,7 +2730,7 @@ fn bind_parameter_dependencies(
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
         *index += 1;
     }
-    Ok(parameter_cycle_features)
+    Ok(losses)
 }
 
 /// Order parameters so each follows the parameters it depends on.
@@ -2605,7 +2745,7 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
         dependents.entry(&parameter.id).or_default();
     }
     for (position, parameter) in parameters.iter().enumerate() {
-        for dependency in &parameter.dependencies {
+        for dependency in parameter.expression.dependencies() {
             if let Some(waiters) = dependents.get_mut(dependency) {
                 waiters.push(position);
             }
@@ -2615,8 +2755,8 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
         .iter()
         .map(|parameter| {
             parameter
-                .dependencies
-                .iter()
+                .expression
+                .dependencies()
                 .filter(|dependency| dependents.contains_key(dependency))
                 .count()
         })
@@ -2667,12 +2807,64 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
     cycle_features
 }
 
-fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
-    expression
-        .split(|character: char| {
-            !character.is_ascii_alphanumeric() && character != '_' && character != '.'
-        })
-        .filter(|identifier| !identifier.is_empty())
+fn expression_identifiers(
+    expression: &str,
+) -> impl Iterator<Item = (std::ops::Range<usize>, &str)> {
+    let mut identifiers = Vec::new();
+    let mut cursor = 0;
+    while cursor < expression.len() {
+        let rest = &expression[cursor..];
+        let character = rest.chars().next().expect("nonempty expression suffix");
+        if matches!(character, '\'' | '"') {
+            let quote = character;
+            cursor += character.len_utf8();
+            let mut escaped = false;
+            while cursor < expression.len() {
+                let character = expression[cursor..]
+                    .chars()
+                    .next()
+                    .expect("nonempty quoted suffix");
+                cursor += character.len_utf8();
+                if !escaped && character == quote {
+                    break;
+                }
+                escaped = !escaped && character == '\\';
+            }
+            continue;
+        }
+        let start = cursor;
+        if rest.starts_with("<<") {
+            if let Some(end) = rest.find(">>.") {
+                cursor += end + 3;
+            }
+        }
+        while cursor < expression.len() {
+            let character = expression[cursor..]
+                .chars()
+                .next()
+                .expect("nonempty identifier suffix");
+            if character == '[' {
+                if let Some(end) = expression[cursor + 1..].find(']') {
+                    let digits = &expression[cursor + 1..cursor + 1 + end];
+                    if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
+                        cursor += end + 2;
+                        continue;
+                    }
+                }
+                break;
+            }
+            if !character.is_alphanumeric() && !matches!(character, '_' | '.') {
+                break;
+            }
+            cursor += character.len_utf8();
+        }
+        if cursor > start {
+            identifiers.push((start..cursor, &expression[start..cursor]));
+        } else {
+            cursor += character.len_utf8();
+        }
+    }
+    identifiers.into_iter()
 }
 
 fn neutral_constraint(
@@ -2765,7 +2957,7 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::DistanceLoci {
                 first,
                 second,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         6 => {
@@ -2778,7 +2970,7 @@ fn neutral_constraint(
             };
             SketchConstraintDefinitionInput::Distance {
                 entities,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         7 => {
@@ -2794,7 +2986,7 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::HorizontalDistance {
                 first,
                 second,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         8 => {
@@ -2810,7 +3002,7 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::VerticalDistance {
                 first,
                 second,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         9 if loci.len() == 2 && sketch_axis(&loci[0]).is_some() => {
@@ -2826,7 +3018,7 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::AngleToAxis {
                 entity,
                 axis,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         9 if loci.len() == 2 && sketch_axis(&loci[1]).is_some() => {
@@ -2842,7 +3034,7 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::AngleToAxis {
                 entity,
                 axis,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         9 if loci.len() == 1 => {
@@ -2855,7 +3047,7 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::AngleToAxis {
                 entity,
                 axis: SketchAxis::Horizontal,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         9 => {
@@ -2871,7 +3063,7 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::Angle {
                 first,
                 second,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         11 => {
@@ -2881,7 +3073,10 @@ fn neutral_constraint(
             let Some(parameter) = parameter() else {
                 return Ok(None);
             };
-            SketchConstraintDefinitionInput::Radius { entity, parameter }
+            SketchConstraintDefinitionInput::Radius {
+                entity,
+                parameter: cadmpeg_ir::Dimension::Parameter(parameter),
+            }
         }
         18 => {
             let Some(entity) = entity(0) else {
@@ -2890,7 +3085,10 @@ fn neutral_constraint(
             let Some(parameter) = parameter() else {
                 return Ok(None);
             };
-            SketchConstraintDefinitionInput::Diameter { entity, parameter }
+            SketchConstraintDefinitionInput::Diameter {
+                entity,
+                parameter: cadmpeg_ir::Dimension::Parameter(parameter),
+            }
         }
         16 => {
             let Some(incident) = locus(0) else {
@@ -2909,7 +3107,7 @@ fn neutral_constraint(
                 incident,
                 refracted,
                 interface,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         }
         19 => {
@@ -2919,7 +3117,10 @@ fn neutral_constraint(
             let Some(parameter) = parameter() else {
                 return Ok(None);
             };
-            SketchConstraintDefinitionInput::Weight { entity, parameter }
+            SketchConstraintDefinitionInput::Weight {
+                entity,
+                parameter: cadmpeg_ir::Dimension::Parameter(parameter),
+            }
         }
         14 => {
             let Some(first) = locus(0) else {
@@ -3898,11 +4099,15 @@ fn revolution_definition(
         };
         if symmetric {
             RevolveExtent::Symmetric {
-                termination: AngularTermination::Angle { angle },
+                termination: AngularTermination::Angle {
+                    angle: cadmpeg_ir::Dimension::Literal(angle),
+                },
             }
         } else {
             RevolveExtent::OneSided {
-                termination: AngularTermination::Angle { angle },
+                termination: AngularTermination::Angle {
+                    angle: cadmpeg_ir::Dimension::Literal(angle),
+                },
             }
         }
     } else {
@@ -3916,11 +4121,15 @@ fn revolution_definition(
                 };
                 if midplane {
                     RevolveExtent::Symmetric {
-                        termination: AngularTermination::Angle { angle },
+                        termination: AngularTermination::Angle {
+                            angle: cadmpeg_ir::Dimension::Literal(angle),
+                        },
                     }
                 } else {
                     RevolveExtent::OneSided {
-                        termination: AngularTermination::Angle { angle },
+                        termination: AngularTermination::Angle {
+                            angle: cadmpeg_ir::Dimension::Literal(angle),
+                        },
                     }
                 }
             }
@@ -3954,8 +4163,12 @@ fn revolution_definition(
                     return Ok(None);
                 };
                 RevolveExtent::TwoSided {
-                    first: AngularTermination::Angle { angle: first },
-                    second: AngularTermination::Angle { angle: second },
+                    first: AngularTermination::Angle {
+                        angle: cadmpeg_ir::Dimension::Literal(first),
+                    },
+                    second: AngularTermination::Angle {
+                        angle: cadmpeg_ir::Dimension::Literal(second),
+                    },
                 }
             }
             _ => return Ok(None),
@@ -4236,12 +4449,26 @@ fn part_construction_geometry_definition(
                         cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
                         required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
                             required!(scalar_named(ctx, properties, "Radius",)?)
-                        )),
+                        ))
+                        .into(),
                         required!(
-                            cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
-                                required!(angle(if legacy_angles { "Angle0" } else { "Angle1" })?),
-                                required!(angle(if legacy_angles { "Angle1" } else { "Angle2" })?),
-                            ])
+                            cadmpeg_ir::features::FeatureAngularRange::try_from(required!(
+                                cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints(
+                                    [
+                                        required!(angle(if legacy_angles {
+                                            "Angle0"
+                                        } else {
+                                            "Angle1"
+                                        })?),
+                                        required!(angle(if legacy_angles {
+                                            "Angle1"
+                                        } else {
+                                            "Angle2"
+                                        })?),
+                                    ]
+                                )
+                                .ok()
+                            ))
                             .ok()
                         ),
                     ),
@@ -4261,12 +4488,16 @@ fn part_construction_geometry_definition(
                         required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
                             required!(scalar_named(ctx, properties, "MinorRadius")?),
                         )),
-                    ],
+                    ]
+                    .map(Into::into),
                     required!(
-                        cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
-                            required!(angle("Angle1")?),
-                            required!(angle("Angle2")?),
-                        ])
+                        cadmpeg_ir::features::FeatureAngularRange::try_from(required!(
+                            cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                                required!(angle("Angle1")?),
+                                required!(angle("Angle2")?),
+                            ])
+                            .ok()
+                        ))
                         .ok()
                     ),
                 )),
@@ -4285,20 +4516,24 @@ fn part_construction_geometry_definition(
             FeatureOperation::RegularPolygonCurve {
                 sides: required!(cadmpeg_ir::features::PolygonSideCount::new(required!(
                     u32::try_from(required!(integer_property(ctx, properties, "Polygon")?)).ok()
-                ),)),
+                ),))
+                .into(),
                 circumradius: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
                     required!(scalar_named(ctx, properties, "Circumradius")?),
-                )),
+                ))
+                .into(),
             },
         )),
         "Part::Plane" => Some(FeatureDefinition::Operation(
             FeatureOperation::PlanarPatch {
                 length: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
                     required!(scalar_named(ctx, properties, "Length",)?)
-                )),
+                ))
+                .into(),
                 width: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
                     required!(scalar_named(ctx, properties, "Width",)?)
-                )),
+                ))
+                .into(),
             },
         )),
         _ => None,
@@ -4332,7 +4567,7 @@ fn parametric_helix_definition(
         .then(|| cadmpeg_ir::scalar::PositiveReal::try_from(segment_value))
         .transpose()
         .ok());
-    let (shape, revolutions, clockwise, construction_style) = if kind == "Part::Helix" {
+    let (shape, clockwise, construction_style) = if kind == "Part::Helix" {
         let pitch = required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
             required!(scalar_named(ctx, properties, "Pitch",)?)
         ));
@@ -4354,24 +4589,20 @@ fn parametric_helix_definition(
             1 => Some(HelixConstructionStyle::Corrected),
             _ => return Ok(None),
         };
+        let law = cadmpeg_ir::features::HelixLaw::HeightPitch {
+            height: cadmpeg_ir::Dimension::Literal(height.into()),
+            pitch: cadmpeg_ir::Dimension::Literal(pitch.into()),
+        };
         let shape = if angle == 0.0 {
-            cadmpeg_ir::features::HelixShape::Cylindrical {
-                pitch: pitch.into(),
-            }
+            cadmpeg_ir::features::HelixShape::Cylindrical { law }
         } else {
             cadmpeg_ir::features::HelixShape::Conical {
-                pitch: pitch.into(),
-                cone_angle: required!(cadmpeg_ir::scalar::SlopeAngle::new(angle.to_radians())),
+                law,
+                cone_angle: required!(cadmpeg_ir::scalar::SlopeAngle::new(angle.to_radians()))
+                    .into(),
             }
         };
-        (
-            shape,
-            required!(cadmpeg_ir::scalar::PositiveReal::new(
-                height.get() / pitch.get()
-            )),
-            clockwise,
-            construction_style,
-        )
+        (shape, clockwise, construction_style)
     } else {
         let growth = required!(
             cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real(required!(
@@ -4383,9 +4614,9 @@ fn parametric_helix_definition(
         )));
         (
             cadmpeg_ir::features::HelixShape::Spiral {
-                radial_growth: growth.into(),
+                radial_growth: cadmpeg_ir::Dimension::Literal(growth.into()),
+                revolutions: revolutions.into(),
             },
-            revolutions,
             false,
             None,
         )
@@ -4394,12 +4625,11 @@ fn parametric_helix_definition(
         FeatureOperation::Helix {
             axis_origin: cadmpeg_ir::features::FinitePoint3::ZERO,
             axis_direction: cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
-            radius,
+            radius: cadmpeg_ir::Dimension::Literal(radius),
             shape,
-            revolutions,
-            start_angle: cadmpeg_ir::scalar::Angle::ZERO,
+            start_angle: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Angle::ZERO),
             clockwise,
-            segment_turns,
+            segment_turns: segment_turns.map(Into::into),
             construction_style,
         },
     )))
@@ -4586,9 +4816,10 @@ fn extrusion_shape(
                         termination: LinearTermination::Blind {
                             length: required!(cadmpeg_ir::scalar::NonZeroLength::new(required!(
                                 (forward != 0.0).then_some(forward.abs())
-                            ),)),
+                            ),))
+                            .into(),
                         },
-                        draft: drafts.taper,
+                        draft: drafts.taper.map(Into::into),
                     },
                 },
                 false,
@@ -4616,9 +4847,10 @@ fn extrusion_shape(
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(length)),
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(length))
+                                    .into(),
                             },
-                            draft,
+                            draft: draft.map(Into::into),
                         },
                     },
                     false,
@@ -4627,9 +4859,10 @@ fn extrusion_shape(
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(-length)),
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(-length))
+                                    .into(),
                             },
-                            draft,
+                            draft: draft.map(Into::into),
                         },
                     },
                     true,
@@ -4638,15 +4871,17 @@ fn extrusion_shape(
                     ExtrudeExtent::TwoSided {
                         first: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(first)),
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(first))
+                                    .into(),
                             },
-                            draft: first_draft,
+                            draft: first_draft.map(Into::into),
                         },
                         second: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(-second)),
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(-second))
+                                    .into(),
                             },
-                            draft: second_draft,
+                            draft: second_draft.map(Into::into),
                         },
                     },
                     false,
@@ -4729,7 +4964,8 @@ fn extrusion_shape(
             0 => Some(LinearTermination::Blind {
                 length: required!(cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(
                     required!(scalar_named(ctx, properties, &length_name,)?)
-                )),
+                ))
+                .into(),
             }),
             1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll {}),
             1 => Some(LinearTermination::ToLast {}),
@@ -4740,7 +4976,7 @@ fn extrusion_shape(
                         .id
                         .clone(),
                 ),
-                offset,
+                offset: offset.map(Into::into),
             }),
             5 => Some(LinearTermination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
@@ -4761,23 +4997,23 @@ fn extrusion_shape(
         0 => ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: required!(termination(1)?),
-                draft: drafts.taper,
+                draft: drafts.taper.map(Into::into),
             },
         },
         1 => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: required!(termination(1)?),
-                draft: drafts.taper,
+                draft: drafts.taper.map(Into::into),
             },
             second: ExtrudeSide {
                 termination: required!(termination(2)?),
-                draft: drafts.taper_second,
+                draft: drafts.taper_second.map(Into::into),
             },
         },
         2 => ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination: required!(termination(1)?),
-                draft: drafts.taper,
+                draft: drafts.taper.map(Into::into),
             },
         },
         _ => return Ok(None),
@@ -4920,7 +5156,9 @@ fn scale_definition(
         let Some(factor) = factor("UniformScale")? else {
             return Ok(None);
         };
-        ScaleFactors::Uniform { factor }
+        ScaleFactors::Uniform {
+            factor: cadmpeg_ir::Dimension::Literal(factor),
+        }
     } else {
         let Some(x) = factor("XScale")? else {
             return Ok(None);
@@ -4931,7 +5169,9 @@ fn scale_definition(
         let Some(z) = factor("ZScale")? else {
             return Ok(None);
         };
-        ScaleFactors::PerAxis { factors: [x, y, z] }
+        ScaleFactors::PerAxis {
+            factors: [x, y, z].map(cadmpeg_ir::Dimension::Literal),
+        }
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Scale {
@@ -4979,7 +5219,9 @@ fn fillet_definition(
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges,
-                    radius: RadiusSpec::Constant { radius },
+                    radius: RadiusSpec::Constant {
+                        radius: cadmpeg_ir::Dimension::Literal(radius),
+                    },
                     tangency_weight: None,
                 },
             ),
@@ -5016,9 +5258,14 @@ fn chamfer_definition(
             return Ok(None);
         }
         if first == second {
-            ChamferSpec::Distance { distance: first }
+            ChamferSpec::Distance {
+                distance: cadmpeg_ir::Dimension::Literal(first),
+            }
         } else {
-            ChamferSpec::TwoDistances { first, second }
+            ChamferSpec::TwoDistances {
+                first: cadmpeg_ir::Dimension::Literal(first),
+                second: cadmpeg_ir::Dimension::Literal(second),
+            }
         }
     } else {
         required!(chamfer_spec(ctx, properties)?)
@@ -5165,7 +5412,7 @@ fn thickness_definition(
         FeatureOperation::Shell {
             bodies: None,
             removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
-            thickness: Some(thickness),
+            thickness: Some(cadmpeg_ir::Dimension::Literal(thickness)),
             outward: Some(if kind == "Part::Thickness" {
                 outward
             } else {
@@ -5208,7 +5455,7 @@ fn offset_shape_definition(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::OffsetShape {
             source: BodySelection::Native(source.id.clone()),
-            distance,
+            distance: cadmpeg_ir::Dimension::Literal(distance),
             mode,
             join,
             resolve_intersections: bool_property(ctx, properties, "Intersection")?.unwrap_or(false),
@@ -5406,8 +5653,8 @@ fn project_on_surface_definition(
             support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
             direction,
             mode,
-            height,
-            offset,
+            height: cadmpeg_ir::Dimension::Literal(height),
+            offset: cadmpeg_ir::Dimension::Literal(offset),
         },
     )))
 }
@@ -5462,7 +5709,7 @@ fn draft_definition(
                     plane: None,
                 }),
             },
-            angle: Some(angle),
+            angle: Some(cadmpeg_ir::Dimension::Literal(angle)),
             outward: Some(reversed),
         },
     )))
@@ -5491,13 +5738,18 @@ fn chamfer_spec(
         .flatten()
         .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real);
     Ok(match (mode, first) {
-        (0, Some(distance)) => Some(ChamferSpec::Distance { distance }),
+        (0, Some(distance)) => Some(ChamferSpec::Distance {
+            distance: cadmpeg_ir::Dimension::Literal(distance),
+        }),
         (1, Some(first)) => property(properties, "Size2")
             .map(|property| scalar_value(ctx, property))
             .transpose()?
             .flatten()
             .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real)
-            .map(|second| ChamferSpec::TwoDistances { first, second }),
+            .map(|second| ChamferSpec::TwoDistances {
+                first: cadmpeg_ir::Dimension::Literal(first),
+                second: cadmpeg_ir::Dimension::Literal(second),
+            }),
         (2, Some(distance)) => property(properties, "Angle")
             .map(|property| scalar_value(ctx, property))
             .transpose()?
@@ -5505,8 +5757,10 @@ fn chamfer_spec(
             .filter(|angle| angle.get() > 0.0 && angle.get() < 180.0)
             .and_then(|angle| {
                 Some(ChamferSpec::DistanceAngle {
-                    distance,
-                    angle: cadmpeg_ir::scalar::InteriorAngle::new(angle.get().to_radians())?,
+                    distance: cadmpeg_ir::Dimension::Literal(distance),
+                    angle: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::InteriorAngle::new(
+                        angle.get().to_radians(),
+                    )?),
                 })
             }),
         _ => None,
@@ -5547,83 +5801,8 @@ fn is_vector_property_type(type_name: &str) -> bool {
     )
 }
 
-fn scalar_value_tag(type_name: &str) -> Option<&'static str> {
-    match type_name {
-        "App::PropertyBool" => Some("Bool"),
-        "App::PropertyEnumeration"
-        | "App::PropertyInteger"
-        | "App::PropertyIntegerConstraint"
-        | "App::PropertyPercent" => Some("Integer"),
-        "App::PropertyFloat"
-        | "App::PropertyFloatConstraint"
-        | "App::PropertyPrecision"
-        | "App::PropertyAcceleration"
-        | "App::PropertyAmountOfSubstance"
-        | "App::PropertyAngle"
-        | "App::PropertyArea"
-        | "App::PropertyCompressiveStrength"
-        | "App::PropertyCurrentDensity"
-        | "App::PropertyDensity"
-        | "App::PropertyDissipationRate"
-        | "App::PropertyDistance"
-        | "App::PropertyDynamicViscosity"
-        | "App::PropertyElectricalCapacitance"
-        | "App::PropertyElectricalConductance"
-        | "App::PropertyElectricalConductivity"
-        | "App::PropertyElectricalInductance"
-        | "App::PropertyElectricalResistance"
-        | "App::PropertyElectricCharge"
-        | "App::PropertySurfaceChargeDensity"
-        | "App::PropertyVolumeChargeDensity"
-        | "App::PropertyElectricCurrent"
-        | "App::PropertyElectricPotential"
-        | "App::PropertyElectromagneticPotential"
-        | "App::PropertyFrequency"
-        | "App::PropertyForce"
-        | "App::PropertyHeatFlux"
-        | "App::PropertyInverseArea"
-        | "App::PropertyInverseLength"
-        | "App::PropertyInverseVolume"
-        | "App::PropertyKinematicViscosity"
-        | "App::PropertyLength"
-        | "App::PropertyLuminousIntensity"
-        | "App::PropertyMagneticFieldStrength"
-        | "App::PropertyMagneticFlux"
-        | "App::PropertyMagneticFluxDensity"
-        | "App::PropertyMagnetization"
-        | "App::PropertyMass"
-        | "App::PropertyMoment"
-        | "App::PropertyPressure"
-        | "App::PropertyPower"
-        | "App::PropertyQuantity"
-        | "App::PropertyQuantityConstraint"
-        | "App::PropertyShearModulus"
-        | "App::PropertySpecificEnergy"
-        | "App::PropertySpecificHeat"
-        | "App::PropertySpeed"
-        | "App::PropertyStiffness"
-        | "App::PropertyStiffnessDensity"
-        | "App::PropertyStress"
-        | "App::PropertyTemperature"
-        | "App::PropertyThermalConductivity"
-        | "App::PropertyThermalExpansionCoefficient"
-        | "App::PropertyThermalTransferCoefficient"
-        | "App::PropertyTime"
-        | "App::PropertyUltimateTensileStrength"
-        | "App::PropertyVacuumPermittivity"
-        | "App::PropertyVelocity"
-        | "App::PropertyVolume"
-        | "App::PropertyVolumeFlowRate"
-        | "App::PropertyVolumetricThermalExpansionCoefficient"
-        | "App::PropertyWork"
-        | "App::PropertyYieldStrength"
-        | "App::PropertyYoungsModulus" => Some("Float"),
-        _ => None,
-    }
-}
-
 fn text_value_tag(type_name: &str) -> Option<&'static str> {
-    scalar_value_tag(type_name).or(match type_name {
+    crate::persistence::scalar_value_tag(type_name).or(match type_name {
         "App::PropertyBoolList" => Some("BoolList"),
         "App::PropertyFile"
         | "App::PropertyFont"
@@ -5640,7 +5819,7 @@ fn scalar_value(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let tag = required!(scalar_value_tag(&property.type_name));
+    let tag = required!(crate::persistence::scalar_value_tag(&property.type_name));
     if tag == "Bool" {
         return Ok(None);
     }
@@ -5710,16 +5889,30 @@ fn direct_root<T>(
 fn native_parameters(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
-) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
+) -> Result<
+    BTreeMap<NonBlankString, cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>>,
+    CodecError,
+> {
     let mut parameters = BTreeMap::new();
     for property in properties {
+        // These records have neutral owners outside the operation's operands.
+        // Unconsumed labels/visibility remain attributes instead of becoming a
+        // second editable copy inside Native.parameters.
+        if matches!(
+            property.name.as_str(),
+            "Label" | "Label2" | "Suppressed" | "Visibility" | "Placement" | "ExpressionEngine"
+        ) || crate::property_policy::is_projection_metadata(property)
+            || !crate::property_policy::has_neutral_form(&property.name)
+        {
+            continue;
+        }
         let Some(value) = scalar_text(ctx, property, str::to_owned)? else {
             continue;
         };
         let Some(name) = NonBlankString::new(property.name.clone()) else {
             continue;
         };
-        parameters.insert(name, value);
+        parameters.insert(name, cadmpeg_ir::features::Dimension::Literal(value.into()));
     }
     Ok(parameters)
 }
@@ -5756,76 +5949,77 @@ fn primitive_definition(
     };
     let solid = if kind.ends_with("Box") {
         PrimitiveSolidKind::Box {
-            length: required!(length("Length")?),
-            width: required!(length("Width")?),
-            height: required!(length("Height")?),
+            length: required!(length("Length")?).into(),
+            width: required!(length("Width")?).into(),
+            height: required!(length("Height")?).into(),
         }
     } else if kind.ends_with("Cylinder") {
         PrimitiveSolidKind::Cylinder {
-            radius: required!(length("Radius")?),
-            height: required!(length("Height")?),
-            angle: required!(angle("Angle")?),
+            radius: required!(length("Radius")?).into(),
+            height: required!(length("Height")?).into(),
+            angle: required!(angle("Angle")?).into(),
         }
     } else if kind.ends_with("Cone") {
         let radius1 = required!(length("Radius1")?);
         let radius2 = required!(length("Radius2")?);
         PrimitiveSolidKind::Cone {
-            radius1,
-            radius2,
-            height: required!(length("Height")?),
-            angle: required!(angle("Angle")?),
+            radius1: cadmpeg_ir::RadialDimension::Radius(radius1.into()),
+            radius2: cadmpeg_ir::RadialDimension::Radius(radius2.into()),
+            height: required!(length("Height")?).into(),
+            angle: required!(angle("Angle")?).into(),
         }
     } else if kind.ends_with("Sphere") {
         PrimitiveSolidKind::Sphere {
-            radius: required!(length("Radius")?),
-            latitude1: required!(angle("Angle1")?),
-            latitude2: required!(angle("Angle2")?),
-            longitude: required!(angle("Angle3")?),
+            radius: required!(length("Radius")?).into(),
+            latitude1: required!(angle("Angle1")?).into(),
+            latitude2: required!(angle("Angle2")?).into(),
+            longitude: required!(angle("Angle3")?).into(),
         }
     } else if kind.ends_with("Ellipsoid") {
         let x_radius = required!(length("Radius2")?);
         let y_radius = required!(length("Radius3")?);
         PrimitiveSolidKind::Ellipsoid {
-            x_radius,
+            x_radius: cadmpeg_ir::RadialDimension::Radius(x_radius.into()),
             y_radius: if y_radius.get() == 0.0 {
-                x_radius
+                cadmpeg_ir::RadialDimension::Radius(x_radius.into())
             } else {
-                y_radius
+                cadmpeg_ir::RadialDimension::Radius(y_radius.into())
             },
-            z_radius: required!(length("Radius1")?),
-            latitude1: required!(angle("Angle1")?),
-            latitude2: required!(angle("Angle2")?),
-            longitude: required!(angle("Angle3")?),
+            z_radius: required!(length("Radius1")?).into(),
+            latitude1: required!(angle("Angle1")?).into(),
+            latitude2: required!(angle("Angle2")?).into(),
+            longitude: required!(angle("Angle3")?).into(),
         }
     } else if kind.ends_with("Torus") {
         PrimitiveSolidKind::Torus {
-            major_radius: required!(length("Radius1")?),
-            minor_radius: required!(length("Radius2")?),
-            latitude1: required!(angle("Angle1")?),
-            latitude2: required!(angle("Angle2")?),
-            longitude: required!(angle("Angle3")?),
+            major_radius: required!(length("Radius1")?).into(),
+            minor_radius: required!(length("Radius2")?).into(),
+            latitude1: required!(angle("Angle1")?).into(),
+            latitude2: required!(angle("Angle2")?).into(),
+            longitude: required!(angle("Angle3")?).into(),
         }
     } else if kind.ends_with("Prism") {
         PrimitiveSolidKind::Prism {
             sides: required!(u32::try_from(required!(integer_property(
                 ctx, properties, "Polygon"
             )?))
-            .ok()),
-            circumradius: required!(length("Circumradius")?),
-            height: required!(length("Height")?),
+            .ok())
+            .into(),
+            circumradius: required!(length("Circumradius")?).into(),
+            height: required!(length("Height")?).into(),
         }
     } else if kind.ends_with("Wedge") {
         PrimitiveSolidKind::Wedge {
-            xmin: required!(length("Xmin")?),
-            ymin: required!(length("Ymin")?),
-            zmin: required!(length("Zmin")?),
-            x2min: required!(length("X2min")?),
-            z2min: required!(length("Z2min")?),
-            xmax: required!(length("Xmax")?),
-            ymax: required!(length("Ymax")?),
-            zmax: required!(length("Zmax")?),
-            x2max: required!(length("X2max")?),
-            z2max: required!(length("Z2max")?),
+            xmin: required!(length("Xmin")?).into(),
+            ymin: required!(length("Ymin")?).into(),
+            zmin: required!(length("Zmin")?).into(),
+            x2min: required!(length("X2min")?).into(),
+            z2min: required!(length("Z2min")?).into(),
+            xmax: required!(length("Xmax")?).into(),
+            ymax: required!(length("Ymax")?).into(),
+            zmax: required!(length("Zmax")?).into(),
+            x2max: required!(length("X2max")?).into(),
+            z2max: required!(length("Z2max")?).into(),
         }
     } else {
         return Ok(None);
@@ -5840,6 +6034,15 @@ fn primitive_definition(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Primitive {
             solid: required!(PrimitiveSolid::new(solid).ok()),
+            placement: match property(properties, "Placement") {
+                Some(property) => {
+                    Some(required!(cadmpeg_ir::features::FeatureRigidPlacement::new(
+                        required!(crate::placement::placement_matrix_unreported(property))
+                            .transform(),
+                    )))
+                }
+                None => None,
+            },
             op,
         },
     )))
@@ -6036,7 +6239,7 @@ fn loft_definition(
         solid,
         ruled,
         linearize,
-        max_degree,
+        max_degree: max_degree.map(Into::into),
         allow_multi_profile_faces,
     })))
 }
@@ -6297,52 +6500,62 @@ fn hole_definition(
         1 => HoleKind::Counterbore {
             diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                 positive("HoleCutDiameter")?
-            )),
+            ))
+            .into(),
             depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                 positive("HoleCutDepth",)?
-            )),
+            ))
+            .into(),
         },
         2 => HoleKind::Countersink {
             diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                 positive("HoleCutDiameter")?
-            )),
-            angle: required!(cut_angle()?),
+            ))
+            .into(),
+            angle: required!(cut_angle()?).into(),
         },
         3 if !legacy_cut_types => HoleKind::Counterdrill {
             diameters: required!(cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                     positive("HoleCutDiameter",)?
-                )),
+                ))
+                .into(),
                 None,
             )
             .ok()),
 
             depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                 positive("HoleCutDepth",)?
-            )),
-            angle: required!(cut_angle()?),
+            ))
+            .into(),
+            angle: required!(cut_angle()?).into(),
         },
         3 | 5 if legacy_cut_types => HoleKind::Counterbore {
             diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                 positive("HoleCutDiameter")?
-            )),
+            ))
+            .into(),
             depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                 positive("HoleCutDepth",)?
-            )),
+            ))
+            .into(),
         },
         4 if legacy_cut_types => HoleKind::Countersink {
             diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                 positive("HoleCutDiameter")?
-            )),
-            angle: required!(cut_angle()?),
+            ))
+            .into(),
+            angle: required!(cut_angle()?).into(),
         },
         _ => return Ok(None),
     };
     let extent = match required!(enumeration_selector(ctx, properties, "DepthType", 0)?) {
         0 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
-                positive("Depth",)?
-            ))
+            length: cadmpeg_ir::scalar::NonZeroLength::from(
+                cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                    positive("Depth",)?
+                )),
+            )
             .into(),
         },
         1 => LinearTermination::ThroughAll {},
@@ -6353,7 +6566,8 @@ fn hole_definition(
         1 => HoleBottom::Angled {
             included_angle: required!(cadmpeg_ir::scalar::InteriorAngle::new(
                 required!(positive("DrillPointAngle")?).get().to_radians(),
-            )),
+            ))
+            .into(),
             depth_to_tip: required!(bool_selector(ctx, properties, "DrillForDepth", false)?),
         },
         _ => return Ok(None),
@@ -6395,7 +6609,8 @@ fn hole_definition(
             1 => HoleThreadDepth::Blind {
                 depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
                     positive("ThreadDepth")?
-                )),
+                ))
+                .into(),
             },
             2 => HoleThreadDepth::TappedStandard,
             _ => return Ok(None),
@@ -6421,13 +6636,15 @@ fn hole_definition(
                 class: class_label,
                 modeled,
                 cosmetic,
-                pitch: positive("ThreadPitch")?
-                    .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
-                major_diameter: positive("ThreadDiameter")?
-                    .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
+                pitch: positive("ThreadPitch")?.map(|value| {
+                    cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(value).into()
+                }),
+                major_diameter: positive("ThreadDiameter")?.map(|value| {
+                    cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(value).into()
+                }),
                 hand,
                 depth,
-                clearance,
+                clearance: clearance.map(Into::into),
             }
         } else {
             HoleSpecification::Clearance {
@@ -6438,7 +6655,7 @@ fn hole_definition(
                 cosmetic,
                 hand,
                 depth,
-                clearance,
+                clearance: clearance.map(Into::into),
             }
         }))
     };
@@ -6456,13 +6673,15 @@ fn hole_definition(
                 specification,
             },
             None,
-            Some(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(diameter)),
+            Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(diameter).into()
+            )),
         )
         .ok()),
 
         extent: Some(extent),
         bottom: Some(bottom),
-        taper_angle,
+        taper_angle: taper_angle.map(Into::into),
         allow_multi_profile_faces: Some(required!(bool_selector(
             ctx,
             properties,
@@ -6556,30 +6775,40 @@ fn helical_sweep_definition(
             cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real(required!(
                 scalar_named(ctx, properties, "Pitch",)?
             ))
-        ),
+        )
+        .into(),
         travel: required!(cadmpeg_ir::features::HelicalSweepTravel::new(
-            Length::from_assigned_real(required!(scalar_named(ctx, properties, "Height")?)),
-            Length::from_assigned_real(required!(scalar_named(ctx, properties, "Growth")?)),
+            cadmpeg_ir::Dimension::Literal(Length::from_assigned_real(required!(scalar_named(
+                ctx, properties, "Height"
+            )?))),
+            cadmpeg_ir::Dimension::Literal(Length::from_assigned_real(required!(scalar_named(
+                ctx, properties, "Growth"
+            )?))),
         )),
         turns: required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(
             scalar_named(ctx, properties, "Turns",)?
-        ))),
+        )))
+        .into(),
         cone_angle: required!(cadmpeg_ir::scalar::Angle::new(
             required!(scalar_named(ctx, properties, "Angle")?)
                 .get()
                 .to_radians(),
-        )),
+        ))
+        .into(),
         left_handed: required!(bool_selector(ctx, properties, "LeftHanded", false)?),
         reversed: required!(bool_selector(ctx, properties, "Reversed", false)?),
-        tolerance: Some(required!(cadmpeg_ir::scalar::PositiveReal::from_finite(
-            required!(finite_float_selector(
-                ctx,
-                properties,
-                "Tolerance",
-                "App::PropertyFloatConstraint",
-                required!(FiniteReal::new(DEFAULT_HELICAL_SWEEP_TOLERANCE)),
-            )?),
-        ))),
+        tolerance: Some(
+            required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(
+                finite_float_selector(
+                    ctx,
+                    properties,
+                    "Tolerance",
+                    "App::PropertyFloatConstraint",
+                    required!(FiniteReal::new(DEFAULT_HELICAL_SWEEP_TOLERANCE))
+                )?
+            )))
+            .into(),
+        ),
         allow_multi_profile_faces: Some(required!(bool_selector(
             ctx,
             properties,
@@ -6674,7 +6903,7 @@ fn binder_definition(
                 return Ok(None);
             };
             Some(BinderOffset {
-                distance,
+                distance: cadmpeg_ir::Dimension::Literal(distance),
                 join: match offset_join {
                     0 => BinderOffsetJoin::Arcs,
                     1 => BinderOffsetJoin::Tangent,
@@ -6759,7 +6988,7 @@ fn binder_definition(
             make_face,
             partial_load,
             refine,
-            offset,
+            offset: offset.map(Into::into),
             context,
         }
     };
@@ -7139,8 +7368,8 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         return Ok(
             (count >= 2).then_some(required!(PatternKind::new(PatternTransform::Scale {
                 center: PatternScaleCenter::FirstSeedCentroid,
-                final_factor,
-                count,
+                final_factor: cadmpeg_ir::Dimension::Literal(final_factor),
+                count: cadmpeg_ir::Dimension::Literal(count),
             })
             .ok())),
         );
@@ -7220,17 +7449,31 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         else {
             return Ok(None);
         };
-        if let Some(step) = uniform_step(&angles) {
-            let Some(angle) = cadmpeg_ir::scalar::PositiveAngle::new(
-                (step.get() * f64::from(count - 1)).to_radians(),
-            ) else {
-                return Ok(None);
-            };
+        if let Some(step) = uniform_step(&angles)
+            .filter(|_| mode == 0 || !has_explicit_pattern_intervals(properties, ""))
+        {
             let Some(pattern) = PatternKind::new(PatternTransform::Circular {
                 axis_origin,
                 axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
-                angle,
-                count,
+                angle: if mode == 0 {
+                    PatternAngle::Span {
+                        angle: required!(cadmpeg_ir::scalar::PositiveAngle::new(
+                            required!(scalar_named(ctx, properties, "Angle")?)
+                                .get()
+                                .to_radians(),
+                        ))
+                        .into(),
+                        distribution: CircularPatternDistribution::Inclusive,
+                    }
+                } else {
+                    PatternAngle::Spacing {
+                        angle: required!(cadmpeg_ir::scalar::PositiveAngle::new(
+                            step.get().to_radians(),
+                        ))
+                        .into(),
+                    }
+                },
+                count: cadmpeg_ir::Dimension::Literal(count),
             })
             .ok() else {
                 return Ok(None);
@@ -7242,7 +7485,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
                 let Some(angle) = cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()) else {
                     return Ok(None);
                 };
-                converted.push(angle);
+                converted.push(cadmpeg_ir::Dimension::Literal(angle));
             }
             let Some(pattern) = PatternKind::new(PatternTransform::CircularAngles {
                 axis_origin,
@@ -7301,26 +7544,59 @@ fn linear_pattern_axis(
     else {
         return Ok(None);
     };
-    if let Some(spacing) = uniform_step(&offsets) {
-        let Some(spacing) = cadmpeg_ir::scalar::PositiveLength::from_assigned_real(spacing) else {
-            return Ok(None);
-        };
+    if let Some(spacing) = uniform_step(&offsets)
+        .filter(|_| mode == 0 || !has_explicit_pattern_intervals(properties, suffix))
+    {
+        let spacing = Length::from_assigned_real(spacing);
         Ok(PatternKind::new(PatternTransform::Linear {
             direction,
-            spacing,
-            count,
+            distance: if mode == 0 {
+                PatternDistance::Span {
+                    distance: Length::from_assigned_real(required!(scalar_named(
+                        ctx,
+                        properties,
+                        &name("Length"),
+                    )?))
+                    .into(),
+                }
+            } else {
+                PatternDistance::Spacing {
+                    distance: spacing.into(),
+                }
+            },
+            count: cadmpeg_ir::Dimension::Literal(count),
             second: None,
         })
         .ok())
     } else {
         let mut converted = Vec::new();
-        converted.extend(offsets.into_iter().map(Length::from_assigned_real));
+        converted.extend(
+            offsets
+                .into_iter()
+                .map(|value| Length::from_assigned_real(value).into()),
+        );
         Ok(PatternKind::new(PatternTransform::LinearOffsets {
             direction,
             offsets: converted,
         })
         .ok())
     }
+}
+
+/// Explicit interval lists remain explicit even when their numbers happen to
+/// be uniform. That avoids binding an evaluated spacing to an unused fallback.
+fn has_explicit_pattern_intervals(properties: &[&PropertyRecord], suffix: &str) -> bool {
+    ["Spacings", "SpacingPattern"].into_iter().any(|name| {
+        property(properties, &format!("{name}{suffix}")).is_some_and(|property| {
+            !property.side_entries().is_empty()
+                || property.values().iter().any(|value| {
+                    value
+                        .attributes
+                        .get("file")
+                        .is_some_and(|name| !name.is_empty())
+                })
+        })
+    })
 }
 
 fn pattern_locations(
@@ -7878,8 +8154,7 @@ fn is_part_construction_geometry(kind: &str) -> bool {
 fn is_stored_geometry_feature(kind: &str) -> bool {
     matches!(
         kind,
-        "Part::Feature"
-            | "Part::FeatureExt"
+        "Part::FeatureExt"
             | "Part::FeatureGeometrySet"
             | "Part::Spline"
             | "Part::Part2DObject"
@@ -7959,7 +8234,25 @@ fn is_body(kind: &str) -> bool {
 fn is_spreadsheet(kind: &str) -> bool {
     kind == "Spreadsheet::Sheet"
 }
-fn is_design_object(kind: &str) -> bool {
+/// Object namespaces that carry construction records. Matching a namespace
+/// does not admit a vendor extension as one of the exact neutral operations.
+pub(crate) fn is_design_kind(kind: &str) -> bool {
+    // A plain Part::Feature is a dumb geometry carrier, not authored history.
+    if kind == "Part::Feature" {
+        return false;
+    }
+    let Some((namespace, _)) = kind.split_once("::") else {
+        return false;
+    };
+    // Unknown workbench namespaces can define construction features. Treat
+    // them conservatively as design until a model-only family is registered.
+    !matches!(
+        namespace,
+        "App" | "Assembly" | "TechDraw" | "Drawing" | "Mesh" | "Points" | "Image" | "Gui"
+    )
+}
+
+pub(crate) fn is_design_object(kind: &str) -> bool {
     is_spreadsheet(kind)
         || is_body(kind)
         || is_datum(kind)

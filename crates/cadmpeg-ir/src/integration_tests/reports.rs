@@ -36,7 +36,10 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
 fn unclassified_reports_serialize_empty_dialect_keys() {
     let decode = DecodeReport::unclassified(
         "rhino",
-        DecodeTransfer::full(true),
+        DecodeTransfer {
+            scope: crate::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),

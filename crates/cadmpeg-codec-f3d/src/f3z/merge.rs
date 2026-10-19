@@ -30,13 +30,18 @@ pub(super) fn merge_archive(
     let table = xref_table_from_ir(ctx, ir)?;
 
     let stack = vec![model_root];
-    MergeSession {
+    let mut session = MergeSession {
         ctx,
         scan,
         archive,
         stack,
+        untyped: Default::default(),
+    };
+    let merged = session.merge(ir, report, fidelity, &table)?;
+    if !session.untyped.is_empty() {
+        fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, session.untyped)?;
     }
-    .merge(ir, report, fidelity, &table)
+    Ok(merged)
 }
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
@@ -113,6 +118,7 @@ struct MergeSession<'r, 'a> {
     scan: &'r ContainerScan<'a>,
     archive: &'r ArchiveSession<'a>,
     stack: Vec<String>,
+    untyped: cadmpeg_ir::document::ArenaClasses,
 }
 
 impl MergeSession<'_, '_> {
@@ -177,6 +183,10 @@ impl MergeSession<'_, '_> {
                 Ok(component) => component.into_decoded(),
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
+                    self.untyped.extend([
+                        cadmpeg_ir::document::ArenaClass::Model,
+                        cadmpeg_ir::document::ArenaClass::Design,
+                    ]);
                     super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
@@ -198,15 +208,14 @@ impl MergeSession<'_, '_> {
                 &child_table,
             )?;
             self.stack.pop();
-            if let Some(transform) = reference.transform {
-                apply_occurrence_transform(&mut component_ir.model, transform)?;
-            }
             append_feature_history(&parent_ir.model, &mut component_ir.model)?;
             let occurrence_start = parent_ir.model.occurrences.len();
             let mut scope = OccurrenceScope {
                 ctx: self.ctx,
                 occurrence: &occurrence,
             };
+            parent_ir.scope.model |= component_ir.scope.model;
+            parent_ir.scope.design |= component_ir.scope.design;
             parent_ir
                 .model
                 .extend_rewritten(component_ir.model, &mut scope)?;
@@ -225,11 +234,8 @@ impl MergeSession<'_, '_> {
             )?;
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
-            if component_report.transfer.geometry_transferred() {
-                parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
-                    parent_report.transfer.depth(),
-                    true,
-                );
+            if component_report.transfer.geometry_transferred {
+                parent_report.transfer.geometry_transferred = true;
             }
             for loss in &mut component_report.losses {
                 loss.message = format!("xref {label}: {}", loss.message);
@@ -310,7 +316,7 @@ fn rescope_fidelity(
     source: SourceFidelity,
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
-    let (mut annotations, records) = source.into_parts();
+    let (mut annotations, records, metadata) = source.into_parts();
     annotations
         .map_ids(|id| match rescope(id, occurrence) {
             Some(id) => Ok(id),
@@ -334,6 +340,11 @@ fn rescope_fidelity(
         builder.note(&id, &stream, provenance.offset, provenance.tag.as_deref());
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
+    for (key, value) in metadata {
+        rescoped
+            .metadata
+            .insert(format!("{}{}", owner.as_str(), key), value);
+    }
     for (id, record) in records {
         let id_text = match rescope(id.as_str(), occurrence) {
             Some(id) => id,
@@ -380,42 +391,6 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
         }
         Ok(())
     }
-}
-
-fn apply_occurrence_transform(
-    model: &mut Model,
-    transform: crate::records::xref::XrefPlacementTransform,
-) -> Result<(), CodecError> {
-    let source_rows = transform.rows();
-    let mut rows = [source_rows[0], source_rows[1], source_rows[2]];
-    for row in &mut rows {
-        row[3] *= 10.0;
-    }
-    let occurrence = cadmpeg_ir::transform::Transform::affine(rows).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "F3Z occurrence translation is not a finite affine transform"
-        ))
-    })?;
-
-    for body in &mut model.bodies {
-        body.transform = Some(match body.transform {
-            Some(local) => compose_transforms(occurrence, local)?,
-            None => occurrence,
-        });
-    }
-    Ok(())
-}
-
-/// Composes a component-local transform after its archive occurrence transform.
-fn compose_transforms(
-    outer: cadmpeg_ir::transform::Transform,
-    inner: cadmpeg_ir::transform::Transform,
-) -> Result<cadmpeg_ir::transform::Transform, CodecError> {
-    outer.compose(inner).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "F3Z occurrence composition is not a finite affine transform: {error}"
-        ))
-    })
 }
 
 fn rescope(text: &str, occurrence: &str) -> Option<String> {
@@ -707,9 +682,6 @@ mod tests {
     mod fidelity;
     mod occurrence;
 
-    use super::{apply_occurrence_transform, compose_transforms};
-    use cadmpeg_ir::document::Model;
-
     #[test]
     fn occurrence_translation_overflow_is_rejected() {
         let rows = [
@@ -719,10 +691,8 @@ mod tests {
         ];
         let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
         let source = crate::records::xref::XrefPlacementTransform::try_from(source.rows()).unwrap();
-        let error = apply_occurrence_transform(&mut Model::default(), source).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("F3Z occurrence translation is not a finite affine transform"));
+        let error = crate::design::components::neutral_transform(source.rows()).unwrap_err();
+        assert!(error.to_string().contains("not a finite affine transform"));
     }
 
     #[test]
@@ -733,9 +703,7 @@ mod tests {
             [0.0, 0.0, 1.0, 0.0],
         ])
         .unwrap();
-        let error = compose_transforms(transform, transform).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("F3Z occurrence composition is not a finite affine transform"));
+        let error = transform.compose(transform).unwrap_err();
+        assert_eq!(error, cadmpeg_ir::transform::TransformError::NonFinite);
     }
 }

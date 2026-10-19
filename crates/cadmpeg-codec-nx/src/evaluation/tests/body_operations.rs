@@ -363,6 +363,7 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
 fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#trim-local".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -448,6 +449,7 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
     let mut ir = complete_block_ir();
     let output = ir.model.bodies[0].id.clone();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#sew-local".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -639,7 +641,7 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::All,
                 spec: ChamferSpec::Distance {
-                    distance: cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap(),
+                    distance: (cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap()).into(),
                 },
             }),
             flip_direction: false,
@@ -653,9 +655,10 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
                 edges: EdgeSelection::All,
                 radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap(),
+                    radius: (cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap()).into(),
                 },
-                tangency_weight: Some(cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()),
+                tangency_weight: (Some(cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()))
+                    .map(Into::into),
             }),
         }),
     ));
@@ -678,7 +681,7 @@ fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::Unresolved,
                 spec: ChamferSpec::Distance {
-                    distance: cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap(),
+                    distance: (cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap()).into(),
                 },
             }),
             flip_direction: false,
@@ -710,16 +713,17 @@ fn complete_single_body_dress_up_families_preserve_identity() {
                 .unwrap(),
 
             radius: RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap(),
+                radius: (cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap()).into(),
             },
         }),
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: first.clone(),
-            distance: Some(Length::new(0.1).unwrap()),
+            distance: (Some(Length::new(0.1).unwrap())).map(Into::into),
         }),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: first.clone(),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()),
+            thickness: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()))
+                .map(Into::into),
             side: Some(ThickenSide::Forward),
         }),
         FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -734,7 +738,7 @@ fn complete_single_body_dress_up_families_preserve_identity() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+            angle: (Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap())).map(Into::into),
             outward: Some(false),
         }),
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
@@ -802,7 +806,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         2,
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces,
-            distance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
+            distance: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap())).map(Into::into),
             method: SurfaceExtension::Natural,
         }),
     );
@@ -859,6 +863,7 @@ fn output_free_surface_edits_are_body_identity_neutral() {
 fn output_free_unresolved_loft_is_body_census_neutral() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#loft".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -888,6 +893,7 @@ fn output_free_unresolved_loft_is_body_census_neutral() {
 fn output_free_unresolved_freeform_surface_is_body_census_neutral() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#freeform".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -954,6 +960,7 @@ fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
 fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#datum".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1013,7 +1020,7 @@ fn output_free_fset_is_body_census_neutral() {
         1,
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "FSET".into(),
-            parameters: BTreeMap::new(),
+            parameters: (BTreeMap::new()).into(),
         }),
     );
     fset.suppressed = None;
@@ -1111,6 +1118,7 @@ fn output_free_hole_is_body_identity_neutral_regardless_of_suppression() {
 fn native_delete_without_a_primary_body_is_body_neutral() {
     let mut ir = CadIr::empty();
     let mut deletion = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1124,7 +1132,7 @@ fn native_delete_without_a_primary_body_is_body_neutral() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "DELETE".into(),
-                parameters: BTreeMap::new(),
+                parameters: (BTreeMap::new()).into(),
             }),
         ),
         native_ref: None,

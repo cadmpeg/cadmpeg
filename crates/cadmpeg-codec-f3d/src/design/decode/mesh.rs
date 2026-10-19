@@ -2201,6 +2201,7 @@ mod tests {
         };
         let types = vec![
             design_type(
+                256,
                 MESH_ENTRY_NAME_TYPE_GUID,
                 Some(MESH_ENTRY_NAME_BASE_TYPE_GUID),
                 MESH_ENTRY_NAME_TYPE_VERSION,
@@ -2208,6 +2209,7 @@ mod tests {
                 entity_ids(&ENTRIES),
             ),
             design_type(
+                257,
                 MESH_GUID_TYPE_GUID,
                 Some(MESH_GUID_BASE_TYPE_GUID),
                 MESH_GUID_TYPE_VERSION,
@@ -2215,6 +2217,7 @@ mod tests {
                 entity_ids(&GUIDS),
             ),
             design_type(
+                258,
                 MESH_BODY_TYPE_GUID,
                 Some(MESH_BODY_BASE_TYPE_GUID),
                 MESH_BODY_TYPE_VERSION,
@@ -2222,6 +2225,7 @@ mod tests {
                 entity_ids(&BODIES),
             ),
             design_type(
+                259,
                 MESH_COLLECTION_TYPE_GUID,
                 Some(MESH_COLLECTION_BASE_TYPE_GUID),
                 MESH_COLLECTION_TYPE_VERSION,
@@ -2229,6 +2233,7 @@ mod tests {
                 vec![u64::from(COLLECTION)],
             ),
             design_type(
+                260,
                 MESH_COLLECTION_BASE_TYPE_GUID,
                 Some(MESH_COLLECTION_BASE_BASE_TYPE_GUID),
                 MESH_COLLECTION_BASE_TYPE_VERSION,
@@ -2236,6 +2241,7 @@ mod tests {
                 Vec::new(),
             ),
             design_type(
+                261,
                 MESH_TEXTURE_TABLE_TYPE_GUID,
                 Some(MESH_TEXTURE_TABLE_BASE_TYPE_GUID),
                 MESH_TEXTURE_TABLE_TYPE_VERSION,
@@ -2243,6 +2249,7 @@ mod tests {
                 vec![u64::from(TEXTURES)],
             ),
             design_type(
+                262,
                 MESH_WRAPPER_TYPE_GUID,
                 Some(MESH_WRAPPER_BASE_TYPE_GUID),
                 MESH_WRAPPER_TYPE_VERSION,
@@ -2250,6 +2257,7 @@ mod tests {
                 entity_ids(&WRAPPERS),
             ),
             design_type(
+                263,
                 MESH_FEATURE_SCOPE_TYPE_GUID,
                 Some(MESH_FEATURE_SCOPE_BASE_TYPE_GUID),
                 MESH_FEATURE_SCOPE_TYPE_VERSION,
@@ -2257,6 +2265,7 @@ mod tests {
                 vec![u64::from(SCOPE)],
             ),
             design_type(
+                264,
                 MESH_SCOPE_BASE_RECORD_TYPE_GUID,
                 Some(MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID),
                 MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
@@ -2264,6 +2273,7 @@ mod tests {
                 Vec::new(),
             ),
             design_type(
+                265,
                 MESH_SCENE_STATE_TYPE_GUID,
                 Some(MESH_SCENE_STATE_BASE_TYPE_GUID),
                 MESH_SCENE_STATE_TYPE_VERSION,
@@ -2271,6 +2281,7 @@ mod tests {
                 entity_ids(&STATES),
             ),
             design_type(
+                266,
                 SCENE_NODE_TYPE_GUID,
                 Some(SCENE_NODE_BASE_TYPE_GUID),
                 SCENE_NODE_TYPE_VERSION,
@@ -2278,6 +2289,7 @@ mod tests {
                 entity_ids(&NODES),
             ),
             design_type(
+                267,
                 SCENE_AUXILIARY_TYPE_GUID,
                 Some(SCENE_AUXILIARY_BASE_TYPE_GUID),
                 SCENE_AUXILIARY_TYPE_VERSION,
@@ -2285,6 +2297,7 @@ mod tests {
                 entity_ids(&AUXILIARIES),
             ),
             design_type(
+                268,
                 MESH_COLLECTION_OWNER_TYPE_GUID,
                 Some(MESH_COLLECTION_OWNER_BASE_TYPE_GUID),
                 MESH_COLLECTION_OWNER_TYPE_VERSIONS[2],
@@ -2292,6 +2305,7 @@ mod tests {
                 vec![u64::from(COLLECTION_OWNER)],
             ),
             design_type(
+                269,
                 MESH_BODY_OWNER_TYPE_GUID,
                 Some(MESH_BODY_OWNER_BASE_TYPE_GUID),
                 MESH_BODY_OWNER_TYPE_VERSION,
@@ -2299,6 +2313,7 @@ mod tests {
                 vec![u64::from(BODY_OWNER)],
             ),
             design_type(
+                270,
                 MESH_TEXTURE_FILENAME_TYPE_GUID,
                 Some(MESH_TEXTURE_FILENAME_BASE_TYPE_GUID),
                 MESH_TEXTURE_FILENAME_TYPE_VERSION,

@@ -495,7 +495,7 @@ mod tests {
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
             "identity": {"classification": "unclassified", "format": "test"},
-            "transfer": {"transfer": "full", "geometry_transferred": false},
+            "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": false},
             "losses": [],
             "notes": [],
         }))

@@ -89,7 +89,8 @@ pub(super) fn exact_legacy_as_built_421_alignment(
         return None;
     }
     if lanes.iter().any(|owner| {
-        owner.class_tag().as_str() != generation.owner_class_tag() || owner.frame_length() != 103
+        owner.class_tag().as_str() != generation.owner_class_tag()
+            || owner.frame_length() != Some(103)
     }) {
         return None;
     }
@@ -129,8 +130,8 @@ pub(super) fn exact_legacy_as_built_421_alignment(
     let maximum = maximum_owner.evaluated_value().get();
     let limit_owner_record_indices = [minimum_owner.record_index(), maximum_owner.record_index()];
     let limit_value_offsets = [
-        minimum_owner.evaluated_value_offset(),
-        maximum_owner.evaluated_value_offset(),
+        minimum_owner.evaluated_value_offset()?,
+        maximum_owner.evaluated_value_offset()?,
     ];
     Some(LegacyAsBuilt421Alignment {
         angle: angle.evaluated_value().get(),
@@ -141,11 +142,13 @@ pub(super) fn exact_legacy_as_built_421_alignment(
         ],
         owners: [angle, offset_x, offset_y, offset_z]
             .into_iter()
-            .map(|owner| crate::records::identity::Located {
-                value: owner.record_index(),
-                offset: owner.evaluated_value_offset(),
+            .map(|owner| {
+                Some(crate::records::identity::Located {
+                    value: owner.record_index(),
+                    offset: owner.evaluated_value_offset()?,
+                })
             })
-            .collect(),
+            .collect::<Option<Vec<_>>>()?,
         limits: DesignAssemblyLimitsWire {
             kind,
             minimum,
@@ -415,7 +418,7 @@ fn exact_legacy_as_built_face_selection(
                 id,
                 record_index,
                 class_tag: class_tag.clone().try_into().ok()?,
-                byte_offset: u64::try_from(byte_offset).ok()?,
+                byte_offset: Some(u64::try_from(byte_offset).ok()?),
             };
             let operand = parse_face_operand(
                 ctx,

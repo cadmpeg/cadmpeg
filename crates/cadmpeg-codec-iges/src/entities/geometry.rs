@@ -1296,26 +1296,6 @@ pub(super) fn admit<T>(
     }
 }
 
-/// The Directory sequence a source-object association names.
-///
-/// The sole producer of the `D{sequence}` object-id spelling. Nothing reads the
-/// sequence back out of that text: every consumer holds the sequence itself,
-/// through [`SourceSequences`] or through the entry it is projecting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SourceObjectId(u32);
-
-impl SourceObjectId {
-    /// Names the Directory entry a projected record was decoded from.
-    pub(crate) const fn new(sequence: u32) -> Self {
-        Self(sequence)
-    }
-
-    /// The object-id text every source association carries.
-    pub(crate) fn text(self) -> String {
-        format!("D{}", self.0)
-    }
-}
-
 /// The Directory sequence each projected body and face was decoded from.
 ///
 /// Recorded where the id is minted, so appearance binding reads the sequence
@@ -1360,11 +1340,11 @@ impl SourceSequences {
         }
     }
 
-    pub(super) fn body(&self, id: &BodyId) -> Option<u32> {
+    pub(crate) fn body(&self, id: &BodyId) -> Option<u32> {
         self.bodies.get(id).copied()
     }
 
-    pub(super) fn face(&self, id: &FaceId) -> Option<u32> {
+    pub(crate) fn face(&self, id: &FaceId) -> Option<u32> {
         self.faces.get(id).copied()
     }
 
@@ -1393,12 +1373,6 @@ pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     let object_id = format!("D{}", entry.sequence);
-    let name = std::str::from_utf8(&entry.label)
-        .ok()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    let layer = entry.level.map(|level| level.to_string());
     Ok(SourceObjectAssociation {
         geometry_role: Some(if entry.status.is_physically_dependent() {
             cadmpeg_ir::SourceGeometryRole::Support
@@ -1409,10 +1383,6 @@ pub(super) fn source_object(
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name,
-        color: None,
-        visible: Some(entry.status.is_visible()),
-        layer,
         instance_path: Vec::new(),
     })
 }

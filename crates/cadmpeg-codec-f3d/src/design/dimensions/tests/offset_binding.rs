@@ -59,7 +59,7 @@ fn offset_binding_fixture() -> (Vec<SketchConstraint>, Vec<DesignParameter>) {
             result,
             source_reversed: false,
         }],
-        distance: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+        distance: (cadmpeg_ir::scalar::Length::new(5.0).unwrap()).into(),
         parameter: None,
     };
     let constraint = |ordinal, definition| SketchConstraint {

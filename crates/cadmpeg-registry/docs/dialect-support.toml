@@ -19,6 +19,12 @@
 #                reason    required when `read = "refused"` and references
 #                          that row's dialect id. Optional otherwise.
 #
+#   Optional format content contract arrays:
+#     delivered_scope: normal successful Full-decode neutral classes (model/design).
+#     write_paths: synthesized, patched, verbatim_replay; empty for decode-only.
+#     dropped_arenas / omitted_arenas: synthesized coverage; per-record losses
+#       can reduce coverage further. Ordered source layout supplies no content.
+#
 # Snapshot-domain gating. A row whose dialect id appears in no checked-in
 # golden snapshot cannot claim a read score: the floor for an unwitnessed
 # dialect is `detected`. The checker derives each domain from the golden
@@ -79,6 +85,10 @@
 # those ids as non-primary `DialectMatch` layers and cite the band.
 
 [format.iges]
+delivered_scope = ["model", "design"]
+write_paths = ["synthesized", "verbatim_replay"]
+dropped_arenas = ["subds", "procedural_curves", "assets", "features", "feature_input_topologies", "feature_result_topologies", "configurations", "parameters", "sketches", "sketch_entities", "sketch_constraints", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "spreadsheets", "product_definitions", "occurrences", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "tessellations", "appearances", "appearance_bindings", "attributes", "pmi", "presentation_layers"]
+omitted_arenas = []
 level = 9
 scored = [
   "iges:4.0-fixed-ascii",
@@ -89,6 +99,10 @@ scored = [
 ]
 
 [format.step]
+delivered_scope = ["model", "design"]
+write_paths = ["synthesized"]
+dropped_arenas = ["subds", "assets", "features", "feature_input_topologies", "feature_result_topologies", "configurations", "parameters", "sketches", "sketch_entities", "sketch_constraints", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "spreadsheets", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "attributes"]
+omitted_arenas = []
 level = 9
 scored = [
   "step:ap203-e1",
@@ -101,6 +115,10 @@ scored = [
 ]
 
 [format.rhino]
+delivered_scope = ["model", "design"]
+write_paths = ["synthesized"]
+dropped_arenas = ["subds", "procedural_surfaces", "features", "configurations", "parameters", "sketches", "sketch_entities", "sketch_constraints", "attributes"]
+omitted_arenas = ["assets", "feature_input_topologies", "feature_result_topologies", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "spreadsheets", "product_definitions", "occurrences", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "pmi", "presentation_layers"]
 level = 1
 scored = [
   "rhino:archive-2",
@@ -113,14 +131,26 @@ scored = [
 ]
 
 [format.fcstd]
+delivered_scope = ["model", "design"]
+write_paths = ["synthesized", "patched"]
+dropped_arenas = ["subds", "assets", "feature_input_topologies", "feature_result_topologies", "configurations", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "drawings", "semantic_annotations", "tessellations", "attributes", "pmi", "presentation_layers"]
+omitted_arenas = []
 level = 5
 scored = ["fcstd:schema-4"]
 
 [format.f3d]
+delivered_scope = ["model", "design"]
+write_paths = ["synthesized", "patched", "verbatim_replay"]
+dropped_arenas = ["subds", "assets", "features", "feature_input_topologies", "feature_result_topologies", "sketches", "sketch_entities", "sketch_constraints", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "spreadsheets", "product_definitions", "occurrences", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "tessellations", "appearance_bindings", "attributes", "pmi", "presentation_layers"]
+omitted_arenas = []
 level = 4
 scored = ["f3d:manifest-3-2-0-0", "f3d:f3z-multi-document"]
 
 [format.catia]
+delivered_scope = ["model", "design"]
+write_paths = []
+dropped_arenas = []
+omitted_arenas = []
 level = 1
 scored = [
   "catia:standard-nested",
@@ -132,22 +162,42 @@ scored = [
 ]
 
 [format.creo]
+delivered_scope = ["model", "design"]
+write_paths = []
+dropped_arenas = []
+omitted_arenas = []
 level = 1
 scored = ["creo:depdb", "creo:nd", "creo:legacy-ascii"]
 
 [format.sldprt]
+delivered_scope = ["model", "design"]
+write_paths = ["synthesized", "patched", "verbatim_replay"]
+dropped_arenas = ["subds", "pcurves", "procedural_surfaces", "procedural_curves", "assets", "feature_input_topologies", "feature_result_topologies", "spreadsheets", "product_definitions", "occurrences", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "presentation_layers", "pmi", "spatial_sketch_constraints"]
+omitted_arenas = []
 level = 1
 scored = ["sldprt:sw-version-pre-12000", "sldprt:sw-version-12000-plus"]
 
 [format.inventor]
+delivered_scope = ["model", "design"]
+write_paths = []
+dropped_arenas = []
+omitted_arenas = []
 level = 1
 scored = ["inventor:cfb3-rse31-meta8"]
 
 [format.nx]
+delivered_scope = ["model", "design"]
+write_paths = []
+dropped_arenas = []
+omitted_arenas = []
 level = 1
 scored = ["nx:splmsstr", "nx:legacy-cfb"]
 
 [format.sat]
+delivered_scope = ["model", "design"]
+write_paths = []
+dropped_arenas = []
+omitted_arenas = []
 level = 1
 scored = ["sat:text"]
 
@@ -164,12 +214,10 @@ reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
 Unverified. No fixture declares the flag, so the row cannot claim
-a score. Write is preservation only: `Inherit` replays whatever dialect
-the source is (`writer.rs:93-97`, `replay_bytes` with no target,
-`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
-excludes this row by construction. `targets.rs:84` proves the other
-half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
-refuses rather than synthesizing"""
+a score. Write is source-conditioned replay only: `Inherit` requires retained source
+bytes, a matching document digest, and no unrepresented source classes.
+This row is outside the synthesis catalog; an unavailable image or an edited
+document cannot deliver the inherited target"""
 
 [[support]]
 dialect = "iges:ansi-y14.26m-1981-fixed-ascii"
@@ -179,12 +227,10 @@ reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
 Unverified. No fixture declares the flag, so the row cannot claim
-a score. Write is preservation only: `Inherit` replays whatever dialect
-the source is (`writer.rs:93-97`, `replay_bytes` with no target,
-`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
-excludes this row by construction. `targets.rs:84` proves the other
-half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
-refuses rather than synthesizing"""
+a score. Write is source-conditioned replay only: `Inherit` requires retained source
+bytes, a matching document digest, and no unrepresented source classes.
+This row is outside the synthesis catalog; an unavailable image or an edited
+document cannot deliver the inherited target"""
 
 [[support]]
 dialect = "iges:2.0-fixed-ascii"
@@ -202,12 +248,10 @@ Unverified admission using `iges:5.3-fixed-ascii`, and
 the `source.dialect-unverified` loss. The read cell stays
 `unclassified-recovered` because that cell is the mirror of the admission,
 not a fixture-gated placeholder: the fixture confirms the recovery rather
-than lifting it. Write is preservation only: `Inherit` replays whatever dialect
-the source is (`writer.rs:93-97`, `replay_bytes` with no target,
-`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
-excludes this row by construction. `targets.rs:84` proves the other
-half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
-refuses rather than synthesizing"""
+than lifting it. Write is source-conditioned replay only: `Inherit` requires retained source
+bytes, a matching document digest, and no unrepresented source classes.
+This row is outside the synthesis catalog; an unavailable image or an edited
+document cannot deliver the inherited target"""
 
 [[support]]
 dialect = "iges:3.0-fixed-ascii"
@@ -217,12 +261,10 @@ reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
 Unverified. No fixture declares the flag, so the row cannot claim
-a score. Write is preservation only: `Inherit` replays whatever dialect
-the source is (`writer.rs:93-97`, `replay_bytes` with no target,
-`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
-excludes this row by construction. `targets.rs:84` proves the other
-half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
-refuses rather than synthesizing"""
+a score. Write is source-conditioned replay only: `Inherit` requires retained source
+bytes, a matching document digest, and no unrepresented source classes.
+This row is outside the synthesis catalog; an unavailable image or an edited
+document cannot deliver the inherited target"""
 
 [[support]]
 dialect = "iges:asme-ansi-y14.26m-1987-fixed-ascii"
@@ -232,12 +274,10 @@ reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
 Unverified. No fixture declares the flag, so the row cannot claim
-a score. Write is preservation only: `Inherit` replays whatever dialect
-the source is (`writer.rs:93-97`, `replay_bytes` with no target,
-`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
-excludes this row by construction. `targets.rs:84` proves the other
-half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
-refuses rather than synthesizing"""
+a score. Write is source-conditioned replay only: `Inherit` requires retained source
+bytes, a matching document digest, and no unrepresented source classes.
+This row is outside the synthesis catalog; an unavailable image or an edited
+document cannot deliver the inherited target"""
 
 [[support]]
 dialect = "iges:4.0-fixed-ascii"
@@ -256,12 +296,10 @@ reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
 Unverified. No fixture declares the flag, so the row cannot claim
-a score. Write is preservation only: `Inherit` replays whatever dialect
-the source is (`writer.rs:93-97`, `replay_bytes` with no target,
-`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
-excludes this row by construction. `targets.rs:84` proves the other
-half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
-refuses rather than synthesizing"""
+a score. Write is source-conditioned replay only: `Inherit` requires retained source
+bytes, a matching document digest, and no unrepresented source classes.
+This row is outside the synthesis catalog; an unavailable image or an edited
+document cannot deliver the inherited target"""
 
 [[support]]
 dialect = "iges:5.0-fixed-ascii"
@@ -649,31 +687,20 @@ witnessed by a synthesized archive in the codec's own suite, not by this table""
 [[support]]
 dialect = "fcstd:schema-2"
 read = "detected"
-write = "preserved"
+write = "emitted"
 reason = """
-admitted for decode as a separate legacy profile and never synthesized; no
-schema 2 fixture exists, so the row cannot claim a score. It is written on
-the preservation path: `Inherit` repacks the retained entry set and
-patches `Document.xml` inside it, reproducing whatever schema the source
-declared (`writer.rs:41-48`, `retained_baseline` at `writer.rs:141-155`).
-Proven by `writer.rs:944`
-`inherit_preserves_a_schema_two_source_outside_the_catalog`, which also
-asserts the id is absent from `targets()`. The path is `Patched`, not
-verbatim replay: the output is entry-for-entry payload-identical, not
-byte-identical"""
+admitted under the legacy schema 2 element vocabulary. The writer synthesizes
+this vocabulary from neutral arenas and its typed native namespace; unchanged
+represented documents may also use the guarded patch path"""
 
 [[support]]
 dialect = "fcstd:schema-3"
 read = "detected"
-write = "preserved"
+write = "emitted"
 reason = """
-admitted for decode as a separate legacy profile and never synthesized; no
-schema 3 fixture exists, so the row cannot claim a score. It is written on
-the same preservation branch as `fcstd:schema-2`: `retained_baseline`
-(`writer.rs:141-155`) is version-generic, rebuilding the write options
-from the retained `DocumentFacts` and gating on `written_dialect(options)
-== source_dialect`. No test covers schema 3 specifically; schema 2 and
-schema 4 cover the branch"""
+admitted under the legacy schema 3 element vocabulary. The writer synthesizes
+this vocabulary from neutral arenas and its typed native namespace; unchanged
+represented documents may also use the guarded patch path"""
 
 [[support]]
 dialect = "fcstd:schema-4"
@@ -695,33 +722,20 @@ exists"""
 [[support]]
 dialect = "sldprt:sw-version-pre-12000"
 read = "detected"
-write = "preserved"
+write = "emitted"
 reason = """
-decoded with four-byte form-code padding, but every golden fixture
-declares no swVersion, so the profile's L4 has no fixture-backed row on
-this side of the padding seam. Write is preservation only: `replay_bytes` is
-an unconditional whole-file byte copy of the
-retained source image once the digest matches, so it reproduces any
-swVersion the source carried, and the patch path keeps the retained
-`Contents/SolidWorks` payload. Synthesis emits no
-swVersion at all, which is why `sldprt:unknown` is the whole catalog.
-`dialect::tests::each_declaration_classifies_into_the_row_its_discriminant_matches`
-covers this row's classification, and
-`history::tests::extrusion_profile::decode_projects_feature_input_extrusion_operations`
-covers operation decoding with four-byte padding"""
+decoded with four-byte form-code padding. Synthesis writes a swVersion
+declaration in this range from the selected target and typed source
+metadata. Patch and replay require represented source content"""
 
 [[support]]
 dialect = "sldprt:sw-version-12000-plus"
 read = "detected"
-write = "preserved"
+write = "emitted"
 reason = """
-decoded with eight-byte form-code padding, but no fixture declares a
-swVersion. Write is preservation only, by the same whole-file replay and
-retained-payload patch as `sldprt:sw-version-pre-12000`.
-`dialect::tests::each_declaration_classifies_into_the_row_its_discriminant_matches`
-covers this row's classification, and
-`history::tests::extrusion_profile::decode_projects_feature_input_extrusion_operations`
-covers operation decoding with eight-byte padding"""
+decoded with eight-byte form-code padding. Synthesis writes a swVersion
+declaration in this range from the selected target and typed source
+metadata. Patch and replay require represented source content"""
 
 [[support]]
 dialect = "sldprt:unknown"
@@ -729,8 +743,8 @@ read = "unclassified-recovered"
 write = "emitted"
 reason = """
 the container declares no swVersion, so the padding filter is not applied
-and candidates must agree; this is the row every golden fixture and the
-sole write target carry"""
+and candidates must agree. Synthesis writes this target without a
+swVersion declaration"""
 
 # --------------------------------------------------------------------------
 # catia

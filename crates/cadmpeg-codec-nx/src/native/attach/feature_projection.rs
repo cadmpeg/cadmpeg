@@ -64,7 +64,7 @@ impl<'a> SolidBodyIndex<'a> {
         shell
             .faces()
             .iter()
-            .map(|face_id| self.faces.get(&(face_id, &shell.id)).copied())
+            .map(|face_id| self.faces.get(&(face_id, &shell.id)).cloned())
             .collect()
     }
 
@@ -154,7 +154,7 @@ impl<'a> FeatureProjectionIndex<'a> {
         let owners = procedural_surface_owners(arenas.surfaces);
         let mut owned_procedurals = BTreeMap::<_, Vec<_>>::new();
         for (position, procedural) in arenas.procedural_surfaces.iter().enumerate() {
-            if let Some(owner) = owners.get(&procedural.id).copied().flatten() {
+            if let Some(owner) = owners.get(&procedural.id).cloned().flatten() {
                 owned_procedurals
                     .entry(owner)
                     .or_default()
@@ -248,7 +248,7 @@ impl<'a> CarrierIndex<'a> {
     }
 
     pub(super) fn surface(&self, id: &SurfaceId) -> Option<&'a Surface> {
-        self.surfaces.get(id).copied()
+        self.surfaces.get(id).cloned()
     }
 
     pub(super) fn loop_coedges(&self, loop_id: &LoopId) -> &[&'a Coedge] {
@@ -258,7 +258,7 @@ impl<'a> CarrierIndex<'a> {
     /// The curve carrying the last edge of `edge_id`.
     pub(super) fn edge_curve(&self, edge_id: &EdgeId) -> Option<&'a Curve> {
         let curve_id = self.edges.get(edge_id)?.curve()?;
-        self.curves.get(curve_id).copied()
+        self.curves.get(curve_id).cloned()
     }
 }
 
@@ -296,13 +296,6 @@ pub(super) fn selection_indices_native(indices: impl Iterator<Item = u32>) -> St
         text.push_str(&index.to_string());
     }
     text
-}
-
-pub(super) fn parameter_consumer_identity(operation_label: &str) -> String {
-    match operation_label.split_once("operation-label") {
-        Some((prefix, suffix)) => format!("{prefix}feature{suffix}"),
-        None => operation_label.to_owned(),
-    }
 }
 
 pub(super) fn insert_parameter_property(
@@ -397,7 +390,9 @@ pub(super) fn blend_feature_definition(
                     RadiusSpec::Unresolved {
                         form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
                     },
-                    |radius| RadiusSpec::Constant { radius },
+                    |radius| RadiusSpec::Constant {
+                        radius: (radius).into(),
+                    },
                 )
         } else {
             RadiusSpec::Unresolved {
@@ -542,7 +537,7 @@ pub(super) fn offset_surface_feature_definition(
     Some((
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces,
-            distance: distance.map(Length::from_assigned_real),
+            distance: (distance.map(Length::from_assigned_real)).map(Into::into),
         }),
         supports,
     ))
@@ -634,7 +629,7 @@ pub(super) fn thicken_feature_definition(
     Some((
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
-            thickness: Some(thickness),
+            thickness: (Some(thickness)).map(Into::into),
             side,
         }),
         supports,
@@ -903,7 +898,7 @@ pub(super) fn block_placement(
     };
     let faces = solid_bodies.connected_solid_body_faces(body)?;
     let mut bands = Vec::<PlaneBand>::new();
-    for face in faces.iter().copied() {
+    for face in faces.iter().cloned() {
         let geometry = index
             .last_surfaces
             .get(&face.surface)
@@ -1255,13 +1250,16 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
     block_dimensions: Option<[f64; 3]>,
     block_placement: Option<Transform>,
     hole: HoleProjection,
-    native_parameters: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    native_parameters: BTreeMap<
+        cadmpeg_core::text::NonBlankString,
+        cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>,
+    >,
 ) -> Result<FeatureDefinition, CodecError> {
     let hole_template = unique_simple_hole_template(payload_strings);
     if matches!(kind, "BLEND" | "FACE_BLEND") {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: kind.into(),
-            parameters: native_parameters,
+            parameters: (native_parameters).into(),
         }));
     }
     if let ("BLOCK", Some([Some(length), Some(width), Some(height)])) = (
@@ -1269,7 +1267,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         block_dimensions.map(|dimensions| dimensions.map(cadmpeg_ir::scalar::PositiveLength::new)),
     ) {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Block {
-            dimensions: Some([length, width, height]),
+            dimensions: (Some([length, width, height])).map(|values| values.map(Into::into)),
             placement: block_placement.and_then(cadmpeg_ir::features::FeatureRigidPlacement::new),
             op: BooleanOp::Unresolved,
         }));
@@ -1445,8 +1443,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                 ),
             ) {
                 (Some(dimensions), true) => HoleKind::Counterbore {
-                    diameter: dimensions.diameter,
-                    depth: dimensions.depth,
+                    diameter: (dimensions.diameter).into(),
+                    depth: (dimensions.depth).into(),
                 },
                 _ => template_kind,
             };
@@ -1458,7 +1456,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                 placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::Form {
-                        kind: match (measured_chamfer, hole_template) {
+                        kind: match (measured_chamfer.clone(), hole_template) {
                             (
                                 Some(chamfer),
                                 Some((
@@ -1484,9 +1482,11 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                         ) => Some(chamfer),
                         _ => template_exit_kind,
                     },
-                    hole.diameter.and_then(|diameter| {
-                        cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
-                    }),
+                    hole.diameter
+                        .and_then(|diameter| {
+                            cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
+                        })
+                        .map(Into::into),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -1505,7 +1505,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             shape: cadmpeg_ir::features::holes::HoleShape::new(
                 cadmpeg_ir::features::holes::HoleConstruction::Form {
                     kind: if hole.grouped_simple_through {
-                        hole.chamfer.unwrap_or(HoleKind::Simple)
+                        hole.chamfer.clone().unwrap_or(HoleKind::Simple)
                     } else {
                         HoleKind::Unresolved(None)
                     },
@@ -1514,9 +1514,11 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                 hole.grouped_simple_through
                     .then_some(hole.chamfer)
                     .flatten(),
-                hole.diameter.and_then(|diameter| {
-                    cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
-                }),
+                hole.diameter
+                    .and_then(|diameter| {
+                        cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
+                    })
+                    .map(Into::into),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -1613,7 +1615,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         }
         _ => FeatureDefinition::Operation(FeatureOperation::Native {
             kind: kind.into(),
-            parameters: native_parameters,
+            parameters: (native_parameters).into(),
         }),
     })
 }
@@ -1680,7 +1682,7 @@ pub(super) fn expressions_by_id(
 pub(super) fn native_feature_parameters(
     uses: &[&crate::native::features::FeatureParameterUse],
     expressions_by_id: &BTreeMap<&str, &crate::native::om::ParameterFormula>,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<String, cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
         let Some(expression) = expressions_by_id.get(parameter_use.expression.as_str()) else {
@@ -1691,7 +1693,14 @@ pub(super) fn native_feature_parameters(
         }
         parameters.insert(
             expression.name.as_str().to_owned(),
-            expression.expression.clone(),
+            super::expressions::expression_parameter_id(&expression.id).map_or_else(
+                || {
+                    cadmpeg_ir::features::Dimension::Literal(
+                        cadmpeg_ir::features::Expression::text(expression.expression.clone()),
+                    )
+                },
+                cadmpeg_ir::features::Dimension::Parameter,
+            ),
         );
     }
     parameters
@@ -1915,7 +1924,7 @@ pub(super) fn hole_package_projection(
 
         let Some(group) = groups_by_id
             .get(use_.simple_hole_construction_group.as_str())
-            .copied()
+            .cloned()
         else {
             continue;
         };
@@ -1933,7 +1942,7 @@ pub(super) fn hole_package_projection(
         for member in group.members.iter() {
             let Some(Some(template)) = templates_by_operation
                 .get(member.operation_label.as_str())
-                .copied()
+                .cloned()
             else {
                 complete_templates = false;
                 break;
@@ -1974,7 +1983,7 @@ pub(super) fn hole_package_projection(
             .first()
             .map(|member| &member.operation_label)
             .and_then(|operation| diameters.get(operation))
-            .copied()
+            .cloned()
         else {
             continue;
         };
@@ -1982,7 +1991,7 @@ pub(super) fn hole_package_projection(
             .members
             .iter()
             .map(|member| &member.operation_label)
-            .any(|operation| diameters.get(operation).copied() != Some(diameter))
+            .any(|operation| diameters.get(operation).cloned() != Some(diameter))
         {
             continue;
         }
@@ -1995,7 +2004,7 @@ pub(super) fn hole_package_projection(
                 .first()
                 .map(|member| &member.operation_label)
                 .and_then(|operation| chamfers.get(operation))
-                .copied()
+                .cloned()
             else {
                 continue;
             };
@@ -2003,7 +2012,7 @@ pub(super) fn hole_package_projection(
                 .members
                 .iter()
                 .map(|member| &member.operation_label)
-                .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
+                .any(|operation| chamfers.get(operation) != Some(&chamfer))
             {
                 continue;
             }
@@ -2524,7 +2533,7 @@ pub(super) fn cylindrical_face_witnesses(
 
     for face in body_faces
         .iter()
-        .copied()
+        .cloned()
         .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
     {
         let Some(surface) = carriers.surface(&face.surface) else {
@@ -3124,9 +3133,12 @@ pub(super) fn simple_hole_chamfers(
         ) else {
             return Ok(BTreeMap::new());
         };
-        let treatment = HoleKind::Chamfer { diameter, angle };
+        let treatment = HoleKind::Chamfer {
+            diameter: (diameter).into(),
+            angle: (angle).into(),
+        };
         for operation in operations {
-            treatments.insert(operation, treatment);
+            treatments.insert(operation, treatment.clone());
         }
     }
     Ok(treatments)
@@ -3142,7 +3154,7 @@ pub(super) fn unique_simple_hole_template(
 )> {
     let mut candidates = payload_strings
         .iter()
-        .copied()
+        .cloned()
         .filter(|value| value.starts_with("Hole_"));
     let candidate = candidates.next()?;
     if candidates.next().is_some() {

@@ -55,8 +55,6 @@ struct ApplicationRecordWire<'a> {
     side_entries: Vec<&'a str>,
     inert_payload: bool,
     order: usize,
-    byte_start: u64,
-    byte_end: u64,
     byte_len: u64,
     sha256: String,
     property_records: Vec<ApplicationPropertyWire<'a>>,
@@ -71,8 +69,6 @@ struct ApplicationPropertyWire<'a> {
     family: PropertyFamily,
     order: usize,
     links: &'a [Option<LinkTarget>],
-    byte_start: u64,
-    byte_end: u64,
     byte_len: u64,
     sha256: String,
     payloads: Vec<ApplicationPayloadWire<'a>>,
@@ -106,13 +102,7 @@ fn wire_records<'a>(
     let mut records = Vec::new();
     for object in objects {
         let mut owned = by_owner.remove(object.id().as_str()).unwrap_or_default();
-        owned.sort_by(|left, right| {
-            (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
-        });
-        let data = object
-            .data
-            .as_ref()
-            .map_or(&[][..], |data| data.text().as_bytes());
+        owned.sort_by_key(|property| property.order);
         let property_ids = owned.iter().map(|property| property.id.as_str()).collect();
         let side_entries = owned
             .iter()
@@ -120,7 +110,6 @@ fn wire_records<'a>(
             .collect();
         let mut property_records = Vec::new();
         for property in owned {
-            let data = property.xml.text().as_bytes();
             let mut payloads = Vec::new();
             for name in property.side_entries() {
                 if let Some(entry) = entry_index.get(name.as_str()) {
@@ -144,10 +133,8 @@ fn wire_records<'a>(
                 family: property.family,
                 order: property.order,
                 links: property.links(),
-                byte_start: property.xml.start(),
-                byte_end: property.xml.end(),
-                byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
-                sha256: cadmpeg_ir::hash::sha256_hex(data),
+                byte_len: property.xml.length(),
+                sha256: property.xml.sha256().to_owned(),
                 payloads,
                 inert: is_inert(property),
             });
@@ -165,16 +152,14 @@ fn wire_records<'a>(
             side_entries,
             inert_payload: property_records.iter().any(|property| property.inert),
             order: object.order,
-            byte_start: object
+            byte_len: object
                 .data
                 .as_ref()
-                .map_or(0, crate::native::RetainedXml::start),
-            byte_end: object
-                .data
-                .as_ref()
-                .map_or(0, crate::native::RetainedXml::end),
-            byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
-            sha256: cadmpeg_ir::hash::sha256_hex(data),
+                .map_or(0, crate::native::RetainedXml::length),
+            sha256: object.data.as_ref().map_or_else(
+                || cadmpeg_ir::hash::sha256_hex(&[]),
+                |data| data.sha256().to_owned(),
+            ),
             property_records,
         });
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole construction, placement, and compatible dimensions.
 
-use super::{FeatureDirection3, FinitePoint3};
+use super::{Dimension, FeatureDirection3, FinitePoint3};
 use crate::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
@@ -31,20 +31,25 @@ pub enum HolePlacement {
 }
 
 /// A counterdrill recess diameter and optional larger entry diameter.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CounterdrillDiameters {
-    diameter: PositiveLength,
-    entry_diameter: Option<PositiveLength>,
+    diameter: Dimension<PositiveLength>,
+    entry_diameter: Option<Dimension<PositiveLength>>,
 }
 
 impl CounterdrillDiameters {
     /// Admit a recess diameter and an optional larger entry diameter.
     pub fn new(
-        diameter: PositiveLength,
-        entry_diameter: Option<PositiveLength>,
+        diameter: Dimension<PositiveLength>,
+        entry_diameter: Option<Dimension<PositiveLength>>,
     ) -> Result<Self, &'static str> {
-        if entry_diameter.is_some_and(|entry| entry.get() <= diameter.get()) {
+        if entry_diameter
+            .as_ref()
+            .and_then(Dimension::literal)
+            .zip(diameter.literal())
+            .is_some_and(|(entry, diameter)| entry.get() <= diameter.get())
+        {
             return Err("entry_diameter must exceed diameter");
         }
         Ok(Self {
@@ -54,13 +59,13 @@ impl CounterdrillDiameters {
     }
 
     /// Return the cylindrical recess diameter.
-    pub const fn diameter(self) -> PositiveLength {
-        self.diameter
+    pub const fn diameter(&self) -> &Dimension<PositiveLength> {
+        &self.diameter
     }
 
     /// Return the optional diameter before the conical transition.
-    pub const fn entry_diameter(self) -> Option<PositiveLength> {
-        self.entry_diameter
+    pub const fn entry_diameter(&self) -> Option<&Dimension<PositiveLength>> {
+        self.entry_diameter.as_ref()
     }
 }
 
@@ -73,7 +78,7 @@ pub struct HoleShape {
     #[cfg_attr(feature = "schema", schemars(with = "Option<HoleKindWire>"))]
     exit_kind: Option<HoleKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    diameter: Option<PositiveLength>,
+    diameter: Option<Dimension<PositiveLength>>,
 }
 
 /// A failed edit of the length-bearing dimensions of an admitted hole.
@@ -95,14 +100,14 @@ struct HoleShapeWire {
     #[serde(default, deserialize_with = "deserialize_exit_kind")]
     exit_kind: Option<HoleKind>,
     #[serde(default, deserialize_with = "deserialize_diameter")]
-    diameter: Option<PositiveLength>,
+    diameter: Option<Dimension<PositiveLength>>,
 }
 
 impl HoleShape {
     fn diameter_is_compatible(
         construction: &HoleConstruction,
         exit_kind: Option<&HoleKind>,
-        diameter: Option<PositiveLength>,
+        diameter: Option<&Dimension<PositiveLength>>,
     ) -> bool {
         let valid_kind = |kind: &HoleKind| match diameter {
             Some(bore) => treatment_exceeds_bore(kind, bore),
@@ -118,7 +123,7 @@ impl HoleShape {
         let valid = match construction {
             HoleConstruction::Form { kind, .. } => valid_kind(kind),
             HoleConstruction::NativeThread { major_diameter, .. } => {
-                diameter.is_some_and(|bore| major_diameter.get() > bore.get())
+                diameter.is_some_and(|bore| dimensions_ordered(major_diameter, bore))
             }
         };
         valid && exit_kind.is_none_or(valid_kind)
@@ -128,9 +133,9 @@ impl HoleShape {
     pub fn new(
         construction: HoleConstruction,
         exit_kind: Option<HoleKind>,
-        diameter: Option<PositiveLength>,
+        diameter: Option<Dimension<PositiveLength>>,
     ) -> Result<Self, &'static str> {
-        if !Self::diameter_is_compatible(&construction, exit_kind.as_ref(), diameter) {
+        if !Self::diameter_is_compatible(&construction, exit_kind.as_ref(), diameter.as_ref()) {
             return Err(
                 "construction and exit_kind treatment diameters must exceed the bore diameter",
             );
@@ -153,16 +158,20 @@ impl HoleShape {
     }
 
     /// Return the bore diameter.
-    pub const fn diameter(&self) -> Option<PositiveLength> {
-        self.diameter
+    pub const fn diameter(&self) -> Option<&Dimension<PositiveLength>> {
+        self.diameter.as_ref()
     }
 
     /// Change the bore diameter after validating the retained treatments.
     pub fn try_set_diameter(
         &mut self,
-        diameter: Option<PositiveLength>,
+        diameter: Option<Dimension<PositiveLength>>,
     ) -> Result<(), &'static str> {
-        if !Self::diameter_is_compatible(&self.construction, self.exit_kind.as_ref(), diameter) {
+        if !Self::diameter_is_compatible(
+            &self.construction,
+            self.exit_kind.as_ref(),
+            diameter.as_ref(),
+        ) {
             return Err(
                 "construction and exit_kind treatment diameters must exceed the bore diameter",
             );
@@ -176,10 +185,10 @@ impl HoleShape {
     pub fn try_set_form_and_diameter(
         &mut self,
         kind: HoleKind,
-        diameter: Option<PositiveLength>,
+        diameter: Option<Dimension<PositiveLength>>,
     ) -> Result<(), &'static str> {
-        let form = HoleConstruction::form(kind);
-        if !Self::diameter_is_compatible(&form, self.exit_kind.as_ref(), diameter) {
+        let form = HoleConstruction::form(kind.clone());
+        if !Self::diameter_is_compatible(&form, self.exit_kind.as_ref(), diameter.as_ref()) {
             return Err(
                 "construction and exit_kind treatment diameters must exceed the bore diameter",
             );
@@ -215,13 +224,16 @@ impl HoleShape {
             map_hole_kind_lengths(kind, map_positive)?;
         }
         if let Some(diameter) = &mut mapped.diameter {
-            *diameter = map_positive(*diameter).map_err(HoleLengthEditError::Field)?;
+            *diameter = diameter
+                .clone()
+                .try_map_literal(&mut *map_positive)
+                .map_err(HoleLengthEditError::Field)?;
         }
-        if let Some(bore) = mapped.diameter {
+        if let Some(bore) = &mapped.diameter {
             let valid = match &mapped.construction {
                 HoleConstruction::Form { kind, .. } => treatment_exceeds_bore(kind, bore),
                 HoleConstruction::NativeThread { major_diameter, .. } => {
-                    major_diameter.get() > bore.get()
+                    dimensions_ordered(major_diameter, bore)
                 }
             };
             if !valid
@@ -241,18 +253,34 @@ impl HoleShape {
     /// Admit edited construction and dimensions before replacing the hole shape.
     pub fn try_edit(
         &mut self,
-        edit: impl FnOnce(&mut HoleConstruction, &mut Option<HoleKind>, &mut Option<PositiveLength>),
+        edit: impl FnOnce(
+            &mut HoleConstruction,
+            &mut Option<HoleKind>,
+            &mut Option<Dimension<PositiveLength>>,
+        ),
     ) -> Result<(), &'static str> {
         let mut construction = self.construction.clone();
-        let mut exit_kind = self.exit_kind;
-        let mut diameter = self.diameter;
+        let mut exit_kind = self.exit_kind.clone();
+        let mut diameter = self.diameter.clone();
         edit(&mut construction, &mut exit_kind, &mut diameter);
         *self = Self::new(construction, exit_kind, diameter)?;
         Ok(())
     }
 }
 
-fn treatment_exceeds_bore(kind: &HoleKind, bore: PositiveLength) -> bool {
+/// Private admission compares literals only. Bound quantities have no local
+/// cache; document validation resolves their parameter references.
+fn dimensions_ordered(
+    larger: &Dimension<PositiveLength>,
+    smaller: &Dimension<PositiveLength>,
+) -> bool {
+    larger
+        .literal()
+        .zip(smaller.literal())
+        .is_none_or(|(larger, smaller)| larger.get() > smaller.get())
+}
+
+fn treatment_exceeds_bore(kind: &HoleKind, bore: &Dimension<PositiveLength>) -> bool {
     match kind {
         HoleKind::Unresolved(_)
         | HoleKind::PartialCounterbore(..)
@@ -262,8 +290,8 @@ fn treatment_exceeds_bore(kind: &HoleKind, bore: PositiveLength) -> bool {
         HoleKind::Chamfer { diameter, .. }
         | HoleKind::Counterbore { diameter, .. }
         | HoleKind::CounterboreDrilled { diameter, .. }
-        | HoleKind::Countersink { diameter, .. } => diameter.get() > bore.get(),
-        HoleKind::Counterdrill { diameters, .. } => diameters.diameter().get() > bore.get(),
+        | HoleKind::Countersink { diameter, .. } => dimensions_ordered(diameter, bore),
+        HoleKind::Counterdrill { diameters, .. } => dimensions_ordered(diameters.diameter(), bore),
     }
 }
 
@@ -271,8 +299,11 @@ fn map_hole_kind_lengths<E>(
     kind: &mut HoleKind,
     map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
 ) -> Result<(), HoleLengthEditError<E>> {
-    let mut edit = |length: &mut PositiveLength| {
-        *length = map_positive(*length).map_err(HoleLengthEditError::Field)?;
+    let mut edit = |length: &mut Dimension<PositiveLength>| {
+        *length = length
+            .clone()
+            .try_map_literal(&mut *map_positive)
+            .map_err(HoleLengthEditError::Field)?;
         Ok(())
     };
     match kind {
@@ -303,8 +334,8 @@ fn map_hole_kind_lengths<E>(
         HoleKind::Counterdrill {
             diameters, depth, ..
         } => {
-            let mut diameter = diameters.diameter();
-            let mut entry_diameter = diameters.entry_diameter();
+            let mut diameter = diameters.diameter().clone();
+            let mut entry_diameter = diameters.entry_diameter().cloned();
             edit(&mut diameter)?;
             if let Some(entry) = &mut entry_diameter {
                 edit(entry)?;
@@ -324,7 +355,7 @@ impl HoleKind {
         &self,
         map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
     ) -> Result<Self, HoleLengthEditError<E>> {
-        let mut mapped = *self;
+        let mut mapped = self.clone();
         map_hole_kind_lengths(&mut mapped, map_positive)?;
         Ok(mapped)
     }
@@ -351,10 +382,19 @@ fn map_hole_construction_lengths<E>(
             pitch,
             ..
         } => {
-            *major_diameter = map_positive(*major_diameter).map_err(HoleLengthEditError::Field)?;
-            *thread_depth = map_positive(*thread_depth).map_err(HoleLengthEditError::Field)?;
+            *major_diameter = major_diameter
+                .clone()
+                .try_map_literal(&mut *map_positive)
+                .map_err(HoleLengthEditError::Field)?;
+            *thread_depth = thread_depth
+                .clone()
+                .try_map_literal(&mut *map_positive)
+                .map_err(HoleLengthEditError::Field)?;
             if let Some(pitch) = pitch {
-                *pitch = map_positive(*pitch).map_err(HoleLengthEditError::Field)?;
+                *pitch = pitch
+                    .clone()
+                    .try_map_literal(&mut *map_positive)
+                    .map_err(HoleLengthEditError::Field)?;
             }
         }
     }
@@ -379,16 +419,28 @@ fn map_hole_specification_lengths<E>(
         } => (Some(pitch), Some(major_diameter), clearance, depth),
     };
     if let Some(Some(pitch)) = pitch {
-        *pitch = map_positive(*pitch).map_err(HoleLengthEditError::Field)?;
+        *pitch = pitch
+            .clone()
+            .try_map_literal(&mut *map_positive)
+            .map_err(HoleLengthEditError::Field)?;
     }
     if let Some(Some(major_diameter)) = major_diameter {
-        *major_diameter = map_positive(*major_diameter).map_err(HoleLengthEditError::Field)?;
+        *major_diameter = major_diameter
+            .clone()
+            .try_map_literal(&mut *map_positive)
+            .map_err(HoleLengthEditError::Field)?;
     }
     if let Some(clearance) = clearance {
-        *clearance = map_length(*clearance).map_err(HoleLengthEditError::Field)?;
+        *clearance = clearance
+            .clone()
+            .try_map_literal(&mut *map_length)
+            .map_err(HoleLengthEditError::Field)?;
     }
     if let HoleThreadDepth::Blind { depth } = depth {
-        *depth = map_positive(*depth).map_err(HoleLengthEditError::Field)?;
+        *depth = depth
+            .clone()
+            .try_map_literal(&mut *map_positive)
+            .map_err(HoleLengthEditError::Field)?;
     }
     Ok(())
 }
@@ -408,61 +460,61 @@ impl<'de> Deserialize<'de> for HoleShape {
 }
 
 /// Structural drilling, entry-treatment, and threading form of a hole.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HoleKindWire", into = "HoleKindWire")]
 pub enum HoleKind {
     /// Entry-treatment family whose dimensions remain unresolved.
     Unresolved(Option<HoleForm>),
     /// Independently retained counterbore diameter and depth.
-    PartialCounterbore(PartialPair<PositiveLength, PositiveLength>),
+    PartialCounterbore(PartialPair<Dimension<PositiveLength>, Dimension<PositiveLength>>),
     /// Independently retained countersink diameter and included angle.
-    PartialCountersink(PartialPair<PositiveLength, InteriorAngle>),
+    PartialCountersink(PartialPair<Dimension<PositiveLength>, Dimension<InteriorAngle>>),
     /// Plain cylindrical hole with no entry feature.
     Simple,
     /// Hole with a chamfered entry.
     Chamfer {
         /// Entry chamfer diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Included chamfer angle.
-        angle: InteriorAngle,
+        angle: Dimension<InteriorAngle>,
     },
     /// Plain cylindrical hole terminating in a conical drill point.
     SimpleDrilled {
         /// Included angle of the conical drill point.
-        drill_point_angle: InteriorAngle,
+        drill_point_angle: Dimension<InteriorAngle>,
     },
     /// Hole with a wider, flat-bottomed counterbore at the entry.
     Counterbore {
         /// Counterbore diameter, wider than the hole diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Counterbore depth.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
     },
     /// Counterbored hole terminating in a conical drill point.
     CounterboreDrilled {
         /// Counterbore diameter, wider than the hole diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Axial depth of the counterbore.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
         /// Included angle of the conical drill point.
-        drill_point_angle: InteriorAngle,
+        drill_point_angle: Dimension<InteriorAngle>,
     },
     /// Hole with a conical countersink at the entry.
     Countersink {
         /// Countersink diameter at the surface, wider than the hole diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Countersink included angle.
-        angle: InteriorAngle,
+        angle: Dimension<InteriorAngle>,
     },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
         /// Recess diameter and optional larger entry diameter.
         diameters: CounterdrillDiameters,
         /// Cylindrical recess depth.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
         /// Included conical entry angle.
-        angle: InteriorAngle,
+        angle: Dimension<InteriorAngle>,
     },
 }
 
@@ -486,18 +538,18 @@ pub enum HoleConstruction {
     /// SLDPRT native thread geometry carried without a named standard specification.
     NativeThread {
         /// Nominal major diameter of the internal thread.
-        major_diameter: PositiveLength,
+        major_diameter: Dimension<PositiveLength>,
         /// Axial length over which the thread is cut.
-        thread_depth: PositiveLength,
+        thread_depth: Dimension<PositiveLength>,
         /// Thread pitch, when carried independently of a nominal designation.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_pitch"
         )]
-        pitch: Option<PositiveLength>,
+        pitch: Option<Dimension<PositiveLength>>,
         /// Included angle of the conical drill point.
-        drill_point_angle: InteriorAngle,
+        drill_point_angle: Dimension<InteriorAngle>,
     },
 }
 
@@ -551,23 +603,23 @@ impl HoleKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum PartialCounterboreDimension {
-    Diameter { diameter: PositiveLength },
-    Depth { depth: PositiveLength },
+    Diameter { diameter: Dimension<PositiveLength> },
+    Depth { depth: Dimension<PositiveLength> },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum PartialCountersinkDimension {
-    Diameter { diameter: PositiveLength },
-    Angle { angle: InteriorAngle },
+    Diameter { diameter: Dimension<PositiveLength> },
+    Angle { angle: Dimension<InteriorAngle> },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleKindWire {
@@ -596,53 +648,53 @@ enum HoleKindWire {
     /// Hole with a chamfered entry.
     Chamfer {
         /// Entry chamfer diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Included chamfer angle.
-        angle: InteriorAngle,
+        angle: Dimension<InteriorAngle>,
     },
     /// Plain cylindrical hole terminating in a conical drill point.
     SimpleDrilled {
         /// Included angle of the conical drill point.
-        drill_point_angle: InteriorAngle,
+        drill_point_angle: Dimension<InteriorAngle>,
     },
     /// Hole with a wider, flat-bottomed counterbore at the entry.
     Counterbore {
         /// Counterbore diameter, wider than the hole diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Counterbore depth.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
     },
     /// Counterbored hole terminating in a conical drill point.
     CounterboreDrilled {
         /// Counterbore diameter, wider than the hole diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Axial depth of the counterbore.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
         /// Included angle of the conical drill point.
-        drill_point_angle: InteriorAngle,
+        drill_point_angle: Dimension<InteriorAngle>,
     },
     /// Hole with a conical countersink at the entry.
     Countersink {
         /// Countersink diameter at the surface, wider than the hole diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Countersink included angle.
-        angle: InteriorAngle,
+        angle: Dimension<InteriorAngle>,
     },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
         /// Cylindrical recess diameter.
-        diameter: PositiveLength,
+        diameter: Dimension<PositiveLength>,
         /// Larger entry diameter, when the source states one.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_entry_diameter"
         )]
-        entry_diameter: Option<PositiveLength>,
+        entry_diameter: Option<Dimension<PositiveLength>>,
         /// Cylindrical recess depth.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
         /// Included conical entry angle.
-        angle: InteriorAngle,
+        angle: Dimension<InteriorAngle>,
     },
 }
 
@@ -687,8 +739,8 @@ impl From<HoleKind> for HoleKindWire {
                 depth,
                 angle,
             } => Self::Counterdrill {
-                diameter: diameters.diameter(),
-                entry_diameter: diameters.entry_diameter(),
+                diameter: diameters.diameter().clone(),
+                entry_diameter: diameters.entry_diameter().cloned(),
                 depth,
                 angle,
             },
@@ -770,7 +822,7 @@ pub enum HoleProfileFilter {
 }
 
 /// Blind-end construction of a drilled hole.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "HoleBottomWire", into = "HoleBottomWire")]
 #[serde(deny_unknown_fields)]
@@ -780,13 +832,13 @@ pub enum HoleBottom {
     /// Conical drill point.
     Angled {
         /// Included drill-point angle.
-        included_angle: InteriorAngle,
+        included_angle: Dimension<InteriorAngle>,
         /// Whether the declared blind depth reaches the tip instead of the shoulder.
         depth_to_tip: bool,
     },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleBottomWire {
@@ -795,7 +847,7 @@ enum HoleBottomWire {
     /// Conical drill point.
     Angled {
         /// Included drill-point angle.
-        included_angle: InteriorAngle,
+        included_angle: Dimension<InteriorAngle>,
         /// Whether the declared blind depth reaches the tip instead of the shoulder.
         depth_to_tip: bool,
     },
@@ -870,7 +922,7 @@ pub enum HoleSpecification {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_clearance"
         )]
-        clearance: Option<Length>,
+        clearance: Option<Dimension<Length>>,
     },
     /// Internally threaded-hole sizing and thread geometry.
     Threaded {
@@ -901,14 +953,14 @@ pub enum HoleSpecification {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_pitch"
         )]
-        pitch: Option<PositiveLength>,
+        pitch: Option<Dimension<PositiveLength>>,
         /// Nominal major thread diameter.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_major_diameter"
         )]
-        major_diameter: Option<PositiveLength>,
+        major_diameter: Option<Dimension<PositiveLength>>,
         /// Thread handedness.
         hand: ThreadHand,
         /// Axial thread-depth construction.
@@ -919,7 +971,7 @@ pub enum HoleSpecification {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_clearance"
         )]
-        clearance: Option<Length>,
+        clearance: Option<Dimension<Length>>,
     },
 }
 
@@ -936,7 +988,7 @@ pub enum ThreadHand {
 }
 
 /// Axial extent rule for a hole thread.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "HoleThreadDepthWire", into = "HoleThreadDepthWire")]
 #[serde(deny_unknown_fields)]
@@ -946,7 +998,7 @@ pub enum HoleThreadDepth {
     /// Explicit thread length.
     Blind {
         /// Explicit axial thread length.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
     },
     /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard,
@@ -956,11 +1008,13 @@ mod decode_clone;
 
 #[cfg(test)]
 mod length_mapping_tests {
-    use super::{HoleConstruction, HoleKind, HoleShape};
+    use super::{Dimension, HoleConstruction, HoleKind, HoleShape};
     use crate::scalar::{InteriorAngle, Length, PositiveLength};
 
-    fn positive(value: f64) -> PositiveLength {
-        PositiveLength::new(value).expect("positive test length")
+    fn positive(value: f64) -> Dimension<PositiveLength> {
+        PositiveLength::new(value)
+            .expect("positive test length")
+            .into()
     }
 
     #[test]
@@ -973,7 +1027,7 @@ mod length_mapping_tests {
             }),
             Some(HoleKind::Chamfer {
                 diameter: positive(5.0),
-                angle,
+                angle: angle.into(),
             }),
             Some(positive(2.0)),
         )
@@ -991,13 +1045,13 @@ mod length_mapping_tests {
             }),
             Some(HoleKind::Chamfer {
                 diameter: positive(10.0),
-                angle,
+                angle: angle.into(),
             }),
             Some(positive(4.0)),
         )
         .expect("valid expected hole");
         assert_eq!(mapped, expected);
-        assert_eq!(source.diameter(), Some(positive(2.0)));
+        assert_eq!(source.diameter(), Some(&positive(2.0)));
 
         let without_bore = HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None)
             .expect("valid hole without bore");
@@ -1068,13 +1122,13 @@ mod length_mapping_tests {
                 depth: positive(1.0)
             }
         );
-        assert_eq!(hole.diameter(), Some(positive(3.0)));
+        assert_eq!(hole.diameter(), Some(&positive(3.0)));
         let mut threaded = HoleShape::new(
             HoleConstruction::NativeThread {
                 major_diameter: positive(4.0),
                 thread_depth: positive(2.0),
                 pitch: None,
-                drill_point_angle: InteriorAngle::new(1.0).unwrap(),
+                drill_point_angle: InteriorAngle::new(1.0).unwrap().into(),
             },
             None,
             Some(positive(2.0)),
@@ -1109,14 +1163,14 @@ mod length_mapping_tests {
             hole.try_set_diameter(Some(positive(4.0))),
             Err("construction and exit_kind treatment diameters must exceed the bore diameter")
         );
-        assert_eq!(hole.diameter(), Some(positive(2.0)));
+        assert_eq!(hole.diameter(), Some(&positive(2.0)));
         hole.try_set_diameter(Some(positive(3.0)))
             .expect("smaller bore remains valid");
-        assert_eq!(hole.diameter(), Some(positive(3.0)));
+        assert_eq!(hole.diameter(), Some(&positive(3.0)));
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleThreadDepthWire {
@@ -1125,7 +1179,7 @@ enum HoleThreadDepthWire {
     /// Explicit thread length.
     Blind {
         /// Explicit axial thread length.
-        depth: PositiveLength,
+        depth: Dimension<PositiveLength>,
     },
     /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard {},
@@ -1167,21 +1221,66 @@ pub enum HoleForm {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_exit_kind, HoleKind, "exit_kind");
-cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
+cadmpeg_core::named_optional_field!(deserialize_diameter, Dimension<PositiveLength>, "diameter");
 cadmpeg_core::named_optional_field!(
     deserialize_specification,
     Box<HoleSpecification>,
     "specification"
 );
-cadmpeg_core::named_optional_field!(deserialize_pitch, PositiveLength, "pitch");
+cadmpeg_core::named_optional_field!(deserialize_pitch, Dimension<PositiveLength>, "pitch");
 cadmpeg_core::named_optional_field!(deserialize_form, HoleForm, "form");
-cadmpeg_core::named_optional_field!(deserialize_entry_diameter, PositiveLength, "entry_diameter");
+cadmpeg_core::named_optional_field!(
+    deserialize_entry_diameter,
+    Dimension<PositiveLength>,
+    "entry_diameter"
+);
 cadmpeg_core::named_optional_field!(deserialize_designation, String, "designation");
 cadmpeg_core::named_optional_field!(deserialize_fit, String, "fit");
-cadmpeg_core::named_optional_field!(deserialize_clearance, Length, "clearance");
+cadmpeg_core::named_optional_field!(deserialize_clearance, Dimension<Length>, "clearance");
 cadmpeg_core::named_optional_field!(deserialize_class, String, "class");
-cadmpeg_core::named_optional_field!(deserialize_major_diameter, PositiveLength, "major_diameter");
+cadmpeg_core::named_optional_field!(
+    deserialize_major_diameter,
+    Dimension<PositiveLength>,
+    "major_diameter"
+);
 
 selection_field_deserializer!(deserialize_local_standard, "standard");
 
 mod identity_rewrite;
+
+#[cfg(test)]
+mod bound_dimension_tests {
+    use super::{Dimension, HoleConstruction, HoleKind, HoleShape};
+
+    #[test]
+    fn a_bound_bore_has_no_local_cache_and_survives_length_mapping() {
+        let parameter =
+            crate::features::ParameterId::mint("test:model:parameter#bore").expect("parameter id");
+        let source = HoleShape::new(
+            HoleConstruction::form(HoleKind::Simple),
+            None,
+            Some(Dimension::Parameter(parameter.clone())),
+        )
+        .expect("bound diameter is resolved by document validation");
+        let mut literal_calls = 0;
+        let mapped = source
+            .try_map_lengths(
+                &mut |value| {
+                    literal_calls += 1;
+                    Ok::<_, ()>(value)
+                },
+                &mut Ok::<_, ()>,
+            )
+            .expect("mapping an unresolved binding does not invent a value");
+        assert_eq!(literal_calls, 0);
+        assert_eq!(mapped, source);
+        assert_eq!(
+            mapped.diameter().and_then(Dimension::parameter),
+            Some(&parameter)
+        );
+        assert_eq!(
+            serde_json::to_value(mapped.diameter()).expect("wire"),
+            serde_json::json!({"kind":"parameter","value":parameter})
+        );
+    }
+}

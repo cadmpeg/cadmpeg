@@ -133,12 +133,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             ),
             "{name} expected native {kind}, got {actual:?}"
         );
-        assert_eq!(result.report().losses.len(), 1);
-        assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-        }));
+        crate::design::tests::assert_native_retention(result, 1);
     }
 
     let shape_absent = decode(&document(Some(("ShapeBind", "TraceSupport", ""))));
@@ -221,7 +216,16 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             assert!(offset.is_none());
         } else {
             let offset = offset.as_ref().expect("selected offset");
-            assert!((offset.distance.get() + 2.5).abs() <= f64::EPSILON);
+            assert!(
+                (result
+                    .ir()
+                    .dimension_value(&offset.distance)
+                    .expect("resolved dimension")
+                    .get()
+                    + 2.5)
+                    .abs()
+                    <= f64::EPSILON
+            );
             assert_eq!(
                 offset.join,
                 if name == "OffsetJoinType" {

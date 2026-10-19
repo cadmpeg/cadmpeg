@@ -16,6 +16,7 @@ use cadmpeg_ir::hash::LowerHex;
 pub(crate) struct TransferResult {
     transferred_packets: usize,
     unresolved_packets: usize,
+    pub(crate) source_colors: Vec<crate::native::CatiaDisplayColorRecord>,
     pub(crate) emitted_assets: usize,
     pub(crate) emitted_bindings: usize,
 }
@@ -104,6 +105,16 @@ pub(crate) fn transfer(
         }
     }
     let mut result = TransferResult::default();
+    for (ordinal, packet) in packets.iter().enumerate() {
+        result
+            .source_colors
+            .push(crate::native::CatiaDisplayColorRecord {
+                id: format!("catia:presentation:display-color#{ordinal}"),
+                appearance: insert_appearance(ctx, ir, packet.rgba())?,
+                source_kind: "value-packet".into(),
+                source_record: Some(packet.source_id.clone()),
+            });
+    }
 
     let mut all_faces = Vec::new();
     let mut body = Vec::new();
@@ -147,6 +158,19 @@ pub(crate) fn transfer(
         None
     };
     if let Some(colors) = positional_colors {
+        for rgba in &colors {
+            result
+                .source_colors
+                .push(crate::native::CatiaDisplayColorRecord {
+                    id: format!(
+                        "catia:presentation:display-color#{}",
+                        result.source_colors.len()
+                    ),
+                    appearance: insert_appearance(ctx, ir, *rgba)?,
+                    source_kind: "fbb-face-color".into(),
+                    source_record: None,
+                });
+        }
         let faces = copy_face_ids(ir);
         for (index, (face, rgba)) in faces.into_iter().zip(colors).enumerate() {
             let appearance = insert_appearance(ctx, ir, rgba)?;

@@ -38,6 +38,11 @@ impl JsonSchema for AssetData {
 }
 
 impl AssetData {
+    /// Borrow the exact resource bytes held by the document.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
     /// Construct nonempty embedded bytes.
     pub fn new(data: Vec<u8>) -> Option<Self> {
         (!data.is_empty()).then_some(Self(data))

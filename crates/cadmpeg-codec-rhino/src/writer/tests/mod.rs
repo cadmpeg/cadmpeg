@@ -12,13 +12,17 @@ use cadmpeg_ir::math::Point3;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+mod compounds;
 mod computed_values;
 mod coverage;
 mod encoding;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod placements;
 mod planar;
+mod reductions;
+mod scopes;
 mod targets;
 
 #[test]

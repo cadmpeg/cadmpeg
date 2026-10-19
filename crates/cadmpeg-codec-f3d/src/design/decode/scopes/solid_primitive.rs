@@ -151,19 +151,19 @@ pub(super) fn exact_solid_primitive(
                 crate::records::feature::primitives::DesignBoxPrimitive {
                     length: length_value,
                     length_record_index: length.record_index(),
-                    length_offset: length.evaluated_value_offset(),
+                    length_offset: length.evaluated_value_offset()?,
                     width: width_value,
                     width_record_index: width.record_index(),
-                    width_offset: width.evaluated_value_offset(),
+                    width_offset: width.evaluated_value_offset()?,
                     height: height_value,
                     height_record_index: height.record_index(),
-                    height_offset: height.evaluated_value_offset(),
+                    height_offset: height.evaluated_value_offset()?,
                     offset_x: offset_x.evaluated_value(),
                     offset_x_record_index: offset_x.record_index(),
-                    offset_x_offset: offset_x.evaluated_value_offset(),
+                    offset_x_offset: offset_x.evaluated_value_offset()?,
                     offset_y: offset_y.evaluated_value(),
                     offset_y_record_index: offset_y.record_index(),
-                    offset_y_offset: offset_y.evaluated_value_offset(),
+                    offset_y_offset: offset_y.evaluated_value_offset()?,
                     operation,
                     operation_offset: u64_from_index(operation_offset),
                 },
@@ -184,10 +184,10 @@ pub(super) fn exact_solid_primitive(
                 crate::records::feature::primitives::DesignCylinderPrimitive {
                     height: height_value,
                     height_record_index: height.record_index(),
-                    height_offset: height.evaluated_value_offset(),
+                    height_offset: height.evaluated_value_offset()?,
                     diameter: diameter_value,
                     diameter_record_index: diameter.record_index(),
-                    diameter_offset: diameter.evaluated_value_offset(),
+                    diameter_offset: diameter.evaluated_value_offset()?,
                     transform: cylinder_transform,
                     operation,
                     operation_offset: u64_from_index(operation_offset),
@@ -448,14 +448,14 @@ fn exact_owned_primitive_parameters<'a, const N: usize>(
     let stream = native_stream(&scope.id)?;
     let mut owners = [None; N];
     for owner in parameter_owners.iter().filter(|owner| {
-        owner.scope_record_index() == scope.record_index
+        owner.scope_record_index() == Some(scope.record_index)
             && native_stream(owner.id()) == Some(stream)
             && scope
                 .reference_members()
                 .values()
                 .any(|value| value == &owner.record_index())
     }) {
-        let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
+        let ordinal = usize::try_from(owner.local_ordinal()?).ok()?;
         let slot = owners.get_mut(ordinal)?;
         if slot.replace(owner).is_some() {
             return None;

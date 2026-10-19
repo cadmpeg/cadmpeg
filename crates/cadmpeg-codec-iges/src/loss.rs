@@ -57,6 +57,8 @@ loss_codes! {
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
     OccurrencePlacementMalformed => "occurrence.placement-malformed",
+    /// A typed semantic record has no constructible neutral projection.
+    NeutralProjectionUnavailable => "projection.native-only",
     /// An envelope-admitted entity was retained without a neutral projection.
     EntityRetainedUnprojected => "entity.retained-unprojected",
     /// An entity type/form is outside the Fixed ASCII mechanical/document envelope.
@@ -141,6 +143,20 @@ loss_codes! {
     WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
     /// A free-geometry body has no single Directory Entry for visibility.
     WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
+    /// A neutral arena has no IGES encoding and was omitted.
+    WriterArenaOmitted => "writer.arena-omitted",
+    /// One attribute target, value, or schema cannot be stated in IGES.
+    WriterAttributeOmitted => "writer.attribute-omitted",
+    /// Parametric design records have no IGES encoding.
+    DesignParametricRecordsOmitted => "design.parametric-records-omitted",
+    /// A geometric entity or containing body has no valid IGES encoding.
+    WriterEntityOmitted => "writer.entity-omitted",
+    /// Unsupported UV images were omitted while preserving model-space boundaries.
+    WriterPcurvesOmitted => "writer.pcurves-omitted",
+    /// A body's local shape was written without its unsupported placement.
+    WriterBodyTransformNotApplied => "writer.body-transform-not-applied",
+    /// No writable geometric entity remains in the document.
+    NoExportableSolids => "export.no-exportable-solids",
 }
 
 impl IgesLossCode {
@@ -152,6 +168,14 @@ impl IgesLossCode {
                 Severity::Blocking
             }
             Self::ProceduralReduced => Severity::Info,
+            Self::NeutralProjectionUnavailable => Severity::Warning,
+            Self::WriterEntityOmitted
+            | Self::WriterPcurvesOmitted
+            | Self::WriterBodyTransformNotApplied => Severity::Error,
+            Self::WriterArenaOmitted
+            | Self::WriterAttributeOmitted
+            | Self::DesignParametricRecordsOmitted
+            | Self::NoExportableSolids => Severity::Warning,
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
@@ -203,6 +227,14 @@ impl IgesLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::NeutralProjectionUnavailable => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterArenaOmitted => LossTaxonomy::PassthroughRecordOmitted,
+            Self::WriterAttributeOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParametricRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterEntityOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterPcurvesOmitted => LossTaxonomy::PcurveOmitted,
+            Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
+            Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
@@ -283,8 +315,115 @@ impl IgesLossCode {
     }
 }
 
+/// Classes with source records represented only by bytes, rather than typed records.
+///
+/// Codes absent from this table describe retained typed content, metadata, or export
+/// loss. Native retention below is checked separately from neutral projection.
+#[cfg(test)]
+const UNREPRESENTED: &[(IgesLossCode, cadmpeg_ir::ArenaClass)] = &[
+    // Unreadable presentation fields survive only in the exact source cards.
+    (
+        IgesLossCode::DirectoryMetadataUnreadable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::AttributeTableCountUnstatable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::DirectoryRecordQuarantined,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::DisplayDataNotProjected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::EntityNotProjected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::EntityOutsideEnvelope,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::EntityRetainedUnprojected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::GeometryNotProjected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::LineWeightScaleUnavailable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::NurbsTransformNonFinite,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::OccurrenceExpansionDepthTruncated,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::OccurrenceExpansionOutputTruncated,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::OccurrencePlacementMalformed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::ParameterDataQuarantined,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::ParameterLiteralUnusable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        IgesLossCode::PointerUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+];
+
+/// Classify this codec's own loss vocabulary after native records have been stored.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
+) -> cadmpeg_ir::ArenaClasses {
+    let mut classes = cadmpeg_ir::ArenaClasses::default();
+    for (code, class) in UNREPRESENTED {
+        if losses.iter().any(|loss| loss.code == code.kind()) {
+            classes.insert(*class);
+        }
+    }
+    classes
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
+        let losses = [
+            super::IgesLossCode::SplineClaimRecovered.note("typed record retained"),
+            super::IgesLossCode::SourceDialectUnverified.note("decode diagnostic"),
+        ];
+        assert!(super::unrepresented(&losses, None).is_empty());
+    }
+
+    #[test]
+    fn source_only_losses_declare_their_classes() {
+        for (code, class) in super::UNREPRESENTED {
+            let losses = [code.note("source record is not typed")];
+            let classes = super::unrepresented(&losses, None);
+            assert!(classes.contains(class), "{code:?} must declare {class:?}");
+        }
+        assert!(super::unrepresented(&[], None).is_empty());
+    }
+
     use super::IgesLossCode;
     use std::collections::BTreeSet;
 
@@ -301,6 +440,7 @@ mod tests {
                 "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
+                "projection.native-only",
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",
@@ -343,6 +483,13 @@ mod tests {
                 "writer.body-color-not-represented",
                 "writer.body-opacity-not-represented",
                 "writer.body-visibility-not-represented",
+                "writer.arena-omitted",
+                "writer.attribute-omitted",
+                "design.parametric-records-omitted",
+                "writer.entity-omitted",
+                "writer.pcurves-omitted",
+                "writer.body-transform-not-applied",
+                "export.no-exportable-solids",
             ]
         );
     }

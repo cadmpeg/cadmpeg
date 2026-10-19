@@ -407,6 +407,35 @@ minter!(
     "model",
     "appearance-binding"
 );
+/// The presentation layer named by its IGES level number.
+pub(crate) fn layer(stem: &Stem) -> cadmpeg_ir::ids::LayerId {
+    cadmpeg_ir::ids::LayerId::from(cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("iges", "presentation", "level"),
+        stem.key(),
+    ))
+}
+
+minter!(
+    /// A reusable product named by its source directory entry.
+    product,
+    cadmpeg_ir::ids::ProductDefinitionId,
+    "model",
+    "product"
+);
+minter!(
+    /// A placed product named by its decoded instance path.
+    occurrence,
+    cadmpeg_ir::ids::OccurrenceId,
+    "model",
+    "occurrence"
+);
+minter!(
+    /// A construction feature named by its source directory entry.
+    feature,
+    cadmpeg_ir::features::FeatureId,
+    "design",
+    "feature"
+);
 
 #[cfg(test)]
 mod tests {

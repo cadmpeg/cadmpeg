@@ -13,28 +13,32 @@ use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
+mod act;
 mod attributes;
 mod index;
-mod native_bytes;
+pub(in crate::writer) mod native_bytes;
 pub(crate) mod native_geometry;
-mod preconditions;
+pub(crate) mod parameter_links;
+mod parameters;
+pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
 mod smbh;
+use parameters::encode_document_parameters;
 use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
     validate_source_less_design_links, validate_source_less_design_ownership,
-    validate_source_less_history_graph, validate_source_less_procedural_carriers,
-    validate_source_less_recipes, validate_source_less_sketch_graph,
-    validate_source_less_topology_tolerances,
+    validate_source_less_face_keys, validate_source_less_history_graph,
+    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
 };
 use presentation::GeneratedDesignRegistry;
-use records::{encode_design_bulkstream, encode_design_metastream, encode_document_parameters};
+use records::{encode_design_bulkstream, encode_design_metastream};
 use smbh::encode_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile, and state which model arenas it carries.
-pub(super) fn write_new(
+pub(crate) fn write_new(
     target: &CadIr,
     writer: &mut dyn Write,
 ) -> Result<ArenaDispositions, CodecError> {
@@ -42,36 +46,33 @@ pub(super) fn write_new(
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
+    validate_source_less_face_keys(&native)?;
     let attributes = attributes::AttributeIndex::new(target, &native);
     if !target.model.subds.is_empty() {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
     }
     if !target.model.assets.is_empty() {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D generation does not support document assets".into(),
         ));
     }
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, &native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    if !native.act_entities.is_empty()
-        || !native.act_guids.is_empty()
-        || !native.act_registry_channels.is_empty()
-        || !native.act_root_components.is_empty()
-        || !native.act_table_references.is_empty()
-    {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D ACT generation requires a retained MetaStream record registry".into(),
-        ));
-    }
+    let act_segments = act::encode(&native)?;
     let design_bindings = validate_source_less_design_bindings(&native)?;
     let mut parameter_bytes = Vec::new();
     if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
         parameter_bytes = encode_document_parameters(&native.design_parameters)?;
+        parameter_links::encode(
+            &mut parameter_bytes,
+            &native.design_parameter_owners,
+            &native.design_parameter_companions,
+        )?;
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_recipes(&native)?;
@@ -130,7 +131,30 @@ pub(super) fn write_new(
             archive.write_all(&payload)?;
         }
     }
-    let design_bulk = encode_design_bulkstream(target, &native, &design_registry, parameter_bytes)?;
+    if !parameter_bytes.is_empty() {
+        archive
+            .start_file(
+                format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/BulkStream.dat"),
+                options,
+            )
+            .map_err(|error| {
+                CodecError::malformed(format_args!("cannot create F3D parameter stream: {error}"))
+            })?;
+        archive.write_all(&parameter_bytes)?;
+    }
+    for segment in act_segments {
+        archive
+            .start_file(format!("{}/BulkStream.dat", segment.folder), options)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        archive.write_all(&segment.bulk)?;
+        archive
+            .start_file(format!("{}/MetaStream.dat", segment.folder), options)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        archive.write_all(&segment.meta)?;
+    }
+    // The parameter segment owns its independent dynamic class tags. Browser
+    // and geometry metadata use the main Design segment's generated registry.
+    let design_bulk = encode_design_bulkstream(target, &native, &design_registry, Vec::new())?;
     if let Some(bulk_stream) = &design_bulk {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
@@ -167,7 +191,7 @@ pub(super) fn write_new(
     })?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
-    Ok(coverage(has_native))
+    Ok(coverage(has_native, target, &native))
 }
 
 /// What [`write_new`] does with each model arena.
@@ -182,8 +206,12 @@ pub(super) fn write_new(
 /// arena is refused and configurations are not read. Design history, sketches
 /// and the remaining document arenas come only from native records, so the
 /// neutral arenas are not represented.
-fn coverage(has_native: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Omitted, Written};
+fn coverage(
+    has_native: bool,
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> ArenaDispositions {
+    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -213,7 +241,22 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
         spreadsheets: Omitted,
-        product_definitions: Omitted,
+        product_definitions: if native.act_root_components.len() == 1
+            && target.model.product_definitions.len() == 1
+        {
+            let product = &target.model.product_definitions[0];
+            if product.source_name.is_none()
+                && product.description.is_none()
+                && product.part_number.is_none()
+                && product.bom_properties.is_empty()
+            {
+                Written
+            } else {
+                Reported
+            }
+        } else {
+            Omitted
+        },
         occurrences: Omitted,
         assembly_joints: Dropped,
         drawings: Omitted,

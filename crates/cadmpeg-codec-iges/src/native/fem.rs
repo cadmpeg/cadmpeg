@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed native records for the IGES finite-element entity family.
 
-use cadmpeg_ir::native::bytes::NativeBytes;
+use crate::text::NativeText;
 
 use crate::directory::DirectoryEntry;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
@@ -55,7 +55,7 @@ pub(in crate::native) enum NativeFemEntity {
         topology_type: Option<i64>,
         declared_node_count: Option<i64>,
         nodes: Vec<Option<String>>,
-        element_type: Option<NativeBytes<Vec<u8>>>,
+        element_type: Option<NativeText<Vec<u8>>>,
     },
     NodalDisplacementRotation {
         id: String,
@@ -144,10 +144,10 @@ fn record_number(record: Option<&ParameterRecord>, index: usize) -> Option<f64> 
     record.and_then(|record| record.number(index))
 }
 
-fn record_string(record: Option<&ParameterRecord>, index: usize) -> Option<NativeBytes<Vec<u8>>> {
+fn record_string(record: Option<&ParameterRecord>, index: usize) -> Option<NativeText<Vec<u8>>> {
     record
         .and_then(|record| record.string(index))
-        .map(|bytes| NativeBytes::from(bytes.to_vec()))
+        .map(|bytes| NativeText::from(bytes.to_vec()))
 }
 
 fn record_has_token(record: Option<&ParameterRecord>, index: usize) -> bool {

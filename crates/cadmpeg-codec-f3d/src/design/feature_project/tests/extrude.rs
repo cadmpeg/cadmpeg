@@ -482,6 +482,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         )
         .unwrap();
         let mut feature = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#extrude").expect("identity grammar"),
             ordinal: 0,
             name: Some("Extrude".into()),
@@ -830,14 +831,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 ..
             }) if sketch == &open_spatial_sketch.id
-                && selections.as_slice() == [format!(
-                    "f3d:Design/BulkStream.dat:design-record-header#{}",
-                    scope
-                        .extrude_profile()
-                        .as_ref()
-                        .expect("test profile operand")
-                        .byte_offset()
-                )]
+                && selections.as_slice() == [scope.id.clone()]
         ));
 
         let body_group = DesignConstructionOperandGroup::try_from(
@@ -977,9 +971,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
                 references: vec![DesignBodyRecipeReference {
                     design_reference: 301,
-                    design_reference_offset: 25,
+                    design_reference_offset: Some(25),
                     form: 33,
-                    form_offset: 33,
+                    form_offset: Some(33),
                     candidate_faces: vec![
                         FaceId::mint("f3d:brep:entity#12").expect("identity grammar"),
                         FaceId::mint("f3d:brep:entity#19").expect("identity grammar"),
@@ -1827,6 +1821,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     use cadmpeg_ir::sketches::SpatialSketchId;
 
     let feature = |id: &str, ordinal, definition| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -1861,7 +1856,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         2,
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(planar_sketch.clone()),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            thickness: (cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()).into(),
             side: SheetMetalThicknessSide::Forward,
         }),
     );

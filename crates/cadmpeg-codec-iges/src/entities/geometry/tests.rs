@@ -1445,14 +1445,19 @@ fn decode_wraps_a_free_line_in_one_body_region_and_shell() {
 }
 
 #[test]
-fn source_object_copies_the_directory_label_and_level() {
+fn source_object_identity_does_not_copy_directory_display_fields() {
     let mut entry = transform_entry(1, 0);
     entry.label = *b"HELLO   ";
     entry.level = Some(7);
     let source = super::source_object(&entry).unwrap();
     assert_eq!(source.object_id.as_str(), "D1");
-    assert_eq!(source.name.as_deref(), Some("HELLO"));
-    assert_eq!(source.layer.as_deref(), Some("7"));
+    let wire = serde_json::to_value(source).unwrap();
+    for field in ["name", "layer", "color", "visible"] {
+        assert!(
+            wire.get(field).is_none(),
+            "{field} has its own neutral home"
+        );
+    }
 }
 
 #[test]

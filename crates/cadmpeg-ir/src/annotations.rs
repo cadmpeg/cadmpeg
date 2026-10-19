@@ -1262,7 +1262,10 @@ mod tests {
             builder.derived(id, "position").expect("nonempty field");
             let report = crate::report::decode::DecodeReport::unclassified(
                 "test",
-                crate::report::decode::DecodeTransfer::full(true),
+                crate::report::decode::DecodeTransfer {
+                    scope: crate::document::ContentScope::full(),
+                    geometry_transferred: true,
+                },
                 BTreeMap::new(),
                 Vec::new(),
                 Vec::new(),

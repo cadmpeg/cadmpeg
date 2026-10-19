@@ -1465,6 +1465,7 @@ fn native_reference_index_matches_the_first_feature_scan() {
                     source_tag: None,
                     source_text: None,
                     source_content: FeatureContent::default(),
+                    needs_recompute: false,
                     evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
                         FeatureOperation::Sketch {
                             sketch: SketchFeatureBinding::Planar(None),

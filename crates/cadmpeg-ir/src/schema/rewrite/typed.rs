@@ -13,6 +13,26 @@ use cache::ReplacementIndex;
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
+    /// Resolve dimensional bindings in a temporary encoder evaluation.
+    /// Scalar owners without dimensions retain their exact value.
+    fn resolve_dimensions(
+        self,
+        _ir: &crate::CadIr,
+        _ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        Ok(self)
+    }
+
+    /// Check every dimensional binding without requiring unevaluated caches.
+    fn validate_dimensions(
+        &self,
+        _ir: &crate::CadIr,
+        _ctx: &DecodeContext<'_>,
+        _errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        Ok(())
+    }
+
     /// False only when identity and text replacement cannot change this value.
     const HAS_IDENTITY_FIELDS: bool = true;
 
@@ -242,6 +262,29 @@ impl RewriteIdentities for String {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        if let Some(value) = self {
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional collection")?;
+        self.map(|value| value.resolve_dimensions(ir, ctx))
+            .transpose()
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -281,6 +324,30 @@ impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        for value in self {
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional collection")?;
+        self.into_iter()
+            .map(|value| value.resolve_dimensions(ir, ctx))
+            .collect()
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -328,6 +395,37 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
 }
 
 impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        for value in self {
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional array")?;
+        let mut resolved = self
+            .into_iter()
+            .map(|value| value.resolve_dimensions(ir, ctx));
+        // The iterator has precisely N elements, but array construction remains fallible.
+        let values = (&mut resolved).collect::<Result<Vec<_>, _>>()?;
+        values.try_into().map_err(|_| {
+            crate::features::DimensionResolutionError::InvalidDefinition {
+                reason: "dimensional array length changed".into(),
+            }
+        })
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -374,6 +472,36 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
 }
 
 impl<K: RewriteIdentities + Ord, V: RewriteIdentities> RewriteIdentities for BTreeMap<K, V> {
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        for (key, value) in self {
+            key.validate_dimensions(ir, ctx, errors)?;
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional map")?;
+        self.into_iter()
+            .map(|(key, value)| {
+                Ok((
+                    key.resolve_dimensions(ir, ctx)?,
+                    value.resolve_dimensions(ir, ctx)?,
+                ))
+            })
+            .collect()
+    }
+
     const HAS_IDENTITY_FIELDS: bool = K::HAS_IDENTITY_FIELDS || V::HAS_IDENTITY_FIELDS;
     fn visit_identity_references(
         &self,
@@ -436,6 +564,26 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
 rewrite_scalars!(std::num::NonZeroI64, std::num::NonZeroU32);
 
 impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        (**self).validate_dimensions(ir, ctx, errors)?;
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional collection")?;
+        Ok(Box::new((*self).resolve_dimensions(ir, ctx)?))
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -472,6 +620,17 @@ impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
 macro_rules! rewrite_tuple {
     ($($type:ident: $field:ident),*) => {
         impl<$($type: RewriteIdentities),*> RewriteIdentities for ($($type,)*) {
+            fn resolve_dimensions(self, ir: &crate::CadIr, ctx: &DecodeContext<'_>) -> Result<Self, crate::features::DimensionResolutionError> {
+                let _depth = ctx.enter_nested_limit("resolve dimensional tuple")?;
+                let ($($field,)*) = self;
+                Ok(($($field.resolve_dimensions(ir, ctx)?,)*))
+            }
+            fn validate_dimensions(&self, ir: &crate::CadIr, ctx: &DecodeContext<'_>, errors: &mut Vec<crate::features::DimensionResolutionError>) -> Result<(), ResourceLimit> {
+                let _depth = ctx.enter_nested_limit("check dimensional tuple")?;
+                let ($($field,)*) = self;
+                $($field.validate_dimensions(ir, ctx, errors)?;)*
+                Ok(())
+            }
             const HAS_IDENTITY_FIELDS: bool = false $(|| $type::HAS_IDENTITY_FIELDS)*;
             fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
                 let _depth = ctx.enter_nested("walk typed reference tuple")?;

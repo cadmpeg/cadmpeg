@@ -21,7 +21,7 @@ fn insert_only_state(node_index: i64, next_ref: Option<i64>, inserted: &[i64]) -
     AsmDeltaState {
         id: state_id.clone(),
         parent: "history".into(),
-        byte_offset: offset,
+        byte_offset: Some(offset),
         state_id: 10 - node_index,
         version_flag: 1,
         state_flag: 0,
@@ -33,7 +33,7 @@ fn insert_only_state(node_index: i64, next_ref: Option<i64>, inserted: &[i64]) -
         bulletin_boards: vec![AsmBulletinBoard {
             id: board_id.clone(),
             parent: state_id.clone(),
-            byte_offset: offset,
+            byte_offset: Some(offset),
             owner_ref: 0,
             number: 2,
             changes: inserted
@@ -42,7 +42,7 @@ fn insert_only_state(node_index: i64, next_ref: Option<i64>, inserted: &[i64]) -
                 .map(|(index, new_ref)| AsmEntityChange {
                     id: format!("change-{node_index}-{index}"),
                     parent: board_id.clone(),
-                    byte_offset: u64_from_index(index),
+                    byte_offset: Some(u64_from_index(index)),
                     kind: AsmEntityChangeKind::Insert { new: *new_ref },
                 })
                 .collect(),

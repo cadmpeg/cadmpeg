@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for source-less `.f3d` generation and immediate re-decode.
 //!
-//! Valid current-version IR may be unsupported by the bounded native writer;
-//! ordinary codec errors are expected. Every successful encode must remain
-//! safe to inspect and decode.
+//! Invalid document state and format capacity limits may refuse generation.
+//! Content without an exact encoding is degraded and reported. Every successful
+//! encode must remain safe to inspect and decode.
 #![no_main]
 
 use std::io::Cursor;
@@ -23,13 +23,6 @@ fuzz_target!(|data: &[u8]| {
     let Ok(ir) = CadIr::from_json(text) else {
         return;
     };
-    if ir.native_unknowns("f3d").is_ok_and(|records| {
-        records
-            .iter()
-            .any(|record| record.id.as_str() == "f3d:file:source-image#0")
-    }) {
-        return;
-    }
     let codec = F3dCodec;
     let mut encoded = Vec::new();
     if codec

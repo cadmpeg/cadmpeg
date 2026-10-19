@@ -17,6 +17,10 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 pub(crate) enum ExportLossCode {
     /// The write path does not represent a non-empty model arena.
     ArenaOmitted(EntityKind),
+    /// Typed native records were omitted by this writer.
+    NativeRecordsOmitted,
+    /// Stored feature evaluation is stale and the output has no recompute flag.
+    EvaluationStale,
 }
 
 impl ExportLossCode {
@@ -24,18 +28,26 @@ impl ExportLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ArenaOmitted(_) => "arena.omitted",
+            Self::NativeRecordsOmitted => "native.records-omitted",
+            Self::EvaluationStale => "evaluation.stale",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
             Self::ArenaOmitted(_) => Severity::Warning,
+            Self::NativeRecordsOmitted => Severity::Info,
+            Self::EvaluationStale => Severity::Warning,
         }
     }
 
     /// Shared category of the omitted arena's content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::ArenaOmitted(kind) = self;
+        let kind = match self {
+            Self::ArenaOmitted(kind) => kind,
+            Self::NativeRecordsOmitted => return LossTaxonomy::RecordNotTyped,
+            Self::EvaluationStale => return LossTaxonomy::FeatureHistoryRetained,
+        };
         match kind {
             EntityKind::Body
             | EntityKind::Region

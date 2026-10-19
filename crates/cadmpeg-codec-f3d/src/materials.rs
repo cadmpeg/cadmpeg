@@ -90,7 +90,7 @@ fn lp_ascii_printable(bytes: &[u8], at: usize) -> Result<Option<(String, usize)>
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
     if !appearance.textures.is_empty() {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D cannot synthesize connected Protein texture assets".into(),
         ));
     }
@@ -150,7 +150,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         | "StructuralPlasticSchema"
         | "ThermalSolidSchema" => zero_fill_to(&mut logical, value_block + 8),
         _ => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "source-less Protein schema {schema} is unsupported"
             )));
         }
@@ -398,7 +398,7 @@ fn patch_instance_colors(
                     "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
                     "PrismTransparentSchema" => position + 121,
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "Protein schema {schema} has no writable color carrier"
                         )));
                     }
@@ -425,7 +425,7 @@ fn patch_instance_colors(
                         "transparent_refraction_index"
                     }
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
                         )));
                     }
@@ -474,7 +474,7 @@ fn patch_instance_colors(
                     }
                     ("PrismTransparentSchema", "refraction_index") => position + 169,
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
                         )));
                     }
@@ -930,22 +930,28 @@ pub(crate) fn decode_design_assignments(
                     "material-assignment",
                     presentation.byte_offset,
                 ),
+                body_binding_id: crate::ids::native_design_body_binding_id(
+                    &entry.name,
+                    body_binding.asm_key_offset,
+                )
+                .try_into()
+                .map_err(CodecError::Malformed)?,
                 asm_body_key: body_binding.asm_key,
-                asm_body_key_offset: u64_from_index(body_binding.asm_key_offset),
+                asm_body_key_offset: Some(u64_from_index(body_binding.asm_key_offset)),
 
-                entity_suffix_offset: u64_from_index(body_binding.entity_suffix_offset()),
+                entity_suffix_offset: Some(u64_from_index(body_binding.entity_suffix_offset())),
                 entity_id,
-                entity_id_offset,
+                entity_id_offset: Some(entity_id_offset),
                 visual_guid: material.visual_guid,
-                visual_guid_offset: material.visual_guid_offset,
+                visual_guid_offset: Some(material.visual_guid_offset),
                 physical_token: Some(crate::records::identity::RecordedValue {
                     value: material.physical_token,
-                    offset: material.physical_token_offset,
+                    offset: Some(material.physical_token_offset),
                 }),
                 visual_preset: material.visual_preset.map(|field| {
                     crate::records::identity::RecordedValue {
                         value: field.value,
-                        offset: field.offset,
+                        offset: Some(field.offset),
                     }
                 }),
             };
@@ -1459,15 +1465,27 @@ fn bind_bodies(
 ) -> Result<Vec<AppearanceBinding>, CodecError> {
     let mut out = Vec::new();
     for assignment in assignments {
-        let Some(body) = resolved_body_for_map_pair(
-            body_bindings,
-            &assignment.id,
-            assignment.asm_body_key,
-            assignment.asm_body_key_offset,
-            assignment.entity_id.suffix(),
-            assignment.entity_suffix_offset,
-        )?
-        else {
+        let mut candidates = body_bindings
+            .iter()
+            .filter(|binding| binding.id().as_str() == assignment.body_binding_id.as_str());
+        let Some(binding) = candidates.next() else {
+            continue;
+        };
+        if candidates.next().is_some() {
+            return Err(CodecError::malformed(format_args!(
+                "F3D material assignment {} has a repeated body-map identity",
+                assignment.id
+            )));
+        }
+        if binding.asm_body_key != assignment.asm_body_key
+            || binding.entity_suffix != assignment.entity_id.suffix()
+        {
+            return Err(CodecError::malformed(format_args!(
+                "F3D material assignment {} disagrees with its typed body-map pair",
+                assignment.id
+            )));
+        }
+        let Some(body) = binding.body.clone() else {
             continue;
         };
         let Some(appearance) = appearance_for_assignment(appearances, assignment)? else {
@@ -1588,9 +1606,9 @@ fn resolved_body_for_map_pair(
     let mut matches = body_bindings.iter().filter(|binding| {
         crate::ids::native_stream(binding.id()) == Some(owner_stream)
             && binding.asm_body_key == asm_body_key
-            && binding.asm_body_key_offset() == asm_body_key_offset
+            && binding.asm_body_key_offset() == Some(asm_body_key_offset)
             && binding.entity_suffix == entity_suffix
-            && binding.entity_suffix_offset() == entity_suffix_offset
+            && binding.entity_suffix_offset() == Some(entity_suffix_offset)
     });
     let Some(binding) = matches.next() else {
         return Ok(None);
@@ -2026,7 +2044,7 @@ fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> 
             record,
             position + 197 + delta,
         );
-    } else if schema == "PrismOpaqueSchema" {
+    } else if matches!(schema.as_str(), "PrismOpaqueSchema" | "PrismMetalSchema") {
         if let Some(marker) = find_from(record, b"\x0e\x20\x00\x00", position) {
             fixed_scalar(&mut properties, "surface_roughness", record, marker + 4);
         }

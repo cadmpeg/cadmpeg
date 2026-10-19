@@ -61,6 +61,7 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),

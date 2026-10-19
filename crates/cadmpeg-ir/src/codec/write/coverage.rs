@@ -9,20 +9,24 @@
 use crate::document::Model;
 use crate::report::loss::LossNote;
 use crate::schema::{EntityKind, EntitySchema};
+#[cfg(feature = "schema")]
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use super::loss::ExportLossCode;
 
 /// What one write path does with one model arena.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ArenaDisposition {
     /// The payload represents every record of the arena.
     Written,
-    /// The payload may represent some records of the arena; the backend refuses
-    /// the arena or charges its own specific export loss for every record it
-    /// does not represent.
+    /// The payload may represent some records of the arena; the backend charges
+    /// its own specific export loss for every record it does not represent.
     Reported,
     /// The payload represents no record of the arena; the backend charges its
-    /// own specific export loss when the arena is non-empty, or refuses it.
+    /// own specific export loss when the arena is non-empty.
     Dropped,
     /// The payload does not represent the arena; the wrapper charges a loss
     /// when it is non-empty.
@@ -37,17 +41,32 @@ impl ArenaDisposition {
 }
 
 /// Which model arenas a payload carries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "coverage",
+    content = "arenas",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum ArenaCoverage {
     /// The payload carries the whole neutral document by construction: a
     /// verbatim replay or a patch admitted only when the document is unchanged
     /// from decode, or a serialization of the whole document.
     Complete,
     /// The payload carries the arenas this per-arena declaration names.
-    Declared(ArenaDispositions),
+    Declared(self::ArenaDispositions),
 }
 
 impl ArenaCoverage {
+    /// The declared disposition of a model arena.
+    pub fn disposition(&self, kind: EntityKind) -> ArenaDisposition {
+        match self {
+            Self::Complete => ArenaDisposition::Written,
+            Self::Declared(dispositions) => dispositions.disposition(kind),
+        }
+    }
+
     /// Whether the payload may carry a record of this model arena.
     pub fn carries(&self, kind: EntityKind) -> bool {
         match self {
@@ -75,7 +94,9 @@ macro_rules! declare_arena_dispositions {
         ///
         /// Every field is required and the type has no default, so a new arena
         /// fails to compile in every writer until that writer declares it.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(deny_unknown_fields)]
         pub struct ArenaDispositions {
             $(
                 #[doc = concat!("Disposition of the `", stringify!($field), "` arena.")]
@@ -84,6 +105,10 @@ macro_rules! declare_arena_dispositions {
         }
 
         impl ArenaDispositions {
+            /// The disposition of one registered model arena.
+            pub fn disposition(&self, kind: EntityKind) -> ArenaDisposition {
+                [$(self.$field),*].get(kind.index()).copied().unwrap_or(ArenaDisposition::Omitted)
+            }
             /// Whether the payload may carry a record of this model arena.
             pub fn carries(&self, kind: EntityKind) -> bool {
                 [$(self.$field),*]

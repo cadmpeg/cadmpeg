@@ -171,8 +171,8 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         record_index,
         owner_reference: Some(42),
         class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
@@ -203,12 +203,12 @@ fn planar_resolution<'a>(
 
 fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMember {
     DesignSketchProfileRegionMember {
-        kind_offset: 0,
+        kind_offset: Some(0),
         curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
-        curve_primary_id_offset: 0,
+        curve_primary_id_offset: Some(0),
         incidence_flag: false,
         incidence_values: [crate::records::topology::sketch_profile::DesignRegionIncidence::One; 2],
-        incidence_words_offset: 0,
+        incidence_words_offset: Some(0),
     }
 }
 
@@ -474,17 +474,17 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             entity_reference_offset: 80,
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 13,
-                byte_offset: 0,
+                byte_offset: Some(0),
                 class_tag: crate::records::references::DesignClassTag::try_from("303".to_owned())
                     .unwrap(),
-                region_count_offset: 0,
+                region_count_offset: Some(0),
                 regions: vec![
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![profile_region_member(100)],
                     },
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![
                             profile_region_member(200),
                             profile_region_member(201),
@@ -496,7 +496,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                     "304".to_owned(),
                 )
                 .unwrap(),
-                companion_byte_offset: 0,
+                companion_byte_offset: Some(0),
             }),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "301".to_owned(),
@@ -962,17 +962,17 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             entity_reference_offset: 80,
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 11,
-                byte_offset: 0,
+                byte_offset: Some(0),
                 class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                     .unwrap(),
-                region_count_offset: 0,
+                region_count_offset: Some(0),
                 regions: vec![
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![profile_region_member(200)],
                     },
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![profile_region_member(100)],
                     },
                 ],
@@ -980,7 +980,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                     "302".to_owned(),
                 )
                 .unwrap(),
-                companion_byte_offset: 0,
+                companion_byte_offset: Some(0),
             }),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "303".to_owned(),

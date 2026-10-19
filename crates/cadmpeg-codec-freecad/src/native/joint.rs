@@ -65,10 +65,12 @@ impl JointParameter {
                 })?;
                 Ok(Self::Scalar { raw, value })
             }
-            ParameterKind::Boolean => Ok(Self::Boolean {
-                value: raw == "true",
-                raw,
-            }),
+            ParameterKind::Boolean => {
+                let value = super::parse_bool(&raw).ok_or_else(|| {
+                    format!("joint parameter {name} has an invalid boolean {raw:?}")
+                })?;
+                Ok(Self::Boolean { value, raw })
+            }
             ParameterKind::Native => Ok(Self::Native { raw }),
         }
     }
@@ -630,10 +632,9 @@ mod tests {
         for (raw, expected) in [
             ("true", true),
             ("false", false),
-            ("1", false),
+            ("1", true),
             ("0", false),
-            ("TRUE", false),
-            ("maybe", false),
+            ("TRUE", true),
         ] {
             let wire = serde_json::json!({
                 "id": "fcstd:native:joint#Joint",
@@ -649,6 +650,15 @@ mod tests {
             assert_eq!(record.parameters().raw("Suppressed"), Some(raw));
             assert_eq!(record.parameters().bool_value("Suppressed"), Some(expected));
             assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn invalid_bool_parameter_text_is_not_typed_boolean_content() {
+        let identity = cadmpeg_ir::transform::Transform::identity().rows();
+        for raw in ["maybe", "not-a-bool"] {
+            let wire = serde_json::json!({"id":"fcstd:native:joint#Joint","object":"fcstd:native:object#Joint","kind":"Fixed","references":[null,null],"placements":[identity,identity],"offsets":[identity,identity],"parameters":{"Suppressed":raw}});
+            assert!(serde_json::from_value::<JointRecord>(wire).is_err());
         }
     }
 

@@ -19,6 +19,27 @@ use super::parasolid::triangle_body;
 use super::parasolid::vertex_use;
 use super::parasolid::world_point;
 
+/// Render canonical identities through the current SolidWorks name resolver.
+pub(crate) fn rendered_parameter(
+    ir: &cadmpeg_ir::CadIr,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+) -> String {
+    let names = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| Some((feature.id.clone(), feature.name.clone()?)))
+        .collect();
+    let globals = crate::history::parameters::global_parameter_owners(&ir.model.features);
+    crate::history::parameters::render_parameter_expression(
+        parameter,
+        &ir.model.parameters,
+        &names,
+        &globals,
+    )
+    .expect("canonical expression references resolve")
+}
+
 pub(crate) fn sldprt_with_body_and_history(body: &[u8]) -> Vec<u8> {
     let mut f = sldprt_with_body(body);
     f.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords Name="Bracket"><Configuration Name="Default" SourceIndex="0" Material="Steel" DisplayState="Shaded"/><Extrusion Name="Boss" Type="BossExtrude" id="7" Scope="Body1"><Dimension Name="Depth">12.5mm</Dimension><EquationDrivenCurve Name="Profile" id="8"/></Extrusion></Keywords>"#));

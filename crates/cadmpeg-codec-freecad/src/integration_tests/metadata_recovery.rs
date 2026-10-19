@@ -322,7 +322,7 @@ fn dependency_and_extension_count_metadata_preserves_checked_geometry() {
 }
 
 #[test]
-fn source_only_properties_repack_without_inventing_values_or_attachments() {
+fn source_only_properties_synthesize_with_explicit_omissions() {
     for payload in [
         r#"<Property name="Unused" type="App::PropertyLink"><String value="wrong payload"/></Property>"#,
         r#"<Property name="Unused" type="App::PropertyFile"><File name="missing-notes.txt"/></Property>"#,
@@ -335,7 +335,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let mut written = Vec::new();
-        FcstdCodec
+        let report = FcstdCodec
             .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut written))
             .unwrap();
@@ -350,10 +350,15 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
             .unwrap()
             .arena_as::<PropertyRecord>("properties")
             .unwrap();
-        assert_eq!(properties.len(), 1);
-        assert_eq!(properties[0].xml.text(), payload);
-        assert!(properties[0].links().is_empty());
-        assert!(properties[0].side_entries().is_empty());
+        assert!(properties.is_empty());
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "metadata.native-property-not-transferred"));
+        assert!(matches!(
+            report.write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
         assert!(crate::validate_native(
             &cadmpeg_test_support::service_decode_context(),
             roundtrip.ir()

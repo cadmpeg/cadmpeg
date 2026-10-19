@@ -675,6 +675,7 @@ impl CatiaNative {
         validate_alias_surface_tags(&alias_rows)?;
         validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
         Ok(Self {
+            display_colors: namespace.arena_as("display_colors")?,
             alias_rows,
             catalogs,
             consolidated_circles,

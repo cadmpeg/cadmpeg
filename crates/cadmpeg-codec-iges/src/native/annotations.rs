@@ -4,7 +4,7 @@
 //! builder, and the pass that fills the `annotations` arena while recording
 //! counted-tail verdicts.
 
-use cadmpeg_ir::native::bytes::NativeBytes;
+use crate::text::NativeText;
 
 use super::{collect_native_items, OverdeclaredCounts};
 
@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(super) struct NativeTextRun {
     declared_character_count: Option<i64>,
-    text: Option<NativeBytes<Vec<u8>>>,
+    text: Option<NativeText<Vec<u8>>>,
     box_size: [Option<f64>; 2],
     font_code: Option<i64>,
     font_definition: Option<String>,
@@ -42,7 +42,7 @@ pub(super) struct NativeNewTextRun {
     line_spacing: Option<f64>,
     font_style: Option<i64>,
     character_angle: Option<f64>,
-    control_codes: Option<NativeBytes<Vec<u8>>>,
+    control_codes: Option<NativeText<Vec<u8>>>,
     text: NativeTextRun,
 }
 
@@ -268,7 +268,7 @@ impl Subject<'_> {
             text: (!v5_null_string)
                 .then_some(text)
                 .flatten()
-                .map(|bytes| NativeBytes::from(bytes.to_vec())),
+                .map(|bytes| NativeText::from(bytes.to_vec())),
             box_size: [
                 record.and_then(|record| record.number(start + 1)),
                 record.and_then(|record| record.number(start + 2)),
