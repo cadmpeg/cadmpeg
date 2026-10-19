@@ -259,9 +259,9 @@ fn origin(
         }
     }
     let matrix = [
-        values[3..6].try_into().expect("three lanes"),
-        values[6..9].try_into().expect("three lanes"),
-        values[9..12].try_into().expect("three lanes"),
+        [values[3], values[4], values[5]],
+        [values[6], values[7], values[8]],
+        [values[9], values[10], values[11]],
     ];
     for i in 0..3 {
         for j in 0..3 {
@@ -275,9 +275,7 @@ fn origin(
     if !residual.is_finite() || residual > FRAME_TOLERANCE {
         return Ok(None);
     }
-    Ok(Some(
-        values[..3].try_into().expect("three origin coordinates"),
-    ))
+    Ok(Some([values[0], values[1], values[2]]))
 }
 
 fn faces(
@@ -452,11 +450,13 @@ pub(crate) fn bind(
         ctx.push_vec(&mut bindings, (index, target), "catia_project_bindings")?;
     }
     for (index, target) in bindings {
-        native.entity_records[index]
+        let interval = native.entity_records[index]
             .range_interval
             .as_mut()
-            .expect("admitted complete interval")
-            .project_target = Some(target);
+            .ok_or_else(|| {
+                CodecError::Malformed("CATIA project binding has no admitted range interval".into())
+            })?;
+        interval.project_target = Some(target);
     }
     Ok(())
 }
