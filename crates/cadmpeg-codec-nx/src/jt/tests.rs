@@ -3,62 +3,26 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::{decode_arithmetic, parse_probability_context, ArithmeticWorkBound};
 use cadmpeg_ir::scalar::FiniteBinary32;
 
 fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, usize)> {
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::decode_int32_cdp2(ctx, bytes, depth).expect("service decode budget"),
+        |ctx| {
+            super::decode_int32_cdp2(ctx, &ArithmeticWorkBound::default(), bytes, depth)
+                .expect("the JT test stream decodes")
+        },
     )
 }
 
 #[test]
-fn jt_int32_cdp2_refuses_counted_vector_at_caller_limit() {
+fn jt_int32_cdp2_decodes_counted_vector() {
     let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
     assert_eq!(
         decode_int32_cdp2(&packet, 0),
         Some((vec![1, -1], packet.len()))
-    );
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_collection_items = 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed one collection item");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
-    );
-}
-
-#[test]
-fn jt_int32_cdp2_refuses_retained_vector_at_caller_limit() {
-    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(2 * std::mem::size_of::<i32>()) - 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed retained storage");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
     );
 }
 
@@ -72,7 +36,7 @@ fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
             policy.limits.max_recursion_depth = 0;
         },
         |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
+            let error = super::decode_int32_cdp2(ctx, &ArithmeticWorkBound::default(), &packet, 0)
                 .expect_err("packet nesting exceeds zero levels");
             assert!(matches!(
                 error,
@@ -84,33 +48,14 @@ fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
     );
 }
 
-#[test]
-fn jt_int32_cdp2_refuses_symbol_work_at_caller_limit() {
-    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_work_units = 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed one work unit");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && limit.operation == "decode JT bitlength symbols"
-            ));
-        },
-    );
-}
-
 fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::frame_int32_cdp2(ctx, bytes, depth).expect("service decode budget"),
+        |ctx| {
+            super::frame_int32_cdp2(ctx, &ArithmeticWorkBound::default(), bytes, depth)
+                .expect("the JT test stream decodes")
+        },
     )
 }
 
@@ -124,9 +69,16 @@ fn decode_vertex_coordinates(
         bytes,
         |_| {},
         |ctx| {
-            super::decode_vertex_coordinates(ctx, bytes, count, ranges, bits)
-                .expect("service decode budget")
-                .map(|array| (array.values, array.hash, array.byte_len))
+            super::decode_vertex_coordinates(
+                ctx,
+                &ArithmeticWorkBound::default(),
+                bytes,
+                count,
+                ranges,
+                bits,
+            )
+            .expect("the JT test stream decodes")
+            .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
 }
@@ -140,9 +92,15 @@ fn decode_vertex_texture_coordinates(
         bytes,
         |_| {},
         |ctx| {
-            super::decode_vertex_texture_coordinates(ctx, bytes, count, bits)
-                .expect("service decode budget")
-                .map(|array| (array.values, array.hash, array.byte_len))
+            super::decode_vertex_texture_coordinates(
+                ctx,
+                &ArithmeticWorkBound::default(),
+                bytes,
+                count,
+                bits,
+            )
+            .expect("the JT test stream decodes")
+            .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
 }
@@ -156,8 +114,8 @@ fn decode_vertex_colors(
         bytes,
         |_| {},
         |ctx| {
-            super::decode_vertex_colors(ctx, bytes, count, bits)
-                .expect("service decode budget")
+            super::decode_vertex_colors(ctx, &ArithmeticWorkBound::default(), bytes, count, bits)
+                .expect("the JT test stream decodes")
                 .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
@@ -167,46 +125,9 @@ fn decode_vertex_flags(bytes: &[u8], count: usize) -> Option<(Vec<u32>, usize)> 
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::decode_vertex_flags(ctx, bytes, count).expect("service decode budget"),
-    )
-}
-
-fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<super::ProbabilityEntry>, usize)> {
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |_| {},
         |ctx| {
-            super::parse_probability_context(ctx, bytes)
-                .expect("service decode budget")
-                .map(|(entries, length, _reservation)| (entries, length))
-        },
-    )
-}
-
-fn decode_arithmetic(
-    bytes: &[u8],
-    bits: usize,
-    count: usize,
-    entries: &[super::ProbabilityEntry],
-) -> Option<Vec<Option<i32>>> {
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |_| {},
-        |ctx| {
-            super::decode_arithmetic(ctx, bytes, bits, count, entries)
-                .expect("service decode budget")
-                .map(|symbols| symbols.values)
-        },
-    )
-}
-
-fn unpack_predictor_residuals(residuals: &[i32], predictor: super::Predictor) -> Vec<i32> {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |_| {},
-        |ctx| {
-            super::unpack_predictor_residuals(ctx, residuals, predictor)
-                .expect("service predictor budget")
+            super::decode_vertex_flags(ctx, &ArithmeticWorkBound::default(), bytes, count)
+                .expect("the JT test stream decodes")
         },
     )
 }
@@ -322,59 +243,6 @@ fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
 }
 
 #[test]
-fn jt_int32_cdp2_refuses_scoped_probability_table_at_caller_limit() {
-    let mut context_bits = Vec::<bool>::new();
-    let mut push = |value: u32, width: u8| {
-        for shift in (0..width).rev() {
-            context_bits.push((value >> shift) & 1 != 0);
-        }
-    };
-    push(2, 6);
-    push(1, 6);
-    push(1, 6);
-    push(7, 32);
-    push(0, 2);
-    push(0, 1);
-    push(0, 1);
-    push(1, 2);
-    push(1, 1);
-    push(0, 1);
-    let mut context = vec![0, 2];
-    for chunk in context_bits.chunks(8) {
-        let mut byte = 0u8;
-        for bit in chunk {
-            byte = (byte << 1) | u8::from(*bit);
-        }
-        byte <<= 8 - chunk.len();
-        context.push(byte);
-    }
-    let mut packet = Vec::new();
-    packet.extend_from_slice(&3_u32.to_le_bytes());
-    packet.push(3);
-    packet.extend_from_slice(&16_u32.to_le_bytes());
-    packet.extend_from_slice(&0_u32.to_le_bytes());
-    packet.extend_from_slice(&context);
-    packet.extend_from_slice(&0_u32.to_le_bytes());
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("probability table needs scoped storage");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
-    );
-}
-
-#[test]
 fn jt_arithmetic_context_rejects_count_without_serialized_entry_span() {
     let mut context_bits = Vec::<bool>::new();
     let mut push = |value: u32, width: u8| {
@@ -451,19 +319,11 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
         };
         65
     ];
-    crate::test_support::with_decode_context_over(
-        &[],
-        |_| {},
-        |ctx| {
-            let error =
-                super::decode_arithmetic(ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries)
-                    .err()
-                    .expect("local work limit");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols")
-            );
-        },
+    let work_bound = ArithmeticWorkBound::default();
+    assert!(
+        decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries, &work_bound).is_none()
     );
+    assert!(work_bound.reached());
 }
 
 #[test]
@@ -487,7 +347,9 @@ fn jt_arithmetic_decode_rejects_normalization_past_declared_bits() {
     ];
     let code_word = 0x5555_0000_u32.to_le_bytes();
 
-    assert!(decode_arithmetic(&code_word, 16, 1, &entries).is_none());
+    let work_bound = ArithmeticWorkBound::default();
+    assert!(decode_arithmetic(&code_word, 16, 1, &entries, &work_bound).is_none());
+    assert!(!work_bound.reached());
 }
 
 #[test]
@@ -497,11 +359,11 @@ fn jt_predictors_reconstruct_primal_integers() {
     let primers = [10, 20, 30, 40];
     let residuals = [10, 20, 30, 40, 5, -2];
     assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Lag1),
+        super::unpack_predictor(&residuals, Predictor::Lag1),
         [10, 20, 30, 40, 45, 43]
     );
     assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Null),
+        super::unpack_predictor(&residuals, Predictor::Null),
         residuals
     );
     assert_eq!(primers, residuals[..4]);
@@ -512,7 +374,7 @@ fn jt_predictors_use_wrapping_i32_arithmetic() {
     use super::Predictor;
 
     assert_eq!(
-        unpack_predictor_residuals(&[0, 0, 0, i32::MAX, 1], Predictor::Lag1),
+        super::unpack_predictor(&[0, 0, 0, i32::MAX, 1], Predictor::Lag1),
         [0, 0, 0, i32::MAX, i32::MIN]
     );
 }
@@ -628,62 +490,6 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     assert_eq!(consumed, array.len());
     assert_eq!(points[0].map(FiniteBinary32::get), [8.333_333; 3]);
     assert_eq!(points[3].map(FiniteBinary32::get), [18.333_334; 3]);
-}
-
-#[test]
-fn jt_coordinate_array_refuses_scoped_component_storage() {
-    let mut code = Vec::new();
-    let mut push = |value: u32, width: u8| {
-        code.extend(
-            (0..width)
-                .rev()
-                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
-        );
-    };
-    push(0, 1);
-    push(0, 6);
-    push(3, 6);
-    push(3, 3);
-    for value in 0..4 {
-        push(value, 2);
-    }
-    let mut word = 0u32;
-    for bit in &code {
-        word = (word << 1) | u32::from(*bit);
-    }
-    word <<= 32 - code.len();
-    let mut packet = 4_u32.to_le_bytes().to_vec();
-    packet.push(1);
-    packet.extend_from_slice(
-        &(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes(),
-    );
-    packet.extend_from_slice(&word.to_le_bytes());
-    let mut array = Vec::new();
-    for _ in 0..3 {
-        array.extend_from_slice(&packet);
-    }
-    array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
-
-    crate::test_support::with_decode_context_over(
-        &array,
-        |policy| {
-            policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-                3 * std::mem::size_of::<Vec<FiniteBinary32>>(),
-            ) - 1;
-        },
-        |ctx| {
-            let error =
-                super::decode_vertex_coordinates(ctx, &array, 4, [range(10.0, 20.0); 3], [2; 3])
-                    .err()
-                    .expect("the component vector exceeds scoped storage");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
-    );
 }
 
 #[test]
@@ -919,41 +725,14 @@ fn jt_probability_context_biases_unsigned_symbols_before_range_admission() {
 }
 
 #[test]
-fn jt_integer_scratch_requires_retained_commit() {
-    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| policy.limits.max_retained_bytes = 0,
-        |ctx| {
-            let (lane, length) = super::decode_int32_cdp2_inner(ctx, &packet, 0)
-                .unwrap()
-                .unwrap();
-            assert_eq!(&*lane, &[1, -1]);
-            assert_eq!(length, packet.len());
-            assert!(
-                matches!(lane.into_retained(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
-    );
+fn jt_lossless_component_decodes_zero_words() {
+    let lane = super::lossless_coordinate_component(&[0, 0], &[0, 0]).unwrap();
+    assert_eq!(lane.len(), 2);
+    assert!(lane.iter().all(|value| value.get() == 0.0));
 }
 
 #[test]
-fn jt_lossless_component_uses_scoped_storage() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_retained_bytes = 0,
-        |ctx| {
-            let lane = super::lossless_coordinate_component(ctx, &[0, 0], &[0, 0])
-                .unwrap()
-                .unwrap();
-            assert_eq!(lane.len(), 2);
-            assert!(lane.iter().all(|value| value.get() == 0.0));
-        },
-    );
-}
-
-#[test]
-fn jt_arithmetic_local_work_refusal_is_structured() {
+fn jt_arithmetic_local_work_limit_skips_the_lane() {
     let entries = vec![
         super::ProbabilityEntry {
             symbol: 0,
@@ -962,34 +741,29 @@ fn jt_arithmetic_local_work_refusal_is_structured() {
         };
         100
     ];
-    crate::test_support::with_decode_context_over(
-        &[],
-        |_| {},
-        |ctx| {
-            let error = super::decode_arithmetic(ctx, &[], 0, 700_000, &entries)
-                .err()
-                .unwrap();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols" && limit.limit == 64_000_000)
-            );
-        },
-    );
+    let work_bound = ArithmeticWorkBound::default();
+    assert!(decode_arithmetic(&[], 0, 700_000, &entries, &work_bound).is_none());
+    assert!(work_bound.reached());
 }
 
 #[test]
-fn jt_component_owner_keeps_scratch_reservation_live() {
+fn jt_packet_above_the_arithmetic_work_bound_marks_the_bound() {
+    let packet = crate::test_support::test_streams::jt_arithmetic_packet_above_the_work_bound();
     crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_materialized_bytes = 8,
+        &packet,
+        |_| {},
         |ctx| {
-            let component = super::lossless_coordinate_component(ctx, &[0, 0], &[0, 0])
-                .unwrap()
-                .unwrap();
-            assert_eq!(component.len(), 2);
-            assert!(ctx
-                .reserve_scoped(1, "overlapping JT component copy")
-                .is_err());
-            assert_eq!(component[0].get(), 0.0);
+            let decoded = ArithmeticWorkBound::default();
+            assert!(super::decode_int32_cdp2(ctx, &decoded, &packet, 0)
+                .expect("a bounded lane is not an error")
+                .is_none());
+            assert!(decoded.reached());
+
+            let framed = ArithmeticWorkBound::default();
+            assert!(super::frame_int32_cdp2(ctx, &framed, &packet, 0)
+                .expect("a bounded lane is not an error")
+                .is_none());
+            assert!(framed.reached());
         },
     );
 }
@@ -1014,22 +788,7 @@ fn single_symbol_probability_packet(raw: u32) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[test]
-fn jt_arithmetic_output_copy_refuses_work_before_formation() {
-    let (_, packet) = single_symbol_probability_packet(2);
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| policy.limits.max_work_units = 3,
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "form JT arithmetic values")
-            );
-        },
-    );
-}
-
-#[test]
-fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
+fn jt_variable_bitlength_delta_cycles_decode() {
     let mut bits = vec![1_u8];
     bits.extend([0; 32]);
     bits.extend([0, 1, 0, 0, 0, 1]); // delta width 2, run width 1
@@ -1049,18 +808,5 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
         word <<= 32 - chunk.len();
         packet.extend_from_slice(&word.to_le_bytes());
     }
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| policy.limits.max_work_units = u64::from(bit_len),
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "decode JT bitlength code bits"
-                    && limit.additional == u64::from(bit_len))
-            );
-        },
-    );
     assert_eq!(decode_int32_cdp2(&packet, 0), Some((vec![0], packet.len())));
 }

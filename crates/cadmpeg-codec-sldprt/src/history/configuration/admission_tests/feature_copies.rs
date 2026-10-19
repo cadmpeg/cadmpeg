@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{assert_projection_refusal, design_configuration, feature_input_lane};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use super::{design_configuration, feature_input_lane};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     ConfigurationEvaluation, ConfigurationFeatureState, DistinctMembers, Feature, FeatureContent,
@@ -21,16 +21,13 @@ fn model() -> cadmpeg_ir::CadIr {
         )]),
     });
     let outputs: DistinctMembers<cadmpeg_ir::ids::BodyId> =
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![cadmpeg_ir::ids::BodyId::mint("synthetic:test:id#copied-body").unwrap()],
-            &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
+            "synthetic:test:id#copied-body",
         )
+        .unwrap()])
         .unwrap();
-    let dependencies: DistinctMembers<FeatureId> = cadmpeg_ir::features::DistinctMembers::try_from(
-        vec![dependency.clone()],
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .unwrap();
+    let dependencies: DistinctMembers<FeatureId> =
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![dependency.clone()]).unwrap();
     let state = ConfigurationFeatureState {
         definition: definition.clone(),
         dependencies: dependencies.clone(),
@@ -83,13 +80,10 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn run_supplemental(policy: &DecodePolicy) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+fn run_supplemental() -> Result<(), CodecError> {
     let mut ir = model();
     let expected = ir.clone();
     super::super::project_configuration_supplemental_edge_selections(
-        &ctx,
         &mut ir,
         &[feature_input_lane(
             "sldprt:feature-input:config-objects#0",
@@ -100,13 +94,10 @@ fn run_supplemental(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn run_topology(policy: &DecodePolicy) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+fn run_topology() -> Result<(), CodecError> {
     let mut ir = model();
     let expected = ir.clone();
     super::super::bind_configuration_topology_selections(
-        &ctx,
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
@@ -134,50 +125,21 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 #[test]
-fn configuration_feature_copy_design_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_design);
+fn configuration_feature_copy_design_runs_under_service_policy() {
+    run_design(&DecodePolicy::service()).unwrap();
 }
+
 #[test]
-fn configuration_feature_copy_design_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_design);
+fn configuration_feature_copy_supplemental_runs_under_service_policy() {
+    run_supplemental().unwrap();
 }
+
 #[test]
-fn configuration_feature_copy_design_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_design);
+fn configuration_feature_copy_topology_runs_under_service_policy() {
+    run_topology().unwrap();
 }
+
 #[test]
-fn configuration_feature_copy_supplemental_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_supplemental);
-}
-#[test]
-fn configuration_feature_copy_supplemental_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_supplemental);
-}
-#[test]
-fn configuration_feature_copy_supplemental_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_supplemental);
-}
-#[test]
-fn configuration_feature_copy_topology_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_topology);
-}
-#[test]
-fn configuration_feature_copy_topology_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_topology);
-}
-#[test]
-fn configuration_feature_copy_topology_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_topology);
-}
-#[test]
-fn configuration_feature_copy_sketch_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_sketch);
-}
-#[test]
-fn configuration_feature_copy_sketch_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_sketch);
-}
-#[test]
-fn configuration_feature_copy_sketch_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_sketch);
+fn configuration_feature_copy_sketch_runs_under_service_policy() {
+    run_sketch(&DecodePolicy::service()).unwrap();
 }

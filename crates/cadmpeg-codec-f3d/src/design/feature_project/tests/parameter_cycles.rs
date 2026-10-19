@@ -1,10 +1,8 @@
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use std::io::{Cursor, Write};
 
-use crate::design::feature_project::{cyclic_parameter_components, normalize_parameter_ordinals};
 use crate::loss::F3dLossCode;
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
@@ -74,261 +72,6 @@ fn dependencies(decoded: &DecodeResult) -> std::collections::BTreeMap<&str, Vec<
         .collect()
 }
 
-fn two_parameter_cycle() -> Vec<cadmpeg_ir::features::DesignParameter> {
-    let decoded = decode_parameters(&[(0, "A", "B"), (1, "B", "A")]);
-    let mut parameters = decoded.ir().model.parameters.clone();
-    let first = parameters[0].id.clone();
-    let second = parameters[1].id.clone();
-    parameters[0].dependencies.clear();
-    parameters[0]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            second,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
-    parameters[1].dependencies.clear();
-    parameters[1]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            first,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
-    parameters
-}
-
-fn owned_parameter_cycle() -> Vec<cadmpeg_ir::features::DesignParameter> {
-    let mut parameters = two_parameter_cycle();
-    let owner = crate::ids::neutral_feature_id_parts("test", "cycle", 0, 0);
-    parameters[0].owner = Some(owner.clone());
-    parameters[1].owner = Some(owner);
-    parameters
-}
-
-fn assert_normalization_refusal(
-    operation: &'static str,
-    dimension: cadmpeg_core::decode::ResourceDimension,
-) {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let parameters = owned_parameter_cycle();
-    let owners = parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect();
-    let dimension = if dimension == ResourceDimension::RetainedBytes {
-        ResourceDimension::MaterializedBytes
-    } else {
-        dimension
-    };
-    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
-        let mut copy = parameters.clone();
-        normalize_parameter_ordinals(ctx, &mut copy, &owners)
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(failure)
-        if failure.operation == operation && failure.dimension == dimension));
-}
-
-macro_rules! normalization_limit_test {
-    ($name:ident, $operation:literal, $dimension:ident) => {
-        #[test]
-        fn $name() {
-            assert_normalization_refusal(
-                $operation,
-                cadmpeg_core::decode::ResourceDimension::$dimension,
-            );
-        }
-    };
-}
-
-normalization_limit_test!(
-    parameter_owner_id_refuses_retained_limit,
-    "f3d parameter owner ID",
-    RetainedBytes
-);
-normalization_limit_test!(
-    parameter_owner_member_refuses_collection_limit,
-    "f3d parameter owner member",
-    CollectionItems
-);
-normalization_limit_test!(
-    parameter_owner_group_refuses_collection_limit,
-    "f3d parameter owner group",
-    CollectionItems
-);
-normalization_limit_test!(
-    parameter_group_ordinal_refuses_collection_limit,
-    "f3d parameter group ordinal",
-    CollectionItems
-);
-normalization_limit_test!(
-    parameter_unresolved_index_refuses_collection_limit,
-    "f3d parameter unresolved index",
-    CollectionItems
-);
-normalization_limit_test!(
-    parameter_readiness_refuses_work_limit,
-    "f3d parameter readiness",
-    WorkUnits
-);
-normalization_limit_test!(
-    parameter_ready_index_refuses_collection_limit,
-    "f3d parameter ready index",
-    CollectionItems
-);
-normalization_limit_test!(
-    parameter_cycle_member_id_refuses_retained_limit,
-    "f3d parameter cycle member ID",
-    RetainedBytes
-);
-normalization_limit_test!(
-    parameter_cycle_member_refuses_collection_limit,
-    "f3d parameter cycle member",
-    CollectionItems
-);
-normalization_limit_test!(
-    parameter_resolved_id_refuses_retained_limit,
-    "f3d parameter resolved ID",
-    RetainedBytes
-);
-normalization_limit_test!(
-    parameter_resolved_index_refuses_collection_limit,
-    "f3d parameter resolved index",
-    CollectionItems
-);
-normalization_limit_test!(
-    parameter_sorted_order_refuses_collection_limit,
-    "f3d parameter sorted order",
-    CollectionItems
-);
-
-fn assert_cycle_collection_refusal(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let parameters = two_parameter_cycle();
-    let unresolved = std::collections::HashSet::from([0, 1]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = limit;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(cyclic_parameter_components(&ctx, &parameters, &unresolved),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == operation
-                && failure.dimension == ResourceDimension::CollectionItems)
-    );
-}
-
-macro_rules! cycle_collection_limit_test {
-    ($name:ident, $limit:literal, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert_cycle_collection_refusal($limit, $operation);
-        }
-    };
-}
-
-cycle_collection_limit_test!(
-    cycle_indices_refuse_collection_limit,
-    0,
-    "f3d parameter cycle indices"
-);
-cycle_collection_limit_test!(
-    cycle_local_index_refuses_collection_limit,
-    2,
-    "f3d parameter cycle local index"
-);
-cycle_collection_limit_test!(
-    cycle_dependency_edge_refuses_collection_limit,
-    4,
-    "f3d parameter cycle dependency edge"
-);
-cycle_collection_limit_test!(
-    cycle_edge_list_refuses_collection_limit,
-    5,
-    "f3d parameter cycle edge list"
-);
-cycle_collection_limit_test!(
-    cycle_incoming_list_refuses_collection_limit,
-    8,
-    "f3d parameter cycle incoming list"
-);
-cycle_collection_limit_test!(
-    cycle_incoming_edge_refuses_collection_limit,
-    10,
-    "f3d parameter cycle incoming edge"
-);
-cycle_collection_limit_test!(
-    cycle_pending_visit_refuses_collection_limit,
-    12,
-    "f3d parameter cycle pending visit"
-);
-cycle_collection_limit_test!(
-    cycle_visited_node_refuses_collection_limit,
-    13,
-    "f3d parameter cycle visited node"
-);
-cycle_collection_limit_test!(
-    cycle_finish_order_refuses_collection_limit,
-    19,
-    "f3d parameter cycle finish order"
-);
-cycle_collection_limit_test!(
-    cycle_assigned_node_refuses_collection_limit,
-    21,
-    "f3d parameter cycle assigned node"
-);
-cycle_collection_limit_test!(
-    cycle_reverse_pending_refuses_collection_limit,
-    22,
-    "f3d parameter cycle reverse pending"
-);
-cycle_collection_limit_test!(
-    cycle_component_member_refuses_collection_limit,
-    24,
-    "f3d parameter cycle component member"
-);
-cycle_collection_limit_test!(
-    cycle_component_refuses_collection_limit,
-    26,
-    "f3d parameter cycle component"
-);
-
-fn assert_cycle_work_refusal(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let parameters = two_parameter_cycle();
-    let unresolved = std::collections::HashSet::from([0, 1]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = limit;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(cyclic_parameter_components(&ctx, &parameters, &unresolved),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == operation
-                && failure.dimension == ResourceDimension::WorkUnits)
-    );
-}
-
-#[test]
-fn cycle_visit_refuses_work_limit() {
-    assert_cycle_work_refusal(0, "f3d parameter cycle visit");
-}
-
-#[test]
-fn cycle_reverse_visit_refuses_work_limit() {
-    assert_cycle_work_refusal(5, "f3d parameter cycle reverse visit");
-}
-
 #[test]
 fn parameter_cycle_preserves_an_acyclic_dependency_into_the_cycle() {
     let records = [(0, "C", "A"), (1, "A", "B"), (2, "B", "A")];
@@ -395,5 +138,83 @@ fn parameter_cycle_ordering_resumes_before_breaking_another_cycle() {
             .map(|parameter| parameter.name.as_str())
             .collect::<Vec<_>>(),
         ["A", "D", "B", "C"]
+    );
+}
+
+/// A chain where `P{i}` names `P{i - 1}` and has the reverse source ordinal,
+/// so ordering needs one round per link.
+fn reversed_chain(length: u32) -> Vec<(u32, String, String)> {
+    (0..length)
+        .map(|index| {
+            let expression = match index {
+                0 => "1".to_owned(),
+                _ => format!("P{}", index - 1),
+            };
+            (length - 1 - index, format!("P{index}"), expression)
+        })
+        .collect()
+}
+
+fn decode_chain(chain: &[(u32, String, String)]) -> DecodeResult {
+    let records = chain
+        .iter()
+        .map(|(ordinal, name, expression)| (*ordinal, name.as_str(), expression.as_str()))
+        .collect::<Vec<_>>();
+    decode_parameters(&records)
+}
+
+#[test]
+fn parameter_ordering_within_its_cap_orders_a_reversed_chain() {
+    let decoded = decode_chain(&reversed_chain(10));
+    let parameters = &decoded.ir().model.parameters;
+    let by_name = |name: String| parameters.iter().find(|p| p.name == name).unwrap();
+    for index in 1..10 {
+        let parameter = by_name(format!("P{index}"));
+        let dependency = by_name(format!("P{}", index - 1));
+        assert_eq!(parameter.dependencies.as_slice(), [dependency.id.clone()]);
+        assert!(dependency.ordinal < parameter.ordinal);
+    }
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::ParameterOrderBudgetExceeded.kind()));
+}
+
+#[test]
+fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edges() {
+    // Round `k` scans the `3000 - k` unresolved parameters and one dependency
+    // each: about 3000^2 work units, past the per-scope cap.
+    let chain = reversed_chain(3000);
+    let decoded = decode_chain(&chain);
+    let parameters = &decoded.ir().model.parameters;
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
+    for (ordinal, name, _) in &chain {
+        let parameter = parameters
+            .iter()
+            .find(|parameter| parameter.name == *name)
+            .unwrap();
+        assert_eq!(parameter.ordinal, *ordinal);
+    }
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::ParameterExpressionUnbound.kind())
+        .unwrap();
+    assert!(loss
+        .message
+        .starts_with("2999 decoded parameter expression symbol(s)"));
+    let skip = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::ParameterOrderBudgetExceeded.kind())
+        .unwrap();
+    assert_eq!(
+        skip.message,
+        "1 Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
     );
 }

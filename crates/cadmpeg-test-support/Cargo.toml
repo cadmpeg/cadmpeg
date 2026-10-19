@@ -12,11 +12,14 @@ publish = false
 
 [dependencies]
 cadmpeg-core = { workspace = true, features = ["test-support"] }
-cadmpeg-ir.workspace = true
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [lints]
 workspace = true

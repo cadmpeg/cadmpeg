@@ -1,7 +1,7 @@
 mod binding;
 mod circle;
 mod evidence;
-mod topology_limits;
+mod topology_bounds;
 mod transfer;
 
 fn checked_circle(

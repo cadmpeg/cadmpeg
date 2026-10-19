@@ -41,6 +41,9 @@ cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
+# The end-to-end conversion tests export to STEP as the CLI does. Test-only,
+# so the published library is unchanged.
+cadmpeg-codec-step.workspace = true
 
 [lints]
 workspace = true

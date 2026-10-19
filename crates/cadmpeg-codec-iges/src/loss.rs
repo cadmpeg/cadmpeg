@@ -49,6 +49,10 @@ loss_codes! {
     DirectoryMetadataUnreadable => "directory.metadata-unreadable",
     /// A readable display field violates a source rule without changing geometry.
     DirectoryMetadataNoncanonical => "directory.metadata-noncanonical",
+    /// Product-occurrence expansion stopped at the configured output limit.
+    OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
+    /// Product-occurrence expansion stopped at the configured nesting-depth limit.
+    OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
@@ -125,6 +129,8 @@ loss_codes! {
     WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
     /// Free-geometry points or vertices have no topology output.
     WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
+    /// Free edges or curves that duplicate a written carrier were not written.
+    WriterDuplicateCarrierOmitted => "writer.duplicate-carrier-omitted",
     /// Unowned support geometry was withheld to avoid standalone transfer.
     WriterSupportGeometryNotRepresented => "writer.support-geometry-not-represented",
     /// A body name cannot be encoded as a Type 406 Form 15 name.
@@ -146,7 +152,9 @@ impl IgesLossCode {
                 Severity::Blocking
             }
             Self::ProceduralReduced => Severity::Info,
-            Self::OccurrenceRootInferenceBlocked
+            Self::OccurrenceExpansionOutputTruncated
+            | Self::OccurrenceExpansionDepthTruncated
+            | Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
@@ -184,6 +192,7 @@ impl IgesLossCode {
             | Self::WriterSupportGeometryNotRepresented
             | Self::WriterSupportEdgeNotRepresented
             | Self::WriterFreeGeometryOmitted
+            | Self::WriterDuplicateCarrierOmitted
             | Self::WriterBodyNameNotRepresented
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
@@ -195,9 +204,10 @@ impl IgesLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
-            Self::OccurrenceRootInferenceBlocked | Self::OccurrencePlacementMalformed => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::OccurrenceExpansionOutputTruncated
+            | Self::OccurrenceExpansionDepthTruncated
+            | Self::OccurrenceRootInferenceBlocked
+            | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
@@ -217,7 +227,8 @@ impl IgesLossCode {
             | Self::NurbsTransformNonFinite
             | Self::GeometryNotProjected
             | Self::WriterSupportGeometryNotRepresented
-            | Self::WriterFreeGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            | Self::WriterFreeGeometryOmitted
+            | Self::WriterDuplicateCarrierOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted
@@ -286,6 +297,8 @@ mod tests {
             [
                 "directory.metadata-unreadable",
                 "directory.metadata-noncanonical",
+                "occurrence.expansion-output-truncated",
+                "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
                 "entity.retained-unprojected",
@@ -324,6 +337,7 @@ mod tests {
                 "writer.minimum-resolution-adjusted",
                 "writer.support-edge-not-represented",
                 "writer.free-geometry-omitted",
+                "writer.duplicate-carrier-omitted",
                 "writer.support-geometry-not-represented",
                 "writer.body-name-not-represented",
                 "writer.body-color-not-represented",

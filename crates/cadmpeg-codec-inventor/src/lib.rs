@@ -70,12 +70,11 @@ impl CodecBackend for InventorCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        let (probe, _storage) =
-            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        let probe = CompoundPrefixProbe::inspect(ctx, View::over_retained(prefix))?;
         let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
             return Ok(Confidence::No);
         };
-        if container::has_inventor_evidence(ctx, &paths)? {
+        if container::has_inventor_evidence(&paths) {
             Ok(Confidence::High)
         } else {
             Ok(Confidence::No)
@@ -87,7 +86,7 @@ impl CodecBackend for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::InventorContainer::open(ctx, root)?.summary(ctx)
+        container::InventorContainer::open(ctx, root)?.summary()
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

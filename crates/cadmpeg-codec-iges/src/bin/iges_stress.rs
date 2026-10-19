@@ -29,7 +29,9 @@ const PARAMETER_COLUMNS: usize = 64;
 const DIRECTORY_FIELD_COLUMNS: usize = 8;
 const SEQUENCE_COLUMNS: usize = 7;
 
-const GLOBAL: &str = "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+const GLOBAL: &str =
+    "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,\
+     15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
 
 const RIGHT_ANGLE: &str = "1.5707963267948966";
 
@@ -655,16 +657,7 @@ fn trailing_groups(scale: Scale) -> Result<Vec<u8>, &'static str> {
 
 fn text_run(seed: &mut Lcg, length: usize) -> Result<String, &'static str> {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:+*/#";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .map_err(|_| "text generation context refused")?;
-    let mut text = ctx
-        .retained_string(length, "IGES stress text")
-        .map_err(|_| "text generation storage refused")?;
+    let mut text = String::new();
     for _ in 0..length {
         let pick = cadmpeg_core::decode::index_from_u64(
             seed.below(cadmpeg_core::decode::u64_from_index(ALPHABET.len()))?,

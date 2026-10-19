@@ -3,24 +3,19 @@
 
 use crate::history::{
     bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    complete_table_binding_budget_exceeded, historical_brep_source,
-    select_legacy_extrude_face_candidate, LegacyFaceResolution,
+    historical_brep_source, select_legacy_extrude_face_candidate, BindingHistories,
+    LegacyFaceResolution,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::HashMap;
 
-fn split_face_case(
-    max_items: u64,
-) -> Result<
-    (
-        Vec<cadmpeg_ir::features::Feature>,
-        cadmpeg_ir::ids::FaceId,
-        String,
-    ),
-    cadmpeg_core::CodecError,
-> {
-    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+fn split_face_case() -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    cadmpeg_ir::ids::FaceId,
+    String,
+) {
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use crate::records::{
         feature::scope::DesignParameterScope,
         recipes::ConstructionRecipeKind,
@@ -133,43 +128,35 @@ fn split_face_case(
             next_byte_offset: 1500,
         })
         .unwrap();
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:state#{state_id}"),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                2,
-                Some(crate::history_records::AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, Some(1)), state(1, None)],
+    );
     let mut features = vec![Feature {
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         ordinal: 0,
@@ -192,12 +179,7 @@ fn split_face_case(
         native_ref: Some(scope_id),
     }];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     super::super::bind_feature_face_selections(
-        &ctx,
         &mut features,
         &mut [],
         crate::history::FeatureFaceSelectionInputs {
@@ -206,26 +188,17 @@ fn split_face_case(
             operands: &[operand],
             entity_operands: &[],
             body_recipe_operands: &[],
-            histories: &[history],
+            histories: &mut [history],
         },
-    )?;
+    );
 
-    Ok((features, face_id, group_id))
-}
-
-#[test]
-fn split_face_binding_refuses_collection_limit() {
-    let result = split_face_case(0);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
-    ));
+    (features, face_id, group_id)
 }
 
 #[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-    let (features, face_id, group_id) = split_face_case(u64::MAX).unwrap();
+    let (features, face_id, group_id) = split_face_case();
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -239,7 +212,6 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
 fn thread_face_group_uses_first_reference_transition_candidates() {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalTopology,
-        AsmHistoricalTransition, AsmHistory,
     };
     use crate::records::{
         dimensions::DesignRecipeReference,
@@ -369,37 +341,35 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         })
         .unwrap();
 
-    let mut transition = AsmHistoricalTransition {
-        previous_state_id: Some(1),
-        records: Default::default(),
-        topology: Default::default(),
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:state#{state_id}"),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    transition.topology.faces.updated.push(7);
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: (state_id == 2).then_some(1),
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
-    };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(2, AsmHistoricalTopology::default(), Some(transition)),
+    let mut history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(2, AsmHistoricalTopology::default(), Some(1)),
             state(
                 1,
                 AsmHistoricalTopology {
@@ -427,8 +397,28 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                 None,
             ),
         ],
-    };
+    );
 
+    let result_topology = history.topology(&history.states()[1]).unwrap().clone();
+    crate::test_support::history::edit(&mut history, 1, |_, versions| {
+        *versions = [7, 8, 9, 10]
+            .into_iter()
+            .map(|entity_ref| crate::history_records::AsmEntityVersion {
+                entity_ref,
+                record_ref: entity_ref,
+            })
+            .collect();
+    });
+    crate::test_support::history::edit(&mut history, 0, |topology, versions| {
+        *topology = result_topology;
+        *versions = [7, 8, 9, 10]
+            .into_iter()
+            .map(|entity_ref| crate::history_records::AsmEntityVersion {
+                entity_ref,
+                record_ref: if entity_ref == 7 { 107 } else { entity_ref },
+            })
+            .collect();
+    });
     let mut operands = vec![operand.clone()];
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_face_operand_history_candidates(
@@ -437,7 +427,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             std::slice::from_ref(&scope),
             std::slice::from_ref(&group),
             &[],
-            std::slice::from_ref(&history),
+            BindingHistories::Shared(std::slice::from_ref(&history)),
             &HashMap::new(),
         )
     })
@@ -473,33 +463,40 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .clone();
     let mut cylinder_history = history.clone();
     cylinder_history.id = "f3d:Breps.BlobParts/BREP.input:asm-history#1".into();
-    let cylinder_topology = cylinder_history.states[1]
-        .topology_mut()
-        .expect("preceding topology");
-    cylinder_topology.face_surfaces = vec![
-        AsmHistoricalCarrierBinding {
-            entity: 7,
-            carrier: 70,
-        },
-        AsmHistoricalCarrierBinding {
-            entity: 8,
-            carrier: 80,
-        },
-    ];
-    cylinder_topology.surface_cylinders = vec![
-        AsmHistoricalCylinder {
-            surface: 70,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radius: 1.5,
-        },
-        AsmHistoricalCylinder {
-            surface: 80,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radius: 3.0,
-        },
-    ];
+    crate::test_support::history::edit(&mut cylinder_history, 1, |topology, _| {
+        topology.surfaces = vec![70, 80];
+        topology.face_surfaces = vec![
+            AsmHistoricalCarrierBinding {
+                entity: 7,
+                carrier: 70,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 8,
+                carrier: 80,
+            },
+        ];
+        topology.surface_cylinders = vec![
+            AsmHistoricalCylinder {
+                surface: 70,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 1.5,
+            },
+            AsmHistoricalCylinder {
+                surface: 80,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 3.0,
+            },
+        ];
+    });
+    let cylinders = cylinder_history
+        .topology(&cylinder_history.states()[1])
+        .unwrap()
+        .clone();
+    crate::test_support::history::edit(&mut cylinder_history, 0, |topology, _| {
+        *topology = cylinders;
+    });
     let mut cylinder_operands = vec![cylinder_operand];
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_face_operand_history_candidates(
@@ -508,7 +505,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             std::slice::from_ref(&cylinder_scope),
             std::slice::from_ref(&group),
             &[],
-            std::slice::from_ref(&cylinder_history),
+            BindingHistories::Shared(std::slice::from_ref(&cylinder_history)),
             &HashMap::new(),
         )
     })
@@ -527,7 +524,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             std::slice::from_ref(&cylinder_scope),
             std::slice::from_ref(&group),
             &[],
-            std::slice::from_ref(&cylinder_history),
+            BindingHistories::Shared(std::slice::from_ref(&cylinder_history)),
             &HashMap::new(),
         )
     })
@@ -535,19 +532,16 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
     let mut ambiguous_geometry_history = cylinder_history;
-    ambiguous_geometry_history.states[0]
-        .transition
-        .as_mut()
-        .expect("result transition")
-        .topology
-        .faces
-        .updated
-        .push(8);
-    ambiguous_geometry_history.states[1]
-        .topology_mut()
-        .expect("preceding topology")
-        .surface_cylinders[1]
-        .radius = 1.6;
+    crate::test_support::history::edit(&mut ambiguous_geometry_history, 0, |_, versions| {
+        versions
+            .iter_mut()
+            .find(|v| v.entity_ref == 8)
+            .unwrap()
+            .record_ref = 108;
+    });
+    crate::test_support::history::edit(&mut ambiguous_geometry_history, 1, |topology, _| {
+        topology.surface_cylinders[1].radius = 1.6;
+    });
     let mut ambiguous_geometry_operands = vec![cylinder_operands.remove(0)];
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_face_operand_history_candidates(
@@ -556,7 +550,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             &[cylinder_scope],
             std::slice::from_ref(&group),
             &[],
-            &[ambiguous_geometry_history],
+            BindingHistories::Shared(&[ambiguous_geometry_history]),
             &HashMap::new(),
         )
     })
@@ -578,7 +572,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             &[scope],
             &[unrelated_group],
             &[],
-            &[history],
+            BindingHistories::Shared(&[history]),
             &HashMap::new(),
         )
     })
@@ -586,29 +580,6 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());
-}
-
-#[test]
-fn history_binding_budget_charges_materialized_state_tables() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
-    limits.max_materialized_bytes = 1920;
-    assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
-    assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
-    assert!(complete_table_binding_budget_exceeded(
-        [usize::MAX, 1],
-        &limits,
-    ));
-
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    assert!(!complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &desktop,
-    ));
-    assert!(complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &service,
-    ));
 }
 
 #[test]
@@ -661,11 +632,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
                 scale: None,
                 allow_multi_profile_faces: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                outputs,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
         ),
         native_ref: None,
     };
@@ -695,12 +662,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         ),
     ];
 
-    bind_sweep_result_modes(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut features,
-        &bodies,
-    )
-    .unwrap();
+    bind_sweep_result_modes(&mut features, &bodies);
 
     let modes = features.map(|feature| match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.mode(),
@@ -715,100 +677,6 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     );
     assert_eq!(modes[2], SweepMode::Unresolved {});
     assert_eq!(modes[3], SweepMode::Unresolved {});
-}
-
-#[test]
-fn sweep_body_kind_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::topology::{Body, BodyKind};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let body = Body {
-        id: BodyId::mint("test:model:body#solid").unwrap(),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let error = bind_sweep_result_modes(&ctx, &mut [], &[body]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D sweep body kinds")
-    );
-}
-
-#[test]
-fn solid_sweep_section_conversion_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, SweepMode, SweepSection,
-    };
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::topology::{Body, BodyKind};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let body_id = BodyId::mint("test:model:body#solid").unwrap();
-    let body = Body {
-        id: body_id.clone(),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let feature = Feature {
-        id: FeatureId::mint("synthetic:test:id#solid-sweep").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::Operation(FeatureOperation::Sweep {
-                shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                    SweepMode::Unresolved {},
-                    SweepSection::Unresolved(None),
-                    vec![SweepSection::Unresolved(None)],
-                ),
-                path: None,
-                orientation: None,
-                transition: None,
-                transformation: None,
-                path_tangent: false,
-                linearize: false,
-                twist: None,
-                path_extent: None,
-                guide_rail: None,
-                taper: None,
-                scale: None,
-                allow_multi_profile_faces: None,
-            }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![body_id],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-        ),
-        native_ref: None,
-    };
-    let error = bind_sweep_result_modes(&ctx, &mut [feature], &[body]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "convert F3D solid sweep sections")
-    );
 }
 
 #[test]
@@ -879,19 +747,12 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
 }
 
-fn hole_face_case(
-    max_items: u64,
-) -> Result<
-    (
-        cadmpeg_ir::features::Feature,
-        Vec<cadmpeg_ir::features::FeatureInputTopology>,
-        cadmpeg_ir::features::FeatureId,
-    ),
-    cadmpeg_core::CodecError,
-> {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
-    };
+fn hole_face_case() -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    cadmpeg_ir::features::FeatureId,
+) {
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use crate::records::{
         feature::{
             hole::{DesignHoleConstruction, DesignHoleFaceSelection},
@@ -1016,72 +877,43 @@ fn hole_face_case(
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         native_ref: None,
     }];
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history:state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                2,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, Some(1)), state(1, None)],
+    );
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     bind_feature_face_selections(
-        &ctx,
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         crate::history::FeatureFaceSelectionInputs {
@@ -1090,26 +922,17 @@ fn hole_face_case(
             operands: &[],
             entity_operands: &[],
             body_recipe_operands: &[],
-            histories: &[history],
+            histories: &mut [history],
         },
-    )?;
+    );
 
-    Ok((feature, input_topologies, feature_id))
-}
-
-#[test]
-fn hole_face_binding_refuses_collection_limit() {
-    let result = hole_face_case(0);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
-    ));
+    (feature, input_topologies, feature_id)
 }
 
 #[test]
 fn hole_face_selection_binds_to_the_feature_input_topology() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-    let (feature, input_topologies, feature_id) = hole_face_case(u64::MAX).unwrap();
+    let (feature, input_topologies, feature_id) = hole_face_case();
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:

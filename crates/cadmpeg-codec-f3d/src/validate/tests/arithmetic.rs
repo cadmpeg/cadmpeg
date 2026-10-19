@@ -113,7 +113,7 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native.design_dimension_locus_groups.push(group);
-        let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(&native.design_dimension_locus_groups[0].id);
         ctx.parameters_by_index.insert((stream, 7), &parameter);
         ctx.owners_by_index.insert((stream, 6), &owner);
@@ -121,7 +121,7 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         ctx.entities_by_suffix.insert((stream, 4), &entity);
         ctx.sketch_geometry_indices.insert((stream, 10));
         let mut findings = Vec::new();
-        super::super::validate_dimension_locus_groups(&ctx, &mut findings).unwrap();
+        super::super::validate_dimension_locus_groups(&ctx, &mut findings);
         findings
     })
 }
@@ -230,12 +230,12 @@ fn companion_findings(
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native.design_parameter_companions.push(companion);
-        let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(native.design_parameter_companions[0].id());
         ctx.owners_by_index.insert((stream, 6), &owner);
         ctx.records_by_index.insert((stream, 8), &header);
         let mut findings = Vec::new();
-        super::super::validate_parameter_companions(&ctx, &mut findings).unwrap();
+        super::super::validate_parameter_companions(&ctx, &mut findings);
         findings
     })
 }
@@ -338,8 +338,7 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         };
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
-        let frame = crate::records::dimensions::DesignDimensionAnnotationFrame::try_new_charged(
-            decode,
+        let frame = crate::records::dimensions::DesignDimensionAnnotationFrame::try_new(
             crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
                 id: "f3d:Design/BulkStream.dat:annotation#9".into(),
                 companion_record_index: Some(8),
@@ -382,7 +381,7 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         )
         .unwrap();
         native.design_dimension_annotation_frames.push(frame);
-        let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(&native.design_dimension_annotation_frames[0].id);
         ctx.parameters_by_index.insert((stream, 7), &parameter);
         ctx.owners_by_index.insert((stream, 6), &owner);
@@ -391,7 +390,7 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         ctx.sketch_geometry_indices
             .extend([(stream, 10), (stream, 11)]);
         let mut findings = Vec::new();
-        super::super::validate_dimension_annotation_frames(&ctx, &mut findings).unwrap();
+        super::super::validate_dimension_annotation_frames(&ctx, &mut findings);
         findings
     })
 }

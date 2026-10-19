@@ -124,13 +124,17 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                     assert_eq!(units.unit, unit);
                     assert_eq!(units.meters_per_unit_bits(), scale.to_bits());
                 }
-                for container_only in [false, true] {
+                for depth in [
+                    cadmpeg_core::decode::DecodeDepth::Full,
+                    cadmpeg_core::decode::DecodeDepth::Container,
+                ] {
+                    let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
                     let result = EditableDecodeResult::from(
                         crate::RhinoCodec
                             .decode(
                                 &mut Cursor::new(&document),
                                 &DecodeOptions {
-                                    container_only,
+                                    depth,
                                     ..DecodeOptions::default()
                                 },
                             )
@@ -209,12 +213,16 @@ fn legacy_units_are_replaced_by_the_complete_unit_detail() {
             );
             let document =
                 bytes::document_with_definitions("50", ArchiveVersion::V5, &[record], &[]);
-            for container_only in [false, true] {
+            for depth in [
+                cadmpeg_core::decode::DecodeDepth::Full,
+                cadmpeg_core::decode::DecodeDepth::Container,
+            ] {
+                let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
                 let result = crate::RhinoCodec
                     .decode(
                         &mut Cursor::new(&document),
                         &DecodeOptions {
-                            container_only,
+                            depth,
                             ..DecodeOptions::default()
                         },
                     )

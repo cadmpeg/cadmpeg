@@ -101,7 +101,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     assert_eq!(poles.len(), 4);
     assert_eq!(poles[3].z, 500.0);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -133,13 +133,6 @@ fn conflicting_compact_counted_surface_array_is_rejected() {
 
 #[test]
 fn short_compact_surface_knot_array_is_rejected_without_panicking() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
     let multiplicity_attr = 183u16.to_be_bytes();
     let header = bytes
@@ -149,9 +142,7 @@ fn short_compact_surface_knot_array_is_rejected_without_panicking() {
     bytes[header + 1] = 1;
 
     assert!(
-        !crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("surface scan")
-            .contains_key(&180)
+        !crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180)
     );
 }
 
@@ -180,7 +171,13 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
     assert_eq!(result.ir().model.surfaces.len(), 3);
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
-        match surface.definition() { ProceduralSurfaceDefinition::Offset(matched_payload) => matches!((matched_payload.distance(),), (distance,) if (distance.get() - 2.0).abs() < f64::EPSILON), _ => false }
+        match surface.definition() {
+            ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
+                (matched_payload.distance(),),
+                (distance,) if (distance.get() - 2.0).abs() < f64::EPSILON
+            ),
+            _ => false,
+        }
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(
@@ -192,7 +189,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     let face_surface = &result.ir().model.faces[0].surface;
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex),
+        &cadmpeg_ir::index::ModelIndex::build(result.ir()),
         face_surface,
         0.0,
         0.0,
@@ -200,7 +197,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     .expect("nested offset evaluation");
     assert!((point.z - 5.0).abs() < 1.0e-12);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -236,7 +233,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == support.surface)
-                .expect("materialized blend support")
+                .expect("find the blend support surface")
         })
         .collect();
     assert!(matches!(
@@ -255,7 +252,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
             .contains("1 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -303,7 +300,7 @@ fn merged_sites_retain_procedural_surface_constructions() {
             .contains("2 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -336,33 +333,16 @@ fn cyclic_offset_surface_graph_remains_unknown() {
 
 #[test]
 fn surface_rejects_nonzero_terminal_multiplicity() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let bytes =
         nurbs_surface_carrier_with_v_knot_storage(180, 181, 10, &[2, 2, 1], &[0.0, 1.0, 2.0]);
     assert!(
-        !crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("surface scan")
-            .contains_key(&180)
+        !crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180)
     );
 }
 
 #[test]
 fn surface_descriptor_uses_terminal_array_references() {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
 
     let mut bytes = nurbs_surface_carrier(180, 181, 10);
     let descriptor = bytes
@@ -389,8 +369,7 @@ fn surface_descriptor_uses_terminal_array_references() {
     bytes.extend(f64_array(0x80, 193, &[0.0, 1.0]));
     bytes.extend(f64_array(0x80, 194, &[0.0, 1.0]));
 
-    let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-        .expect("surface scan")
+    let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
         .remove(&180)
         .expect("surface carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carrier.geometry.solved() else {
@@ -465,7 +444,7 @@ fn face_on_untyped_surface_keeps_topology() {
         .iter()
         .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 

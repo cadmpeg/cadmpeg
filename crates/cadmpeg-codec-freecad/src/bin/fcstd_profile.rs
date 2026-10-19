@@ -242,7 +242,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         observed
             .document_variants
             .insert(if has_gui { "gui" } else { "headless" }.to_owned());
-        collect_native_observations(first.ir(), &mut observed);
+        collect_native_observations(first.ir(), &mut observed)?;
         for (name, count) in &neutral.entity_counts {
             *total_counts.entry(name.to_string()).or_default() += count;
             if *count > 0 && !name.as_str().starts_with("native.") {
@@ -391,9 +391,12 @@ fn file_name(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
         .to_owned())
 }
 
-fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
+fn collect_native_observations(
+    ir: &CadIr,
+    observed: &mut Observed,
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
-        return;
+        return Ok(());
     };
     for record in namespace
         .arenas()
@@ -401,7 +404,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .into_iter()
         .flatten()
     {
-        let fields = record.fields();
+        let fields = &record.fields()?;
         insert_string(fields, "form", &mut observed.shape_forms);
         insert_map_keys(fields, "curves_2d", &mut observed.curves_2d);
         insert_map_keys(fields, "curves_3d", &mut observed.curves_3d);
@@ -409,7 +412,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         insert_map_keys(fields, "topology", &mut observed.topology);
     }
     for record in namespace.arenas().get("applications").into_iter().flatten() {
-        let fields = record.fields();
+        let fields = &record.fields()?;
         insert_string(fields, "type_name", &mut observed.application_types);
         if fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
             observed
@@ -434,7 +437,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas().get("drawings").into_iter().flatten() {
-        let fields = record.fields();
+        let fields = &record.fields()?;
         insert_string(fields, "kind", &mut observed.drawing_types);
         if fields
             .get("side_entries")
@@ -501,7 +504,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     let product_node_fields = product_nodes
         .iter()
         .map(|record| record.fields())
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     for fields in &product_node_fields {
         if let Some(Value::String(kind)) = fields.get("kind") {
             observed.product_constructs.insert(kind.clone());
@@ -543,7 +546,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas().get("joints").into_iter().flatten() {
-        let fields = record.fields();
+        let fields = &record.fields()?;
         insert_string(fields, "kind", &mut observed.joint_kinds);
         if fields
             .get("references")
@@ -595,6 +598,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
             );
         }
     }
+    Ok(())
 }
 
 /// Record every non-default branch a feature definition selects, keyed by
@@ -719,18 +723,17 @@ fn logical_side_entries(
         .native
         .namespace("fcstd")
         .ok_or("CADIR has no fcstd namespace")?;
-    Ok(namespace
-        .arenas()
-        .get("entries")
-        .into_iter()
-        .flatten()
-        .filter_map(|record| {
-            let fields = record.fields();
-            let name = fields.get("name")?.as_str()?;
-            let digest = fields.get("sha256")?.as_str()?;
-            Some((name.to_owned(), digest.to_owned()))
-        })
-        .collect())
+    let mut entries = BTreeMap::new();
+    for record in namespace.arenas().get("entries").into_iter().flatten() {
+        let fields = record.fields()?;
+        if let (Some(name), Some(digest)) = (
+            fields.get("name").and_then(Value::as_str),
+            fields.get("sha256").and_then(Value::as_str),
+        ) {
+            entries.insert(name.to_owned(), digest.to_owned());
+        }
+    }
+    Ok(entries)
 }
 
 fn property_value_attribute(
@@ -746,9 +749,8 @@ fn property_value_attribute(
         .get("properties")?
         .iter()
         .find(|record| {
-            let fields = record.fields();
-            fields.get("owner").and_then(Value::as_str) == Some(owner)
-                && fields.get("name").and_then(Value::as_str) == Some(property_name)
+            record.field("owner").as_ref().and_then(Value::as_str) == Some(owner)
+                && record.field("name").as_ref().and_then(Value::as_str) == Some(property_name)
         })?
         .field("values")?
         .as_array()?

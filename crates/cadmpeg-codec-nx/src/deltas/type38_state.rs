@@ -395,7 +395,11 @@ mod tests {
                     .contains(field));
             }
         }
-        let prior = serde_json::json!({"xmt":112,"node_id":17,"leading_references":[1,7,8,9,1],"marker":45,"linked_references":[118,119],"state_references":[120,121,122],"numeric_values":vec![0.0; 11]});
+        let prior = serde_json::json!({
+            "xmt": 112, "node_id": 17, "leading_references": [1, 7, 8, 9, 1], "marker": 45,
+            "linked_references": [118, 119], "state_references": [120, 121, 122],
+            "numeric_values": vec![0.0; 11]
+        });
         assert!(serde_json::from_value::<Type38State>(prior)
             .unwrap_err()
             .to_string()

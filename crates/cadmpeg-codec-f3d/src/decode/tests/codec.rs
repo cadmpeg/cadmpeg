@@ -10,7 +10,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-5;
@@ -70,9 +69,7 @@ const HEADER_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 #[test]
 fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
-    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-        .expect("service policy admits header")
-        .expect("magic present");
+    let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width.bytes(), 8);
     assert_eq!(h.metadata.save_format_version, Some(23100));
     assert_eq!(h.metadata.entity_count, Some(7));
@@ -99,12 +96,7 @@ fn asm_header_parses_documented_fields() {
 
 #[test]
 fn asm_header_absent_on_non_asm_bytes() {
-    assert!(asm_header::parse(
-        &cadmpeg_test_support::service_decode_context(),
-        b"not an asm stream at all"
-    )
-    .expect("service policy admits absence")
-    .is_none());
+    assert!(asm_header::parse(b"not an asm stream at all").is_none());
     assert!(!asm_header::has_asm_magic(b"PK\x03\x04"));
 }
 
@@ -112,9 +104,7 @@ fn asm_header_absent_on_non_asm_bytes() {
 fn asm_header_parses_binaryfile4_fields() {
     let bytes = bf4_header_prefix(5);
     assert!(asm_header::has_asm_magic(&bytes));
-    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-        .expect("service policy admits header")
-        .expect("magic present");
+    let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width.bytes(), 4);
     assert_eq!(h.metadata.save_format_version, Some(22700));
     assert_eq!(asm_header::record_count(&bytes), Some(0));
@@ -255,14 +245,12 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].z = 4.5;
     nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
@@ -318,9 +306,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
 #[test]
 fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let bytes = synthetic_smbh();
-    let off = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .expect("has a delta_state");
+    let off = asm_header::solved_record_limit(&bytes).expect("has a delta_state");
     assert_eq!(&bytes[off..off + 2], &[0x0d, 0x0b]);
     assert_eq!(&bytes[off + 2..off + 13], b"delta_state");
 
@@ -329,29 +315,20 @@ fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let mut smb = bytes;
     smb[39..47].copy_from_slice(&2u64.to_le_bytes());
     smb.truncate(off);
-    assert!(
-        asm_header::solved_record_limit(&service_decode_context(), &smb)
-            .expect("history scan")
-            .is_none()
-    );
+    assert!(asm_header::solved_record_limit(&smb).is_none());
 }
 
 #[test]
 fn history_preamble_record_is_the_modern_partition_boundary() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
-        .expect("history scan")
-        .unwrap();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
     let mut bytes = direct[..delta].to_vec();
     let expected = bytes.len();
     t_ident(&mut bytes, "Begin-of-ASM-History-Data");
     t_end(&mut bytes);
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(
-        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
-        Some(expected)
-    );
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let solved = cadmpeg_asm::test_support::sab::frame(
         &bytes,
@@ -369,9 +346,7 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 #[test]
 fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
-        .expect("history scan")
-        .unwrap();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
     let start = asm_header::record_stream_start(&direct).unwrap();
     let mut bytes = direct[..start].to_vec();
     t_ident(&mut bytes, "metadata");
@@ -380,10 +355,7 @@ fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let expected = bytes.len();
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(
-        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
-        Some(expected)
-    );
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
 }
 
 #[test]
@@ -397,28 +369,28 @@ fn decode_retains_generated_asm_history_graph() {
     let history = &f3d_native(result.ir()).asm_histories[0];
     assert_eq!(history.stream_size(), Some(2));
     assert_eq!(history.history_entry_count(), Some(99));
-    assert_eq!(history.states.len(), 2);
-    assert_eq!(history.states[0].state_id, 2);
-    assert_eq!(history.states[0].next_ref, Some(1));
-    assert_eq!(history.states[0].bulletin_boards.len(), 1);
-    assert_eq!(history.states[0].bulletin_boards[0].changes.len(), 2);
-    assert_eq!(history.states[0].records.len(), 1);
-    assert_eq!(history.states[0].records[0].name(), "history_payload");
-    assert_eq!(history.states[0].records[0].revision_id, Some(1830));
+    assert_eq!(history.states().len(), 2);
+    assert_eq!(history.states()[0].state_id, 2);
+    assert_eq!(history.states()[0].next_ref, Some(1));
+    assert_eq!(history.states()[0].bulletin_boards.len(), 1);
+    assert_eq!(history.states()[0].bulletin_boards[0].changes.len(), 2);
+    assert_eq!(history.states()[0].records.len(), 1);
+    assert_eq!(history.states()[0].records[0].name(), "history_payload");
+    assert_eq!(history.states()[0].records[0].revision_id, Some(1830));
     let crate::history_records::AsmHistoryRecordFraming::Framed {
         entity_references, ..
-    } = &history.states[0].records[0].framing
+    } = &history.states()[0].records[0].framing
     else {
         panic!("framed history record");
     };
     assert_eq!(entity_references, &[1830, -1]);
-    assert!(!history.states[0].records[0].raw_bytes.is_empty());
+    assert!(!history.states()[0].records[0].raw_bytes.is_empty());
     assert!(matches!(
-        history.states[0].bulletin_boards[0].changes[1].kind,
+        history.states()[0].bulletin_boards[0].changes[1].kind,
         crate::history_records::AsmEntityChangeKind::Insert { .. }
     ));
-    assert_eq!(history.states[1].previous_ref, Some(0));
-    assert_eq!(history.states[1].next_ref, None);
+    assert_eq!(history.states()[1].previous_ref, Some(0));
+    assert_eq!(history.states()[1].next_ref, None);
     assert!(result.report().geometry_transferred());
 }
 
@@ -432,20 +404,20 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     update_f3d_native(&mut edited, |native| {
         let history = &mut native.asm_histories[0];
         assert!(history.byte_offset > 0);
-        assert!(history.states[0].byte_offset > 0);
+        assert!(history.states()[0].byte_offset > 0);
         history.preamble = Some(crate::history_records::AsmPreamble {
             stream_size: 8,
             history_entry_count: 120,
         });
-        history.states[0].state_id = 8;
-        history.states[0].version_flag = 4;
-        history.states[0].state_flag = 6;
-        history.states[0].previous_ref = Some(12);
-        history.states[0].next_ref = Some(14);
-        history.states[0].node_index = 16;
-        history.states[0].partner_ref = Some(18);
-        history.states[0].owner_ref = 20;
-        let board = &mut history.states[0].bulletin_boards[0];
+        history.states_mut()[0].state_id = 8;
+        history.states_mut()[0].version_flag = 4;
+        history.states_mut()[0].state_flag = 6;
+        history.states_mut()[0].previous_ref = Some(12);
+        history.states_mut()[0].next_ref = Some(14);
+        history.states_mut()[0].node_index = 16;
+        history.states_mut()[0].partner_ref = Some(18);
+        history.states_mut()[0].owner_ref = 20;
+        let board = &mut history.states_mut()[0].bulletin_boards[0];
         assert!(board.byte_offset > 0);
         board.owner_ref = 22;
         board.number = 24;
@@ -460,7 +432,8 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated history decode");
-    let state = &f3d_native(round_trip.ir()).asm_histories[0].states[0];
+    let native = f3d_native(round_trip.ir());
+    let state = &native.asm_histories[0].states()[0];
     assert_eq!(
         f3d_native(round_trip.ir()).asm_histories[0].stream_size(),
         Some(8)
@@ -583,56 +556,6 @@ fn inspect_enumerates_and_reads_headers() {
 }
 
 #[test]
-fn f3d_brep_scan_propagates_header_string_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = synthetic_f3d(true);
-    let mut cap = 0;
-    let mut needed = None;
-    for _ in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (limited, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        match container::scan(&limited, root) {
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes =>
-            {
-                let next = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("fixture charge fits u64");
-                if limit.operation == "retain kernel header product string" {
-                    needed = Some(next);
-                    break;
-                }
-                assert!(next > cap, "fixture advances to its next retained charge");
-                cap = next;
-            }
-            Ok(_) => panic!("BREP scan did not reach the header limit"),
-            Err(error) => panic!("BREP scan failed elsewhere: {error}"),
-        }
-    }
-    let needed = needed.expect("header string reached within fixture charges");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = needed - 1;
-    let (limited, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-    assert!(matches!(
-        container::scan(&limited, root),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain kernel header product string"
-    ));
-    let (service, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
-    assert!(container::scan(&service, root).is_ok());
-}
-
-#[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     use cadmpeg_core::decode::ResourceDimension;
 
@@ -735,12 +658,7 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
             "FusionAssetName[Active]/Breps.BlobParts/Body1.smb"
         );
         assert!(container::select_history_brep(scan).is_none());
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let notes =
-            container::summary_notes(&ctx, scan, container::SummaryScope::FullDecode).unwrap();
+        let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
         assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));
@@ -839,9 +757,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
     assert_eq!(prefix[47], 0x07, "first string tag at offset 47");
     // The header parses all three strings and both tolerances despite the
     // overlap, and the record stream begins immediately after the last double.
-    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &prefix)
-        .expect("service policy admits header")
-        .expect("magic present");
+    let h = asm_header::parse(&prefix).expect("magic present");
     assert_eq!(
         h.metadata.product_family.as_deref(),
         Some("Autodesk Neutron")
@@ -859,9 +775,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,

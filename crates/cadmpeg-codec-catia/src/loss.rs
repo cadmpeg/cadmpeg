@@ -7,10 +7,10 @@
 //! human-readable message text, so a reworded message is not a contract change
 //! and a new drop path without a code does not compile.
 //!
-//! [`CatiaLossCode::note_charged`] is the single practical construction path for a
+//! [`CatiaLossCode::note`] is the single practical construction path for a
 //! decode-time [`LossNote`] in this crate: it fixes the loss category and
 //! severity from the code so the two cannot drift apart across sites. The
-//! caller supplies the decode context, retained message and operation name.
+//! caller supplies the per-instance message.
 //! Local codes appear on
 //! [`LossNote::code`] under the `catia` namespace.
 //!
@@ -19,7 +19,6 @@
 //! and the categories this codec spans (geometry, topology, history, attribute,
 //! container) have no honest common default.
 //!
-#[cfg(test)]
 use cadmpeg_ir::report::loss::LossKind;
 
 use cadmpeg_ir::report::{
@@ -61,6 +60,8 @@ pub(crate) enum CatiaLossCode {
     SourceRouteFellThrough,
     /// Carrier populations assigned conflicting annotations to one identity.
     SourceAnnotationCollision,
+    /// The `7C02` catalog scan skipped candidates at its walk allowance.
+    SourceCatalogScanBounded,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
     /// Transferred model retains unresolved curve or surface carriers.
@@ -87,6 +88,10 @@ pub(crate) enum CatiaLossCode {
     TopologyFbbRowsWithheld,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotBuilt,
+    /// A standard-family topology evidence search reached its local work bound.
+    TopologyStandardSearchBounded,
+    /// A planar face stated too many boundary points to classify its loops.
+    TopologyPlanarBoundaryBounded,
     /// E5 reference graph is closed; orientation uses an incidence-derived gauge.
     TopologyE5GaugeSubstituted,
     /// E5 carriers decoded, but the reference graph did not close.
@@ -99,8 +104,12 @@ pub(crate) enum CatiaLossCode {
     TopologyObjectStreamWorkSliceExhausted,
     /// Object-stream and NURBS carriers decoded, but the B5 graph did not close.
     TopologyB5GraphUnclosed,
+    /// B5 topology runs were read without the isolated geometry they reference.
+    TopologyB5PopulationBounded,
     /// Zero-entity support runs retain face-local occurrences without closed topology.
     TopologyZeroEntitySupportsRetained,
+    /// Zero-entity endpoint-pair and endpoint-locus candidates exceeded their work bound.
+    TopologyZeroEntityCandidatesBounded,
     /// Zero-entity topology transferred under a derived or source-bound gauge.
     TopologyZeroEntityGaugeSubstituted,
     /// Zero-entity loop members bind supports, but no neutral topology transferred.
@@ -113,6 +122,10 @@ pub(crate) enum CatiaLossCode {
     HistoryObjectRecordsUnresolved,
     /// Legacy design runs retain unresolved selector, relation, and feature semantics.
     HistoryLegacyRunsUnresolved,
+    /// Configuration-row links kept no intervening entities at their allowance.
+    HistoryConfigurationRowOrderBounded,
+    /// Relations kept no parameter dependencies at their allowance.
+    HistoryRelationDependenciesBounded,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -128,6 +141,7 @@ impl CatiaLossCode {
         Self::SourceDialectUnverified,
         Self::SourceRouteFellThrough,
         Self::SourceAnnotationCollision,
+        Self::SourceCatalogScanBounded,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
@@ -141,19 +155,25 @@ impl CatiaLossCode {
         Self::TopologyBoundaryGraphNotEmitted,
         Self::TopologyFbbRowsWithheld,
         Self::TopologyGraphNotBuilt,
+        Self::TopologyStandardSearchBounded,
+        Self::TopologyPlanarBoundaryBounded,
         Self::TopologyE5GaugeSubstituted,
         Self::TopologyE5GraphUnclosed,
         Self::TopologyB5GaugeSubstituted,
         Self::TopologyB5SubsetIncomplete,
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
+        Self::TopologyB5PopulationBounded,
         Self::TopologyZeroEntitySupportsRetained,
+        Self::TopologyZeroEntityCandidatesBounded,
         Self::TopologyZeroEntityGaugeSubstituted,
         Self::TopologyZeroEntityNotTransferred,
         Self::TopologyZeroEntityFaceUnresolved,
         Self::HistoryModelingScopeUnresolved,
         Self::HistoryObjectRecordsUnresolved,
         Self::HistoryLegacyRunsUnresolved,
+        Self::HistoryConfigurationRowOrderBounded,
+        Self::HistoryRelationDependenciesBounded,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesVisualizationUnbound,
@@ -166,6 +186,7 @@ impl CatiaLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceRouteFellThrough => "source.route-fell-through",
             Self::SourceAnnotationCollision => "source.annotation-identity-collision",
+            Self::SourceCatalogScanBounded => "source.catalog-scan-bounded",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
@@ -181,6 +202,8 @@ impl CatiaLossCode {
             Self::TopologyBoundaryGraphNotEmitted => "topology.boundary-graph-not-emitted",
             Self::TopologyFbbRowsWithheld => "topology.fbb-rows-withheld",
             Self::TopologyGraphNotBuilt => "topology.graph-not-built",
+            Self::TopologyStandardSearchBounded => "topology.standard-search-bounded",
+            Self::TopologyPlanarBoundaryBounded => "topology.planar-boundary-bounded",
             Self::TopologyE5GaugeSubstituted => "topology.e5-gauge-substituted",
             Self::TopologyE5GraphUnclosed => "topology.e5-graph-unclosed",
             Self::TopologyB5GaugeSubstituted => "topology.b5-gauge-substituted",
@@ -189,13 +212,17 @@ impl CatiaLossCode {
                 "topology.object-stream-work-slice-exhausted"
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
+            Self::TopologyB5PopulationBounded => "topology.b5-population-bounded",
             Self::TopologyZeroEntitySupportsRetained => "topology.zero-entity-supports-retained",
+            Self::TopologyZeroEntityCandidatesBounded => "topology.zero-entity-candidates-bounded",
             Self::TopologyZeroEntityGaugeSubstituted => "topology.zero-entity-gauge-substituted",
             Self::TopologyZeroEntityNotTransferred => "topology.zero-entity-not-transferred",
             Self::TopologyZeroEntityFaceUnresolved => "topology.zero-entity-face-unresolved",
             Self::HistoryModelingScopeUnresolved => "history.modeling-scope-unresolved",
             Self::HistoryObjectRecordsUnresolved => "history.object-records-unresolved",
             Self::HistoryLegacyRunsUnresolved => "history.legacy-runs-unresolved",
+            Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
+            Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -233,9 +260,9 @@ impl CatiaLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceRouteFellThrough | Self::SourceAnnotationCollision => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::SourceRouteFellThrough
+            | Self::SourceAnnotationCollision
+            | Self::SourceCatalogScanBounded => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
@@ -249,13 +276,17 @@ impl CatiaLossCode {
             Self::TopologyBoundaryGraphNotEmitted
             | Self::TopologyFbbRowsWithheld
             | Self::TopologyGraphNotBuilt
+            | Self::TopologyStandardSearchBounded
+            | Self::TopologyPlanarBoundaryBounded
             | Self::TopologyE5GaugeSubstituted
             | Self::TopologyE5GraphUnclosed
             | Self::TopologyB5GaugeSubstituted
             | Self::TopologyB5SubsetIncomplete
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
+            | Self::TopologyB5PopulationBounded
             | Self::TopologyZeroEntitySupportsRetained
+            | Self::TopologyZeroEntityCandidatesBounded
             | Self::TopologyZeroEntityNotTransferred
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
@@ -264,13 +295,14 @@ impl CatiaLossCode {
             | Self::AttributesVisualizationUnbound => LossTaxonomy::AttributesNotTransferred,
             Self::HistoryModelingScopeUnresolved
             | Self::HistoryObjectRecordsUnresolved
-            | Self::HistoryLegacyRunsUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::HistoryLegacyRunsUnresolved
+            | Self::HistoryConfigurationRowOrderBounded
+            | Self::HistoryRelationDependenciesBounded => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    #[cfg(test)]
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
@@ -289,26 +321,8 @@ impl CatiaLossCode {
     /// The structured code is `catia/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    #[cfg(test)]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
-    }
-
-    pub(crate) fn note_charged(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        message: String,
-        operation: &'static str,
-    ) -> Result<LossNote, cadmpeg_core::CodecError> {
-        let namespace = ctx.copy_retained_text("catia", operation)?;
-        let code = ctx.copy_retained_text(self.code(), operation)?;
-        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
-            namespace,
-            code,
-            self.shared_taxonomy(),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?;
-        Ok(LossNote::new(kind, message).with_severity(self.severity()))
     }
 }
 
@@ -327,6 +341,7 @@ mod tests {
                 "source.dialect-unverified",
                 "source.route-fell-through",
                 "source.annotation-identity-collision",
+                "source.catalog-scan-bounded",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",
@@ -340,19 +355,25 @@ mod tests {
                 "topology.boundary-graph-not-emitted",
                 "topology.fbb-rows-withheld",
                 "topology.graph-not-built",
+                "topology.standard-search-bounded",
+                "topology.planar-boundary-bounded",
                 "topology.e5-gauge-substituted",
                 "topology.e5-graph-unclosed",
                 "topology.b5-gauge-substituted",
                 "topology.b5-subset-incomplete",
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
+                "topology.b5-population-bounded",
                 "topology.zero-entity-supports-retained",
+                "topology.zero-entity-candidates-bounded",
                 "topology.zero-entity-gauge-substituted",
                 "topology.zero-entity-not-transferred",
                 "topology.zero-entity-face-unresolved",
                 "history.modeling-scope-unresolved",
                 "history.object-records-unresolved",
                 "history.legacy-runs-unresolved",
+                "history.configuration-row-order-bounded",
+                "history.relation-dependencies-bounded",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.visualization-unbound",

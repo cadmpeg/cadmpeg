@@ -6,12 +6,11 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
-use std::mem::size_of;
 use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -66,60 +65,108 @@ pub(crate) enum Value {
     Typed(String, Box<Value>),
 }
 
-fn try_clone_value(
-    value: &Value,
-    budget: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<Value, CodecError> {
+fn try_clone_value(value: &Value, budget: &DecodeContext<'_>) -> Result<Value, CodecError> {
     let _depth = budget.enter_nested("step_value_copy_depth")?;
-    budget.charge_work(1, operation)?;
     Ok(match value {
         Value::Reference(id) => Value::Reference(*id),
         Value::ExternalReference(id) => Value::ExternalReference(*id),
-        Value::ConstantEntity(text) => {
-            budget.charge_work(u64_from_index(text.len()), operation)?;
-            Value::ConstantEntity(budget.copy_retained_text(text, operation)?)
-        }
-        Value::ExpressValueConstant(text) => {
-            budget.charge_work(u64_from_index(text.len()), operation)?;
-            Value::ExpressValueConstant(budget.copy_retained_text(text, operation)?)
-        }
+        Value::ConstantEntity(text) => Value::ConstantEntity(text.to_owned()),
+        Value::ExpressValueConstant(text) => Value::ExpressValueConstant(text.to_owned()),
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
         Value::UninterpretedLiteral => Value::UninterpretedLiteral,
-        Value::Enumeration(text) => {
-            budget.charge_work(u64_from_index(text.len()), operation)?;
-            Value::Enumeration(budget.copy_retained_text(text, operation)?)
-        }
-        Value::String(bytes) => {
-            budget.charge_work(u64_from_index(bytes.len()), operation)?;
-            let copied = budget.copy_slice(bytes, operation)?;
-            Value::String(copied)
-        }
-        Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
-        Value::Resource(text) => {
-            budget.charge_work(u64_from_index(text.len()), operation)?;
-            Value::Resource(budget.copy_retained_text(text, operation)?)
-        }
+        Value::Enumeration(text) => Value::Enumeration(text.to_owned()),
+        Value::String(bytes) => Value::String(bytes.clone()),
+        Value::Binary(binary) => Value::Binary(binary.clone()),
+        Value::Resource(text) => Value::Resource(text.to_owned()),
         Value::Omitted => Value::Omitted,
         Value::Derived => Value::Derived,
         Value::List(values) => {
-            let mut copied = budget.collection_vec(values.len(), operation)?;
+            let mut copied = Vec::new();
             for value in values {
-                copied.push(try_clone_value(value, budget, operation)?);
+                copied.push(try_clone_value(value, budget)?);
             }
             Value::List(copied)
         }
         Value::Typed(name, nested) => {
-            budget.charge_work(u64_from_index(name.len()), operation)?;
-            budget.charge_collection_items(1, operation)?;
-            budget.charge_retained(u64_from_index(size_of::<Value>()), operation)?;
-            Value::Typed(
-                budget.copy_retained_text(name, operation)?,
-                Box::new(try_clone_value(nested, budget, operation)?),
-            )
+            Value::Typed(name.to_owned(), Box::new(try_clone_value(nested, budget)?))
         }
     })
+}
+
+/// Octets of string, binary and name text that a copy of `value`'s own node
+/// allocates, excluding nested values.
+fn node_payload(value: &Value) -> u64 {
+    let octets = match value {
+        Value::ConstantEntity(text)
+        | Value::ExpressValueConstant(text)
+        | Value::Enumeration(text)
+        | Value::Resource(text)
+        | Value::Typed(text, _) => text.len(),
+        Value::String(bytes) => bytes.len(),
+        Value::Binary(binary) => binary.data().len(),
+        Value::Reference(_)
+        | Value::ExternalReference(_)
+        | Value::Integer(_)
+        | Value::Real(_)
+        | Value::UninterpretedLiteral
+        | Value::Omitted
+        | Value::Derived
+        | Value::List(_) => 0,
+    };
+    u64_from_index(octets)
+}
+
+/// Payload octets that one anchor or REFERENCE expansion pass may copy out
+/// of anchors for each input byte, on top of [`EXPANDED_PAYLOAD_BASE`].
+const MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE: u64 = 16;
+/// Payload octets that one expansion pass may copy out of anchors at any
+/// input size.
+const EXPANDED_PAYLOAD_BASE: u64 = 16 * 1024 * 1024;
+
+/// Payload octets that one expansion pass may still copy out of anchors.
+/// Copies that a bounded item discards stay charged, so the allowance bounds
+/// the copying work as well as the memory the pass holds.
+#[derive(Debug)]
+struct PayloadAllowance {
+    limit: u64,
+    remaining: u64,
+}
+
+impl PayloadAllowance {
+    /// The allowance of an input of `input_len` bytes, or `None` when it
+    /// does not fit in `u64`.
+    fn limit_for_input(input_len: usize) -> Option<u64> {
+        MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE
+            .checked_mul(u64_from_index(input_len))?
+            .checked_add(EXPANDED_PAYLOAD_BASE)
+    }
+
+    fn new(limit: u64) -> Self {
+        Self {
+            limit,
+            remaining: limit,
+        }
+    }
+
+    /// Charges `octets` before they are copied; false leaves the allowance
+    /// unchanged.
+    fn charge(&mut self, octets: u64) -> bool {
+        match self.remaining.checked_sub(octets) {
+            Some(rest) => {
+                self.remaining = rest;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn bound(&self, expansion: &str) -> String {
+        format!(
+            "{expansion} expansion exceeds {} payload bytes (MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE)",
+            self.limit
+        )
+    }
 }
 
 /// One simple entity leaf within an entity instance.
@@ -132,7 +179,7 @@ pub(crate) struct PartialRecord {
 }
 
 pub(crate) mod partials {
-    use super::{DecodeContext, ParseError, PartialRecord};
+    use super::PartialRecord;
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
@@ -150,22 +197,15 @@ pub(crate) mod partials {
             Self(Storage::One(first))
         }
 
-        pub(super) fn push(
-            self,
-            next: PartialRecord,
-            budget: &DecodeContext<'_>,
-        ) -> Result<Self, ParseError> {
-            let mut records = match self.0 {
-                Storage::One(first) => {
-                    let mut records = budget.collection_vec(2, "step_parse_record_partials")?;
-                    records.push(first);
+        pub(super) fn push(self, next: PartialRecord) -> Self {
+            let records = match self.0 {
+                Storage::One(first) => vec![first, next],
+                Storage::Many(mut records) => {
                     records.push(next);
-                    return Ok(Self(Storage::Many(records)));
+                    records
                 }
-                Storage::Many(records) => records,
             };
-            budget.push_vec(&mut records, next, "step_parse_record_partials")?;
-            Ok(Self(Storage::Many(records)))
+            Self(Storage::Many(records))
         }
 
         pub(super) fn shrink_to_fit(&mut self) {
@@ -219,36 +259,20 @@ pub(crate) mod partials {
     }
     #[cfg(test)]
     mod tests {
-        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        use super::{ParseError, PartialRecord, RecordPartials};
+        use super::{PartialRecord, RecordPartials};
         use crate::parse::parameters::RecordParameters;
-        use crate::test_support::with_policy_context;
 
         #[test]
-        fn one_partial_is_inline_and_a_second_leaf_admits_collection_storage() {
+        fn one_partial_is_inline_and_a_second_leaf_is_appended() {
             let partial = || PartialRecord {
                 name: String::from("ITEM"),
                 parameters: RecordParameters::default(),
             };
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            with_policy_context(b"", &policy, |_, ctx| {
-                let parts = RecordPartials::single(partial());
-                assert_eq!(parts.len(), 1);
-                assert_eq!(parts.first().name, "ITEM");
-                assert!(
-                    matches!(parts.push(partial(), ctx), Err(ParseError::Resource(CodecError::ResourceLimit(refusal))) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_parse_record_partials")
-                );
-            });
-            policy.limits.max_collection_items = 2;
-            with_policy_context(b"", &policy, |_, ctx| {
-                let parts = RecordPartials::single(partial())
-                    .push(partial(), ctx)
-                    .expect("two complex leaves are admitted");
-                assert_eq!(parts.len(), 2);
-            });
+            let parts = RecordPartials::single(partial());
+            assert_eq!(parts.len(), 1);
+            assert_eq!(parts.first().name, "ITEM");
+            let parts = RecordPartials::single(partial()).push(partial());
+            assert_eq!(parts.len(), 2);
         }
     }
 }
@@ -260,6 +284,15 @@ pub(crate) struct RawRecord {
     pub(crate) partials: partials::RecordPartials,
     /// Half-open byte range from instance name through semicolon.
     pub(crate) span: Range<usize>,
+}
+
+impl RawRecord {
+    /// Every parameter of every partial, in source order.
+    fn values_mut(&mut self) -> impl Iterator<Item = &mut Value> {
+        (&mut self.partials)
+            .into_iter()
+            .flat_map(|partial| &mut partial.parameters)
+    }
 }
 
 /// One entity-like record in the HEADER section.
@@ -293,6 +326,17 @@ pub(crate) struct AnchorEntry {
     pub(crate) value: Value,
     /// Ordered metadata tags attached to the binding.
     tags: Vec<AnchorTag>,
+}
+
+impl AnchorEntry {
+    /// The bound value followed by each tag value.
+    fn values(&self) -> impl Iterator<Item = &Value> {
+        std::iter::once(&self.value).chain(self.tags.iter().map(|tag| &tag.value))
+    }
+
+    fn values_mut(&mut self) -> impl Iterator<Item = &mut Value> {
+        std::iter::once(&mut self.value).chain(self.tags.iter_mut().map(|tag| &mut tag.value))
+    }
 }
 
 /// One edition-3 metadata tag attached to an ANCHOR binding.
@@ -361,24 +405,20 @@ impl PartialEq for EntityIndex {
 }
 
 impl EntityIndex {
-    fn build(
-        records: &BTreeMap<u64, RawRecord>,
-        budget: &DecodeContext<'_>,
-    ) -> Result<Self, ParseError> {
+    fn build(records: &BTreeMap<u64, RawRecord>) -> EntityIndex {
         let mut index = HashMap::<String, Vec<u64>>::new();
         for (&id, record) in records {
             for partial in &record.partials {
                 if let Some(ids) = index.get_mut(partial.name.as_str()) {
-                    budget.push_vec(ids, id, "step_entity_index_ids")?;
+                    ids.push(id);
                 } else {
-                    let name = budget
-                        .copy_retained_text(&partial.name, "step_entity_index_name_storage")?;
-                    let ids = budget.collect_vec([id], "step_entity_index_ids")?;
-                    budget.insert_hash_map(&mut index, name, ids, "step_entity_index_names")?;
+                    let name = partial.name.clone();
+                    let ids = vec![id];
+                    index.insert(name, ids);
                 }
             }
         }
-        Ok(Self(Arc::new(index)))
+        Self(Arc::new(index))
     }
 }
 
@@ -424,40 +464,15 @@ impl Exchange {
             .map(AdmittedSchemaIdentifier::text)
     }
 
-    pub(crate) fn joined_schema_identifiers(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<String, CodecError> {
-        let operation = "step_schema_identifier_list";
-        let len = self.schema_identifiers.iter().enumerate().try_fold(
-            0usize,
-            |sum, (index, identifier)| {
-                sum.checked_add(identifier.text().len())
-                    .and_then(|sum| sum.checked_add(usize::from(index != 0)))
-            },
-        );
-        let len = len.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-        let mut joined = ctx.retained_string(len, operation)?;
-
-        for identifier in self.schema_identifiers() {
-            if !joined.is_empty() {
-                joined.push(',');
-            }
-            joined.push_str(identifier);
-        }
-        Ok(joined)
+    pub(crate) fn joined_schema_identifiers(&self) -> String {
+        self.schema_identifiers().collect::<Vec<_>>().join(",")
     }
 
     /// Numeric object-identifier components for the primary schema identifier.
-    pub(crate) fn primary_schema_object_identifier(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<Vec<u64>>, CodecError> {
+    pub(crate) fn primary_schema_object_identifier(&self) -> Option<Vec<u64>> {
         self.schema_identifiers
             .first()
-            .map_or(Ok(None), |identifier| {
-                identifier.numeric_object_identifier(ctx)
-            })
+            .and_then(AdmittedSchemaIdentifier::numeric_object_identifier)
     }
 
     /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.
@@ -465,12 +480,11 @@ impl Exchange {
         self.implementation_level.text()
     }
 
-    pub(crate) fn decode_string_with_context(
+    pub(crate) fn decode_string(
         &self,
         bytes: &[u8],
-        ctx: &DecodeContext<'_>,
-    ) -> Result<String, crate::strings::StringDecodeFailure> {
-        crate::strings::decode_with_context(bytes, self.implementation_level.level(), ctx)
+    ) -> Result<String, crate::strings::StringError> {
+        crate::strings::decode(bytes, self.implementation_level.level())
     }
 
     /// Release the source graph and transfer its signature extents for retention.
@@ -486,7 +500,7 @@ impl Exchange {
         std::mem::take(&mut self.signatures)
     }
 
-    // The record graph is immutable while its charged name index exists.
+    // The record graph is immutable while its name index exists.
     fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
         &self.entity_ids.0
     }
@@ -540,7 +554,7 @@ pub(crate) enum ParseError {
     /// Tokenization failed.
     #[error(transparent)]
     Lex(#[from] LexError),
-    /// The caller's decode policy refused additional parser work or storage.
+    /// The caller's decode session refused the parse.
     #[error(transparent)]
     Resource(#[from] CodecError),
     /// Token sequence violates the exchange grammar.
@@ -580,6 +594,9 @@ pub(crate) enum ParseDiagnosticKind {
     /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
     /// not implemented; parsing continued with the edition-3 class-3 grammar.
     ImplementationLevelUnverified,
+    /// An anchor or REFERENCE expansion passed its value-node limit; the
+    /// binding or instance remains source-only.
+    ExpansionBounded,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -593,8 +610,8 @@ pub(crate) struct ParseDiagnostic {
     pub(crate) message: String,
 }
 
-/// Parse one exchange structure while charging the caller's decode session.
-pub(crate) fn parse_with_context(
+/// Parse one exchange structure in the caller's decode session.
+pub(crate) fn parse(
     input: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {
@@ -610,7 +627,6 @@ pub(crate) fn parse_inner(
         current: None,
         lexer,
         last_end: 0,
-        depth: 0,
         diagnostics: Vec::new(),
         omitted_entity_names: None,
         defer_lexical_errors: false,
@@ -634,7 +650,6 @@ struct Parser<'input, 'ctx, 'arena> {
     lexer: Lexer<'input, 'ctx, 'arena>,
     current: Option<Token>,
     last_end: usize,
-    depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
     defer_lexical_errors: bool,
@@ -812,12 +827,11 @@ impl Parser<'_, '_, '_> {
                 format_args!(
                     "bounded prefix before the draft exchange omitted; exact source retained"
                 ),
-            )?;
-            self.budget
-                .push_vec(&mut omitted_spans, 0..offset, "step_omitted_record_spans")?;
+            );
+            omitted_spans.push(0..offset);
         }
         if draft {
-            self.diagnostic(0, ParseDiagnosticKind::DraftExchangeGrammar, format_args!("pre-standard STEP/FILE_IDENTIFICATION exchange; DATA parsed with the Part 21 instance grammar, with draft @ assignments and !* comments"))?;
+            self.diagnostic(0, ParseDiagnosticKind::DraftExchangeGrammar, format_args!("pre-standard STEP/FILE_IDENTIFICATION exchange; DATA parsed with the Part 21 instance grammar, with draft @ assignments and !* comments"));
         }
         self.name(if draft { "STEP" } else { "ISO-10303-21" })?;
         self.punct(&TokenKind::Semicolon)?;
@@ -828,8 +842,7 @@ impl Parser<'_, '_, '_> {
         let mut header = Vec::new();
         while !self.peek_name("ENDSEC") && self.current.is_some() {
             if let Some(record) = self.recover_header_record(&mut omitted_spans)? {
-                self.budget
-                    .push_vec(&mut header, record, "step_parse_header_records")?;
+                header.push(record);
             }
         }
         self.defer_lexical_errors = false;
@@ -845,7 +858,7 @@ impl Parser<'_, '_, '_> {
                 Vec::new(),
             ))
         } else {
-            validate_header(&header, self.budget)
+            validate_header(&header)
         };
         let (header_admission, header_diagnostics) = match admission {
             Ok(admitted) => admitted,
@@ -853,47 +866,31 @@ impl Parser<'_, '_, '_> {
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let implementation_level = header_admission.implementation_level.level();
-        self.budget.reserve_vec(
-            &mut self.diagnostics,
-            header_diagnostics.len(),
-            "step_parse_diagnostics",
-        )?;
+
         self.diagnostics.extend(header_diagnostics);
-        let (schema_names_for_matching, _schema_names_storage) = self
-            .budget
-            .with_scoped_storage("step schema matching storage", || {
-                schema_names_for_matching(&header_admission.schema_identifiers, self.budget)
-            })?;
-        let (header_data_references, _header_reference_storage) = match self
-            .budget
-            .with_scoped_storage("step header reference storage", || {
-                validate_header_sections(
-                    implementation_level,
-                    &header,
-                    &schema_names_for_matching,
-                    self.budget,
-                )
-            }) {
+        let schema_names_for_matching =
+            schema_names_for_matching(&header_admission.schema_identifiers);
+        let header_data_references = match validate_header_sections(
+            implementation_level,
+            &header,
+            &schema_names_for_matching,
+        ) {
             Ok(references) => references,
             Err(ValidationError::Invalid(message)) => {
                 push_header_metadata_diagnostic(
                     &mut self.diagnostics,
                     header.first().map_or(0, |record| record.offset),
                     format_args!("{message}"),
-                    self.budget,
-                )?;
-                (
-                    Vec::new(),
-                    self.budget
-                        .reserve_scoped(0, "step header reference storage")?,
-                )
+                );
+                Vec::new()
             }
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let mut anchors = Vec::new();
+        let mut anchor_spans = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
-                self.diagnostic(self.current_offset(), ParseDiagnosticKind::ImplementationLevelUnverified, format_args!("{level} forbids ANCHOR and REFERENCE sections; readable sections parsed with the 4;3 section grammar"))?;
+                self.diagnostic(self.current_offset(), ParseDiagnosticKind::ImplementationLevelUnverified, format_args!("{level} forbids ANCHOR and REFERENCE sections; readable sections parsed with the 4;3 section grammar"));
             }
         }
         if self.peek_name("ANCHOR") {
@@ -901,6 +898,7 @@ impl Parser<'_, '_, '_> {
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
+                let start = self.current_offset();
                 let TokenKind::Resource(name) = self.next_kind()? else {
                     return self.err("expected anchor name");
                 };
@@ -924,29 +922,21 @@ impl Parser<'_, '_, '_> {
                         return self.err("invalid anchor tag item");
                     }
                     self.punct(&TokenKind::RBrace)?;
-                    self.budget
-                        .reserve_capacity(&mut tags, 1, "step_anchor_tag_storage")?;
-                    self.budget
-                        .charge_collection_items(1, "step_parse_anchor_tags")?;
+
                     tags.push(AnchorTag { name, value });
                 }
                 tags.shrink_to_fit();
 
                 self.punct(&TokenKind::Semicolon)?;
-                self.budget.push_vec(
-                    &mut anchors,
-                    AnchorEntry { name, value, tags },
-                    "step_parse_anchors",
-                )?;
+                anchors.push(AnchorEntry { name, value, tags });
+                anchor_spans.push(start..self.previous_end());
             }
             self.next_kind()?;
             self.lexer.set_allow_print_controls(true);
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut reference_entries = Vec::new();
-        let mut external_storage = self
-            .budget
-            .reserve_scoped(0, "step external identity lookup")?;
+
         let mut external_reference_ids = BTreeSet::new();
         let mut external_value_reference_ids = BTreeSet::new();
         if self.peek_name("REFERENCE") {
@@ -972,10 +962,7 @@ impl Parser<'_, '_, '_> {
                 if same_kind.contains(&id) {
                     return self.err("duplicate reference name");
                 }
-                external_storage.with_storage(|| {
-                    self.budget
-                        .insert_btree_set(same_kind, id, "step_parse_external_reference_ids")
-                })?;
+                same_kind.insert(id);
                 if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
                 }
@@ -984,11 +971,7 @@ impl Parser<'_, '_, '_> {
                     return self.err("expected reference URI");
                 };
                 self.punct(&TokenKind::Semicolon)?;
-                self.budget.push_vec(
-                    &mut reference_entries,
-                    ReferenceEntry { name, uri },
-                    "step_parse_reference_entries",
-                )?;
+                reference_entries.push(ReferenceEntry { name, uri });
             }
             self.next_kind()?;
             self.lexer.set_allow_print_controls(true);
@@ -997,7 +980,7 @@ impl Parser<'_, '_, '_> {
         let mut data: Vec<DataSection> = Vec::new();
         let mut records = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
-        let mut data_name_storage = self.budget.reserve_scoped(0, "step data name lookup")?;
+
         let mut data_section_names = BTreeSet::new();
         while self.peek_name("DATA") {
             self.next_kind()?;
@@ -1015,15 +998,12 @@ impl Parser<'_, '_, '_> {
                     return self.err("2;1 forbids DATA section parameters");
                 }
                 let parameters = self.parameter_nesting(Self::parameters_inner)?;
-                if let Err(message) = data_name_storage.with_storage(|| {
-                    valid_data_parameters(
-                        &parameters,
-                        &schema_names_for_matching,
-                        implementation_level,
-                        &mut data_section_names,
-                        self.budget,
-                    )
-                }) {
+                if let Err(message) = valid_data_parameters(
+                    &parameters,
+                    &schema_names_for_matching,
+                    implementation_level,
+                    &mut data_section_names,
+                ) {
                     match message {
                         ValidationError::Invalid(message) => return self.err(message),
                         ValidationError::Resource(error) => {
@@ -1053,14 +1033,10 @@ impl Parser<'_, '_, '_> {
                 }
             }
 
-            self.budget.push_vec(
-                &mut data,
-                DataSection {
-                    parameters,
-                    span: record_start..record_end,
-                },
-                "step_parse_data_sections",
-            )?;
+            data.push(DataSection {
+                parameters,
+                span: record_start..record_end,
+            });
         }
         if !implementation_level.is_edition3() && data.is_empty() {
             return self.err("historical implementation levels require one DATA section");
@@ -1080,17 +1056,16 @@ impl Parser<'_, '_, '_> {
                 &mut self.diagnostics,
                 header.first().map_or(0, |record| record.offset),
                 format_args!("{message}"),
-                self.budget,
-            )?;
+            );
         }
         if self.current.is_none() && !data.is_empty() {
-            self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("readable DATA records precede EOF; closing exchange envelope is incomplete; no terminator bytes were supplied"))?;
+            self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("readable DATA records precede EOF; closing exchange envelope is incomplete; no terminator bytes were supplied"));
         } else {
             self.name(if draft { "ENDSTEP" } else { "END-ISO-10303-21" })?;
             if self.current.is_some() {
                 self.punct(&TokenKind::Semicolon)?;
             } else {
-                self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("exchange terminator precedes EOF without its closing semicolon; no terminator bytes were supplied"))?;
+                self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("exchange terminator precedes EOF without its closing semicolon; no terminator bytes were supplied"));
             }
         }
         let mut signatures = Vec::new();
@@ -1116,8 +1091,7 @@ impl Parser<'_, '_, '_> {
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
             crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)?;
-            self.budget
-                .push_vec(&mut signatures, span, "step_parse_signature_spans")?;
+            signatures.push(span);
         }
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
@@ -1131,54 +1105,47 @@ impl Parser<'_, '_, '_> {
         {
             return self.err("external value instance collides with a DATA instance");
         }
+        let Some(payload_limit) = PayloadAllowance::limit_for_input(self.lexer.input().len())
+        else {
+            return self.err("input length overflows the expansion payload allowance");
+        };
+        let mut omissions = ExpansionOmissions::default();
         if !anchors.is_empty() {
-            let mut binding_storage = self
-                .budget
-                .reserve_scoped(0, "step_anchor_binding_storage")?;
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
-                binding_storage.with_storage(|| {
-                    let name = self
-                        .budget
-                        .copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")?;
-                    let value = try_clone_value(
-                        &anchor.value,
-                        self.budget,
-                        "step_anchor_binding_value_copy",
-                    )?;
-                    self.budget.insert_btree_map(
-                        &mut anchor_bindings,
-                        name,
-                        value,
-                        "step_anchor_binding_items",
-                    )?;
-                    Ok::<(), CodecError>(())
-                })?;
+                let value = try_clone_value(&anchor.value, self.budget)?;
+                anchor_bindings.insert(anchor.name.clone(), value);
             }
             if anchor_bindings.len() != anchors.len() {
                 return self.err("duplicate anchor name");
             }
-            let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget)
-                .map_err(|error| error.into_parse_error(0))?;
+            let mut bounded = BoundedExpansions::default();
+            let mut resolver = AnchorResolver::new(&anchor_bindings, payload_limit, self.budget);
             for anchor in &mut anchors {
-                anchor.value = resolver
-                    .resolve_root(&anchor.value)
-                    .map_err(|error| error.into_parse_error(0))?;
-                for tag in &mut anchor.tags {
-                    tag.value = resolver
-                        .resolve_root(&tag.value)
-                        .map_err(|error| error.into_parse_error(0))?;
+                if let Some(bound) = resolver
+                    .resolve_item(anchor.values_mut())
+                    .map_err(|error| error.into_parse_error(0))?
+                {
+                    bounded.anchors.insert(anchor.name.clone(), bound);
                 }
             }
-            for record in records.values_mut() {
-                for partial in &mut record.partials {
-                    for value in &mut partial.parameters {
-                        *value = resolver
-                            .resolve_root(value)
-                            .map_err(|error| error.into_parse_error(record.span.start))?;
-                    }
+            for (&id, record) in &mut records {
+                let offset = record.span.start;
+                if let Some(bound) = resolver
+                    .resolve_item(record.values_mut())
+                    .map_err(|error| error.into_parse_error(offset))?
+                {
+                    bounded.records.insert(id, bound);
                 }
             }
+            self.omit_bounded_expansions(
+                bounded,
+                &mut anchors,
+                &mut anchor_spans,
+                &mut records,
+                &mut omitted_spans,
+                &mut omissions,
+            );
         }
         // Validate the source occurrence class before local REFERENCES can
         // replace a forbidden token with an ordinary value.
@@ -1202,20 +1169,36 @@ impl Parser<'_, '_, '_> {
                             })
                         })
                 });
-        resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
-            .map_err(|error| error.into_parse_error(0))?;
+        let bounded = resolve_local_references(
+            &mut anchors,
+            &mut records,
+            &reference_entries,
+            &omissions.anchors,
+            payload_limit,
+            self.budget,
+        )?;
+        self.omit_bounded_expansions(
+            bounded,
+            &mut anchors,
+            &mut anchor_spans,
+            &mut records,
+            &mut omitted_spans,
+            &mut omissions,
+        );
         for (&id, record) in &mut records {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
 
-                parameters.prepend(
-                    Value::String(Vec::new()),
-                    self.budget,
-                    "step_omitted_name_recovery_item",
-                )?;
+                parameters.prepend(Value::String(Vec::new()));
                 match &mut self.omitted_entity_names {
                     Some((_, count)) => {
-                        *count = count.checked_add(1).ok_or_else(storage_overflow)?;
+                        let Some(next) = count.checked_add(1) else {
+                            return Self::err_at(
+                                record.span.start,
+                                "omitted entity name count exceeds the address space",
+                            );
+                        };
+                        *count = next;
                     }
                     None => {
                         self.omitted_entity_names = Some((record.span.start, NonZeroUsize::MIN));
@@ -1223,34 +1206,48 @@ impl Parser<'_, '_, '_> {
                 }
             }
             for partial in &record.partials {
-                self.budget.charge_work(1, "step_entity_name_admission")?;
                 if (record.partials.len() == 1 || partial.name == "REPRESENTATION_ITEM")
                     && named_carrier_arities(&partial.name).contains(&partial.parameters.len())
                     && partial.parameters.first().is_some_and(|value| {
                         !matches!(value, Value::String(_) | Value::Omitted | Value::Derived)
                     })
                 {
-                    self.budget.push_vec(
-                        &mut self.diagnostics,
-                        ParseDiagnostic {
-                            offset: record.span.start,
-                            kind: ParseDiagnosticKind::EntityNameUnreadable,
-                            message: self.budget.format_retained(format_args!("{} #{id} has a non-string name; parameter positions and exact source retained", partial.name), "step_entity_name_diagnostic")?,
-                        },
-                        "step_parse_diagnostics",
-                    )?;
+                    self.diagnostics.push(ParseDiagnostic {
+                        offset: record.span.start,
+                        kind: ParseDiagnosticKind::EntityNameUnreadable,
+                        message: format!("{} #{id} has a non-string name; parameter positions and exact source retained", partial.name),
+                    });
                 }
             }
         }
-        let mut reference_storage = self.budget.reserve_scoped(0, "step reference lookup")?;
+
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
+        let mut dependent = BoundedExpansions::default();
         for anchor in &anchors {
+            let mut bounded_reference = None;
+            for value in anchor.values() {
+                refs.clear();
+                value_refs.clear();
+                references(value, &mut refs, &mut value_refs, self.budget)?;
+                bounded_reference = refs
+                    .iter()
+                    .copied()
+                    .find(|id| omissions.records.contains(id));
+                if bounded_reference.is_some() {
+                    break;
+                }
+            }
+            if let Some(id) = bounded_reference {
+                dependent.anchors.insert(
+                    anchor.name.clone(),
+                    format!("depends on instance #{id}, omitted at its expansion limit"),
+                );
+                continue;
+            }
             refs.clear();
             value_refs.clear();
-            reference_storage.with_storage(|| {
-                references(&anchor.value, &mut refs, &mut value_refs, self.budget)
-            })?;
+            references(&anchor.value, &mut refs, &mut value_refs, self.budget)?;
             if refs
                 .iter()
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1266,9 +1263,7 @@ impl Parser<'_, '_, '_> {
             for tag in &anchor.tags {
                 refs.clear();
                 value_refs.clear();
-                reference_storage.with_storage(|| {
-                    references(&tag.value, &mut refs, &mut value_refs, self.budget)
-                })?;
+                references(&tag.value, &mut refs, &mut value_refs, self.budget)?;
                 if refs
                     .iter()
                     .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1283,6 +1278,14 @@ impl Parser<'_, '_, '_> {
                 }
             }
         }
+        self.omit_bounded_expansions(
+            dependent,
+            &mut anchors,
+            &mut anchor_spans,
+            &mut records,
+            &mut omitted_spans,
+            &mut omissions,
+        );
         self.omit_unresolved_records(
             &mut records,
             &external_reference_ids,
@@ -1306,23 +1309,20 @@ impl Parser<'_, '_, '_> {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
         if let Some((offset, count)) = self.omitted_entity_names {
-            self.budget.push_vec(&mut self.diagnostics,
-                ParseDiagnostic {
-                    offset,
-                    kind: ParseDiagnosticKind::OmittedEntityName,
-                    message: format!(
-                        "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
-                    ),
-                },
-                "step_parse_diagnostics",
-            )?;
+            self.diagnostics.push(ParseDiagnostic {
+                offset,
+                kind: ParseDiagnosticKind::OmittedEntityName,
+                message: format!(
+                    "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
+                ),
+            });
         }
         header.shrink_to_fit();
         anchors.shrink_to_fit();
         reference_entries.shrink_to_fit();
         data.shrink_to_fit();
         signatures.shrink_to_fit();
-        let entity_ids = EntityIndex::build(&records, self.budget)?;
+        let entity_ids = EntityIndex::build(&records);
         Ok((
             Exchange {
                 header,
@@ -1356,26 +1356,15 @@ impl Parser<'_, '_, '_> {
             let mut parts = partials::RecordPartials::single(first);
             while !self.peek(&TokenKind::RParen) {
                 let partial = self.partial(false)?;
-                parts = parts.push(partial, self.budget)?;
+                parts = parts.push(partial);
             }
             self.next_kind()?;
-            let mut name_storage = self.budget.reserve_scoped(0, "step partial name lookup")?;
+
             let mut canonical_names = Vec::new();
             for part in &parts {
-                name_storage.with_storage(|| {
-                    self.budget.push_vec(
-                        &mut canonical_names,
-                        part.name.as_str(),
-                        "step_parse_canonical_partial_names",
-                    )
-                })?;
+                canonical_names.push(part.name.as_str());
             }
-            self.budget.sort_unstable_by(
-                &mut canonical_names,
-                Ord::cmp,
-                |item| item.len(),
-                "step_parse_canonical_partial_name_sort",
-            )?;
+            canonical_names.sort_unstable_by(Ord::cmp);
             if canonical_names
                 .windows(2)
                 .any(|window| window[0] == window[1])
@@ -1386,20 +1375,16 @@ impl Parser<'_, '_, '_> {
                 .windows(2)
                 .all(|window| window[0].name < window[1].name)
             {
-                let message = self.budget.format_retained(format_args!(
-                        "complex partial records are not alphabetical: observed ({}), expected ({})",
-                        PartialNameList(&parts),
-                        SortedPartialNameList(&canonical_names),
-                    ), "step_parse_complex_partial_diagnostic_text")?;
-                self.budget.push_vec(
-                    &mut self.diagnostics,
-                    ParseDiagnostic {
-                        offset: start,
-                        kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
-                        message,
-                    },
-                    "step_parse_diagnostics",
-                )?;
+                let message = format!(
+                    "complex partial records are not alphabetical: observed ({}), expected ({})",
+                    PartialNameList(&parts),
+                    SortedPartialNameList(&canonical_names),
+                );
+                self.diagnostics.push(ParseDiagnostic {
+                    offset: start,
+                    kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
+                    message,
+                });
             }
             parts
         } else {
@@ -1442,10 +1427,10 @@ impl Parser<'_, '_, '_> {
         }
         self.lexer.set_literal_admission(LiteralAdmission::Required);
         if presentation && metadata::unreadable_literal(&parameters, self.budget)? {
-            self.budget.push_vec(&mut self.diagnostics, ParseDiagnostic {
+            self.diagnostics.push(ParseDiagnostic {
                 offset, kind: ParseDiagnosticKind::PresentationMetadataUnusable,
-                message: self.budget.format_retained(format_args!("{name} contains an unusable bounded presentation literal; exact record retained"), "STEP presentation literal diagnostic")?,
-            }, "step_parse_diagnostics")?;
+                message: format!("{name} contains an unusable bounded presentation literal; exact record retained"),
+            });
         }
         Ok(PartialRecord { name, parameters })
     }
@@ -1454,22 +1439,9 @@ impl Parser<'_, '_, '_> {
         &mut self,
         parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
     ) -> Result<T, ParseError> {
-        const MAX_VALUE_DEPTH: usize = 256;
         let budget = self.budget;
         let _nested = budget.enter_nested("step_parse_parameter_nesting")?;
-        if self.depth >= recursion_cap(budget, MAX_VALUE_DEPTH) {
-            return Err(budget
-                .refuse_codec_limit(
-                    "step_parse_parameter_depth_limit",
-                    u64_from_index(recursion_cap(budget, MAX_VALUE_DEPTH)),
-                    u64_from_index(self.depth + 1),
-                )
-                .into());
-        }
-        self.depth += 1;
-        let result = parse(self);
-        self.depth -= 1;
-        result
+        parse(self)
     }
 
     fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
@@ -1508,7 +1480,7 @@ impl Parser<'_, '_, '_> {
             if first_is_name {
                 self.lexer.set_literal_admission(LiteralAdmission::Required);
             }
-            values.push_value(value, self.budget)?;
+            values.push_value(value);
             if self.peek(&TokenKind::Comma) {
                 self.next_kind()?;
             } else {
@@ -1538,10 +1510,7 @@ impl Parser<'_, '_, '_> {
                 TokenKind::Omitted => Value::Omitted,
                 TokenKind::Derived => Value::Derived,
                 TokenKind::Name(name) => self.typed_parameter(name)?,
-                TokenKind::UserName(name) => self.typed_parameter(
-                    self.budget
-                        .format_retained(format_args!("!{name}"), "step_parse_user_name_prefix")?,
-                )?,
+                TokenKind::UserName(name) => self.typed_parameter(format!("!{name}"))?,
                 _ => return self.err("expected parameter value"),
             }
         };
@@ -1573,13 +1542,7 @@ impl Parser<'_, '_, '_> {
                 return Ok(Value::UninterpretedLiteral);
             }
             parser.punct(&TokenKind::RParen)?;
-            parser
-                .budget
-                .charge_collection_items(1, "step_parse_typed_value")?;
-            parser.budget.charge_retained(
-                u64_from_index(size_of::<Value>()),
-                "step_parse_typed_value_storage",
-            )?;
+
             Ok(Value::Typed(name, Box::new(value)))
         })
     }
@@ -1587,9 +1550,7 @@ impl Parser<'_, '_, '_> {
     fn take_name(&mut self) -> Result<String, ParseError> {
         match self.next_kind()? {
             TokenKind::Name(name) => Ok(name),
-            TokenKind::UserName(name) => Ok(self
-                .budget
-                .format_retained(format_args!("!{name}"), "step_parse_user_name_prefix")?),
+            TokenKind::UserName(name) => Ok(format!("!{name}")),
             _ => self.err("expected name"),
         }
     }
@@ -1598,10 +1559,7 @@ impl Parser<'_, '_, '_> {
         if actual == expected {
             Ok(())
         } else {
-            let message = self.budget.format_retained(
-                format_args!("expected {expected}, found {actual}"),
-                "step_parse_expected_name_error",
-            )?;
+            let message = format!("expected {expected}, found {actual}");
             Err(ParseError::Syntax {
                 offset: self.current_offset(),
                 message,
@@ -1654,9 +1612,6 @@ impl Parser<'_, '_, '_> {
             }
             Err(error) => return Err(ParseError::Lex(error)),
         };
-        if token.is_some() {
-            self.budget.charge_work(1, "step_lex_token")?;
-        }
         Ok(token)
     }
 
@@ -1677,10 +1632,6 @@ impl Parser<'_, '_, '_> {
             message: message.into(),
         })
     }
-}
-
-fn storage_overflow() -> CodecError {
-    cadmpeg_core::decode::refuse_local_limit("step allocation bytes", u64::MAX, u64::MAX)
 }
 
 /// Validate the three required header records, and admit the `FILE_SCHEMA`
@@ -1713,24 +1664,17 @@ fn push_header_metadata_diagnostic(
     diagnostics: &mut Vec<ParseDiagnostic>,
     offset: usize,
     message: std::fmt::Arguments<'_>,
-    budget: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let message = budget.format_retained(message, "step_header_metadata_diagnostic_text")?;
-    budget.push_vec(
-        diagnostics,
-        ParseDiagnostic {
-            offset,
-            kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
-            message,
-        },
-        "step_parse_diagnostics",
-    )
+) {
+    diagnostics.push(ParseDiagnostic {
+        offset,
+        kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+        message: message.to_string(),
+    });
 }
 
 /// Admit interpretation fields independently of header metadata conformance.
 fn validate_header(
     header: &[HeaderRecord],
-    budget: &DecodeContext<'_>,
 ) -> Result<(HeaderAdmission, Vec<ParseDiagnostic>), ValidationError> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     let mut diagnostics = Vec::new();
@@ -1748,7 +1692,7 @@ fn validate_header(
             .zip(REQUIRED)
             .any(|(record, expected)| record.name != expected)
     {
-        push_header_metadata_diagnostic(&mut diagnostics, offset, format_args!("HEADER does not begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA; records read by name"), budget)?;
+        push_header_metadata_diagnostic(&mut diagnostics, offset, format_args!("HEADER does not begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA; records read by name"));
     }
     let mut descriptions = header
         .iter()
@@ -1757,8 +1701,7 @@ fn validate_header(
     let text = match (description, descriptions.next()) {
         (Some(record), None) => match record.parameters.get(1) {
             Some(Value::String(bytes)) => {
-                decoded_bytes(bytes, ImplementationLevel::LegacyEdition1, budget)?
-                    .unwrap_or_default()
+                decoded_bytes(bytes, ImplementationLevel::LegacyEdition1).unwrap_or_default()
             }
             _ => String::new(),
         },
@@ -1766,16 +1709,12 @@ fn validate_header(
     };
     let declaration = DeclaredImplementationLevel::new(text);
     if declaration.is_unverified() {
-        let message = budget.format_retained(format_args!("FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar", declaration.text()), "step_implementation_level_diagnostic_text")?;
-        budget.push_vec(
-            &mut diagnostics,
-            ParseDiagnostic {
-                offset: description.map_or(offset, |record| record.offset),
-                kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-                message,
-            },
-            "step_parse_diagnostics",
-        )?;
+        let message = format!("FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar", declaration.text());
+        diagnostics.push(ParseDiagnostic {
+            offset: description.map_or(offset, |record| record.offset),
+            kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+            message,
+        });
     }
     let implementation_level = declaration.level();
     for name in ["FILE_DESCRIPTION", "FILE_NAME"] {
@@ -1785,16 +1724,15 @@ fn validate_header(
                 &mut diagnostics,
                 offset,
                 format_args!("HEADER contains {count} {name} records; expected one"),
-                budget,
-            )?;
+            );
         }
     }
     for record in header {
         let result = match record.name.as_str() {
             "FILE_DESCRIPTION" => {
-                validate_file_description(&record.parameters, implementation_level, budget)
+                validate_file_description(&record.parameters, implementation_level)
             }
-            "FILE_NAME" => validate_file_name(&record.parameters, implementation_level, budget),
+            "FILE_NAME" => validate_file_name(&record.parameters, implementation_level),
             _ => continue,
         };
         match result {
@@ -1803,8 +1741,7 @@ fn validate_header(
                 &mut diagnostics,
                 record.offset,
                 format_args!("{message}"),
-                budget,
-            )?,
+            ),
             Err(error @ ValidationError::Resource(_)) => return Err(error),
         }
     }
@@ -1819,42 +1756,33 @@ fn validate_header(
     let mut normalized_identifiers = BTreeSet::new();
     for value in identifiers {
         let identifier = match value {
-            Value::String(bytes) => decoded_bytes(bytes, implementation_level, budget)?,
+            Value::String(bytes) => decoded_bytes(bytes, implementation_level),
             _ => None,
         };
         let Some(identifier) = identifier.and_then(AdmittedSchemaIdentifier::admit) else {
-            push_header_metadata_diagnostic(&mut diagnostics, schema_record.offset, format_args!("FILE_SCHEMA contains an unusable identifier; schema selected from the readable identifiers"), budget)?;
+            push_header_metadata_diagnostic(&mut diagnostics, schema_record.offset, format_args!("FILE_SCHEMA contains an unusable identifier; schema selected from the readable identifiers"));
             continue;
         };
         let trimmed = identifier.text().trim();
-        budget.charge_retained(
-            u64_from_index(trimmed.len()),
-            "step_schema_identifier_normalized",
-        )?;
+
         let normalized = trimmed.to_ascii_uppercase();
-        if !budget.insert_btree_set(
-            &mut normalized_identifiers,
-            normalized,
-            "step_schema_identifier_names",
-        )? {
+        if !normalized_identifiers.insert(normalized) {
             push_header_metadata_diagnostic(
                 &mut diagnostics,
                 schema_record.offset,
                 format_args!(
                     "FILE_SCHEMA repeats an identifier; duplicate excluded from schema selection"
                 ),
-                budget,
-            )?;
+            );
             continue;
         }
-        budget.push_vec(&mut admitted, identifier, "step_schema_identifiers")?;
+        admitted.push(identifier);
     }
     if admitted.is_empty() {
         return invalid("FILE_SCHEMA has no usable schema identifiers");
     }
-    for diagnostic in schema_object_identifier_diagnostics(&admitted, schema_record.offset, budget)
-    {
-        budget.push_vec(&mut diagnostics, diagnostic?, "step_parse_diagnostics")?;
+    for diagnostic in schema_object_identifier_diagnostics(&admitted, schema_record.offset) {
+        diagnostics.push(diagnostic?);
     }
     Ok((
         HeaderAdmission {
@@ -1868,7 +1796,6 @@ fn validate_header(
 fn validate_file_description(
     description: &[Value],
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
 ) -> Result<(), ValidationError> {
     let [description_strings, implementation_level_value @ Value::String(_)] = description else {
         return invalid("FILE_DESCRIPTION has invalid parameters");
@@ -1876,18 +1803,13 @@ fn validate_file_description(
     if !is_string_list(Some(description_strings)) {
         return invalid("FILE_DESCRIPTION has invalid parameters");
     }
-    if !is_decodable_string_list(Some(description_strings), implementation_level, budget)?
-        || !is_decodable_string(implementation_level_value, implementation_level, budget)?
+    if !is_decodable_string_list(Some(description_strings), implementation_level)
+        || !is_decodable_string(implementation_level_value, implementation_level)
     {
         return invalid("FILE_DESCRIPTION has invalid string encoding");
     }
-    if !string_list_within_limit(Some(description_strings), implementation_level, 256, budget)?
-        || !string_within_limit(
-            implementation_level_value,
-            implementation_level,
-            256,
-            budget,
-        )?
+    if !string_list_within_limit(Some(description_strings), implementation_level, 256)
+        || !string_within_limit(implementation_level_value, implementation_level, 256)
     {
         return invalid("FILE_DESCRIPTION contains a string longer than 256 characters");
     }
@@ -1898,7 +1820,6 @@ fn validate_file_description(
 fn validate_file_name(
     file_name: &[Value],
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
 ) -> Result<(), ValidationError> {
     // Producer metadata after the author and organization lists may be unset.
     let [file_name_value, file_name_timestamp, authors, organizations, preprocessor, originating_system, authorization] =
@@ -1916,26 +1837,25 @@ fn validate_file_name(
     {
         return invalid("FILE_NAME has invalid parameters");
     }
-    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level, budget)?
-    else {
+    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level) else {
         return invalid("FILE_NAME has invalid string encoding");
     };
-    if !is_decodable_string(file_name_value, implementation_level, budget)?
-        || !is_decodable_string_list(Some(authors), implementation_level, budget)?
-        || !is_decodable_string_list(Some(organizations), implementation_level, budget)?
-        || !is_decodable_string_or_omitted(preprocessor, implementation_level, budget)?
-        || !is_decodable_string_or_omitted(originating_system, implementation_level, budget)?
-        || !is_decodable_string_or_omitted(authorization, implementation_level, budget)?
+    if !is_decodable_string(file_name_value, implementation_level)
+        || !is_decodable_string_list(Some(authors), implementation_level)
+        || !is_decodable_string_list(Some(organizations), implementation_level)
+        || !is_decodable_string_or_omitted(preprocessor, implementation_level)
+        || !is_decodable_string_or_omitted(originating_system, implementation_level)
+        || !is_decodable_string_or_omitted(authorization, implementation_level)
     {
         return invalid("FILE_NAME has invalid string encoding");
     }
-    if !string_within_limit(file_name_value, implementation_level, 256, budget)?
-        || !string_within_limit(file_name_timestamp, implementation_level, 256, budget)?
-        || !string_list_within_limit(Some(authors), implementation_level, 256, budget)?
-        || !string_list_within_limit(Some(organizations), implementation_level, 256, budget)?
-        || !string_or_omitted_within_limit(preprocessor, implementation_level, 256, budget)?
-        || !string_or_omitted_within_limit(originating_system, implementation_level, 256, budget)?
-        || !string_or_omitted_within_limit(authorization, implementation_level, 256, budget)?
+    if !string_within_limit(file_name_value, implementation_level, 256)
+        || !string_within_limit(file_name_timestamp, implementation_level, 256)
+        || !string_list_within_limit(Some(authors), implementation_level, 256)
+        || !string_list_within_limit(Some(organizations), implementation_level, 256)
+        || !string_or_omitted_within_limit(preprocessor, implementation_level, 256)
+        || !string_or_omitted_within_limit(originating_system, implementation_level, 256)
+        || !string_or_omitted_within_limit(authorization, implementation_level, 256)
     {
         return invalid("FILE_NAME contains a string longer than 256 characters");
     }
@@ -1948,16 +1868,13 @@ fn validate_file_name(
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
 /// under its schema name alone.
-fn schema_object_identifier_diagnostics<'a>(
-    admitted: &'a [AdmittedSchemaIdentifier],
+fn schema_object_identifier_diagnostics(
+    admitted: &[AdmittedSchemaIdentifier],
     offset: usize,
-    budget: &'a DecodeContext<'_>,
-) -> impl Iterator<Item = Result<ParseDiagnostic, CodecError>> + 'a {
+) -> impl Iterator<Item = Result<ParseDiagnostic, CodecError>> + '_ {
     admitted
         .iter()
-        .filter_map(move |identifier| identifier.out_of_range().map(|(name, component)| budget.format_retained(format_args!(
-                    "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
-                ), "step_schema_oid_diagnostic_text")
+        .filter_map(move |identifier| identifier.out_of_range().map(|(name, component)| Ok(format!("FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"))
             .map(|message| ParseDiagnostic {
                 offset,
                 kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
@@ -1974,7 +1891,6 @@ fn validate_header_sections(
     implementation_level: ImplementationLevel,
     header: &[HeaderRecord],
     schema_identifiers: &[String],
-    budget: &DecodeContext<'_>,
 ) -> Result<Vec<HeaderDataReferences>, ValidationError> {
     let has = |name: &str| header.iter().any(|record| record.name == name);
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION") {
@@ -2021,7 +1937,7 @@ fn validate_header_sections(
                     return invalid("HEADER contains duplicate SCHEMA_POPULATION");
                 }
                 schema_population_seen = true;
-                if !valid_schema_population(&record.parameters, implementation_level, budget)? {
+                if !valid_schema_population(&record.parameters, implementation_level) {
                     return invalid("SCHEMA_POPULATION has invalid parameters");
                 }
             }
@@ -2030,73 +1946,34 @@ fn validate_header_sections(
                     &record.parameters,
                     schema_identifiers,
                     implementation_level,
-                    budget,
                 )
                 .map_err(|error| error.with_message("FILE_POPULATION has invalid parameters"))?;
-                budget
-                    .push_vec(
-                        &mut references,
-                        HeaderDataReferences::FilePopulation(sections),
-                        "step_header_data_references",
-                    )
-                    .map_err(ValidationError::Resource)?;
+                references.push(HeaderDataReferences::FilePopulation(sections));
             }
             "SECTION_LANGUAGE" => {
-                let section =
-                    valid_section_language(&record.parameters, implementation_level, budget)
-                        .map_err(|error| {
-                            error.with_message("SECTION_LANGUAGE has invalid parameters")
-                        })?;
-                let section_copy = section
-                    .as_deref()
-                    .map(|value| {
-                        budget.copy_retained_text(value, "step_section_language_name_copy")
-                    })
-                    .transpose()
-                    .map_err(ValidationError::Resource)?;
-                if !budget.insert_btree_set(
-                    &mut language_sections,
-                    section_copy,
-                    "step_section_language_names",
-                )? {
+                let section = valid_section_language(&record.parameters, implementation_level)
+                    .map_err(|error| {
+                        error.with_message("SECTION_LANGUAGE has invalid parameters")
+                    })?;
+                let section_copy = section.as_deref().map(std::borrow::ToOwned::to_owned);
+                if !language_sections.insert(section_copy) {
                     return invalid("HEADER contains duplicate SECTION_LANGUAGE section");
                 }
                 if let Some(section) = section {
-                    budget
-                        .push_vec(
-                            &mut references,
-                            HeaderDataReferences::Section(section),
-                            "step_header_data_references",
-                        )
-                        .map_err(ValidationError::Resource)?;
+                    references.push(HeaderDataReferences::Section(section));
                 }
             }
             "SECTION_CONTEXT" => {
-                let section =
-                    valid_section_context(&record.parameters, implementation_level, budget)
-                        .map_err(|error| {
-                            error.with_message("SECTION_CONTEXT has invalid parameters")
-                        })?;
-                let section_copy = section
-                    .as_deref()
-                    .map(|value| budget.copy_retained_text(value, "step_section_context_name_copy"))
-                    .transpose()
-                    .map_err(ValidationError::Resource)?;
-                if !budget.insert_btree_set(
-                    &mut context_sections,
-                    section_copy,
-                    "step_section_context_names",
-                )? {
+                let section = valid_section_context(&record.parameters, implementation_level)
+                    .map_err(|error| {
+                        error.with_message("SECTION_CONTEXT has invalid parameters")
+                    })?;
+                let section_copy = section.as_deref().map(std::borrow::ToOwned::to_owned);
+                if !context_sections.insert(section_copy) {
                     return invalid("HEADER contains duplicate SECTION_CONTEXT section");
                 }
                 if let Some(section) = section {
-                    budget
-                        .push_vec(
-                            &mut references,
-                            HeaderDataReferences::Section(section),
-                            "step_header_data_references",
-                        )
-                        .map_err(ValidationError::Resource)?;
+                    references.push(HeaderDataReferences::Section(section));
                 }
             }
             _ => return invalid("HEADER contains an unsupported entity"),
@@ -2108,47 +1985,45 @@ fn validate_header_sections(
 fn valid_schema_population(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> bool {
     let [Value::List(identifications)] = parameters else {
-        return Ok(false);
+        return false;
     };
     if identifications.is_empty() {
-        return Ok(false);
+        return false;
     }
     for identification in identifications {
         let Value::List(values) = identification else {
-            return Ok(false);
+            return false;
         };
         let [Value::String(address), time_stamp, digest] = values.as_slice() else {
-            return Ok(false);
+            return false;
         };
-        if decoded_bytes(address, implementation_level, budget)?.is_none()
-            || !valid_optional_timestamp(time_stamp, implementation_level, budget)?
-            || !valid_optional_base64(digest, implementation_level, budget)?
+        if decoded_bytes(address, implementation_level).is_none()
+            || !valid_optional_timestamp(time_stamp, implementation_level)
+            || !valid_optional_base64(digest, implementation_level)
         {
-            return Ok(false);
+            return false;
         }
     }
-    Ok(true)
+    true
 }
 
 fn admit_file_population(
     parameters: &[Value],
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, ValidationError> {
     let [Value::String(schema), Value::String(determination), governed_sections] = parameters
     else {
         return invalid("FILE_POPULATION has invalid parameters");
     };
-    let Some(schema) = decoded_bytes(schema, implementation_level, budget)? else {
+    let Some(schema) = decoded_bytes(schema, implementation_level) else {
         return invalid("FILE_POPULATION has invalid parameters");
     };
     if !valid_schema_identifier(&schema)
-        || decoded_bytes(determination, implementation_level, budget)?.is_none()
-        || !schema_identifier_matches(schema_identifiers, &schema, budget)?
+        || decoded_bytes(determination, implementation_level).is_none()
+        || !schema_identifier_matches(schema_identifiers, &schema)
     {
         return invalid("FILE_POPULATION has invalid parameters");
     }
@@ -2157,10 +2032,10 @@ fn admit_file_population(
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
             for section in sections {
-                let Some(section) = decoded_string(section, implementation_level, budget)? else {
+                let Some(section) = decoded_string(section, implementation_level) else {
                     return invalid("FILE_POPULATION has invalid parameters");
                 };
-                if !budget.insert_btree_set(&mut names, section, "step_file_population_sections")? {
+                if !names.insert(section) {
                     return invalid("FILE_POPULATION has invalid parameters");
                 }
             }
@@ -2173,24 +2048,22 @@ fn admit_file_population(
 fn valid_section_language(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, ValidationError> {
     let [section, language] = parameters else {
         return invalid("SECTION_LANGUAGE has invalid parameters");
     };
-    let Some(language) = decoded_string(language, implementation_level, budget)? else {
+    let Some(language) = decoded_string(language, implementation_level) else {
         return invalid("SECTION_LANGUAGE has invalid parameters");
     };
     if language.len() != 3 || !language.bytes().all(|byte| byte.is_ascii_alphabetic()) {
         return invalid("SECTION_LANGUAGE has invalid parameters");
     }
-    valid_optional_section_name(section, implementation_level, budget)
+    valid_optional_section_name(section, implementation_level)
 }
 
 fn valid_section_context(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, ValidationError> {
     let [section, Value::List(contexts)] = parameters else {
         return invalid("SECTION_CONTEXT has invalid parameters");
@@ -2199,116 +2072,101 @@ fn valid_section_context(
         return invalid("SECTION_CONTEXT has invalid parameters");
     }
     for context in contexts {
-        if decoded_string(context, implementation_level, budget)?.is_none() {
+        if decoded_string(context, implementation_level).is_none() {
             return invalid("SECTION_CONTEXT has invalid parameters");
         }
     }
-    valid_optional_section_name(section, implementation_level, budget)
+    valid_optional_section_name(section, implementation_level)
 }
 
 fn valid_optional_section_name(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, ValidationError> {
     match value {
         Value::Omitted => Ok(None),
-        value => decoded_string(value, implementation_level, budget)?
+        value => decoded_string(value, implementation_level)
             .map(Some)
             .ok_or(ValidationError::Invalid("invalid section name")),
     }
 }
 
-fn is_decodable_string(
-    value: &Value,
-    implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
-    Ok(decoded_string(value, implementation_level, budget)?.is_some())
+fn is_decodable_string(value: &Value, implementation_level: ImplementationLevel) -> bool {
+    decoded_string(value, implementation_level).is_some()
 }
 
 fn is_decodable_string_list(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> bool {
     let Some(Value::List(values)) = value else {
-        return Ok(false);
+        return false;
     };
     if values.is_empty() {
-        return Ok(false);
+        return false;
     }
     for value in values {
-        if !is_decodable_string(value, implementation_level, budget)? {
-            return Ok(false);
+        if !is_decodable_string(value, implementation_level) {
+            return false;
         }
     }
-    Ok(true)
+    true
 }
 
 fn is_decodable_string_or_omitted(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> bool {
     if matches!(value, Value::Omitted) {
-        return Ok(true);
+        return true;
     }
-    is_decodable_string(value, implementation_level, budget)
+    is_decodable_string(value, implementation_level)
 }
 
 fn string_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
-    Ok(decoded_string(value, implementation_level, budget)?
-        .is_some_and(|value| value.chars().count() <= limit))
+) -> bool {
+    decoded_string(value, implementation_level).is_some_and(|value| value.chars().count() <= limit)
 }
 
 fn string_list_within_limit(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
     limit: usize,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> bool {
     let Some(Value::List(values)) = value else {
-        return Ok(false);
+        return false;
     };
     if values.is_empty() {
-        return Ok(false);
+        return false;
     }
     for value in values {
-        if !string_within_limit(value, implementation_level, limit, budget)? {
-            return Ok(false);
+        if !string_within_limit(value, implementation_level, limit) {
+            return false;
         }
     }
-    Ok(true)
+    true
 }
 
 fn string_or_omitted_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> bool {
     if matches!(value, Value::Omitted) {
-        return Ok(true);
+        return true;
     }
-    string_within_limit(value, implementation_level, limit, budget)
+    string_within_limit(value, implementation_level, limit)
 }
 
-fn valid_optional_timestamp(
-    value: &Value,
-    implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+fn valid_optional_timestamp(value: &Value, implementation_level: ImplementationLevel) -> bool {
     match value {
-        Value::Omitted => Ok(true),
-        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
-            .is_some_and(|value| valid_timestamp_text(&value))),
-        _ => Ok(false),
+        Value::Omitted => true,
+        Value::String(_) => decoded_string(value, implementation_level)
+            .is_some_and(|value| valid_timestamp_text(&value)),
+        _ => false,
     }
 }
 
@@ -2398,16 +2256,12 @@ fn parse_ascii_digits(bytes: &[u8]) -> usize {
         .fold(0, |value, byte| value * 10 + usize::from(byte - b'0'))
 }
 
-fn valid_optional_base64(
-    value: &Value,
-    implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+fn valid_optional_base64(value: &Value, implementation_level: ImplementationLevel) -> bool {
     match value {
-        Value::Omitted => Ok(true),
-        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
-            .is_some_and(|value| valid_base64_text(value.as_bytes()))),
-        _ => Ok(false),
+        Value::Omitted => true,
+        Value::String(_) => decoded_string(value, implementation_level)
+            .is_some_and(|value| valid_base64_text(value.as_bytes())),
+        _ => false,
     }
 }
 
@@ -2443,46 +2297,26 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
     quantum_len == 0
 }
 
-fn decoded_string(
-    value: &Value,
-    implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<Option<String>, CodecError> {
+fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {
     let Value::String(bytes) = value else {
-        return Ok(None);
+        return None;
     };
-    decoded_bytes(bytes, implementation_level, budget)
+    decoded_bytes(bytes, implementation_level)
 }
 
-fn decoded_bytes(
-    bytes: &[u8],
-    implementation_level: ImplementationLevel,
-    budget: &DecodeContext<'_>,
-) -> Result<Option<String>, CodecError> {
-    let result = crate::strings::decode_with_context(bytes, implementation_level, budget);
-    match result {
-        Ok(value) => Ok(Some(value)),
-        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
-        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
-    }
+fn decoded_bytes(bytes: &[u8], implementation_level: ImplementationLevel) -> Option<String> {
+    crate::strings::decode(bytes, implementation_level).ok()
 }
 
-fn schema_identifier_matches(
-    schema_identifiers: &[String],
-    schema_name: &str,
-    budget: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -> bool {
     let trimmed = schema_name.trim();
-    let (mut schema_name, _storage) = budget
-        .with_scoped_storage("step_schema_name_matching", || {
-            budget.copy_retained_text(trimmed, "step_schema_name_matching")
-        })?;
+    let mut schema_name = trimmed.to_owned();
     schema_name.make_ascii_uppercase();
-    Ok(schema_identifiers.iter().any(|identifier| {
+    schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
         identifier == schema_name
             || split_schema_identifier(identifier).is_some_and(|(name, _)| name == schema_name)
-    }))
+    })
 }
 
 fn validate_header_data_references(
@@ -2514,7 +2348,6 @@ fn valid_data_parameters(
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
     section_names: &mut BTreeSet<String>,
-    budget: &DecodeContext<'_>,
 ) -> Result<(), ValidationError> {
     let [Value::String(section_name), Value::List(schema)] = parameters else {
         return invalid("DATA section parameters must contain a name and one schema");
@@ -2522,17 +2355,17 @@ fn valid_data_parameters(
     let [Value::String(schema_name)] = schema.as_slice() else {
         return invalid("DATA section parameters must contain a name and one schema");
     };
-    let Some(section_name) = decoded_bytes(section_name, implementation_level, budget)? else {
+    let Some(section_name) = decoded_bytes(section_name, implementation_level) else {
         return invalid("DATA section parameters contain an invalid string");
     };
-    if !budget.insert_btree_set(section_names, section_name, "step_data_section_names")? {
+    if !section_names.insert(section_name) {
         return invalid("DATA section names must be unique");
     }
-    let Some(schema_name) = decoded_bytes(schema_name, implementation_level, budget)? else {
+    let Some(schema_name) = decoded_bytes(schema_name, implementation_level) else {
         return invalid("DATA section parameters contain an invalid string");
     };
     if !valid_schema_identifier(&schema_name)
-        || !schema_identifier_matches(schema_identifiers, &schema_name, budget)?
+        || !schema_identifier_matches(schema_identifiers, &schema_name)
     {
         return invalid("DATA section schema is not listed in FILE_SCHEMA");
     }
@@ -2542,16 +2375,15 @@ fn valid_data_parameters(
 /// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
 fn schema_names_for_matching(
     admitted: &[AdmittedSchemaIdentifier],
-    budget: &DecodeContext<'_>,
-) -> Result<Vec<String>, ParseError> {
+) -> std::vec::Vec<std::string::String> {
     let mut names = Vec::new();
     for identifier in admitted {
         let source = identifier.text();
-        let mut name = budget.copy_retained_text(source, "step_schema_matching_name")?;
+        let mut name = source.to_owned();
         name.make_ascii_uppercase();
-        budget.push_vec(&mut names, name, "step_schema_matching_names")?;
+        names.push(name);
     }
-    Ok(names)
+    names
 }
 
 fn is_string_list(value: Option<&Value>) -> bool {
@@ -2591,16 +2423,37 @@ fn is_anchor_item(value: &Value) -> bool {
 #[derive(Debug)]
 enum ResolveError {
     Syntax(String),
+    /// A value-node or payload limit stopped the expansion; the message
+    /// names the bound.
+    Bounded(String),
     Resource(CodecError),
 }
 
 impl ResolveError {
     fn into_parse_error(self, offset: usize) -> ParseError {
         match self {
-            Self::Syntax(message) => ParseError::Syntax { offset, message },
+            Self::Syntax(message) | Self::Bounded(message) => {
+                ParseError::Syntax { offset, message }
+            }
             Self::Resource(error) => ParseError::Resource(error),
         }
     }
+}
+
+/// Anchors and instances whose expansion passed a value-node limit, each with
+/// the bound that stopped it.
+#[derive(Default)]
+struct BoundedExpansions {
+    anchors: BTreeMap<String, String>,
+    records: BTreeMap<u64, String>,
+}
+
+/// Anchors and instances that a value-node limit removed from the
+/// interpreted graph.
+#[derive(Default)]
+struct ExpansionOmissions {
+    anchors: BTreeSet<String>,
+    records: BTreeSet<u64>,
 }
 
 impl From<String> for ResolveError {
@@ -2621,354 +2474,526 @@ impl From<CodecError> for ResolveError {
     }
 }
 
-fn collection_cap(budget: &DecodeContext<'_>, format_cap: usize) -> usize {
-    usize::try_from(budget.policy().limits.max_collection_items)
-        .map_or(format_cap, |policy| policy.min(format_cap))
+/// What an item's expansion is known to do before it copies anything.
+enum KnownOutcome {
+    /// Every expansion in the item fits the remaining nodes.
+    Fits,
+    /// The item stops at this bound.
+    Bounded(String),
+    /// Only a full expansion decides the item.
+    Unknown,
 }
 
-fn recursion_cap(budget: &DecodeContext<'_>, format_cap: usize) -> usize {
-    usize::try_from(budget.policy().limits.max_recursion_depth)
-        .map_or(format_cap, |policy| policy.min(format_cap))
+/// The bounds that one top-level expansion met before. An expansion that
+/// starts from an empty reference stack checks the same bounds in the same
+/// order at every budget, so a node-limit bound recurs at every smaller
+/// budget and any other bound, met before the node limit, recurs at every
+/// larger budget.
+#[derive(Default)]
+struct ExpansionBounds {
+    /// The largest budget at which the expansion passed the node limit.
+    node_limit_at: Option<usize>,
+    /// The smallest budget at which the expansion met another bound, with
+    /// that bound.
+    other_at: Option<(usize, String)>,
+}
+
+impl ExpansionBounds {
+    fn record(&mut self, budget: usize, bound: &str, node_limit: &str) {
+        if bound == node_limit {
+            self.node_limit_at = Some(self.node_limit_at.map_or(budget, |at| at.max(budget)));
+        } else if self.other_at.as_ref().is_none_or(|(at, _)| budget < *at) {
+            self.other_at = Some((budget, bound.to_owned()));
+        }
+    }
+
+    fn bound_at(&self, budget: usize, node_limit: &str) -> Option<String> {
+        if self.node_limit_at.is_some_and(|at| budget <= at) {
+            return Some(node_limit.to_owned());
+        }
+        self.other_at
+            .as_ref()
+            .filter(|(at, _)| *at <= budget)
+            .map(|(_, bound)| bound.clone())
+    }
 }
 
 struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
-    memo: BTreeMap<&'a str, (Value, usize)>,
+    /// Each expanded anchor with its value nodes and payload octets.
+    memo: BTreeMap<&'a str, (Value, usize, u64)>,
+    bounds: BTreeMap<&'a str, ExpansionBounds>,
     remaining_nodes: usize,
+    /// Value nodes that omitted items may still copy; `None` once spent.
+    discard_allowance: Option<usize>,
+    /// Value nodes that the current item has copied or counted.
+    item_nodes: usize,
+    payload: PayloadAllowance,
     budget: &'ctx DecodeContext<'arena>,
-    storage: ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
+    /// Value nodes that anchor expansion may copy across the whole exchange.
     const MAX_EXPANDED_NODES: usize = 1_000_000;
-    const MAX_REFERENCE_DEPTH: usize = 256;
+    /// Value nodes that items omitted at the node limit may copy across the
+    /// whole exchange before their expansion stopped.
+    const MAX_DISCARDED_EXPANDED_NODES: usize = 16 * Self::MAX_EXPANDED_NODES;
 
     fn new(
         anchors: &'a BTreeMap<String, Value>,
+        payload_limit: u64,
         budget: &'ctx DecodeContext<'arena>,
-    ) -> Result<Self, ResolveError> {
-        Ok(Self {
-            storage: budget.reserve_scoped(0, "step_anchor_resolver_storage")?,
+    ) -> Self {
+        Self {
             anchors,
             memo: BTreeMap::new(),
-            remaining_nodes: collection_cap(budget, Self::MAX_EXPANDED_NODES),
+            bounds: BTreeMap::new(),
+            remaining_nodes: Self::MAX_EXPANDED_NODES,
+            discard_allowance: Some(Self::MAX_DISCARDED_EXPANDED_NODES),
+            item_nodes: 0,
+            payload: PayloadAllowance::new(payload_limit),
             budget,
-        })
+        }
+    }
+
+    /// Resolves every value of one anchor or instance. A value that passes
+    /// the node limit leaves the item unresolved, returns the bound, and
+    /// gives back the nodes that the item's earlier values used.
+    fn resolve_item<'v>(
+        &mut self,
+        values: impl Iterator<Item = &'v mut Value>,
+    ) -> Result<Option<String>, ResolveError> {
+        let values = values.collect::<Vec<_>>();
+        match self.known_outcome(&values) {
+            KnownOutcome::Bounded(bound) => return Ok(Some(bound)),
+            KnownOutcome::Unknown if self.discard_allowance.is_none() => {
+                return Ok(Some(Self::discard_limit_bound()));
+            }
+            KnownOutcome::Fits | KnownOutcome::Unknown => {}
+        }
+        let remaining = self.remaining_nodes;
+        self.item_nodes = 0;
+        for value in values {
+            match self.resolve_root(value) {
+                Ok(resolved) => *value = resolved,
+                Err(ResolveError::Bounded(bound)) => {
+                    self.remaining_nodes = remaining;
+                    self.discard_allowance = self
+                        .discard_allowance
+                        .and_then(|allowance| allowance.checked_sub(self.item_nodes));
+                    return Ok(Some(bound));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
+    }
+
+    /// Decides the item from earlier expansions of its top-level
+    /// references, without copying.
+    fn known_outcome(&self, values: &[&mut Value]) -> KnownOutcome {
+        let node_limit = Self::node_limit_bound();
+        let mut budget = self.remaining_nodes;
+        let mut payload = self.payload.remaining;
+        let mut pending = values
+            .iter()
+            .rev()
+            .map(|value| &**value)
+            .collect::<Vec<_>>();
+        while let Some(value) = pending.pop() {
+            match value {
+                Value::Resource(name) => {
+                    let Some(name) = name
+                        .strip_prefix('#')
+                        .filter(|name| self.anchors.contains_key(*name))
+                    else {
+                        continue;
+                    };
+                    if let Some((_, nodes, octets)) = self.memo.get(name) {
+                        let Some(rest) = budget.checked_sub(*nodes) else {
+                            return KnownOutcome::Bounded(node_limit);
+                        };
+                        let Some(rest_payload) = payload.checked_sub(*octets) else {
+                            return KnownOutcome::Bounded(self.payload.bound("anchor"));
+                        };
+                        budget = rest;
+                        payload = rest_payload;
+                    } else if let Some(bound) = self
+                        .bounds
+                        .get(name)
+                        .and_then(|bounds| bounds.bound_at(budget, &node_limit))
+                    {
+                        return KnownOutcome::Bounded(bound);
+                    } else {
+                        return KnownOutcome::Unknown;
+                    }
+                }
+                Value::List(values) => pending.extend(values.iter().rev()),
+                Value::Typed(_, value) => pending.push(value),
+                _ => {}
+            }
+        }
+        KnownOutcome::Fits
     }
 
     fn resolve_root(&mut self, value: &Value) -> Result<Value, ResolveError> {
-        let mut stack_storage = self
-            .budget
-            .reserve_scoped(0, "step_anchor_reference_stack_storage")?;
         let mut stack = Vec::new();
-        let (value, _, expanded_nodes) = self.resolve(
-            value,
-            &mut stack,
-            &mut stack_storage,
-            self.remaining_nodes,
-            0,
-        )?;
+        let (value, _, expanded_nodes) = self.resolve(value, &mut stack, self.remaining_nodes)?;
         self.remaining_nodes = self
             .remaining_nodes
             .checked_sub(expanded_nodes)
-            .ok_or_else(|| self.node_limit_error())?;
+            .ok_or_else(Self::node_limit_error)?;
         Ok(value)
     }
 
-    fn node_limit_error(&self) -> ResolveError {
-        self.budget
-            .refuse_codec_limit(
-                "step_anchor_output_node_limit",
-                u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES)),
-                u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES) + 1),
-            )
-            .into()
+    fn node_limit_bound() -> String {
+        format!(
+            "anchor expansion exceeds {} value nodes",
+            Self::MAX_EXPANDED_NODES
+        )
     }
 
-    fn charge_nodes(&self, count: usize) -> Result<(), ResolveError> {
-        let count = u64_from_index(count);
-        self.budget
-            .charge_collection_items(count, "step_anchor_materialization")
-            .map_err(ResolveError::Resource)?;
+    fn node_limit_error() -> ResolveError {
+        ResolveError::Bounded(Self::node_limit_bound())
+    }
+
+    fn discard_limit_bound() -> String {
+        format!(
+            "anchor expansions omitted at the node limit already copied {} value nodes",
+            Self::MAX_DISCARDED_EXPANDED_NODES
+        )
+    }
+
+    fn count_item_nodes(&mut self, nodes: usize) -> Result<(), ResolveError> {
+        self.item_nodes = self
+            .item_nodes
+            .checked_add(nodes)
+            .ok_or_else(Self::node_limit_error)?;
         Ok(())
+    }
+
+    fn charge_payload(&mut self, octets: u64) -> Result<(), ResolveError> {
+        if self.payload.charge(octets) {
+            Ok(())
+        } else {
+            Err(ResolveError::Bounded(self.payload.bound("anchor")))
+        }
     }
 
     fn resolve(
         &mut self,
         value: &Value,
         stack: &mut Vec<&'a str>,
-        stack_storage: &mut ScopedReservation<'ctx>,
         budget: usize,
-        depth: usize,
     ) -> Result<(Value, usize, usize), ResolveError> {
-        let _nested = self
-            .budget
-            .enter_nested("step_anchor_reference")
-            .map_err(ResolveError::Resource)?;
-        self.budget.charge_work(1, "step_anchor_materialization")?;
-        if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err(self
-                .budget
-                .refuse_codec_limit(
-                    "step_anchor_depth_limit",
-                    u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
-                    u64_from_index(depth + 1),
-                )
-                .into());
-        }
+        let _nested = self.budget.enter_nested("step_anchor_reference")?;
+        self.count_item_nodes(1)?;
         if let Value::Resource(name) = value {
             if let Some((name, source)) = name
                 .strip_prefix('#')
                 .and_then(|name| self.anchors.get_key_value(name))
             {
                 let name = name.as_str();
-                if let Some((value, nodes)) = self.memo.get(name) {
+                if let Some((value, nodes, octets)) = self.memo.get(name) {
                     if *nodes > budget {
-                        return Err(self.node_limit_error());
+                        return Err(Self::node_limit_error());
                     }
-                    self.charge_nodes(*nodes)?;
-                    return Ok((
-                        try_clone_value(value, self.budget, "step_anchor_memo_value_copy")
-                            .map_err(ResolveError::Resource)?,
-                        *nodes,
-                        *nodes,
-                    ));
+                    if !self.payload.charge(*octets) {
+                        return Err(ResolveError::Bounded(self.payload.bound("anchor")));
+                    }
+                    let (value, nodes) = (try_clone_value(value, self.budget)?, *nodes);
+                    self.count_item_nodes(nodes)?;
+                    return Ok((value, nodes, nodes));
                 }
                 if stack.contains(&name) {
-                    let message = self
-                        .budget
-                        .format_retained(
-                            format_args!("cyclic anchor binding <{name}>"),
-                            "step_cyclic_anchor_error_text",
-                        )
-                        .map_err(ResolveError::Resource)?;
+                    let message = format!("cyclic anchor binding <{name}>");
                     return Err(message.into());
                 }
-                value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
-
-                stack_storage
-                    .with_storage(|| {
-                        self.budget
-                            .charge_collection_items(1, "step_anchor_reference_stack")?;
-                        self.budget.reserve_capacity(
-                            stack,
-                            1,
-                            "step_anchor_reference_stack_storage",
-                        )
-                    })
-                    .map_err(ResolveError::Resource)?;
-                stack.push(name);
-                let resolved = self.resolve(source, stack, stack_storage, budget, depth + 1);
-                stack.pop();
-                let (value, nodes, _) = resolved?;
-                if nodes > budget {
-                    return Err(self.node_limit_error());
-                }
-                self.charge_nodes(nodes)?;
-                self.storage
-                    .with_storage(|| {
-                        self.budget.admit_btree_entry(
-                            &self.memo,
-                            &name,
-                            "step_anchor_memo_entry",
-                        )?;
-                        self.memo.insert(
-                            name,
-                            (
-                                try_clone_value(
-                                    &value,
-                                    self.budget,
-                                    "step_anchor_memo_value_copy",
-                                )?,
-                                nodes,
-                            ),
+                let top_level = stack.is_empty();
+                let expanded = self.expand(name, source, stack, budget);
+                if top_level {
+                    if let Err(ResolveError::Bounded(bound)) = &expanded {
+                        self.bounds.entry(name).or_default().record(
+                            budget,
+                            bound,
+                            &Self::node_limit_bound(),
                         );
-                        Ok::<(), CodecError>(())
-                    })
-                    .map_err(ResolveError::Resource)?;
-                return Ok((value, nodes, nodes));
+                    }
+                }
+                return expanded;
             }
         }
         match value {
             Value::List(values) => {
-                self.charge_nodes(1)?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
-                let mut resolved = self
-                    .budget
-                    .collection_vec(values.len(), "step_anchor_list_items")
-                    .map_err(ResolveError::Resource)?;
+                let mut resolved = Vec::new();
                 for value in values {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
-                        .ok_or_else(|| self.node_limit_error())?;
+                        .ok_or_else(Self::node_limit_error)?;
                     let (value, child_nodes, child_expanded_nodes) =
-                        self.resolve(value, stack, stack_storage, remaining, depth + 1)?;
+                        self.resolve(value, stack, remaining)?;
                     nodes = nodes
                         .checked_add(child_nodes)
-                        .ok_or_else(|| self.node_limit_error())?;
+                        .ok_or_else(Self::node_limit_error)?;
                     expanded_nodes = expanded_nodes
                         .checked_add(child_expanded_nodes)
-                        .ok_or_else(|| self.node_limit_error())?;
+                        .ok_or_else(Self::node_limit_error)?;
                     resolved.push(value);
                 }
                 Ok((Value::List(resolved), nodes, expanded_nodes))
             }
-            Value::Typed(name, value) => {
-                self.charge_nodes(1)?;
-                let (value, nodes, expanded_nodes) =
-                    self.resolve(value, stack, stack_storage, budget, depth + 1)?;
-                self.budget
-                    .charge_work(u64_from_index(name.len()), "step_anchor_typed_name_copy")?;
-                self.budget
-                    .charge_retained(
-                        u64_from_index(size_of::<Value>()),
-                        "step_anchor_materialization_storage",
-                    )
-                    .map_err(ResolveError::Resource)?;
-                let value = Value::Typed(
-                    self.budget
-                        .copy_retained_text(name, "step_anchor_typed_name_copy")
-                        .map_err(ResolveError::Resource)?,
-                    Box::new(value),
-                );
+            Value::Typed(name, nested) => {
+                if !stack.is_empty() {
+                    self.charge_payload(node_payload(value))?;
+                }
+                let (value, nodes, expanded_nodes) = self.resolve(nested, stack, budget)?;
+                let value = Value::Typed(name.to_owned(), Box::new(value));
                 Ok((
                     value,
-                    nodes
-                        .checked_add(1)
-                        .ok_or_else(|| self.node_limit_error())?,
+                    nodes.checked_add(1).ok_or_else(Self::node_limit_error)?,
                     expanded_nodes,
                 ))
             }
             value => {
-                self.charge_nodes(1)?;
-                Ok((
-                    try_clone_value(value, self.budget, "step_anchor_leaf_copy")
-                        .map_err(ResolveError::Resource)?,
-                    1,
-                    0,
-                ))
+                if !stack.is_empty() {
+                    self.charge_payload(node_payload(value))?;
+                }
+                Ok((try_clone_value(value, self.budget)?, 1, 0))
             }
         }
+    }
+
+    /// Expands anchor `name`, which is not memoized and not on `stack`.
+    fn expand(
+        &mut self,
+        name: &'a str,
+        source: &Value,
+        stack: &mut Vec<&'a str>,
+        budget: usize,
+    ) -> Result<(Value, usize, usize), ResolveError> {
+        let counted = value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget);
+        self.count_item_nodes(
+            counted
+                .as_ref()
+                .map_or(Self::MAX_EXPANDED_NODES, |nodes| *nodes),
+        )?;
+        counted?;
+        let payload_before = self.payload.remaining;
+        stack.push(name);
+        let resolved = self.resolve(source, stack, budget);
+        stack.pop();
+        let (value, nodes, _) = resolved?;
+        if nodes > budget {
+            return Err(Self::node_limit_error());
+        }
+        let octets = payload_before - self.payload.remaining;
+        let memo = try_clone_value(&value, self.budget)?;
+        self.memo.insert(name, (memo, nodes, octets));
+        Ok((value, nodes, nodes))
     }
 }
 
 struct ReferenceResolver<'a, 'ctx, 'arena> {
     bindings: BTreeMap<ReferenceName, &'a str>,
     anchors: &'a BTreeMap<String, Value>,
+    omitted_anchors: &'a BTreeSet<String>,
     stack: Vec<ReferenceName>,
+    /// Value nodes and payload octets that each top-level occurrence used
+    /// when it expanded.
+    used: BTreeMap<ReferenceName, (usize, u64)>,
+    bounds: BTreeMap<ReferenceName, ExpansionBounds>,
     remaining_nodes: usize,
+    /// Value nodes that omitted items may still copy; `None` once spent.
+    discard_allowance: Option<usize>,
+    /// Value nodes that the current item has copied.
+    item_nodes: usize,
+    payload: PayloadAllowance,
     budget: &'ctx DecodeContext<'arena>,
-    storage: ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
+    /// Value nodes that REFERENCE expansion may copy across the whole
+    /// exchange.
     const MAX_MATERIALIZED_NODES: usize = 1_000_000;
-    const MAX_REFERENCE_DEPTH: usize = 256;
+    /// Value nodes that items omitted at the node limit may copy across the
+    /// whole exchange before their expansion stopped.
+    const MAX_DISCARDED_MATERIALIZED_NODES: usize = 16 * Self::MAX_MATERIALIZED_NODES;
 
     fn new(
         references: &'a [ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
+        omitted_anchors: &'a BTreeSet<String>,
+        payload_limit: u64,
         budget: &'ctx DecodeContext<'arena>,
-    ) -> Result<Self, ResolveError> {
-        let mut storage = budget.reserve_scoped(0, "step_reference_binding_storage")?;
-        let mut bindings = BTreeMap::new();
-        for reference in references {
-            storage.with_storage(|| {
-                budget.insert_btree_map(
-                    &mut bindings,
-                    reference.name,
-                    reference.uri.as_str(),
-                    "step_reference_binding_items",
-                )
-            })?;
-        }
-        Ok(Self {
-            storage,
+    ) -> Self {
+        let bindings = references
+            .iter()
+            .map(|reference| (reference.name, reference.uri.as_str()))
+            .collect();
+        Self {
             bindings,
             anchors,
+            omitted_anchors,
             stack: Vec::new(),
-            remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
+            used: BTreeMap::new(),
+            bounds: BTreeMap::new(),
+            remaining_nodes: Self::MAX_MATERIALIZED_NODES,
+            discard_allowance: Some(Self::MAX_DISCARDED_MATERIALIZED_NODES),
+            item_nodes: 0,
+            payload: PayloadAllowance::new(payload_limit),
             budget,
-        })
+        }
     }
 
-    fn admit_copy(&self, nodes: u64) -> Result<(), ResolveError> {
-        self.budget
-            .charge_collection_items(nodes, "step_reference_materialization")
-            .map_err(ResolveError::Resource)?;
-        Ok(())
+    fn node_limit_bound() -> String {
+        format!(
+            "external reference expansion exceeds {} value nodes",
+            Self::MAX_MATERIALIZED_NODES
+        )
+    }
+
+    fn node_limit_error() -> ResolveError {
+        ResolveError::Bounded(Self::node_limit_bound())
+    }
+
+    fn omitted_anchor_bound(key: ReferenceName, fragment: &str) -> String {
+        format!("REFERENCE {key} names anchor <{fragment}>, omitted at its expansion limit")
+    }
+
+    fn discard_limit_bound() -> String {
+        format!(
+            "external reference expansions omitted at the node limit already copied {} value nodes",
+            Self::MAX_DISCARDED_MATERIALIZED_NODES
+        )
+    }
+
+    /// Resolves every value of one anchor or instance. A value that passes
+    /// the node limit leaves the item unresolved, returns the bound, and
+    /// gives back the nodes that the item's earlier values used.
+    fn resolve_item<'v>(
+        &mut self,
+        values: impl Iterator<Item = &'v mut Value>,
+    ) -> Result<Option<String>, ResolveError> {
+        let values = values.collect::<Vec<_>>();
+        match self.known_outcome(&values) {
+            KnownOutcome::Bounded(bound) => return Ok(Some(bound)),
+            KnownOutcome::Unknown if self.discard_allowance.is_none() => {
+                return Ok(Some(Self::discard_limit_bound()));
+            }
+            KnownOutcome::Fits | KnownOutcome::Unknown => {}
+        }
+        let remaining = self.remaining_nodes;
+        self.item_nodes = 0;
+        for value in values {
+            match self.resolve_value(value) {
+                Ok(resolved) => *value = resolved,
+                Err(ResolveError::Bounded(bound)) => {
+                    self.remaining_nodes = remaining;
+                    self.discard_allowance = self
+                        .discard_allowance
+                        .and_then(|allowance| allowance.checked_sub(self.item_nodes));
+                    return Ok(Some(bound));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
+    }
+
+    /// Decides the item from earlier expansions of its top-level
+    /// occurrences, without copying.
+    fn known_outcome(&self, values: &[&mut Value]) -> KnownOutcome {
+        let node_limit = Self::node_limit_bound();
+        let mut budget = self.remaining_nodes;
+        let mut payload = self.payload.remaining;
+        let mut pending = values
+            .iter()
+            .rev()
+            .map(|value| &**value)
+            .collect::<Vec<_>>();
+        while let Some(value) = pending.pop() {
+            let key = match value {
+                Value::Reference(id) => ReferenceName::Entity(*id),
+                Value::ExternalReference(id) => ReferenceName::Value(*id),
+                Value::List(values) => {
+                    pending.extend(values.iter().rev());
+                    continue;
+                }
+                Value::Typed(_, value) => {
+                    pending.push(value);
+                    continue;
+                }
+                _ => continue,
+            };
+            let Some(fragment) = self
+                .bindings
+                .get(&key)
+                .and_then(|uri| uri.split_once('#'))
+                .and_then(|(path, fragment)| path.is_empty().then_some(fragment))
+            else {
+                continue;
+            };
+            if self.omitted_anchors.contains(fragment) {
+                return KnownOutcome::Bounded(Self::omitted_anchor_bound(key, fragment));
+            }
+            if !self.anchors.contains_key(fragment) {
+                continue;
+            }
+            if let Some((nodes, octets)) = self.used.get(&key) {
+                let Some(rest) = budget.checked_sub(*nodes) else {
+                    return KnownOutcome::Bounded(node_limit);
+                };
+                let Some(rest_payload) = payload.checked_sub(*octets) else {
+                    return KnownOutcome::Bounded(self.payload.bound("external reference"));
+                };
+                budget = rest;
+                payload = rest_payload;
+            } else if let Some(bound) = self
+                .bounds
+                .get(&key)
+                .and_then(|bounds| bounds.bound_at(budget, &node_limit))
+            {
+                return KnownOutcome::Bounded(bound);
+            } else {
+                return KnownOutcome::Unknown;
+            }
+        }
+        KnownOutcome::Fits
     }
 
     fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
-        self.consume_materialized_node()?;
-        self.admit_copy(1)?;
-        try_clone_value(value, self.budget, "step_reference_leaf_copy")
-            .map_err(ResolveError::Resource)
+        self.consume_materialized_node(value)?;
+        Ok(try_clone_value(value, self.budget)?)
     }
 
-    fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
-        let _nested = self
-            .budget
-            .enter_nested("step_reference_expansion")
-            .map_err(ResolveError::Resource)?;
-        self.budget
-            .charge_work(1, "step_reference_materialization")?;
-        if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err(self
-                .budget
-                .refuse_codec_limit(
-                    "step_reference_depth_limit",
-                    u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
-                    u64_from_index(depth + 1),
-                )
-                .into());
-        }
+    fn resolve_value(&mut self, value: &Value) -> Result<Value, ResolveError> {
+        let _nested = self.budget.enter_nested("step_reference_expansion")?;
+        self.item_nodes = self
+            .item_nodes
+            .checked_add(1)
+            .ok_or_else(Self::node_limit_error)?;
         match value {
-            Value::Reference(id) => {
-                self.resolve_occurrence(ReferenceName::Entity(*id), value, depth)
-            }
+            Value::Reference(id) => self.resolve_occurrence(ReferenceName::Entity(*id), value),
             Value::ExternalReference(id) => {
-                self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
+                self.resolve_occurrence(ReferenceName::Value(*id), value)
             }
             Value::List(values) => {
-                self.consume_materialized_node()?;
+                self.consume_materialized_node(value)?;
                 if !self.stack.is_empty() && values.len() > self.remaining_nodes {
-                    return Err(self
-                        .budget
-                        .refuse_codec_limit(
-                            "step_reference_output_node_limit",
-                            u64_from_index(self.remaining_nodes),
-                            u64_from_index(values.len()),
-                        )
-                        .into());
+                    return Err(Self::node_limit_error());
                 }
-                self.admit_copy(1)?;
-                let mut resolved = self
-                    .budget
-                    .collection_vec(values.len(), "step_reference_list_items")
-                    .map_err(ResolveError::Resource)?;
+                let mut resolved = Vec::new();
                 for value in values {
-                    resolved.push(self.resolve_value(value, depth + 1)?);
+                    resolved.push(self.resolve_value(value)?);
                 }
                 Ok(Value::List(resolved))
             }
-            Value::Typed(name, value) => {
-                self.consume_materialized_node()?;
-                let resolved = self.resolve_value(value, depth + 1)?;
-                self.budget
-                    .charge_work(u64_from_index(name.len()), "step_reference_typed_name_copy")?;
-                self.admit_copy(1)?;
-                self.budget.charge_retained(
-                    u64_from_index(size_of::<Value>()),
-                    "step_reference_materialization_storage",
-                )?;
-                Ok(Value::Typed(
-                    self.budget
-                        .copy_retained_text(name, "step_reference_typed_name_copy")
-                        .map_err(ResolveError::Resource)?,
-                    Box::new(resolved),
-                ))
+            Value::Typed(name, nested) => {
+                self.consume_materialized_node(value)?;
+                let resolved = self.resolve_value(nested)?;
+                Ok(Value::Typed(name.to_owned(), Box::new(resolved)))
             }
             _ => self.clone_leaf(value),
         }
@@ -2978,7 +3003,6 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         &mut self,
         key: ReferenceName,
         original: &Value,
-        depth: usize,
     ) -> Result<Value, ResolveError> {
         let Some(uri) = self.bindings.get(&key).copied() else {
             return self.clone_leaf(original);
@@ -2992,6 +3016,11 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         if self.stack.contains(&key) {
             return self.clone_leaf(&Value::Omitted);
         }
+        if self.omitted_anchors.contains(fragment) {
+            return Err(ResolveError::Bounded(Self::omitted_anchor_bound(
+                key, fragment,
+            )));
+        }
         let Some(anchor) = self.anchors.get(fragment) else {
             return if is_uuid_fragment(fragment) {
                 self.clone_leaf(original)
@@ -2999,18 +3028,30 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 self.clone_leaf(&Value::Omitted)
             };
         };
-
-        self.storage
-            .with_storage(|| {
-                self.budget
-                    .charge_collection_items(1, "step_reference_stack")?;
-                self.budget
-                    .reserve_capacity(&mut self.stack, 1, "step_reference_stack_storage")
-            })
-            .map_err(ResolveError::Resource)?;
+        let top_level = self.stack.is_empty();
+        let remaining = self.remaining_nodes;
+        let payload_before = self.payload.remaining;
         self.stack.push(key);
-        let resolved = self.resolve_value(anchor, depth + 1);
+        let resolved = self.resolve_value(anchor);
         self.stack.pop();
+        if top_level {
+            match &resolved {
+                Ok(_) => {
+                    if let Some(nodes) = remaining.checked_sub(self.remaining_nodes) {
+                        let octets = payload_before - self.payload.remaining;
+                        self.used.insert(key, (nodes, octets));
+                    }
+                }
+                Err(ResolveError::Bounded(bound)) => {
+                    self.bounds.entry(key).or_default().record(
+                        remaining,
+                        bound,
+                        &Self::node_limit_bound(),
+                    );
+                }
+                Err(_) => {}
+            }
+        }
         let resolved = resolved?;
         if let Value::Resource(uri) = &resolved {
             return if uri.contains('#') {
@@ -3025,60 +3066,69 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         Ok(resolved)
     }
 
-    fn consume_materialized_node(&mut self) -> Result<(), ResolveError> {
+    /// Charges the node and payload octets that copying `value`'s own node
+    /// out of an anchor costs.
+    fn consume_materialized_node(&mut self, value: &Value) -> Result<(), ResolveError> {
         if !self.stack.is_empty() {
-            self.remaining_nodes = self.remaining_nodes.checked_sub(1).ok_or_else(|| {
-                self.budget.refuse_codec_limit(
-                    "step_reference_output_node_limit",
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1),
-                )
-            })?;
+            self.remaining_nodes = self
+                .remaining_nodes
+                .checked_sub(1)
+                .ok_or_else(Self::node_limit_error)?;
+            if !self.payload.charge(node_payload(value)) {
+                return Err(ResolveError::Bounded(
+                    self.payload.bound("external reference"),
+                ));
+            }
         }
         Ok(())
     }
 }
 
+/// Resolves local REFERENCE occurrences and returns the anchors and instances
+/// whose expansion passed the value-node or payload limit.
 fn resolve_local_references(
     anchors: &mut [AnchorEntry],
     records: &mut BTreeMap<u64, RawRecord>,
     references: &[ReferenceEntry],
+    omitted_anchors: &BTreeSet<String>,
+    payload_limit: u64,
     budget: &DecodeContext<'_>,
-) -> Result<(), ResolveError> {
+) -> Result<BoundedExpansions, ParseError> {
+    let mut bounded = BoundedExpansions::default();
     if references.is_empty() {
-        return Ok(());
+        return Ok(bounded);
     }
-    let mut snapshot_storage = budget.reserve_scoped(0, "step_reference_anchor_copy_storage")?;
+
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
-        snapshot_storage.with_storage(|| {
-            let name =
-                budget.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")?;
-            let value = try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")?;
-            budget.insert_btree_map(
-                &mut anchor_bindings,
-                name,
-                value,
-                "step_reference_anchor_copies",
-            )?;
-            Ok::<(), CodecError>(())
-        })?;
+        let value = try_clone_value(&anchor.value, budget)?;
+        anchor_bindings.insert(anchor.name.clone(), value);
     }
-    let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
+    let mut resolver = ReferenceResolver::new(
+        references,
+        &anchor_bindings,
+        omitted_anchors,
+        payload_limit,
+        budget,
+    );
     for anchor in anchors {
-        anchor.value = resolver.resolve_value(&anchor.value, 0)?;
-        for tag in &mut anchor.tags {
-            tag.value = resolver.resolve_value(&tag.value, 0)?;
+        if let Some(bound) = resolver
+            .resolve_item(anchor.values_mut())
+            .map_err(|error| error.into_parse_error(0))?
+        {
+            bounded.anchors.insert(anchor.name.clone(), bound);
         }
     }
-    for record in records.values_mut() {
-        for partial in &mut record.partials {
-            for value in &mut partial.parameters {
-                *value = resolver.resolve_value(value, 0)?;
-            }
+    for (&id, record) in records.iter_mut() {
+        let offset = record.span.start;
+        if let Some(bound) = resolver
+            .resolve_item(record.values_mut())
+            .map_err(|error| error.into_parse_error(offset))?
+        {
+            bounded.records.insert(id, bound);
         }
     }
-    Ok(())
+    Ok(bounded)
 }
 
 fn reference_target_matches(name: ReferenceName, value: &Value) -> bool {
@@ -3100,6 +3150,8 @@ fn is_uuid_fragment(fragment: &str) -> bool {
         })
 }
 
+/// Count the value nodes of `value` before anchor expansion copies it. A
+/// value larger than `limit` nodes is [`ResolveError::Bounded`].
 fn value_node_count(
     value: &Value,
     limit: usize,
@@ -3108,41 +3160,27 @@ fn value_node_count(
     fn visit(
         value: &Value,
         remaining: &mut usize,
+        limit: usize,
         budget: &DecodeContext<'_>,
-        depth: usize,
     ) -> Result<(), ResolveError> {
-        let _depth_guard = budget
-            .enter_nested("step_value_node_count")
-            .map_err(ResolveError::Resource)?;
-        if depth >= 256 {
-            return Err(budget
-                .refuse_codec_limit(
-                    "step_value_node_count_depth_limit",
-                    256,
-                    u64_from_index(depth + 1),
-                )
-                .into());
-        }
-        *remaining = remaining
-            .checked_sub(1)
-            .ok_or_else(|| budget.refuse_codec_limit("step_value_node_count_node_limit", 0, 1))?;
-        budget
-            .charge_work(1, "step_value_node_count")
-            .map_err(ResolveError::Resource)?;
+        let _depth_guard = budget.enter_nested("step_value_node_count")?;
+        *remaining = remaining.checked_sub(1).ok_or_else(|| {
+            ResolveError::Bounded(format!("anchor value exceeds {limit} value nodes"))
+        })?;
         match value {
             Value::List(values) => {
                 for child in values {
-                    visit(child, remaining, budget, depth + 1)?;
+                    visit(child, remaining, limit, budget)?;
                 }
             }
-            Value::Typed(_, child) => visit(child, remaining, budget, depth + 1)?,
+            Value::Typed(_, child) => visit(child, remaining, limit, budget)?,
             _ => {}
         }
         Ok(())
     }
 
     let mut remaining = limit;
-    visit(value, &mut remaining, budget, 0)?;
+    visit(value, &mut remaining, limit, budget)?;
     Ok(limit - remaining)
 }
 
@@ -3154,9 +3192,9 @@ fn references(
 ) -> Result<(), ParseError> {
     recovery::visit_references(value, budget, &mut |id, value_instance| {
         if value_instance {
-            budget.push_vec(value_out, id, "step_parse_value_reference_ids")?;
+            value_out.push(id);
         } else {
-            budget.push_vec(entity_out, id, "step_parse_reference_ids")?;
+            entity_out.push(id);
         }
         Ok(())
     })

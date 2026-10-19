@@ -20,23 +20,24 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
         )),
         source_object: None,
     });
-    let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &id,
         geometry: &ir.model.surfaces[0].geometry,
     };
     for d in [1., 1e9] {
         let p = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0., 0., d, d],
                 vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let t = mapped_pcurve_parameter_near_point(
@@ -47,7 +48,7 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
             crate::scalar::FiniteReal::ZERO,
             EPS_POINT,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the mapped pcurve parameter near point")
         .unwrap()
         .get();
         assert!(

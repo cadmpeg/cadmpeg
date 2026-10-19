@@ -192,7 +192,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
                 })
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -240,7 +240,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
                 })
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -280,7 +280,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     assert!((origin.v - 1000.0).abs() < 1.0e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -320,7 +320,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -543,7 +543,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -585,7 +585,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -681,69 +681,15 @@ fn isocurve_admission_source() -> Vec<u8> {
     sldprt_with_body(&body)
 }
 
-fn assert_isocurve_route_limit(dimension: cadmpeg_core::decode::ResourceDimension) {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+#[test]
+fn geometry_isocurve_route_derives_pcurves() {
     let source = isocurve_admission_source();
-    let mut options = DecodeOptions {
-        policy: DecodePolicy::service(),
+    let options = DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    let expected = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(&source), &options)
-        .unwrap()
-        .ir()
-        .clone();
-    assert!(!expected.model.pcurves.is_empty());
-    let set_limit = |options: &mut DecodeOptions, limit| match dimension {
-        ResourceDimension::MaterializedBytes => {
-            options.policy.limits.max_materialized_bytes = limit;
-        }
-        ResourceDimension::WorkUnits => options.policy.limits.max_work_units = limit,
-        _ => panic!("unexpected isocurve route dimension"),
-    };
-    let run = |options: &DecodeOptions| match SldprtCodec.decode(&mut Cursor::new(&source), options)
-    {
-        Ok(decoded) => {
-            assert_eq!(decoded.ir(), &expected);
-            true
-        }
-        Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
-            assert_eq!(limit.dimension, dimension);
-            false
-        }
-        Err(error) => panic!("unexpected isocurve route failure: {error}"),
-    };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        set_limit(&mut options, upper);
-        if run(&options) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        set_limit(&mut options, middle);
-        if run(&options) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    set_limit(&mut options, upper);
-    assert!(run(&options));
-    set_limit(&mut options, upper - 1);
-    assert!(!run(&options));
-}
-
-#[test]
-fn geometry_isocurve_route_refuses_scoped_limit() {
-    assert_isocurve_route_limit(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-}
-
-#[test]
-fn geometry_isocurve_route_refuses_work_limit() {
-    assert_isocurve_route_limit(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        .unwrap();
+    assert!(!decoded.ir().model.pcurves.is_empty());
 }

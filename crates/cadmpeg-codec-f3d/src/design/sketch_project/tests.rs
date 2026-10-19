@@ -6,6 +6,7 @@ use super::project_spatial_sketch_constraints;
 use super::project_spatial_sketch_design;
 use super::sketch_text_horizontal_alignment;
 use super::sketch_text_vertical_alignment;
+use super::SpatialSketchDesign;
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::dimensions::exact_atomic_constraint;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
@@ -560,23 +561,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .unwrap()
     .expect("non-clamped NURBS endpoints");
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(2.0, 1.0),
-            nurbs,
-            EPS_CONTAINMENT_DISTANCE
-        ))
-        .expect("resource allocation did not fail")
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
-            decode_ctx,
-            Point2::new(2.0, 1.0),
-            &nurbs.geometry
-        ))
-        .expect("resource allocation did not fail")
-    );
+    assert!(point_on_sketch_entity(
+        Point2::new(2.0, 1.0),
+        nurbs,
+        EPS_CONTAINMENT_DISTANCE,
+    ));
+    assert!(point_lies_on_sketch_geometry(
+        Point2::new(2.0, 1.0),
+        &nurbs.geometry,
+    ));
 
     let relation = |record_index, member| {
         SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
@@ -812,29 +805,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(point.geometry_ref.clone())
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point], decode_ctx)).unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point], decode_ctx)).unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Horizontal,
-            &[point, point],
-            decode_ctx
-        ))
-        .unwrap()
-        .is_none()
-    );
+    assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Midpoint,
-            &[line, point],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
@@ -842,15 +822,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(
-            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-                kind,
-                &[line, point],
-                decode_ctx
-            ))
-            .unwrap()
-            .is_none()
-        );
+        assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
     }
     let other_line = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#other").unwrap(),
@@ -862,30 +834,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(line.geometry_ref.clone())
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Tangent,
-            &[line, &other_line],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
         Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Curvature,
-            &[line, &other_line],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]),
         Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Equal,
-            &[line, &other_line],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
         Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
@@ -897,15 +854,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(
-            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-                kind,
-                &[line, line],
-                decode_ctx
-            ))
-            .unwrap()
-            .is_none()
-        );
+        assert!(exact_atomic_constraint(kind, &[line, line]).is_none());
     }
 }
 
@@ -1242,7 +1191,9 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
-    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+    let SpatialSketchDesign {
+        sketches, entities, ..
+    } = crate::test_support::with_decode_context(|decode_ctx| {
         project_spatial_sketch_design(
             decode_ctx,
             &[placement.clone()],
@@ -1277,18 +1228,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 if start == Point3::new(10.0, 21.0, 32.0)
                     && end == Point3::new(10.0, 24.0, 32.0)
         )));
-    let constraints = crate::test_support::with_decode_context(|decode_ctx| {
-        project_spatial_sketch_constraints(
-            decode_ctx,
-            &[placement],
-            &relations,
-            &points,
-            &curves,
-            &surfaces,
-            &entities,
-        )
-    })
-    .unwrap();
+    let constraints = project_spatial_sketch_constraints(
+        &[placement],
+        &relations,
+        &points,
+        &curves,
+        &surfaces,
+        &entities,
+    );
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
@@ -1390,7 +1337,11 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
         )
     })
     .expect("sketch lanes pair");
-    let (spatial, spatial_entities) = crate::test_support::with_decode_context(|decode_ctx| {
+    let SpatialSketchDesign {
+        sketches: spatial,
+        entities: spatial_entities,
+        ..
+    } = crate::test_support::with_decode_context(|decode_ctx| {
         project_spatial_sketch_design(
             decode_ctx,
             &placements,
@@ -1408,6 +1359,240 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     assert_eq!(spatial_entities.len(), 1);
 }
 
+/// Two split pieces of one Fusion sketch line keep one `(primary, secondary)`
+/// identity pair. Each piece projects to its own neutral entity, and a curve
+/// with an unshared pair keeps its identity-derived key.
+#[test]
+fn shared_curve_identity_pairs_project_distinct_entities() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            100,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
+        id: "f3d:Design/BulkStream.dat:placement#100".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        record_index: 100,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
+    };
+    let line = |record_index: u32,
+                primary_id: u64,
+                start: Point3,
+                end: Point3,
+                direction: Vector3,
+                normal: Vector3| {
+        SketchCurveIdentity {
+            id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
+            record_index,
+            owner_reference: Some(42),
+            class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned())
+                .unwrap(),
+            byte_offset: u64::from(record_index),
+            geometry_offset: 133,
+            entity_genesis: None,
+            primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
+            secondary_id: 0,
+            geometry: Some(SketchCurveGeometry::line(start, end, direction, normal).unwrap()),
+        }
+    };
+    let planar_curves = vec![
+        line(
+            101,
+            5,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        line(
+            102,
+            5,
+            Point3::new(0.0, 3.0, 0.0),
+            Point3::new(0.0, 5.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        line(
+            103,
+            6,
+            Point3::new(0.0, 5.0, 0.0),
+            Point3::new(4.0, 5.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+    ];
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(
+            decode_ctx,
+            &[placement.clone()],
+            &[],
+            &planar_curves,
+            &[],
+            &[],
+            EPS_POINT_PROJECTION,
+        )
+    })
+    .expect("planar sketch projects");
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(entities.len(), 3);
+    let planar_ids = entities
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(planar_ids.len(), 3);
+    assert!(planar_ids.contains(&neutral_sketch_curve_id(&sketches[0].id, 6, 0)));
+    assert!(!planar_ids.contains(&neutral_sketch_curve_id(&sketches[0].id, 5, 0)));
+
+    let mut spatial_curves = planar_curves;
+    spatial_curves.push(line(
+        104,
+        7,
+        Point3::new(4.0, 5.0, 0.0),
+        Point3::new(4.0, 5.0, 3.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    ));
+    let SpatialSketchDesign {
+        sketches: spatial_sketches,
+        entities: spatial_entities,
+        ..
+    } = crate::test_support::with_decode_context(|decode_ctx| {
+        project_spatial_sketch_design(
+            decode_ctx,
+            &[placement],
+            &[],
+            &spatial_curves,
+            &[],
+            &[],
+            EPS_POINT_PROJECTION,
+        )
+    })
+    .expect("spatial sketch projects");
+    assert_eq!(spatial_sketches.len(), 1);
+    assert_eq!(spatial_entities.len(), 4);
+    let spatial_ids = spatial_entities
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(spatial_ids.len(), 4);
+    assert!(
+        spatial_ids.contains(&crate::ids::neutral_spatial_sketch_curve_id(
+            &spatial_sketches[0].id,
+            6,
+            0
+        ))
+    );
+    assert!(
+        !spatial_ids.contains(&crate::ids::neutral_spatial_sketch_curve_id(
+            &spatial_sketches[0].id,
+            5,
+            0
+        ))
+    );
+}
+
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
-mod projection_limits;
+mod spline_projection;
+
+/// A spatial sketch whose closed-profile search exceeds its local cap keeps
+/// its entities, has no profiles, and reports the capped search as a loss.
+#[test]
+fn capped_spatial_profile_search_reports_a_loss() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            100,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
+        id: "f3d:Design/BulkStream.dat:placement#100".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        record_index: 100,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
+    };
+    // Disjoint open segments: each search start scans every unused segment
+    // twice and every segment once, about 2 * 3200^2 work units in total.
+    let curves = (0..3200_u32)
+        .map(|index| {
+            let x = f64::from(index) * 10.0;
+            let record_index = 1000 + index;
+            SketchCurveIdentity {
+                id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
+                record_index,
+                owner_reference: Some(42),
+                class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned())
+                    .unwrap(),
+                byte_offset: u64::from(record_index),
+                geometry_offset: 133,
+                entity_genesis: None,
+                primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
+                secondary_id: 0,
+                geometry: Some(
+                    SketchCurveGeometry::line(
+                        Point3::new(x, 0.0, 0.0),
+                        Point3::new(x, 0.0, 1.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+    let SpatialSketchDesign {
+        sketches,
+        entities,
+        losses,
+    } = crate::test_support::with_decode_context(|decode_ctx| {
+        project_spatial_sketch_design(
+            decode_ctx,
+            &[placement],
+            &[],
+            &curves,
+            &[],
+            &[],
+            EPS_POINT_PROJECTION,
+        )
+    })
+    .expect("spatial sketch projects");
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(entities.len(), curves.len());
+    assert!(sketches[0].profiles.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::SketchProfileSearchCapped.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "1 spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK (16777216)."
+    );
+}

@@ -434,10 +434,10 @@ pub(super) fn print_decode_report(
 ) -> io::Result<()> {
     writeln!(
         writer,
-        "decode report ({}): geometry_transferred={}, container_only={}",
+        "decode report ({}): depth={}, geometry_transferred={}",
         report.format(),
-        report.geometry_transferred(),
-        report.container_only()
+        report.depth(),
+        report.geometry_transferred()
     )?;
     for line in crate::registry_view::dialect_lines(report.dialects()).map_err(io::Error::other)? {
         writeln!(writer, "{line}")?;

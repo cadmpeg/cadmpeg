@@ -58,7 +58,6 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
 
     let parse_raw = |bytes: &[u8], class_tag: &str| {
         parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             RECORD_INDEX,
@@ -176,7 +175,6 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
@@ -316,7 +314,6 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
@@ -488,7 +485,6 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
     };
     let prologue = |bytes: &[u8]| {
         parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
@@ -506,7 +502,6 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                         face_extend: u32,
                         direction_reversed: bool| {
         let scope = parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,

@@ -12,8 +12,6 @@
 
 pub mod comparison;
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use serde::Deserialize;
 
 fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
@@ -33,36 +31,22 @@ use std::fmt::{self, Display};
 /// The key is non-empty, contains no `#`, and the whole id has no whitespace.
 #[must_use]
 pub fn is_valid_identity(id: &str) -> bool {
-    match check_identity(id, |_| Ok::<(), std::convert::Infallible>(())) {
-        Ok(valid) => valid,
-        Err(error) => match error {},
-    }
-}
-
-/// One grammar scan with an explicit admission callback before each scalar.
-fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> Result<bool, E> {
-    visit(0)?;
-    let mut characters = id.chars();
     let mut separators = 0_u8;
     let mut key = false;
     let mut nonempty = false;
-    while !characters.as_str().is_empty() {
-        visit(1)?;
-        let Some(character) = characters.next() else {
-            break;
-        };
+    for character in id.chars() {
         if character.is_whitespace() {
-            return Ok(false);
+            return false;
         }
         match character {
-            '#' if key || !nonempty || separators != 2 => return Ok(false),
+            '#' if key || !nonempty || separators != 2 => return false,
             '#' => {
                 key = true;
                 nonempty = false;
             }
             ':' if !key => {
                 if !nonempty || separators == 2 {
-                    return Ok(false);
+                    return false;
                 }
                 separators += 1;
                 nonempty = false;
@@ -70,7 +54,7 @@ fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> R
             _ => nonempty = true,
         }
     }
-    Ok(key && nonempty)
+    key && nonempty
 }
 
 /// An entity identity with validated namespace and key grammar.
@@ -105,34 +89,18 @@ impl schemars::JsonSchema for Identity {
 }
 
 impl Identity {
-    /// Copies an admitted identity within the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
-    }
-
     /// Admit a string matching the entity identity grammar.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
-        match Self::admit_text(value.into(), |_| Ok::<(), std::convert::Infallible>(())) {
-            Ok(result) => result.map_err(|value| IdentityError::InvalidId { value }),
-            Err(error) => match error {},
-        }
+        Self::admit_text(value.into()).map_err(|value| IdentityError::InvalidId { value })
     }
 
-    /// Admit owned text with the same grammar used by standard reconstruction.
-    /// Invalid grammar returns the owned input; admission failure stays outside it.
-    pub(crate) fn admit_text<E>(
-        value: String,
-        visit: impl FnMut(u64) -> Result<(), E>,
-    ) -> Result<Result<Self, String>, E> {
-        Ok(if check_identity(&value, visit)? {
+    /// Admit owned text, returning it unchanged when the grammar does not match.
+    pub(crate) fn admit_text(value: String) -> Result<Self, String> {
+        if is_valid_identity(&value) {
             Ok(Self(value))
         } else {
             Err(value)
-        })
+        }
     }
 
     /// Borrow the identity string.
@@ -448,23 +416,6 @@ pub struct IdentityKey(std::borrow::Cow<'static, str>);
 rewrite_scalar!(IdentityKey);
 
 impl IdentityKey {
-    /// Copy owned key text under the decode budget; retain static borrowed text.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self(match &self.0 {
-            std::borrow::Cow::Borrowed(text) => {
-                ctx.charge_work(1, operation)?;
-                std::borrow::Cow::Borrowed(*text)
-            }
-            std::borrow::Cow::Owned(text) => {
-                std::borrow::Cow::Owned(ctx.copy_retained_text(text, operation)?)
-            }
-        }))
-    }
-
     /// Encode one source component for use as an identity key.
     ///
     /// ASCII letters, digits, `.`, `_`, `-`, and `/` remain literal. Every other
@@ -1014,15 +965,6 @@ macro_rules! id_type {
         }
 
         impl $name {
-            /// Copies an admitted identity within the decode budget.
-            pub fn try_clone_for_decode(
-                &self,
-                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                operation: &'static str,
-            ) -> Result<Self, cadmpeg_core::CodecError> {
-                Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
-            }
-
             /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 $crate::ids::Identity::new(value).map(Self::from)
@@ -1119,15 +1061,6 @@ macro_rules! local_id_type {
         }
 
         impl $name {
-            /// Copies an admitted local identity within the decode budget.
-            pub fn try_clone_for_decode(
-                &self,
-                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                operation: &'static str,
-            ) -> Result<Self, cadmpeg_core::CodecError> {
-                Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
-            }
-
             /// Mint a non-empty identity that has no whitespace.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 let value = value.into();

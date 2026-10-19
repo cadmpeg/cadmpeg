@@ -21,7 +21,7 @@ use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    match classify(ctx, bytes)? {
+    match classify(bytes) {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
         Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),
@@ -54,7 +54,7 @@ fn decode_asm_binary(
         let start = stream.offset();
         // A history-bearing stream ends its solved partition at the delta-state
         // boundary; a history-less stream ends at EOF without a terminator tag.
-        let framed = match asm_header::solved_record_limit_with_header(ctx, bytes, header)? {
+        let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
             Some(limit) => sab::frame(
                 ctx,
                 bytes,
@@ -89,7 +89,7 @@ fn decode_asm_binary(
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
-    header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
+    header_attributes(&header.metadata, Family::Asm, &mut attributes);
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
         header,
@@ -136,7 +136,7 @@ fn decode_acis_binary(
         None
     } else {
         let start = stream.offset();
-        let framed = match acis_header::solved_record_limit_with_header(ctx, bytes, header)? {
+        let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
             Some(limit) => sab::frame(
                 ctx,
                 bytes,
@@ -171,7 +171,7 @@ fn decode_acis_binary(
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
-    header_attributes(ctx, &header.metadata, Family::Acis, &mut attributes)?;
+    header_attributes(&header.metadata, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
@@ -204,7 +204,7 @@ fn decode_acis_binary(
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     let (text_header, branch, records, framing, unread, concatenated_streams, unread_stream_layout) =
         if ctx.container_only() {
-            let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
+            let (header, branch) = sat::parse_container(bytes).map_err(|failure| {
                 failure.into_codec_error(ctx, |error| {
                     unsupported_unframed(
                         &StreamEvidence::Text(None),
@@ -232,16 +232,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 stream.unread_stream_layout,
             )
         };
-    let header = text_header.as_kernel_header(ctx)?;
+    let header = text_header.as_kernel_header();
     let mut attributes = BTreeMap::new();
-    header_attributes(ctx, &header, branch.into(), &mut attributes)?;
+    header_attributes(&header, branch.into(), &mut attributes);
     if let sat::TextUnits::Declared(scale) = text_header.units() {
-        let key = ctx.copy_retained_text("scale", "retain SAT scale attribute key")?;
-        let value = ctx.format_retained(
-            format_args!("{}", scale.get()),
-            "retain SAT scale attribute",
-        )?;
-        ctx.insert_btree_map(&mut attributes, key, value, "collect SAT scale attribute")?;
+        attributes.insert("scale".to_owned(), scale.get().to_string());
     }
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
@@ -255,7 +250,6 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let mut standalone_faces = false;
     let record_list = records.as_deref().unwrap_or_default();
     for record in record_list {
-        ctx.charge_work(1, "scan SAT topology ownership")?;
         standalone_faces |= record.head() == "face" && record.ref_at(5).is_none();
         if record.head() == "wire"
             && record
@@ -273,10 +267,6 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             if !matches!(record.head(), "spline" | "intcurve") {
                 continue;
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(record.tokens.len()),
-                "scan SAT legacy construction context",
-            )?;
             legacy_context |= record.tokens.windows(2).enumerate().any(|(index, tokens)| {
                 let [sab::Token::SubtypeOpen, sab::Token::Ident(name)] = tokens else {
                     return false;
@@ -314,46 +304,38 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         &kernel,
     )?;
     crate::loss::text_stream_losses(
-        ctx,
         text_header.diagnostics.iter().chain(&framing),
         unread
             .as_ref()
             .filter(|_| unread_stream_layout)
             .map(|span| span.start),
         &mut result.body.losses,
-    )?;
+    );
     let extensions =
         !ctx.container_only() && (1100..10_000).contains(&text_header.save_format_version);
     if extensions {
-        ctx.push_vec(&mut result.body.losses,
-            SatLossCode::SourceRecordExtensionsUnprojected.note(
-                "ACIS base extension integers and class-specific tails have no neutral projection; shared entity fields decoded; complete stream retained"),
-            "SAT record extension losses")?;
+        result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
+            "ACIS base extension integers and class-specific tails have no neutral projection; shared entity fields decoded; complete stream retained"));
     }
     if concatenated_streams {
-        ctx.push_vec(&mut result.body.losses,
-            SatLossCode::SourceConcatenatedStreamsRecovered.note(
-                "independently headed SAT streams use separate entity and subtype tables; references rebased; complete source retained"),
-            "SAT concatenated stream recovery loss")?;
+        result.body.losses.push(SatLossCode::SourceConcatenatedStreamsRecovered.note(
+            "independently headed SAT streams use separate entity and subtype tables; references rebased; complete source retained"));
     }
     let concatenated_span =
         concatenated_streams.then_some(("sat:source:concatenated-streams#0", 0..bytes.len()));
     let extension_span = extensions.then_some(("sat:source:record-extensions#0", 0..bytes.len()));
     if legacy_context {
-        ctx.push_vec(&mut result.body.losses,
-            SatLossCode::SourceRecordExtensionsUnprojected.note(
-                "Legacy spline construction context has no complete native projection; solved B-spline blocks decoded; complete stream retained"),
-            "SAT legacy construction losses")?;
+        result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
+            "Legacy spline construction context has no complete native projection; solved B-spline blocks decoded; complete stream retained"));
     }
     let legacy_span = legacy_context.then_some(("sat:source:legacy-context#0", 0..bytes.len()));
     if body_wire {
-        ctx.push_vec(
-            &mut result.body.losses,
-            SatLossCode::TopologyWireOwnerUnprojected.note(
-                "Body-owned wires have no neutral ownership representation; complete stream retained",
-            ),
-            "SAT wire ownership losses",
-        )?;
+        result
+            .body
+            .losses
+            .push(SatLossCode::TopologyWireOwnerUnprojected.note(
+            "Body-owned wires have no neutral ownership representation; complete stream retained",
+        ));
     }
     let wire_span = body_wire.then_some(("sat:source:body-wire#0", 0..bytes.len()));
     // A dropped standalone face can own loops, trims and carriers that no
@@ -389,19 +371,16 @@ fn retain_source<'a>(
 ) -> Result<(), CodecError> {
     let mut retained = Vec::new();
     for (id, span) in extents {
-        ctx.push_vec(
-            &mut retained,
-            cadmpeg_ir::UnknownRecord::retained(
-                cadmpeg_ir::ids::UnknownId::mint(
-                    ctx.copy_retained_text(id, "SAT recovered source identity")?,
-                )
-                .map_err(CodecError::malformed)?,
-                cadmpeg_core::decode::u64_from_index(span.start),
-                ctx.copy_retained(&bytes[span], "SAT recovered source bytes")?,
-                Vec::new(),
-            ),
-            "SAT recovered source records",
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(span.len()),
+            "SAT recovered source bytes",
         )?;
+        retained.push(cadmpeg_ir::UnknownRecord::retained(
+            cadmpeg_ir::ids::UnknownId::mint(id.to_owned()).map_err(CodecError::malformed)?,
+            cadmpeg_core::decode::u64_from_index(span.start),
+            bytes[span].to_vec(),
+            Vec::new(),
+        ));
     }
     if retained.is_empty() {
         return Ok(());
@@ -422,7 +401,6 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             };
         }
     };
@@ -443,22 +421,17 @@ fn build_result(
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched)
-            .with_for_decode(
-                ctx,
-                kernel.try_clone_for_decode(ctx, "copy SAT kernel dialect")?,
-                "collect SAT dialect layers",
-            )
+            .with(kernel.clone())
             .map_err(|rejected| match rejected {
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             })?,
-        cadmpeg_core::text::named_entries_for_decode(ctx, "the acis header", attributes)?,
+        cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
     let mut losses = Vec::new();
     if text_dialect.is_none() {
-        crate::loss::binary_header_losses(ctx, header, &mut losses)?;
+        crate::loss::binary_header_losses(header, &mut losses);
     }
     let mut unresolved_tolerance = |name: &str, value: f64| {
         losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(
@@ -510,11 +483,7 @@ fn build_result(
             None
         };
         if let Some((code, message)) = code {
-            ctx.push_vec(
-                &mut losses,
-                code.note(message),
-                "SAT record recovery losses",
-            )?;
+            losses.push(code.note(message));
         }
     }
 
@@ -549,28 +518,22 @@ fn build_result(
         .other_record_kinds
         .get("cached-procedural-surface-untyped")
     {
-        ctx.push_vec(
-            &mut losses,
-            SatLossCode::GeometryProceduralSurfaceUntyped.note(format!(
-                "{count} surface construction(s) are untyped; solved caches and source records retained"
-            )),
-            "SAT cached construction recovery losses",
-        )?;
+        losses.push(SatLossCode::GeometryProceduralSurfaceUntyped.note(format!(
+            "{count} surface construction(s) are untyped; solved caches and source records retained"
+        )));
     }
     if stats.invalid_use_curve_intervals() > 0 {
-        ctx.push_vec(&mut losses,
-            SatLossCode::GeometryUseCurveIntervalInvalid.note(format!(
-                "{} tolerant-coedge use curve(s) have decreasing carrier endpoints; use curves omitted; coedges and native intervals retained",
-                stats.invalid_use_curve_intervals()
-            )), "SAT use-curve recovery losses")?;
+        losses.push(SatLossCode::GeometryUseCurveIntervalInvalid.note(format!(
+            "{} tolerant-coedge use curve(s) have decreasing carrier endpoints; use curves omitted; coedges and native intervals retained",
+            stats.invalid_use_curve_intervals()
+        )));
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    coverage.record(ctx, crate::coverage::UNKNOWN_RECORDS, unknowns.len())?;
+    coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
     coverage.record(
-        ctx,
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
-    )?;
+    );
     let body = DecodeBody {
         coverage,
         losses,
@@ -580,28 +543,18 @@ fn build_result(
     };
 
     let mut annotations = AnnotationBuilder::new();
-    let annotation_count = cadmpeg_core::decode::u64_from_index(annotation_records.len());
-    ctx.charge_work(annotation_count, "scan SAT annotation records")?;
     for record in annotation_records {
-        let stream = StreamHandle::new(
-            ctx,
-            cadmpeg_ir::stream_name!("sat:").with_suffix(
-                ctx,
-                &record.stream,
-                "compose annotation stream name",
-            )?,
-            "allocate annotation stream handle",
-        )?;
+        let stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream));
         annotations.note(
-            ctx,
             &record.id,
             &stream,
             record.offset,
             Some(record.tag.as_str()),
-        )?;
+        );
         for field in record.derived_fields {
             annotations
-                .derived(ctx, &record.id, field)
+                .derived(&record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

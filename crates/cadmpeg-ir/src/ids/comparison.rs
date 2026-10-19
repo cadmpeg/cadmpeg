@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Text comparison under the caller's decode work budget.
+//! Byte-order text comparison under the caller's work policy.
 
 use std::cmp::Ordering;
 
-pub(crate) mod key;
-
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
-
 pub(crate) mod sealed {
     pub trait TextWork {}
-    impl TextWork for cadmpeg_core::decode::DecodeContext<'_> {}
 }
 
 /// Work policy for byte-wise text comparisons.
@@ -18,13 +13,6 @@ pub trait TextWork: sealed::TextWork {
     type Error;
     #[doc(hidden)]
     fn comparison_work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error>;
-}
-
-impl TextWork for DecodeContext<'_> {
-    type Error = ResourceLimit;
-    fn comparison_work(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
-        self.charge_work_limit(count, operation)
-    }
 }
 
 /// Compare text in byte order, admitting only the bytes actually compared.

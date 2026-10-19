@@ -74,7 +74,6 @@ pub(super) fn add_extrusion_pcurve(
         _ => [0.0, 1.0],
     };
     annotate(
-        ctx,
         annotations,
         &id,
         "FeatDefs",
@@ -84,7 +83,7 @@ pub(super) fn add_extrusion_pcurve(
     )?;
     ctx.charge_entities(1, "admit Creo model pcurves")?;
     let pcurve = Pcurve {
-        id: id.try_clone_for_decode(ctx, "creo extrusion pcurve identity copy")?,
+        id: id.clone(),
         geometry,
         metadata: PcurveMetadata::general(
             None,
@@ -108,7 +107,6 @@ pub(super) fn add_extrusion_pcurve(
 }
 
 fn revolution_boundary_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     point: [f64; 3],
     axis: &RevolutionAxis,
@@ -162,15 +160,7 @@ fn revolution_boundary_pcurve(
             } else {
                 std::f64::consts::TAU
             };
-            return circular_pcurve(
-                ctx,
-                center,
-                radius,
-                start,
-                start + direction,
-                record,
-                refusal,
-            );
+            return circular_pcurve(center, radius, start, start + direction, record, refusal);
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
@@ -266,33 +256,25 @@ fn revolution_boundary_pcurve(
 }
 
 pub(in super::super) fn revolved_brep_surface(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
     reversed: bool,
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
+) -> Option<SurfaceGeometry> {
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let Some(directrix) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
-            return Ok(None);
-        };
-        let Some(placed_directrix) = placed_section_nurbs(ctx, transform, &directrix)? else {
-            return Ok(None);
-        };
-        let Some(surface) = revolved_nurbs_surface(ctx, &placed_directrix, axis, record, refusal)?
-        else {
-            return Ok(None);
-        };
-        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
+        let placed_directrix = placed_section_nurbs(transform, &directrix)?;
+        let surface = revolved_nurbs_surface(&placed_directrix, axis, record, refusal)?;
+        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             surface,
-        ))));
+        )));
     }
-    Ok(revolved_section_surface(transform, geometry, axis))
+    revolved_section_surface(transform, geometry, axis)
 }
 
 /// An endpoint boundary of a revolved profile segment.
@@ -321,7 +303,6 @@ impl RevolutionBoundary {
 }
 
 pub(in super::super) fn revolution_profile_boundary_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     segment: &super::profiles::ProfileEntity,
     surface: &SurfaceGeometry,
@@ -335,10 +316,10 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     ) {
-        let Some(sketch) = segment.geometry().to_sketch(ctx)? else {
+        let Some(sketch) = segment.geometry().to_sketch() else {
             return Ok(None);
         };
-        let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed())? else {
+        let Some(nurbs) = oriented_sketch_nurbs_curve(&sketch, segment.reversed()) else {
             return Ok(None);
         };
         let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
@@ -355,7 +336,6 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         ));
     }
     revolution_boundary_pcurve(
-        ctx,
         surface,
         section_point_in_model(transform, section_point),
         axis,
@@ -391,12 +371,8 @@ pub(in super::super) fn revolution_face_sense(
         super::profiles::ProfileGeometry::Nurbs { .. }
     );
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
-        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
-        let nurbs = require_some!(oriented_sketch_nurbs_curve(
-            ctx,
-            &geometry,
-            segment.reversed()
-        )?);
+        let geometry = require_some!(segment.geometry().to_sketch());
+        let nurbs = require_some!(oriented_sketch_nurbs_curve(&geometry, segment.reversed()));
         let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
             nurbs_intrinsic_parameter_range(&nurbs)
         ));
@@ -448,12 +424,8 @@ pub(in super::super) fn revolution_face_sense(
     })));
     let model_point = section_point_in_model(transform, point);
     let pcurve = if is_nurbs {
-        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
-        let nurbs = require_some!(oriented_sketch_nurbs_curve(
-            ctx,
-            &geometry,
-            segment.reversed()
-        )?);
+        let geometry = require_some!(segment.geometry().to_sketch());
+        let nurbs = require_some!(oriented_sketch_nurbs_curve(&geometry, segment.reversed()));
         let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
             nurbs_intrinsic_parameter_range(&nurbs)
         ));
@@ -464,7 +436,6 @@ pub(in super::super) fn revolution_face_sense(
         ))
     } else {
         require_some!(revolution_boundary_pcurve(
-            ctx,
             surface,
             model_point,
             axis,

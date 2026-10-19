@@ -5,15 +5,12 @@ use super::super::{
     polygon_contains, triangulate_polygon, CircularHole, PlanarHole, EPS_DISPLAY_QUANTIZATION,
     MAX_PLANAR_TRIM_ARC_SEGMENTS,
 };
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::planar::segments_intersect;
 use cadmpeg_ir::math::Point2;
 const EPS_DISTANCE: f64 = 1e-7;
 #[test]
 fn numerical_audit_tessellation_keeps_small_crossings_and_triangles() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     for d in [1., 1e-4] {
         assert!(segments_intersect(
             Point2::new(-d, 0.),
@@ -25,7 +22,7 @@ fn numerical_audit_tessellation_keeps_small_crossings_and_triangles() {
         let p = [Point2::new(0., 0.), Point2::new(d, 0.), Point2::new(0., d)];
         assert!(is_simple_polygon(&p, EPS_DISTANCE));
         assert_eq!(
-            triangulate_polygon(&ctx, &p, EPS_DISTANCE).unwrap(),
+            triangulate_polygon(&p, EPS_DISTANCE, &WorkBudget::new(usize::MAX)),
             Some(vec![p])
         );
         let square = [
@@ -35,8 +32,7 @@ fn numerical_audit_tessellation_keeps_small_crossings_and_triangles() {
             Point2::new(0., d),
         ];
         assert_eq!(
-            triangulate_polygon(&ctx, &square, EPS_DISTANCE)
-                .unwrap()
+            triangulate_polygon(&square, EPS_DISTANCE, &WorkBudget::new(usize::MAX))
                 .unwrap()
                 .len(),
             2
@@ -60,10 +56,6 @@ fn numerical_audit_tessellation_keeps_translated_area() {
 #[test]
 fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
     const CONTAINMENT_TOLERANCE: f64 = 1.0e-9;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let concave = vec![
         Point2::new(0.0, 0.0),
         Point2::new(4.0, 0.0),
@@ -73,11 +65,12 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
         Point2::new(0.0, 2.0),
     ];
     assert!(is_simple_polygon(&concave, CONTAINMENT_TOLERANCE));
-    assert!(
-        PlanarHole::polygon(&ctx, concave.clone(), CONTAINMENT_TOLERANCE)
-            .unwrap()
-            .is_some()
-    );
+    assert!(PlanarHole::polygon(
+        concave.clone(),
+        CONTAINMENT_TOLERANCE,
+        &WorkBudget::new(usize::MAX)
+    )
+    .is_some());
     assert!(polygon_contains(
         &concave,
         Point2::new(1.0, 1.0),
@@ -123,10 +116,6 @@ fn numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap() {
 
 #[test]
 fn chordal_hole_constraint_uses_the_boundary_sampling_sagitta() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let hole = CircularHole {
         center: Point2::new(0.0, 0.0),
         radius: 1.0,
@@ -141,35 +130,21 @@ fn chordal_hole_constraint_uses_the_boundary_sampling_sagitta() {
     let angle = std::f64::consts::PI / 6.0;
     chordal.push(Point2::new(0.9 * angle.cos(), 0.9 * angle.sin()));
     let (exclusion, boundary_circle) =
-        chordal_hole_constraint(&ctx, hole, &chordal, EPS_DISPLAY_QUANTIZATION)
-            .unwrap()
-            .unwrap();
+        chordal_hole_constraint(hole, &chordal, EPS_DISPLAY_QUANTIZATION).unwrap();
     assert_eq!(boundary_circle.radius, hole.radius);
     assert!(exclusion.radius < hole.radius);
     assert!(exclusion.radius > 0.8);
 
     let mut deep = boundary;
     deep.push(Point2::new(0.7 * angle.cos(), 0.7 * angle.sin()));
-    assert!(
-        chordal_hole_constraint(&ctx, hole, &deep, EPS_DISPLAY_QUANTIZATION)
-            .unwrap()
-            .is_none()
-    );
+    assert!(chordal_hole_constraint(hole, &deep, EPS_DISPLAY_QUANTIZATION).is_none());
 
     let interior = vec![Point2::new(0.5, 0.0), Point2::new(0.0, 0.5)];
-    assert!(
-        chordal_hole_constraint(&ctx, hole, &interior, EPS_DISPLAY_QUANTIZATION)
-            .unwrap()
-            .is_none()
-    );
+    assert!(chordal_hole_constraint(hole, &interior, EPS_DISPLAY_QUANTIZATION).is_none());
 }
 
 #[test]
 fn circular_planar_bounds_choose_one_enclosing_outer() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let circles = vec![
         CircularHole {
             center: Point2::new(0.0, 0.0),
@@ -184,9 +159,7 @@ fn circular_planar_bounds_choose_one_enclosing_outer() {
             radius: 2.0,
         },
     ];
-    let (outer, holes) = circular_outer_and_holes(&ctx, &circles, EPS_DISPLAY_QUANTIZATION)
-        .unwrap()
-        .unwrap();
+    let (outer, holes) = circular_outer_and_holes(&circles, EPS_DISPLAY_QUANTIZATION).unwrap();
     assert_eq!(outer.radius, 10.0);
     assert_eq!(holes.len(), 2);
 
@@ -200,9 +173,5 @@ fn circular_planar_bounds_choose_one_enclosing_outer() {
             radius: 10.0,
         },
     ];
-    assert!(
-        circular_outer_and_holes(&ctx, &ambiguous, EPS_DISPLAY_QUANTIZATION)
-            .unwrap()
-            .is_none()
-    );
+    assert!(circular_outer_and_holes(&ambiguous, EPS_DISPLAY_QUANTIZATION).is_none());
 }

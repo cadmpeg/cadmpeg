@@ -92,8 +92,7 @@ fn placed_point_product() -> CadIr {
             native_ref: None,
         });
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     ir
 }
 
@@ -101,7 +100,7 @@ fn placed_point_product() -> CadIr {
 fn unrepresented_product_structure_is_an_export_loss() {
     let ir = placed_point_product();
     let validation =
-        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:?}", validation.findings);
 
     let plan = RhinoCodec

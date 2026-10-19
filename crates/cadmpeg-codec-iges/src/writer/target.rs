@@ -20,10 +20,14 @@ pub(crate) fn plan(
         ResolvedTarget::Preserved { .. } => match replay_bytes(input.ir, input.fidelity)? {
             Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
             Replay::Declined(reason) => Err(resolved.unavailable(match reason {
-                DeclineReason::Rejected(reason) => format!(
-                    "{reason}; the semantic writer cannot synthesize the inherited dialect"
-                ),
-                DeclineReason::SourceImageUnavailable => "its retained source image is unavailable for byte replay and the semantic writer cannot synthesize it".to_owned(),
+                DeclineReason::Rejected(reason) => {
+                    format!("{reason}; the semantic writer cannot synthesize the inherited dialect")
+                }
+                DeclineReason::SourceImageUnavailable => {
+                    "its retained source image is unavailable for byte replay and the \
+                     semantic writer cannot synthesize it"
+                        .to_owned()
+                }
             })),
         },
         ResolvedTarget::Explicit { index, .. }

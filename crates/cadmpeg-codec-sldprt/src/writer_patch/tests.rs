@@ -34,17 +34,8 @@ use crate::SldprtCodec;
 fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
-    let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-        .expect("surface scan")
+    let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
         .remove(&180)
         .expect("compact NURBS carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(old)) = carrier.geometry.solved() else {
@@ -52,21 +43,17 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     };
     let mut new = old.clone();
     let target = new.v_count() + 1;
-    new.try_map_control_points(
-        |index, pole| {
-            let mut pole = pole.get();
-            if index == target {
-                pole.z = 750.0;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        },
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("pole edit admission")
+    new.try_map_control_points(|index, pole| {
+        let mut pole = pole.get();
+        if index == target {
+            pole.z = 750.0;
+        }
+        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                "control_points contains a non-finite point".into(),
+            )
+        })
+    })
     .unwrap();
     edit::replace(&mut new, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -75,7 +62,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             knots[2..].fill(2.0);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -89,7 +75,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(&mut new, |previous| {
@@ -99,7 +84,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             knots[2..].fill(3.0);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -113,7 +97,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     let dirty_slots = [
@@ -121,12 +104,11 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
     ];
 
-    crate::brep::spline::patch_nurbs_surface(&ctx, &mut bytes, 0, old, &new, 0.001)
+    crate::brep::spline::patch_nurbs_surface(&mut bytes, 0, old, &new, 0.001)
         .expect("compact NURBS patch fits policy")
         .expect("compact NURBS patch");
 
-    let patched = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-        .expect("surface scan")
+    let patched = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
         .remove(&180)
         .expect("patched compact NURBS carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(patched)) = patched.geometry.solved() else {
@@ -191,27 +173,22 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             })
             .unwrap();
         curve
-            .try_map_control_points(
-                |index, point| {
-                    let mut point = point.get();
-                    if index == 1 {
-                        point.y = 1_500.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.y = 1_500.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         curve
-            .edit_knots(&cadmpeg_test_support::service_decode_context(), |knots| {
+            .edit_knots(|knots| {
                 knots[3..].fill(2.0);
             })
-            .expect("knot edit admission")
             .unwrap();
         let expected_curve = curve.clone();
         let surface = ir_edit
@@ -225,21 +202,17 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             .unwrap();
         let target = surface.v_count() + 1;
         surface
-            .try_map_control_points(
-                |index, pole| {
-                    let mut pole = pole.get();
-                    if index == target {
-                        pole.z = 750.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == target {
+                    pole.z = 750.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         edit::replace(surface, |previous| {
             let mut knots = previous.u_knots().to_vec();
@@ -248,7 +221,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 knots[2..].fill(2.0);
             };
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     knots,
@@ -262,7 +234,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
         edit::replace(surface, |previous| {
@@ -272,7 +243,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 knots[2..].fill(3.0);
             };
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -286,7 +256,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
         let expected_surface = surface.clone();
@@ -661,11 +630,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         let source_fidelity = decoded.source_fidelity_mut();
         let mut annotations =
             cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
-        annotations
-            .retain_exactness(&cadmpeg_test_support::service_decode_context(), |_| {
-                Ok(false)
-            })
-            .unwrap();
+        annotations.retain_exactness(|_| false);
         source_fidelity.annotations = annotations.build();
     }
     assert_eq!(
@@ -911,53 +876,6 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         ),
         "the write must state the baseline decode's cause, not report no patch: {error}"
     );
-}
-
-#[test]
-fn retained_point_patch_preserves_topology_resource_refusal() {
-    let body = triangle_body();
-    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &body);
-    let baseline_ctx = cadmpeg_test_support::service_decode_context();
-    let header = crate::parasolid::stream_header(&baseline_ctx, &payload)
-        .unwrap()
-        .unwrap();
-    let native = crate::brep::graph::decode(
-        &baseline_ctx,
-        &payload,
-        &header,
-        &cadmpeg_ir::stream_name!("point-patch-test"),
-    )
-    .unwrap();
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points = native.points.clone();
-    let mut point = ir.model.points[0].position().get();
-    point.x += 1.0;
-    ir.model.points[0].set_position(cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = u64::try_from(ir.model.points.len()).unwrap();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let mut edited = payload.clone();
-    let error = super::patch_points(
-        &ctx,
-        &ir,
-        &native.annotations,
-        &native,
-        &mut edited[header.body_offset..],
-        0.001,
-    )
-    .unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-        panic!("topology refusal");
-    };
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_ne!(limit.operation, "index SLDPRT patch points");
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert_eq!(edited, payload);
 }
 
 #[test]

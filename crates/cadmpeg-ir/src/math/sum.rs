@@ -53,6 +53,7 @@ const SUBNORMAL_UNIT_BIT: usize = 3286;
 pub(crate) struct ExactSignedSum {
     positive: [u64; EXACT_SUM_WORDS],
     negative: [u64; EXACT_SUM_WORDS],
+    window: Window,
     invalid: bool,
 }
 
@@ -61,8 +62,34 @@ impl Default for ExactSignedSum {
         Self {
             positive: [0; EXACT_SUM_WORDS],
             negative: [0; EXACT_SUM_WORDS],
+            window: Window::EMPTY,
             invalid: false,
         }
+    }
+}
+
+/// The accumulator words `low..high`. Every word outside them is zero on both
+/// sides, so a scan of the accumulator reads only these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Window {
+    low: usize,
+    high: usize,
+}
+
+impl Window {
+    const EMPTY: Self = Self {
+        low: EXACT_SUM_WORDS,
+        high: 0,
+    };
+
+    /// Widen the window over the words `low..high`.
+    fn include(&mut self, low: usize, high: usize) {
+        self.low = self.low.min(low);
+        self.high = self.high.max(high);
+    }
+
+    fn words(self) -> std::ops::Range<usize> {
+        self.low..self.high.max(self.low)
     }
 }
 
@@ -270,26 +297,34 @@ impl ScaledValue {
         let negative = factors
             .iter()
             .fold(false, |negative, factor| negative ^ (factor.get() < 0.0));
-        let magnitude = if negative { sum.negative } else { sum.positive };
-        // `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of
-        // the accumulator is a `u16`; a zero word takes no part.
-        let highest_bit =
-            magnitude
-                .iter()
-                .enumerate()
-                .try_fold(0_u16, |highest, (word, value)| {
-                    if *value == 0 {
-                        Some(highest)
-                    } else {
-                        u16::try_from(
-                            word * 64 + 63
-                                - cadmpeg_core::decode::index_from_u32(value.leading_zeros()),
-                        )
-                        .ok()
-                    }
-                })?;
-        rounded_magnitude(negative, &magnitude, highest_bit)
+        let magnitude = if negative {
+            &sum.negative
+        } else {
+            &sum.positive
+        };
+        rounded_magnitude(
+            negative,
+            magnitude,
+            sum.window.low,
+            highest_bit(magnitude, sum.window)?,
+        )
     }
+}
+
+/// The index of the highest set bit of a nonzero magnitude whose nonzero
+/// words lie in `window`.
+///
+/// `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of the
+/// accumulator is a `u16`. `checked_ilog2` answers `None` for a zero word,
+/// which `rposition` has already excluded; the `?` states that rather than
+/// asserting it.
+fn highest_bit(magnitude: &[u64; EXACT_SUM_WORDS], window: Window) -> Option<u16> {
+    let words = window.words();
+    let word = words.start + magnitude[words].iter().rposition(|value| *value != 0)?;
+    u16::try_from(
+        word * 64 + cadmpeg_core::decode::index_from_u32(magnitude[word].checked_ilog2()?),
+    )
+    .ok()
 }
 
 /// The sign, the integer significand, and the significand's exponent biased by
@@ -315,7 +350,10 @@ fn finite_significand(value: f64) -> Option<(bool, u64, u16)> {
     }
 }
 
-fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
+/// Add `value` at word `index`, carrying upwards, and widen `window` over every
+/// word written.
+fn add_word(words: &mut [u64; EXACT_SUM_WORDS], window: &mut Window, index: usize, value: u64) {
+    let low = index;
     let (sum, mut carry) = words[index].overflowing_add(value);
     words[index] = sum;
     let mut index = index + 1;
@@ -325,9 +363,10 @@ fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
         carry = next;
         index += 1;
     }
+    window.include(low, index);
 }
 
-fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
+fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], window: &mut Window, value: u128, shift: usize) {
     let bytes = value.to_le_bytes();
     // endian-exception: reconstructed-scalar
     let low = u64::from_le_bytes([
@@ -345,10 +384,10 @@ fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
         let word = bit / 64;
         let remainder = bit % 64;
         if remainder == 0 {
-            add_word(words, word, limb);
+            add_word(words, window, word, limb);
         } else {
-            add_word(words, word, limb << remainder);
-            add_word(words, word + 1, limb >> (64 - remainder));
+            add_word(words, window, word, limb << remainder);
+            add_word(words, window, word + 1, limb >> (64 - remainder));
         }
     }
 }
@@ -392,11 +431,13 @@ impl ExactSignedSum {
         };
         add_shifted(
             target,
+            &mut self.window,
             u128::from(product[0]) | (u128::from(product[1]) << 64),
             shift,
         );
         add_shifted(
             target,
+            &mut self.window,
             u128::from(product[2]) | (u128::from(product[3]) << 64),
             shift + 128,
         );
@@ -437,51 +478,52 @@ impl ExactSignedSum {
         } else {
             &mut self.positive
         };
-        add_shifted(target, product, shift);
+        add_shifted(target, &mut self.window, product, shift);
         Some(())
     }
 
-    pub(crate) fn finish(self) -> Option<ScaledValue> {
+    pub(crate) fn finish(mut self) -> Option<ScaledValue> {
         if self.invalid {
             return None;
         }
-        let (negative, magnitude) = signed_difference(&self.positive, &self.negative)?;
-        let word = magnitude.iter().rposition(|value| *value != 0)?;
-        // `checked_ilog2` answers `None` for a zero word, which `rposition`
-        // has already excluded; the `?` states that rather than asserting it.
-        // `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of
-        // the accumulator is a `u16` and converts to `i32` with no range check.
-        let highest_bit = u16::try_from(
-            word * 64 + cadmpeg_core::decode::index_from_u32(magnitude[word].checked_ilog2()?),
+        let window = self.window;
+        let (negative, magnitude) = self.signed_difference()?;
+        rounded_magnitude(
+            negative,
+            magnitude,
+            window.low,
+            highest_bit(magnitude, window)?,
         )
-        .ok()?;
-        rounded_magnitude(negative, &magnitude, highest_bit)
     }
 
     /// Round a sum in the subnormal range directly onto the binary64 grid.
     /// Rounding through a 53-bit scaled mantissa first can discard a tail that
     /// breaks a tie at half of the smallest subnormal.
-    pub(crate) fn finite_sum(self) -> Option<FiniteReal> {
+    pub(crate) fn finite_sum(mut self) -> Option<FiniteReal> {
         if self.invalid {
             return None;
         }
-        let Some((negative, magnitude)) = signed_difference(&self.positive, &self.negative) else {
+        let window = self.window;
+        let Some((negative, magnitude)) = self.signed_difference() else {
             return Some(FiniteReal::ZERO);
         };
-        let word = magnitude.iter().rposition(|value| *value != 0)?;
-        let highest_bit =
-            word * 64 + cadmpeg_core::decode::index_from_u32(magnitude[word].checked_ilog2()?);
+        let highest = highest_bit(magnitude, window)?;
+        let highest_bit = usize::from(highest);
         if highest_bit >= SUBNORMAL_UNIT_BIT + 52 {
-            return self.finish()?.finite().ok();
+            return rounded_magnitude(negative, magnitude, window.low, highest)?
+                .finite()
+                .ok();
         }
         let mut units = 0_u64;
         if highest_bit >= SUBNORMAL_UNIT_BIT {
-            for bit in (SUBNORMAL_UNIT_BIT..=highest_bit).rev() {
-                units = (units << 1) | u64::from(bit_is_set(&magnitude, bit));
-            }
+            units = bit_field(
+                magnitude,
+                SUBNORMAL_UNIT_BIT,
+                highest_bit + 1 - SUBNORMAL_UNIT_BIT,
+            );
         }
-        let guard = bit_is_set(&magnitude, SUBNORMAL_UNIT_BIT - 1);
-        let sticky = (0..SUBNORMAL_UNIT_BIT - 1).any(|bit| bit_is_set(&magnitude, bit));
+        let guard = bit_is_set(magnitude, SUBNORMAL_UNIT_BIT - 1);
+        let sticky = any_bit_below(magnitude, window.low, SUBNORMAL_UNIT_BIT - 1);
         if guard && (sticky || units & 1 != 0) {
             units += 1;
         }
@@ -490,64 +532,92 @@ impl ExactSignedSum {
         }
         FiniteReal::subnormal_units(negative, units)
     }
-}
 
-/// Returns the sign and the magnitude of `positive - negative`, or `None` when
-/// the two accumulators are equal.
-///
-/// The comparison that names the larger accumulator is the only route to the
-/// subtraction below, so the minuend is never the smaller side and the loop
-/// cannot leave a borrow in the highest word. Splitting the comparison from the
-/// subtraction would state that relation as an assertion instead of holding it.
-fn signed_difference(
-    positive: &[u64; EXACT_SUM_WORDS],
-    negative: &[u64; EXACT_SUM_WORDS],
-) -> Option<(bool, [u64; EXACT_SUM_WORDS])> {
-    let (larger, smaller, is_negative) =
-        positive
+    /// Returns the sign and the magnitude of `positive - negative`, or `None`
+    /// when the two accumulators are equal. The magnitude is written over the
+    /// larger side, and its nonzero words lie in the window.
+    ///
+    /// The comparison that names the larger accumulator is the only route to
+    /// the subtraction below, so the minuend is never the smaller side and the
+    /// loop cannot leave a borrow in the highest word. Splitting the
+    /// comparison from the subtraction would state that relation as an
+    /// assertion instead of holding it.
+    fn signed_difference(&mut self) -> Option<(bool, &[u64; EXACT_SUM_WORDS])> {
+        let words = self.window.words();
+        let is_negative = self.positive[words.clone()]
             .iter()
-            .zip(negative)
+            .zip(&self.negative[words.clone()])
             .rev()
             .find_map(|(left, right)| match left.cmp(right) {
-                std::cmp::Ordering::Greater => Some((positive, negative, false)),
-                std::cmp::Ordering::Less => Some((negative, positive, true)),
+                std::cmp::Ordering::Greater => Some(false),
+                std::cmp::Ordering::Less => Some(true),
                 std::cmp::Ordering::Equal => None,
             })?;
-    let mut magnitude = [0; EXACT_SUM_WORDS];
-    let mut borrow = false;
-    for index in 0..EXACT_SUM_WORDS {
-        let (difference, first_borrow) = larger[index].overflowing_sub(smaller[index]);
-        let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
-        magnitude[index] = difference;
-        borrow = first_borrow || second_borrow;
+        let (larger, smaller) = if is_negative {
+            (&mut self.negative, &self.positive)
+        } else {
+            (&mut self.positive, &self.negative)
+        };
+        let mut borrow = false;
+        for index in words {
+            let (difference, first_borrow) = larger[index].overflowing_sub(smaller[index]);
+            let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
+            larger[index] = difference;
+            borrow = first_borrow || second_borrow;
+        }
+        Some((is_negative, larger))
     }
-    Some((is_negative, magnitude))
 }
 
 fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
     words[bit / 64] & (1_u64 << (bit % 64)) != 0
 }
 
+/// The `count` bits of `words` from bit `low` upwards, `count` at most 64,
+/// with bit `low` as the least significant.
+fn bit_field(words: &[u64; EXACT_SUM_WORDS], low: usize, count: usize) -> u64 {
+    let (word, offset) = (low / 64, low % 64);
+    let mut field = words[word] >> offset;
+    if offset != 0 && word + 1 < EXACT_SUM_WORDS {
+        field |= words[word + 1] << (64 - offset);
+    }
+    if count < 64 {
+        field & ((1_u64 << count) - 1)
+    } else {
+        field
+    }
+}
+
+/// Whether any bit of `words` below `bit` is set, when every word below word
+/// `low` is zero.
+fn any_bit_below(words: &[u64; EXACT_SUM_WORDS], low: usize, bit: usize) -> bool {
+    let (word, offset) = (bit / 64, bit % 64);
+    words[low.min(word)..word].iter().any(|value| *value != 0)
+        || words[word] & ((1_u64 << offset) - 1) != 0
+}
+
 /// The scaled form of an accumulator magnitude whose highest set bit is
 /// `highest_bit`, rounded to 53 bits, half to even, with `negative` as its
-/// sign.
+/// sign. Every word below word `low` is zero.
 fn rounded_magnitude(
     negative: bool,
     magnitude: &[u64; EXACT_SUM_WORDS],
+    low: usize,
     highest_bit: u16,
 ) -> Option<ScaledValue> {
     let keep = (highest_bit + 1).min(53);
-    let mut significand = 0_u64;
-    for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
-        significand = (significand << 1) | u64::from(bit_is_set(magnitude, usize::from(bit)));
-    }
+    let mut significand = bit_field(
+        magnitude,
+        usize::from(highest_bit + 1 - keep),
+        usize::from(keep),
+    );
     if keep == 53 {
         let guard_bit = highest_bit
             .checked_sub(keep)
             .is_some_and(|bit| bit_is_set(magnitude, usize::from(bit)));
-        let sticky = highest_bit.checked_sub(keep).is_some_and(|bit| {
-            (0..bit).any(|candidate| bit_is_set(magnitude, usize::from(candidate)))
-        });
+        let sticky = highest_bit
+            .checked_sub(keep)
+            .is_some_and(|bit| any_bit_below(magnitude, low, usize::from(bit)));
         if guard_bit && (sticky || significand & 1 != 0) {
             significand += 1;
             if significand == 1_u64 << 53 {
@@ -562,7 +632,7 @@ fn rounded_magnitude(
     Some(ScaledValue {
         sign: if negative { -1.0 } else { 1.0 },
         mantissa: cadmpeg_core::convert::f64_from_u64(significand)?
-            * 2.0_f64.powi(-i32::from(keep)),
+            * super::normal_power_of_two(-i32::from(keep))?,
         exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1),
     })
 }
@@ -702,6 +772,85 @@ pub(crate) fn product_sum<const N: usize>(
         sum.add_factors(factors);
     }
     ProductSum::from_scaled(sum.finish())
+}
+
+/// The f64 pass of [`product_sum`] over several sums whose terms share their
+/// leading factors. Lane `k` of a term is the product of the shared factors
+/// and then `lanes[k]`, formed in that order, so every product, partial sum
+/// and range test of a lane is the one `product_sum` forms for the terms
+/// `[shared.., lanes[k]]`.
+#[derive(Clone, Copy)]
+pub(crate) struct LaneProductSums<const LANES: usize> {
+    sum: [f64; LANES],
+    largest: [f64; LANES],
+    exact: [bool; LANES],
+}
+
+impl<const LANES: usize> Default for LaneProductSums<LANES> {
+    fn default() -> Self {
+        Self {
+            sum: [0.0; LANES],
+            largest: [0.0; LANES],
+            exact: [false; LANES],
+        }
+    }
+}
+
+impl<const LANES: usize> LaneProductSums<LANES> {
+    /// Add one term. `None` states a factor that is not finite, for which
+    /// `product_sum` leaves the sum undefined.
+    pub(crate) fn add<const SHARED: usize>(
+        &mut self,
+        shared: [f64; SHARED],
+        lanes: [f64; LANES],
+    ) -> Option<()> {
+        if shared.iter().chain(&lanes).any(|value| !value.is_finite()) {
+            return None;
+        }
+        if shared.contains(&0.0) {
+            return Some(());
+        }
+        let mut product = 1.0_f64;
+        let mut exact = false;
+        for factor in shared {
+            product *= factor;
+            exact |= !product.is_normal();
+        }
+        for (lane, factor) in lanes.into_iter().enumerate() {
+            if factor == 0.0 {
+                continue;
+            }
+            let lane_product = product * factor;
+            self.exact[lane] |= exact || !lane_product.is_normal();
+            self.sum[lane] += lane_product;
+            self.largest[lane] = self.largest[lane].max(lane_product.abs());
+            self.exact[lane] |= !self.sum[lane].is_finite();
+        }
+        Some(())
+    }
+
+    /// Each lane's sum where the f64 pass states it, or its replay.
+    pub(crate) fn finish(&self) -> [LaneSum; LANES] {
+        std::array::from_fn(|lane| {
+            let (sum, largest) = (self.sum[lane], self.largest[lane]);
+            let exact = self.exact[lane] || (largest != 0.0 && sum.abs() / largest < f64::EPSILON);
+            if exact {
+                LaneSum::Replay
+            } else {
+                LaneSum::Settled(scaled_finite(sum))
+            }
+        })
+    }
+}
+
+/// A lane of [`LaneProductSums`] after its f64 pass.
+#[derive(Clone, Copy)]
+pub(crate) enum LaneSum {
+    /// The f64 pass states the sum. `None` is an exact zero.
+    Settled(Option<ScaledValue>),
+    /// A product left the normal range or the sum cancelled: `product_sum`
+    /// replays the lane's terms through [`ExactSignedSum`].
+    Replay,
 }
 
 #[cfg(test)]

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::LoopId;
@@ -9,6 +8,10 @@ use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::FaceLoops;
 
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
+
+/// Boundary points one planar face may state before its loops are left
+/// unclassified. Segment intersection and containment are quadratic in them.
+pub(crate) const MAX_PLANAR_BOUNDARY_POINTS: usize = 4096;
 
 fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
     let mut inside = false;
@@ -143,46 +146,29 @@ fn polygon_boundaries_intersect(
 /// invariant. Multiple boundaries are classified only when one unique largest
 /// non-degenerate polygon strictly contains every other polygon. This
 /// deliberately declines disjoint, touching, nested-hole, malformed, and
-/// non-planar arrangements.
+/// non-planar arrangements. A face past [`MAX_PLANAR_BOUNDARY_POINTS`] is
+/// declined with a loss in `refusal`.
 pub(crate) fn classify_planar_boundaries(
-    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
     rows: &[(LoopId, Vec<Point3>)],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<FaceLoops, CodecError> {
     let unspecified = || -> Result<FaceLoops, CodecError> {
         let mut ids = Vec::new();
         for (id, _) in rows {
-            let id = id.try_clone_for_decode(ctx, "catia_boundary_unspecified_id_copy")?;
-            ctx.push_vec(&mut ids, id, "catia_boundary_unspecified_ids")?;
+            let id = id.clone();
+            ids.push(id);
         }
         Ok(FaceLoops::unspecified(ids))
     };
     if let [(single, _)] = rows {
-        let id = single.try_clone_for_decode(ctx, "catia_boundary_single_id_copy")?;
+        let id = single.clone();
         return Ok(FaceLoops::classified(id, Vec::new()));
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(rows.len()),
-        "catia_boundary_work_bound",
-    )?;
-    let point_count = rows
-        .iter()
-        .try_fold(0_u64, |count, (_, points)| {
-            count.checked_add(cadmpeg_core::decode::u64_from_index(points.len()))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_boundary_work_bound", u64::MAX, u64::MAX))?;
-    // Segment pairs, containment passes, projection and area scans fit this bound.
-    let work = point_count
-        .checked_mul(point_count)
-        .and_then(|square| square.checked_mul(4))
-        .and_then(|pairs| point_count.checked_mul(8)?.checked_add(pairs))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_boundary_classification_work", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(work, "catia_boundary_classification_work")?;
+
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
@@ -193,11 +179,7 @@ pub(crate) fn classify_planar_boundaries(
             return unspecified();
         }
         let mut polygon = Vec::new();
-        ctx.reserve_vec(
-            &mut polygon,
-            boundary.len(),
-            "catia_boundary_polygon_points",
-        )?;
+
         for point in boundary {
             let offset = point.vector_from(origin);
             let u = offset.dot(u_axis);
@@ -213,7 +195,7 @@ pub(crate) fn classify_planar_boundaries(
             }
             polygon.push(Point2::new(u, v));
         }
-        ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
+        polygons.push(polygon);
     }
     let coordinate_scale = polygons
         .iter()
@@ -230,12 +212,19 @@ pub(crate) fn classify_planar_boundaries(
             .map(|(left, right)| left.u * right.v - right.u * left.v)
             .sum::<f64>()
             * 0.5;
-        ctx.push_vec(&mut areas, area, "catia_boundary_polygon_areas")?;
+        areas.push(area);
     }
     if areas
         .iter()
         .any(|area| !area.is_finite() || area.abs() <= area_tolerance)
     {
+        return unspecified();
+    }
+    let points = polygons.iter().map(Vec::len).sum::<usize>();
+    if points > MAX_PLANAR_BOUNDARY_POINTS {
+        if let Some((first_loop, _)) = rows.first() {
+            refusal.push_planar_boundary_bounded(first_loop.as_str(), points);
+        }
         return unspecified();
     }
     if polygons.iter().enumerate().any(|(index, polygon)| {
@@ -288,11 +277,11 @@ pub(crate) fn classify_planar_boundaries(
     let mut inner = Vec::new();
     for (index, (id, _)) in rows.iter().enumerate() {
         if index != outer {
-            let id = id.try_clone_for_decode(ctx, "catia_boundary_inner_id_copy")?;
-            ctx.push_vec(&mut inner, id, "catia_boundary_inner_ids")?;
+            let id = id.clone();
+            inner.push(id);
         }
     }
-    let outer_id = outer_id.try_clone_for_decode(ctx, "catia_boundary_outer_id_copy")?;
+    let outer_id = outer_id.clone();
     Ok(FaceLoops::classified(outer_id, inner))
 }
 
@@ -307,10 +296,8 @@ mod tests {
         surface: &SurfaceGeometry,
         rows: &[(cadmpeg_ir::ids::LoopId, Vec<Point3>)],
     ) -> FaceLoops {
-        crate::test_support::with_service_context(|ctx| {
-            super::classify_planar_boundaries(ctx, surface, rows)
-        })
-        .expect("service context admits boundary classification")
+        super::classify_planar_boundaries(surface, rows, &mut crate::nurbs::LaneRefusals::new())
+            .expect("classify planar boundaries")
     }
 
     fn plane() -> SurfaceGeometry {
@@ -346,40 +333,6 @@ mod tests {
             .enumerate()
             .map(|(index, boundary)| (loop_id(index), boundary))
             .collect()
-    }
-
-    #[test]
-    fn planar_boundary_comparisons_refuse_work() {
-        let boundaries = rows(vec![
-            square(0.0, 0.0, 10.0, 10.0),
-            square(2.0, 2.0, 3.0, 3.0),
-        ]);
-        crate::test_support::with_work_limit(2, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
-                super::classify_planar_boundaries(ctx, &plane(), &boundaries)
-                    .expect_err("comparison work must be admitted")
-            else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_boundary_classification_work");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-    }
-
-    #[test]
-    fn planar_boundary_points_refuse_before_nested_polygon_allocation() {
-        let boundaries = rows(vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)]);
-        let limited = crate::test_support::with_collection_limit(3, |ctx| {
-            super::classify_planar_boundaries(ctx, &plane(), &boundaries)
-        });
-        assert!(matches!(
-            limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        assert_eq!(
-            classify_planar_boundaries(&plane(), &boundaries),
-            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
-        );
     }
 
     #[test]
@@ -423,6 +376,50 @@ mod tests {
             ),
             FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
         );
+    }
+
+    #[test]
+    fn a_face_past_the_point_bound_stays_unclassified_with_a_loss() {
+        let hole = square(-1.0, -1.0, 1.0, 1.0);
+        let outer_points = u32::try_from(super::MAX_PLANAR_BOUNDARY_POINTS + 1 - hole.len())
+            .expect("fixture point count");
+        let outer = (0..outer_points)
+            .map(|index| {
+                let angle = std::f64::consts::TAU * f64::from(index) / f64::from(outer_points);
+                Point3::new(10.0 * angle.cos(), 10.0 * angle.sin(), 0.0)
+            })
+            .collect();
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        assert_eq!(
+            super::classify_planar_boundaries(&plane(), &rows(vec![outer, hole]), &mut refusal)
+                .expect("classify planar boundaries"),
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
+        );
+        let notes = refusal.take_notes();
+        let [note] = notes.as_slice() else {
+            panic!("one bounded planar face");
+        };
+        assert_eq!(
+            note.code,
+            crate::loss::CatiaLossCode::TopologyPlanarBoundaryBounded.kind()
+        );
+        assert!(note
+            .message
+            .contains("loop catia:test:loop#0 states 4097 boundary points"));
+        assert!(note.message.contains("bound of 4096 points"));
+    }
+
+    #[test]
+    fn classified_and_declined_faces_within_the_bound_state_no_loss() {
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        for boundaries in [
+            vec![square(1.0, 1.0, 3.0, 3.0), square(0.0, 0.0, 5.0, 5.0)],
+            vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)],
+        ] {
+            super::classify_planar_boundaries(&plane(), &rows(boundaries), &mut refusal)
+                .expect("classify planar boundaries");
+        }
+        assert_eq!(refusal.note_count(), 0);
     }
 
     #[test]

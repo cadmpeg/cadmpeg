@@ -30,7 +30,7 @@ fn decode_zero_entity_falls_back_to_metadata() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, f.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::ZeroEntity);
     assert!(scan.inner.is_none());
 
@@ -74,13 +74,10 @@ fn zero_entity_directory_markers_stay_outside_the_record_stream() {
 
     let scan =
         crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
-            .expect("service resource budget");
+            .expect("scan the container");
     assert_eq!(scan.census.a9_records, 0);
     assert_eq!(scan.variant, Variant::Unknown);
-    let ranges = crate::test_support::with_service_context(|ctx| {
-        crate::container::consolidated_record_ranges(ctx, &scan)
-    })
-    .expect("service budget admits record ranges");
+    let ranges = crate::container::consolidated_record_ranges(&scan);
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert!(native.zero_entity_records.is_empty());
     assert!(native.zero_entity_support_runs.is_empty());
@@ -107,13 +104,10 @@ fn zero_entity_finjpl_records_stay_outside_the_record_stream() {
 
     let scan =
         crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
-            .expect("service resource budget");
+            .expect("scan the container");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::ZeroEntity);
-    let ranges = crate::test_support::with_service_context(|ctx| {
-        crate::container::consolidated_record_ranges(ctx, &scan)
-    })
-    .expect("service budget admits record ranges");
+    let ranges = crate::container::consolidated_record_ranges(&scan);
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert_eq!(native.zero_entity_records.len(), 1);
 }
@@ -147,7 +141,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         other => panic!("expected cylinder, got {other:?}"),
     }
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -229,7 +223,7 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.sides()[1].pcurve, None);
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -266,7 +260,7 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
     assert!(result.ir().model.procedural_curves.is_empty());
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -508,13 +502,11 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         let replacement = true;
         edit::replace(model_curve, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };

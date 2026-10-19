@@ -51,7 +51,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::resolved_features::validate::validate_native(
         &cadmpeg_test_support::service_decode_context(),
@@ -75,7 +75,7 @@ fn display_geometry_and_summary_share_one_parse_per_section() {
     let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(source), &options)
-            .expect("service profile admits display geometry"),
+            .expect("decode the display geometry fixture"),
     );
     assert!(!result.ir().model.tessellations.is_empty());
     assert_eq!(crate::tessellation::display_parse_calls(), section_count);
@@ -247,8 +247,12 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
-    let _ = crate::tessellation::assign_unique_surface_owners(&ctx, &mut decoded.ir_mut().model)
-        .unwrap();
+    let _ = crate::tessellation::assign_unique_surface_owners(
+        &ctx,
+        &mut decoded.ir_mut().model,
+        &mut Vec::new(),
+    )
+    .unwrap();
 
     assert!(decoded.ir().model.tessellations[0].body.is_none());
     assert!(decoded.ir().model.tessellations[0].faces.is_empty());

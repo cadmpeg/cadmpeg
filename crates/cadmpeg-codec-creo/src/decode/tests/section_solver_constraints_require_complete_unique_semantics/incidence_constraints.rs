@@ -62,7 +62,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         ),
     ]);
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_pair,
             &sketch,
@@ -93,7 +93,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         ),
     )]);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_pair,
             &sketch,
@@ -284,7 +284,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         ),
     ]);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -316,7 +316,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         sense: 0,
     };
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -339,7 +339,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .items[1]
         .sense = 4;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -396,7 +396,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
             cadmpeg_core::text::NonBlankString::new("arc").expect("nonempty source identity"),
         ),
     );
-    let inactive = crate::decode::with_test_decode_ctx(|ctx| {
+    let inactive = crate::decode::with_service_context(|ctx| {
         section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
@@ -450,7 +450,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         ),
     );
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -502,7 +502,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .expect("skamp table")
         .rows_mut()[0]
         .kind = 15;
-    let inactive_type_fifteen = crate::decode::with_test_decode_ctx(|ctx| {
+    let inactive_type_fifteen = crate::decode::with_service_context(|ctx| {
         section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
@@ -525,7 +525,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .rows_mut()[0]
         .flags = 3;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -568,7 +568,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         },
     ];
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &inactive_tangent_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -599,7 +599,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &inactive_tangent_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -649,7 +649,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         ),
     ]);
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &inactive_point_on_curve_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -678,7 +678,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &inactive_point_on_curve_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -743,7 +743,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         ),
     ]);
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &inactive_point_symmetry_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -778,7 +778,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &inactive_point_symmetry_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -799,7 +799,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .expect("skamp table")
         .rows_mut()[0]
         .status = 1;
-    let active_native_arc = crate::decode::with_test_decode_ctx(|ctx| {
+    let active_native_arc = crate::decode::with_service_context(|ctx| {
         section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
@@ -870,7 +870,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .rows_mut()[1]
         .status = 0;
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -910,7 +910,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         },
     ];
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -923,7 +923,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -946,7 +946,7 @@ fn section_solver_incidence_requires_available_geometry_and_active_semantics() {
         .items[1]
         .sense = 0;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),

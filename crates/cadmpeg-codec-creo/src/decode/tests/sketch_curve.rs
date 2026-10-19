@@ -3,7 +3,7 @@
 
 use super::{extruded_segment_surface, placed_section_curve_geometry};
 use crate::decode::feature_history::dimensions::{
-    feature_dimension_display, feature_dimension_parameter_id, feature_dimension_parameter_layout,
+    feature_dimension_display, feature_dimension_parameter_layout,
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
 use crate::decode::feature_history::outputs::{
@@ -39,10 +39,8 @@ fn section_segment_radius_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        checked_section_segment_radius_constraints(ctx, definition, sketch)
-    })
-    .expect("service profile admits segment radius constraints")
+    checked_section_segment_radius_constraints(definition, sketch)
+        .expect("compute the checked section segment radius constraints")
 }
 
 fn section_segment_radius_constraints_for_emitted(
@@ -51,16 +49,13 @@ fn section_segment_radius_constraints_for_emitted(
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        checked_section_segment_radius_constraints_for_emitted(
-            ctx,
-            definition,
-            sketch,
-            emitted,
-            available_parameters,
-        )
-    })
-    .expect("service profile admits emitted segment radius constraints")
+    checked_section_segment_radius_constraints_for_emitted(
+        definition,
+        sketch,
+        emitted,
+        available_parameters,
+    )
+    .expect("compute the checked section segment radius constraints for emitted")
 }
 
 #[test]
@@ -86,64 +81,13 @@ fn sketch_curve_references_require_a_materialized_curve() {
     .expect("valid test fixture");
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
-            ctx,
-            Some(&transform),
-            &sketch,
-            3,
-            &line
-        ))
-        .expect("test curve reference"),
+        placed_sketch_curve_ref(Some(&transform), &sketch, 3, &line),
         Some("creo:featdefs:section_curve#5:3".to_string())
     );
+    assert_eq!(placed_sketch_curve_ref(None, &sketch, 3, &line), None);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
-            ctx, None, &sketch, 3, &line
-        ))
-        .expect("test absent curve reference"),
+        placed_sketch_curve_ref(Some(&transform), &sketch, 4, &point),
         None
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
-            ctx,
-            Some(&transform),
-            &sketch,
-            4,
-            &point
-        ))
-        .expect("test point curve reference"),
-        None
-    );
-}
-
-#[test]
-fn placed_sketch_curve_reference_refuses_before_retained_formatting() {
-    let transform = crate::placement::FeatureSectionTransform::new(
-        5,
-        Some(5),
-        [10.0, 20.0, 30.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-        7,
-    )
-    .expect("valid section frame");
-    let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(0.0, 0.0),
-        end: Point2::new(2.0, 0.0),
-    })
-    .expect("valid line");
-    let expected = "creo:featdefs:section_curve#5:3";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(
-        matches!(placed_sketch_curve_ref(&ctx, Some(&transform), &sketch, 3, &line),
-        Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && resource.operation == "creo section curve reference")
     );
 }
 
@@ -233,26 +177,16 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     let entity = SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture");
     let sketch = SketchId::mint("synthetic:test:id#sketch").expect("valid test fixture");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
-            ctx,
-            &segment,
-            &sketch,
-            entity.clone()
-        ))
-        .expect("service verhor admission"),
+        section_segment_verhor_definition(&segment, &sketch, entity.clone())
+            .expect("build the section segment orientation constraint"),
         Some(SketchConstraintDefinitionInput::Vertical {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(1);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
-            ctx,
-            &segment,
-            &sketch,
-            entity.clone()
-        ))
-        .expect("service verhor admission"),
+        section_segment_verhor_definition(&segment, &sketch, entity.clone())
+            .expect("build the section segment orientation constraint"),
         Some(SketchConstraintDefinitionInput::Horizontal {
             entity: entity.clone()
         })
@@ -263,10 +197,8 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         entities,
         operands,
         ..
-    }) = crate::decode::with_test_decode_ctx(|ctx| {
-        section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone())
-    })
-    .expect("service verhor admission")
+    }) = { section_segment_verhor_definition(&segment, &sketch, entity.clone()) }
+        .expect("build the section segment orientation constraint")
     else {
         panic!("an undefined line selector must remain native");
     };
@@ -281,21 +213,18 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.kind = crate::feature::definitions::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
-            ctx, &segment, &sketch, entity
-        ))
-        .expect("service verhor admission"),
+        section_segment_verhor_definition(&segment, &sketch, entity)
+            .expect("build the section segment orientation constraint"),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     segment.vertical_horizontal = None;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
-            ctx,
+        section_segment_verhor_definition(
             &segment,
             &sketch,
             SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture")
-        ))
-        .expect("service verhor admission"),
+        )
+        .expect("build the section segment orientation constraint"),
         None
     );
 }
@@ -319,27 +248,26 @@ fn dimension_identity_includes_its_feature_definition() {
     let sketch_1200 =
         SketchId::mint("creo:model:sketch#1200".to_string()).expect("valid test fixture");
     assert_ne!(
-        feature_dimension_parameter_id(&sketch_917, 3),
-        feature_dimension_parameter_id(&sketch_1104, 3)
+        feature_dimension_parameter_row_id(&sketch_917, 3, None)
+            .expect("build the dimension parameter identity"),
+        feature_dimension_parameter_row_id(&sketch_1104, 3, None)
+            .expect("build the dimension parameter identity")
     );
     assert_eq!(
-        feature_dimension_parameter_id(&sketch_917, 3)
+        feature_dimension_parameter_row_id(&sketch_917, 3, None)
+            .expect("build the dimension parameter identity")
             .expect("valid test identity")
             .as_str(),
         "creo:featdefs:parameter#917:3"
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(
-            ctx,
-            &[
-                (sketch_917.clone(), 3),
-                (sketch_1104.clone(), 3),
-                (sketch_1104.clone(), 4),
-                (sketch_1200, 3),
-            ]
-        )
-        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
-        .expect("layout fits service limits"),
+        feature_dimension_parameter_layout(&[
+            (sketch_917.clone(), 3),
+            (sketch_1104.clone(), 3),
+            (sketch_1104.clone(), 4),
+            (sketch_1200, 3),
+        ])
+        .map(std::iter::Iterator::collect::<Vec<_>>),
         Some(vec![
             (0, "d3".to_string(), None),
             (0, "d3".to_string(), None),
@@ -348,20 +276,18 @@ fn dimension_identity_includes_its_feature_definition() {
         ])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(
-            ctx,
-            &[(sketch_917.clone(), 3), (sketch_917.clone(), 3)]
-        )
-        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
-        .expect("layout fits service limits"),
+        feature_dimension_parameter_layout(&[(sketch_917.clone(), 3), (sketch_917.clone(), 3)])
+            .map(std::iter::Iterator::collect::<Vec<_>>),
         Some(vec![
             (0, "d917_3_1".to_string(), Some(0)),
             (1, "d917_3_2".to_string(), Some(1)),
         ])
     );
     assert_ne!(
-        feature_dimension_parameter_row_id(&sketch_917, 3, Some(0)),
+        feature_dimension_parameter_row_id(&sketch_917, 3, Some(0))
+            .expect("build the dimension parameter identity"),
         feature_dimension_parameter_row_id(&sketch_917, 3, Some(1))
+            .expect("build the dimension parameter identity")
     );
     let dimension = crate::feature::definitions::FeatureDimension {
         dimension_type: 2,
@@ -404,7 +330,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             0,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         Some((
             &dimension,
             ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
@@ -433,7 +360,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 3;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 5.0)])
     );
@@ -501,7 +428,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
@@ -543,7 +470,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .declared_count = 2;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
@@ -571,7 +498,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 2;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve")
             .is_empty()
     );
@@ -700,7 +627,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         section_circle_geometry(
             &BTreeMap::from([(7, [1.0, 2.0])]),
-            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            &crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve"),
             &definition
                 .segments
@@ -730,7 +657,8 @@ fn dimension_identity_includes_its_feature_definition() {
         ..table.clone()
     };
     assert_eq!(
-        resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0),
+        resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0)
+            .expect("resolve the dimension parameter"),
         Some((
             &unresolved_dimension,
             ParameterId::mint("creo:featdefs:parameter#917:4".to_string())
@@ -742,7 +670,8 @@ fn dimension_identity_includes_its_feature_definition() {
         ..unresolved_table
     };
     assert_eq!(
-        resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0),
+        resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0)
+            .expect("resolve the dimension parameter"),
         None
     );
     table.rows.push(dimension);
@@ -752,7 +681,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             0,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         None
     );
     assert_eq!(
@@ -760,7 +690,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             1,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         None
     );
 }
@@ -807,8 +738,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40))
-            .expect("service profile admits output bodies"),
+        evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),

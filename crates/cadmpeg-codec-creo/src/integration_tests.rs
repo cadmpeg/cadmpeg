@@ -32,7 +32,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("creo").is_some());
 }
@@ -226,7 +226,7 @@ fn featdefs_pipeline_retains_solver_relations_and_resolved_dimension_inputs() {
     let result = decode(build_prt("integration", &[("FeatDefs", payload)]));
     let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
-    let fields = sketches[0].fields();
+    let fields = sketches[0].fields().unwrap();
     let headers = fields["table_headers"].as_array().unwrap();
     assert!(headers
         .iter()
@@ -254,7 +254,7 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

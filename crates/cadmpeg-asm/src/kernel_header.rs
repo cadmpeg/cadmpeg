@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Kernel header metadata shared by binary ASM, binary ACIS, and text streams.
 
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 /// Integer and reference payload width of a kernel stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,19 +101,14 @@ pub(crate) struct HeaderRegion {
     pub(crate) doubles: [Option<f64>; 3],
 }
 
-pub(crate) fn read_string_region(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-) -> Result<HeaderRegion, CodecError> {
+pub(crate) fn read_string_region(bytes: &[u8], start: usize) -> HeaderRegion {
     let mut cur = start;
     let mut strings = [None, None, None];
     for slot in &mut strings {
         match read_u8_string_span(bytes, cur) {
             Some((value, next)) => {
                 if let Ok(value) = std::str::from_utf8(value) {
-                    *slot =
-                        Some(ctx.copy_retained_text(value, "retain kernel header product string")?);
+                    *slot = Some(value.to_owned());
                 }
                 cur = next;
             }
@@ -131,7 +125,7 @@ pub(crate) fn read_string_region(
             None => break,
         }
     }
-    Ok(HeaderRegion { strings, doubles })
+    HeaderRegion { strings, doubles }
 }
 
 /// Locate tagged header values without materializing a second copy.
@@ -217,13 +211,11 @@ mod tests {
                 let mut bytes = original.clone();
                 bytes[*position] = 0xff;
                 assert_eq!(start(&bytes), Some(record_start));
-                let ctx = cadmpeg_test_support::service_decode_context();
                 let header = if magic.starts_with(b"ASM") {
-                    crate::asm_header::parse(&ctx, &bytes)
+                    crate::asm_header::parse(&bytes)
                 } else {
-                    crate::acis_header::parse(&ctx, &bytes)
+                    crate::acis_header::parse(&bytes)
                 }
-                .unwrap()
                 .unwrap();
                 assert_eq!(header.metadata.linear, Some(0.125));
                 assert_eq!(header.metadata.angular, Some(0.25));
@@ -244,27 +236,6 @@ mod tests {
                 "untrusted byte boundaries stay fatal"
             );
         }
-    }
-
-    #[test]
-    fn binary_header_product_string_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let bytes = [0x07, 3, b'a', b'b', b'c'];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("source fits input limit");
-        let Err(error) = super::read_string_region(&ctx, &bytes, 0) else {
-            panic!("product string must exceed retained limit");
-        };
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "retain kernel header product string");
     }
 
     #[test]
@@ -295,16 +266,12 @@ mod tests {
             } else {
                 crate::acis_header::parse
             };
-            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("service policy admits header")
-                .expect("recognized partial header");
+            let header = parse(&bytes).expect("recognized partial header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, None);
             bytes.push(6);
             bytes.extend_from_slice(&0.25_f64.to_le_bytes());
-            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("service policy admits header")
-                .expect("recognized complete header");
+            let header = parse(&bytes).expect("recognized complete header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, Some(0.25));
         }

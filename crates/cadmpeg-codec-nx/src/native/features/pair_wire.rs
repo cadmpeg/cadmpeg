@@ -341,7 +341,11 @@ mod tests {
 
     #[test]
     fn sketch_mixed_pair_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let scalars = serde_json::from_str(r#"{"fixed_value":0.5,"binary32_value":0.5,"fixed_raw_value":"00000000000000","binary32_raw_value":"4f000000"}"#).unwrap();
+        let scalars = serde_json::from_str(
+            r#"{"fixed_value":0.5,"binary32_value":0.5,
+                "fixed_raw_value":"00000000000000","binary32_raw_value":"4f000000"}"#,
+        )
+        .unwrap();
         let pair = FeatureSketchPayloadMixedPair {
             id: "nx:feature:sketch-mixed-pair#0".into(),
             operation_label: "operation".into(),

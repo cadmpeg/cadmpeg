@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, FaceId};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 
@@ -89,7 +89,7 @@ pub(crate) fn transfer(
                 .as_ref()
                 .is_some_and(|graph| graph_scope.contains(graph))
     }) {
-        for (ordinal, field) in crate::value_block::tokenize_charged(ctx, &block.payload)?
+        for (ordinal, field) in crate::value_block::tokenize(&block.payload)
             .into_iter()
             .enumerate()
         {
@@ -99,15 +99,8 @@ pub(crate) fn transfer(
             let ValueField::Inline { offset, .. } = field else {
                 continue;
             };
-            let source_id = ctx.format_retained(
-                format_args!("{}:field#{offset:010}:{ordinal:06}", block.id),
-                "catia_appearance_source_id",
-            )?;
-            ctx.push_vec(
-                &mut packets,
-                SourcedPacket { packet, source_id },
-                "catia_appearance_packets",
-            )?;
+            let source_id = format!("{}:field#{offset:010}:{ordinal:06}", block.id);
+            packets.push(SourcedPacket { packet, source_id });
         }
     }
     let mut result = TransferResult::default();
@@ -117,9 +110,9 @@ pub(crate) fn transfer(
     for packet in &packets {
         match packet.packet {
             Packet::AllFaces(_) => {
-                ctx.push_vec(&mut all_faces, packet.rgba(), "catia_appearance_all_faces")?;
+                all_faces.push(packet.rgba());
             }
-            Packet::Body(rgba) => ctx.push_vec(&mut body, rgba, "catia_appearance_body")?,
+            Packet::Body(rgba) => body.push(rgba),
         }
     }
 
@@ -140,9 +133,9 @@ pub(crate) fn transfer(
                 [base] => {
                     let mut overrides = Vec::new();
                     for rgba in colors.iter().copied().filter(|rgba| rgba != base) {
-                        ctx.push_vec(&mut overrides, rgba, "catia_appearance_overrides")?;
+                        overrides.push(rgba);
                     }
-                    same_color_multiset(ctx, &overrides, &body)?
+                    same_color_multiset(&overrides, &body)
                 }
                 _ => false,
             }
@@ -154,7 +147,7 @@ pub(crate) fn transfer(
         None
     };
     if let Some(colors) = positional_colors {
-        let faces = copy_face_ids(ctx, ir)?;
+        let faces = copy_face_ids(ir);
         for (index, (face, rgba)) in faces.into_iter().zip(colors).enumerate() {
             let appearance = insert_appearance(ctx, ir, rgba)?;
             insert_binding(ctx, ir, &appearance, AppearanceTarget::Face(face), index)?;
@@ -163,7 +156,7 @@ pub(crate) fn transfer(
     } else {
         if all_faces.len() == 1 && !ir.model.faces.is_empty() {
             let appearance = insert_appearance(ctx, ir, all_faces[0])?;
-            let faces = copy_face_ids(ctx, ir)?;
+            let faces = copy_face_ids(ir);
             for (index, face) in faces.into_iter().enumerate() {
                 insert_binding(ctx, ir, &appearance, AppearanceTarget::Face(face), index)?;
             }
@@ -178,11 +171,7 @@ pub(crate) fn transfer(
         match body.as_slice() {
             [rgba] if all_faces.is_empty() && ir.model.bodies.len() == 1 => {
                 let appearance = insert_appearance(ctx, ir, *rgba)?;
-                let target = AppearanceTarget::Body(
-                    ir.model.bodies[0]
-                        .id
-                        .try_clone_for_decode(ctx, "catia_appearance_body_target")?,
-                );
+                let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
                 insert_binding(ctx, ir, &appearance, target, 0)?;
                 result.transferred_packets += 1;
             }
@@ -199,37 +188,24 @@ pub(crate) fn transfer(
     Ok(result)
 }
 
-fn copy_face_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
+fn copy_face_ids(ir: &CadIr) -> Vec<cadmpeg_ir::ids::FaceId> {
     let mut faces = Vec::new();
     for face in &ir.model.faces {
-        let id = face
-            .id
-            .try_clone_for_decode(ctx, "catia_appearance_face_id")?;
-        ctx.push_vec(&mut faces, id, "catia_appearance_face_ids")?;
+        let id = face.id.clone();
+        faces.push(id);
     }
-    Ok(faces)
+    faces
 }
 
-fn same_color_multiset(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    left: &[[u8; 4]],
-    right: &[[u8; 4]],
-) -> Result<bool, cadmpeg_core::CodecError> {
-    fn counts(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        values: &[[u8; 4]],
-    ) -> Result<BTreeMap<[u8; 4], usize>, cadmpeg_core::CodecError> {
+fn same_color_multiset(left: &[[u8; 4]], right: &[[u8; 4]]) -> bool {
+    fn counts(values: &[[u8; 4]]) -> BTreeMap<[u8; 4], usize> {
         let mut counts = BTreeMap::new();
         for value in values {
-            ctx.admit_btree_entry(&counts, value, "catia_appearance_color_counts")?;
             *counts.entry(*value).or_default() += 1;
         }
-        Ok(counts)
+        counts
     }
-    Ok(counts(ctx, left)? == counts(ctx, right)?)
+    counts(left) == counts(right)
 }
 
 fn packet(field: &ValueField) -> Option<Packet> {
@@ -248,10 +224,7 @@ fn insert_appearance(
     ir: &mut CadIr,
     rgba: [u8; 4],
 ) -> Result<AppearanceId, cadmpeg_core::CodecError> {
-    let id = ctx.format_retained(
-        format_args!("catia:appearance:rgba#{}", LowerHex(&rgba)),
-        "catia_appearance_id",
-    )?;
+    let id = format!("catia:appearance:rgba#{}", LowerHex(&rgba));
     let id = AppearanceId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
     if !ir
         .model
@@ -260,25 +233,21 @@ fn insert_appearance(
         .any(|appearance| appearance.id == id)
     {
         ctx.charge_entities(1, "admit CATIA appearance")?;
-        let retained_id = id.try_clone_for_decode(ctx, "catia_appearance_asset_id")?;
-        let schema = ctx.copy_retained_text("CATIA V5 display color", "catia_appearance_schema")?;
-        ctx.push_vec(
-            &mut ir.model.appearances,
-            Appearance {
-                id: retained_id,
-                name: None,
-                library_id: None,
-                asset_guid: None,
-                visual_guid: None,
-                physical_token: None,
-                schema: Some(schema),
-                category: None,
-                base_color: Some(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3])),
-                properties: BTreeMap::new(),
-                textures: Vec::new(),
-            },
-            "catia_appearance_assets",
-        )?;
+        let retained_id = id.clone();
+        let schema = "CATIA V5 display color".to_owned();
+        ir.model.appearances.push(Appearance {
+            id: retained_id,
+            name: None,
+            library_id: None,
+            asset_guid: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some(schema),
+            category: None,
+            base_color: Some(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3])),
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        });
     }
     Ok(id)
 }
@@ -294,10 +263,7 @@ fn insert_binding(
         .as_str()
         .split_once('#')
         .map_or("", |(_, key)| key);
-    let id = ctx.format_retained(
-        format_args!("catia:appearance:binding#{index}:{key}"),
-        "catia_appearance_binding_id",
-    )?;
+    let id = format!("catia:appearance:binding#{index}:{key}");
     let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
     insert_binding_record(ctx, ir, appearance, target, id)
 }
@@ -313,21 +279,17 @@ fn insert_source_binding(
         .as_str()
         .split_once('#')
         .map_or("", |(_, key)| key);
-    let id = ctx.format_retained(
-        format_args!(
-            "catia:appearance:source-binding#source-{}:{key}",
-            LowerHex(packet.source_id.as_bytes())
-        ),
-        "catia_appearance_source_binding_id",
-    )?;
+    let id = format!(
+        "catia:appearance:source-binding#source-{}:{key}",
+        LowerHex(packet.source_id.as_bytes())
+    );
     let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
     insert_binding_record(
         ctx,
         ir,
         &appearance,
         AppearanceTarget::Source {
-            source_id: ctx
-                .copy_retained_text(&packet.source_id, "catia_appearance_bound_source")?,
+            source_id: packet.source_id.clone(),
         },
         id,
     )
@@ -341,23 +303,17 @@ fn insert_binding_record(
     id: AppearanceBindingId,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_entities(1, "admit CATIA appearance binding")?;
-    let retained_appearance =
-        appearance.try_clone_for_decode(ctx, "catia_appearance_binding_asset_id")?;
-    let object_type =
-        ctx.copy_retained_text("CATIA V5 display property", "catia_appearance_object_type")?;
-    ctx.push_vec(
-        &mut ir.model.appearance_bindings,
-        AppearanceBinding {
-            id,
-            target,
-            appearance: retained_appearance,
-            source_entity_id: None,
-            object_type: Some(object_type),
-            visible: None,
-            channels: BTreeMap::new(),
-        },
-        "catia_appearance_bindings",
-    )?;
+    let retained_appearance = appearance.clone();
+    let object_type = "CATIA V5 display property".to_owned();
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id,
+        target,
+        appearance: retained_appearance,
+        source_entity_id: None,
+        object_type: Some(object_type),
+        visible: None,
+        channels: BTreeMap::new(),
+    });
     Ok(())
 }
 
@@ -421,99 +377,6 @@ mod tests {
         );
         assert_eq!(ir.model.appearances.len(), 1);
         assert!(ir.model.appearance_bindings.is_empty());
-    }
-
-    #[test]
-    fn appearance_packet_views_refuse_collection_and_retained_limits() {
-        let input = native(vec![inline(&[0x01, 1, 2, 3])]);
-        let limited_collection = crate::test_support::with_collection_limit(0, |ctx| {
-            transfer(
-                ctx,
-                &mut model(0),
-                &input,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                None,
-            )
-        });
-        assert!(matches!(
-            limited_collection,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_value_field_bytes"
-                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-        ));
-        let limited_retained = crate::test_support::with_retained_limit(0, |ctx| {
-            transfer(
-                ctx,
-                &mut model(0),
-                &input,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                None,
-            )
-        });
-        assert!(matches!(
-            limited_retained,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_value_field_bytes"
-                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        ));
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            transfer(
-                ctx,
-                &mut model(0),
-                &input,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                None,
-            )
-        })
-        .expect("service profile admits one appearance packet");
-        assert_eq!(admitted.decoded_packets(), 1);
-    }
-
-    #[test]
-    fn appearance_emission_refuses_each_collection_boundary() {
-        let input = native(vec![inline(&[0x01, 1, 2, 3])]);
-        for (limit, operation) in [
-            (4, "catia_value_fields"),
-            (5, "catia_appearance_packets"),
-            (6, "catia_appearance_all_faces"),
-            (7, "catia_appearance_assets"),
-            (8, "catia_appearance_bindings"),
-        ] {
-            let refusal = crate::test_support::with_collection_limit(limit, |ctx| {
-                transfer(
-                    ctx,
-                    &mut model(0),
-                    &input,
-                    &crate::decode::ModelingGraphScope::Unscoped,
-                    None,
-                )
-            });
-            assert!(
-                matches!(
-                    refusal,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                        if resource.operation == operation
-                            && resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                ),
-                "limit {limit}"
-            );
-        }
-        let retained_refusal =
-            crate::test_support::with_retained_refusal(&[], "catia_appearance_source_id", |ctx| {
-                transfer(
-                    ctx,
-                    &mut model(0),
-                    &input,
-                    &crate::decode::ModelingGraphScope::Unscoped,
-                    None,
-                )
-            });
-        assert!(matches!(
-            retained_refusal,
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.operation == "catia_appearance_source_id"
-                    && resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        ));
     }
 
     fn model(face_count: usize) -> CadIr {
@@ -643,7 +506,7 @@ mod tests {
                                 None,
                             )
                         })
-                        .expect("service profile admits appearance transfer");
+                        .expect("transfer the appearance");
                         assert_eq!(
                             result.decoded_packets(),
                             all_face_count + body_packet_count,
@@ -667,7 +530,7 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 None
             ))
-            .expect("service profile admits appearance transfer"),
+            .expect("transfer the appearance"),
             TransferResult::default()
         );
         assert!(ir.model.appearances.is_empty());
@@ -682,7 +545,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -712,7 +575,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -745,7 +608,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -795,7 +658,7 @@ mod tests {
         crate::test_support::with_service_context(|ctx| {
             insert_source_binding(ctx, &mut ir, &packet)
         })
-        .expect("service profile admits appearance transfer");
+        .expect("insert source binding");
         let binding = ir
             .model
             .appearance_bindings
@@ -828,7 +691,7 @@ mod tests {
                 Some(&six_face_brep(rgba)),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -860,7 +723,7 @@ mod tests {
                 Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -893,7 +756,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -925,7 +788,7 @@ mod tests {
                 Some(&six_face_brep(rgba)),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -952,7 +815,7 @@ mod tests {
                 Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -1002,7 +865,7 @@ mod tests {
                     Some(&brep),
                 )
             })
-            .expect("service profile admits appearance transfer");
+            .expect("transfer the appearance");
             assert_eq!(
                 (
                     result.decoded_packets(),
@@ -1055,7 +918,7 @@ mod tests {
                 Some(&brep),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -1084,7 +947,7 @@ mod tests {
                 Some(&mismatched),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.transferred_packets,
@@ -1107,5 +970,21 @@ mod tests {
                 .count(),
             5
         );
+    }
+
+    #[test]
+    fn transfer_decodes_one_inline_appearance_packet() {
+        let input = native(vec![inline(&[0x01, 1, 2, 3])]);
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            transfer(
+                ctx,
+                &mut model(0),
+                &input,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                None,
+            )
+        })
+        .expect("transfer the appearance");
+        assert_eq!(admitted.decoded_packets(), 1);
     }
 }

@@ -2,7 +2,7 @@
 //! Conical display support and trim bounds.
 
 use super::{add_face, model_with_body, set_shell_faces};
-use crate::tessellation::{analytic_surface_normal, ConicalTrim};
+use crate::tessellation::{analytic_surface_normal, ConicalTrim, MeshSamples};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -175,18 +175,18 @@ fn conical_trim_uses_scaled_angular_coordinate() {
     };
 
     assert!(trim.contains_mesh(
-        &mesh(
+        &MeshSamples::of(&mesh(
             point_at(std::f64::consts::FRAC_PI_4),
             "synthetic:test:tessellation#inside"
-        ),
+        )),
         cadmpeg_ir::transform::Transform::identity(),
         0.0,
     ));
     assert!(!trim.contains_mesh(
-        &mesh(
+        &MeshSamples::of(&mesh(
             point_at(3.0 * std::f64::consts::FRAC_PI_4),
             "synthetic:test:tessellation#outside"
-        ),
+        )),
         cadmpeg_ir::transform::Transform::identity(),
         0.0,
     ));

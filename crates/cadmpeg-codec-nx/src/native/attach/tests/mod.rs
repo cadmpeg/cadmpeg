@@ -12,12 +12,11 @@ fn hole_diameters_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
-    crate::test_support::with_decode_context(|ctx| {
-        hole_body_projection(ctx, ir, operations, outputs)
-            .expect("hole witness resource budget")
+    {
+        hole_body_projection(ir, operations, outputs)
             .map(|projection| projection.diameters)
             .unwrap_or_default()
-    })
+    }
 }
 
 fn simple_hole_diameters(
@@ -32,14 +31,10 @@ fn simple_hole_diameters(
         .map(|(position, template)| (template.operation_label.as_str(), position))
         .collect::<BTreeMap<_, _>>();
 
-    crate::test_support::with_decode_context(|ctx| {
-        let Some(operations) = simple_hole_operations(ctx, templates, groups, &operation_positions)
-            .expect("simple hole operation resource budget")
-        else {
-            return BTreeMap::new();
-        };
-        hole_diameters_for_operations(ir, &operations, outputs)
-    })
+    let Some(operations) = simple_hole_operations(templates, groups, &operation_positions) else {
+        return BTreeMap::new();
+    };
+    hole_diameters_for_operations(ir, &operations, outputs)
 }
 
 mod blend;
@@ -66,7 +61,6 @@ mod move_object;
 mod operation_sources;
 mod operations_and_holes;
 mod part_attributes;
-mod preview_assets;
 mod shell;
 mod sketches;
 mod sphere;
@@ -76,4 +70,3 @@ mod thread;
 mod through_curve_mesh;
 mod topology_optimization;
 mod trim_body;
-mod unknowns;

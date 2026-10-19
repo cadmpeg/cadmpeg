@@ -9,168 +9,10 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
 use crate::CreoCodec;
-
-fn fc05_circles_service(
-    parameters: &[crate::curve::CurveParameterRecord],
-) -> Vec<crate::curve::Fc05Circle> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    crate::curve::fc05_circles(&ctx, parameters).expect("service FC05 circles")
-}
-
-fn fc05_circle_parameter() -> crate::curve::CurveParameterRecord {
-    let mut payload = visibgeom_payload(0, 1);
-    payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
-    for [x, z, t, y] in [
-        [4.0, 3.0, 2.0, 2.0],
-        [3.0, 4.0, 2.0 + std::f64::consts::FRAC_PI_2, 2.0],
-        [2.0, 3.0, 2.0 + std::f64::consts::PI, 2.0],
-        [3.0, 2.0, 2.0 + 3.0 * std::f64::consts::FRAC_PI_2, 2.0],
-    ] {
-        world(&mut payload, x);
-        world(&mut payload, z);
-        world(&mut payload, t);
-        world(&mut payload, y);
-    }
-    payload.push(0xff);
-    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let data = build_prt("c", &[("VisibGeom", payload)]);
-    let mut scan = container::scan_bytes_ok(data);
-    scan.curves.parameters.remove(0)
-}
-
-fn assert_fc05_circle_collection_refusal(limit: u64, operation: &'static str) {
-    let parameter = fc05_circle_parameter();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = crate::curve::fc05_circles(&ctx, &[parameter])
-        .expect_err("one four-point circle exceeds limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-fn fc_curve_parameter() -> crate::curve::CurveParameterRecord {
-    let mut payload = visibgeom_payload(0, 1);
-    payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x08");
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0, 0xff]);
-    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let data = build_prt("c", &[("VisibGeom", payload)]);
-    let mut scan = container::scan_bytes_ok(data);
-    scan.curves.parameters.remove(0)
-}
-
-fn fc_coordinates_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Vec<crate::curve::FcCurveCoordinates>, CodecError> {
-    let parameter = fc_curve_parameter();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    crate::curve::fc_coordinates(&ctx, &[parameter])
-}
-
-fn assert_fc_coordinate_collection_refusal(limit: u64, operation: &'static str) {
-    let error = fc_coordinates_with_limits(limit, u64::MAX)
-        .expect_err("one FC coordinate row exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-fn assert_fc_coordinate_retained_refusal(_limit: u64, operation: &'static str) {
-    let parameter = fc_curve_parameter();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::RetainedBytes,
-        operation,
-        |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)),
-    );
-
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == operation));
-}
-
-#[test]
-fn fc_coordinates_refuse_unique_parameter_count_node() {
-    assert_fc_coordinate_collection_refusal(0, "creo unique-row count nodes");
-}
-
-#[test]
-fn fc_coordinates_refuse_unique_parameter_projection() {
-    assert_fc_coordinate_collection_refusal(1, "creo unique-row projection");
-}
-
-#[test]
-fn fc_coordinates_refuse_token_vector() {
-    assert_fc_coordinate_collection_refusal(2, "creo fc coordinate tokens");
-}
-
-#[test]
-fn fc_coordinates_refuse_opaque_span_vector() {
-    assert_fc_coordinate_collection_refusal(6, "creo fc opaque spans");
-}
-
-#[test]
-fn fc_coordinates_refuse_value_vector() {
-    assert_fc_coordinate_collection_refusal(8, "creo fc coordinate values");
-}
-
-#[test]
-fn fc_coordinates_refuse_output_vector() {
-    assert_fc_coordinate_collection_refusal(12, "creo fc coordinate rows");
-}
-
-#[test]
-fn fc_coordinates_refuse_token_retained_bytes() {
-    assert_fc_coordinate_retained_refusal(0, "creo fc coordinate token bytes");
-}
-
-#[test]
-fn fc_coordinates_refuse_span_retained_bytes() {
-    assert_fc_coordinate_retained_refusal(32, "creo fc opaque span bytes");
-}
-
-#[test]
-fn fc_coordinates_refuse_body_retained_bytes() {
-    assert_fc_coordinate_retained_refusal(35, "creo fc coordinate body");
-}
-
-#[test]
-fn fc05_circles_refuse_unique_parameter_count_node() {
-    assert_fc05_circle_collection_refusal(0, "creo unique-row count nodes");
-}
-
-#[test]
-fn fc05_circles_refuse_unique_parameter_projection() {
-    assert_fc05_circle_collection_refusal(1, "creo unique-row projection");
-}
-
-#[test]
-fn fc05_circles_refuse_point_rows() {
-    assert_fc05_circle_collection_refusal(2, "creo fc05 point rows");
-}
-
-#[test]
-fn fc05_circles_refuse_output_vector() {
-    assert_fc05_circle_collection_refusal(6, "creo fc05 circles");
-}
 
 #[test]
 fn scan_discovers_labeled_curve_prototypes() {
@@ -187,9 +29,9 @@ fn scan_discovers_labeled_curve_prototypes() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_prototypes"];
-    assert_eq!(records[0].fields()["curve_id"], 7);
-    assert_eq!(records[0].fields()["type_byte"], 8);
-    assert_eq!(records[0].fields()["generating_feature_id"], 4);
+    assert_eq!(records[0].fields().unwrap()["curve_id"], 7);
+    assert_eq!(records[0].fields().unwrap()["type_byte"], 8);
+    assert_eq!(records[0].fields().unwrap()["generating_feature_id"], 4);
 }
 
 #[test]
@@ -213,21 +55,21 @@ fn scan_discovers_curve_halfedge_topology() {
             .expect("decode"),
     );
     let row = &result.ir().native.namespace("creo").unwrap().arenas()["curve_topology_rows"][0];
-    assert_eq!(row.fields()["curve_id"], 7);
-    assert_eq!(row.fields()["type_byte"], 8);
-    assert_eq!(row.fields()["feature_id"], 4);
+    assert_eq!(row.fields().unwrap()["curve_id"], 7);
+    assert_eq!(row.fields().unwrap()["type_byte"], 8);
+    assert_eq!(row.fields().unwrap()["feature_id"], 4);
     assert_eq!(
-        crate::test_support::native_bytes(&row.fields()["directions"])[0],
+        crate::test_support::native_bytes(&row.fields().unwrap()["directions"])[0],
         1
     );
     assert_eq!(
-        crate::test_support::native_bytes(&row.fields()["directions"])[1],
+        crate::test_support::native_bytes(&row.fields().unwrap()["directions"])[1],
         0xf6
     );
-    assert_eq!(row.fields()["faces"][0], 10);
-    assert_eq!(row.fields()["faces"][1], 11);
-    assert_eq!(row.fields()["next_edges"][0], 7);
-    assert_eq!(row.fields()["next_edges"][1], 7);
+    assert_eq!(row.fields().unwrap()["faces"][0], 10);
+    assert_eq!(row.fields().unwrap()["faces"][1], 11);
+    assert_eq!(row.fields().unwrap()["next_edges"][0], 7);
+    assert_eq!(row.fields().unwrap()["next_edges"][1], 7);
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_topology#7"]
             .tag
@@ -295,7 +137,7 @@ fn repeated_curve_rows_receive_source_offset_native_keys() {
     }
     assert_ne!(rows[0].id(), rows[1].id());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -354,29 +196,32 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
             .expect("decode"),
     );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["curve_parameters"][0];
-    assert_eq!(record.fields()["curve_id"], 7);
-    assert_eq!(record.fields()["type_byte"], 8);
+    assert_eq!(record.fields().unwrap()["curve_id"], 7);
+    assert_eq!(record.fields().unwrap()["type_byte"], 8);
     assert_eq!(
-        crate::test_support::native_bytes(&record.fields()["body"]).len(),
+        crate::test_support::native_bytes(&record.fields().unwrap()["body"]).len(),
         parameters.body.len()
     );
-    assert_eq!(record.fields()["scalar_values"][2], 3.0);
-    assert_eq!(record.fields()["scalar_tokens"][2]["offset"], 5);
+    assert_eq!(record.fields().unwrap()["scalar_values"][2], 3.0);
+    assert_eq!(record.fields().unwrap()["scalar_tokens"][2]["offset"], 5);
     assert_eq!(
-        crate::test_support::native_bytes(&record.fields()["scalar_tokens"][2]["raw"])[0],
+        crate::test_support::native_bytes(&record.fields().unwrap()["scalar_tokens"][2]["raw"])[0],
         0x46
     );
-    assert_eq!(record.fields()["skipped_references"][0], 256);
-    assert_eq!(record.fields()["references"][0]["entity_id"], 256);
-    assert_eq!(record.fields()["references"][0]["offset"], 2);
-    assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
+    assert_eq!(record.fields().unwrap()["skipped_references"][0], 256);
+    assert_eq!(record.fields().unwrap()["references"][0]["entity_id"], 256);
+    assert_eq!(record.fields().unwrap()["references"][0]["offset"], 2);
+    assert_eq!(record.fields().unwrap()["opaque_spans"][0]["offset"], 13);
     assert_eq!(
-        crate::test_support::native_bytes(&record.fields()["opaque_spans"][0]["raw"])[0],
+        crate::test_support::native_bytes(&record.fields().unwrap()["opaque_spans"][0]["raw"])[0],
         0xff
     );
-    assert_eq!(record.fields()["suffix"], "unique");
-    assert!(record.fields().contains_key("suffix_candidate_count"));
-    assert!(record.fields()["suffix_candidate_count"].is_null());
+    assert_eq!(record.fields().unwrap()["suffix"], "unique");
+    assert!(record
+        .fields()
+        .unwrap()
+        .contains_key("suffix_candidate_count"));
+    assert!(record.fields().unwrap()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_parameter#7"]
             .tag
@@ -431,7 +276,7 @@ fn absent_pcurve_faces_remain_zero_in_native_records() {
         let records = &decoded.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
         assert_eq!(records.len(), 1);
         assert_eq!(
-            serde_json::to_string(&records[0].fields()["faces"]).unwrap(),
+            serde_json::to_string(&records[0].fields().unwrap()["faces"]).unwrap(),
             "[0,11]"
         );
     }
@@ -463,20 +308,15 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].id(), "creo:visibgeom:pcurve_endpoints#7");
-    assert_eq!(records[0].fields()["faces"][0], 10);
-    assert_eq!(records[0].fields()["faces"][1], 11);
-    assert_eq!(records[0].fields()["source_form"], "positional");
+    assert_eq!(records[0].fields().unwrap()["faces"][0], 10);
+    assert_eq!(records[0].fields().unwrap()["faces"][1], 11);
+    assert_eq!(records[0].fields().unwrap()["source_form"], "positional");
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
-    assert!({
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        crate::curve::pcurve_endpoints(&ctx, &scan.curves.parameters, &mismatched_topology)
-            .expect("service pcurve endpoints")
-            .is_empty()
-    });
+    assert!(
+        crate::curve::pcurve_endpoints(&scan.curves.parameters, &mismatched_topology).is_empty()
+    );
 }
 
 #[test]
@@ -624,12 +464,13 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc_curve_coordinates"];
-    assert_eq!(records[0].fields()["curve_id"], 7);
-    assert_eq!(records[0].fields()["values_mm"][1], -3.0);
-    assert_eq!(records[0].fields()["tokens"][1]["offset"], 10);
-    assert_eq!(records[0].fields()["tokens"][1]["length"], 8);
+    assert_eq!(records[0].fields().unwrap()["curve_id"], 7);
+    assert_eq!(records[0].fields().unwrap()["values_mm"][1], -3.0);
+    assert_eq!(records[0].fields().unwrap()["tokens"][1]["offset"], 10);
+    assert_eq!(records[0].fields().unwrap()["tokens"][1]["length"], 8);
     assert_eq!(
-        crate::test_support::native_bytes(&records[0].fields()["opaque_spans"][1]["raw"])[0],
+        crate::test_support::native_bytes(&records[0].fields().unwrap()["opaque_spans"][1]["raw"])
+            [0],
         0xff
     );
 }
@@ -674,7 +515,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1.0e-12);
     let mut unknown_parameter = scan.curves.parameters[0].clone();
     unknown_parameter.body.splice(114..122, [0x39, 0x29, 0x00]);
-    let carriers = fc05_circles_service(&[unknown_parameter]);
+    let carriers = crate::curve::fc05_circles(&[unknown_parameter]);
     let [carrier] = carriers.as_slice() else {
         panic!("circle geometry is independent of an unresolved parameter token");
     };
@@ -687,15 +528,18 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert_eq!(carrier.sample_direction_row_frame.get(), [1.0, 0.0]);
     let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
-    assert!(fc05_circles_service(&[trailing]).is_empty());
+    assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc05_circles"];
-    assert_eq!(records[0].fields()["curve_id"], 7);
-    assert_eq!(records[0].fields()["radius_mm"], 1.0);
-    assert_eq!(records[0].fields()["sample_direction_row_frame"][0], 1.0);
-    assert_eq!(records[0].fields()["parameter_sign"], 1);
+    assert_eq!(records[0].fields().unwrap()["curve_id"], 7);
+    assert_eq!(records[0].fields().unwrap()["radius_mm"], 1.0);
+    assert_eq!(
+        records[0].fields().unwrap()["sample_direction_row_frame"][0],
+        1.0
+    );
+    assert_eq!(records[0].fields().unwrap()["parameter_sign"], 1);
 }
 
 #[test]
@@ -803,11 +647,13 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas()["prototype_pcurves"][0].fields()["curve_id"],
+        namespace.arenas()["prototype_pcurves"][0].fields().unwrap()["curve_id"],
         44
     );
     assert_eq!(
-        namespace.arenas()["curve_prototype_topology"][0].fields()["faces"][1],
+        namespace.arenas()["curve_prototype_topology"][0]
+            .fields()
+            .unwrap()["faces"][1],
         11
     );
 }
@@ -840,81 +686,17 @@ fn prototype_pcurve_binding_requires_unique_native_identity() {
         next_edges: [44, 44],
         offset: 20,
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     assert!(crate::curve::bind_prototype_pcurves(
-        &ctx,
         &[pcurve.clone(), pcurve.clone()],
-        std::slice::from_ref(&topology),
+        std::slice::from_ref(&topology)
     )
-    .expect("duplicate pcurve identity")
     .is_empty());
     assert!(crate::curve::bind_prototype_pcurves(
-        &ctx,
         std::slice::from_ref(&pcurve),
-        &[topology.clone(), topology],
+        &[topology.clone(), topology]
     )
-    .expect("duplicate topology identity")
     .is_empty());
-}
-
-#[test]
-fn prototype_topology_rows_refuse_collection_limit() {
-    let mut payload = visibgeom_payload(0, 0);
-    payload.extend_from_slice(b"crv_id\0\x2c type\0\x00");
-    payload.extend_from_slice(b"crv_hdr_geom_ptr[0]\0\x0a crv_hdr_geom_ptr[1]\0\x0b");
-    payload.extend_from_slice(b"next_crv_hdr_ptr[0]\0\x2c next_crv_hdr_ptr[1]\0\x2c");
-    payload.extend_from_slice(b"topol_ref_data\0");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = crate::curve::prototype_topology(&ctx, &payload)
-        .expect_err("one labeled topology exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo prototype topology rows"));
-}
-
-fn assert_prototype_binding_collection_refusal(limit: u64, operation: &'static str) {
-    let pcurve = crate::curve::PrototypePcurveEndpoints {
-        curve_id: 44,
-        face_0_endpoints: [[0.0, 1.0], [1.0, 0.0]],
-        face_1_endpoints: [[3.0, 0.0], [3.0, 1.0]],
-        offset: 10,
-    };
-    let topology = crate::curve::CurvePrototypeTopology {
-        curve_id: 44,
-        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
-        next_edges: [44, 44],
-        offset: 20,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = crate::curve::bind_prototype_pcurves(&ctx, &[pcurve], &[topology])
-        .expect_err("one bound prototype exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn prototype_binding_refuses_pcurve_count_node() {
-    assert_prototype_binding_collection_refusal(0, "creo prototype pcurve count nodes");
-}
-
-#[test]
-fn prototype_binding_refuses_topology_count_node() {
-    assert_prototype_binding_collection_refusal(1, "creo prototype topology count nodes");
-}
-
-#[test]
-fn prototype_binding_refuses_bound_output() {
-    assert_prototype_binding_collection_refusal(2, "creo bound prototype pcurves");
 }
 
 #[test]

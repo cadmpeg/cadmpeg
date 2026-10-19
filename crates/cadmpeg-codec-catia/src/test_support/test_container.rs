@@ -12,7 +12,10 @@ use crate::test_support::test_topology::{
 
 pub(crate) fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();
-    bytes.extend_from_slice(b"LastSaveVersion\0<Version>5/<Version><Release>27/<Release><ServicePack>2/<ServicePack><BuildDate>03-10-2017.22.00/<BuildDate><HotFix>0/<HotFix>\0");
+    bytes.extend_from_slice(
+        b"LastSaveVersion\0<Version>5/<Version><Release>27/<Release><ServicePack>2/<ServicePack>\
+          <BuildDate>03-10-2017.22.00/<BuildDate><HotFix>0/<HotFix>\0",
+    );
     bytes.extend_from_slice(&[
         0xff, 0xd8, // SOI
         0xff, 0xc0, 0x00, 0x0b, 8, 0x01, 0x20, 0x02, 0x80, 1, 1, 0x11, 0, 0xff, 0xda, 0x00, 0x08,

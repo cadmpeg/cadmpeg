@@ -10,7 +10,7 @@ use crate::history::configuration::restore_configuration_tree_node_definitions;
 use crate::history::enrich_scene_classes;
 use crate::history::parameters::native_parameter_is_length;
 use crate::history::parameters::project_parameters;
-use crate::history::project::neutral_feature_id_charged;
+use crate::history::project::neutral_feature_id;
 use crate::history::project::parameter_names;
 use crate::history::project::project_definition;
 use crate::history::project::project_feature_content;
@@ -53,22 +53,20 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
 }
 
 #[test]
-fn charged_feature_ids_preserve_native_key_escaping() {
-    with_test_ctx(|ctx| {
-        for (native, expected) in [
-            ("sldprt:history:feature#1:2", "sldprt:model:feature#1:2"),
-            (
-                "sldprt:history:feature#two#percent% space",
-                "sldprt:model:feature#two%23percent%25%20space",
-            ),
-            ("custom-native-id", "sldprt:model:feature#custom-native-id"),
-        ] {
-            assert_eq!(
-                neutral_feature_id_charged(ctx, native).unwrap(),
-                cadmpeg_ir::features::FeatureId::mint(expected).unwrap()
-            );
-        }
-    });
+fn feature_ids_preserve_native_key_escaping() {
+    for (native, expected) in [
+        ("sldprt:history:feature#1:2", "sldprt:model:feature#1:2"),
+        (
+            "sldprt:history:feature#two#percent% space",
+            "sldprt:model:feature#two%23percent%25%20space",
+        ),
+        ("custom-native-id", "sldprt:model:feature#custom-native-id"),
+    ] {
+        assert_eq!(
+            neutral_feature_id(native).unwrap(),
+            cadmpeg_ir::features::FeatureId::mint(expected).unwrap()
+        );
+    }
 }
 
 #[test]
@@ -85,8 +83,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
         ],
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.features =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    ir.model.features = project_features(&[history]).unwrap();
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();
     ir.model
@@ -109,10 +106,9 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![predecessor.clone()],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                        predecessor.clone(),
+                    ])
                     .unwrap(),
                     definition: ir.model.features[0].evaluation.definition().clone(),
                 },
@@ -149,7 +145,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
 
     assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
+        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -175,7 +171,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
         .insert(cadmpeg_core::nonblank_literal!("m"), "6.4".into());
 
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
+        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -221,8 +217,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         features: vec![extrusion, profile],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:1"))
@@ -289,8 +284,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
         features: vec![extrusion, early_profile, origin_profile, preceding_profile],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:3"))
@@ -327,22 +321,10 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
         FeatureContent::Dimension("D1".into()),
     ];
 
+    assert_eq!(parameter_names(&feature), vec!["D1", "D1"]);
+    assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
     assert_eq!(
-        parameter_names(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
-        vec!["D1", "D1"]
-    );
-    assert_eq!(
-        projected_parameter_names(&cadmpeg_test_support::service_decode_context(), &feature)
-            .unwrap(),
-        vec!["D1"]
-    );
-    assert_eq!(
-        (&*project_feature_content(
-            &cadmpeg_test_support::service_decode_context(),
-            &feature,
-            &HashMap::new()
-        )
-        .unwrap()),
+        (&*project_feature_content(&feature, &HashMap::new()).unwrap()),
         vec![FeatureSourceContent::Parameter(
             ParameterId::mint("sldprt:model:parameter#1:2:0").expect("identity grammar")
         )]
@@ -358,7 +340,6 @@ fn spatial_profile_class_projects_a_spatial_sketch() {
 
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &spatial,
             &HashMap::new(),
             &HashMap::new(),
@@ -378,7 +359,6 @@ fn base_body_class_projects_stored_geometry_independently_of_display_name() {
 
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &base_body,
             &HashMap::new(),
             &HashMap::new(),
@@ -415,12 +395,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "12"),
         ("e", "<MOD-DIAM>5.5"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &counterbore,
-    )
-    .expect("resource budget")
-    .expect("required invariant");
+    let construction = hole_sketch_construction(&counterbore)
+        .expect("read the hole sketch construction")
+        .expect("required invariant");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
@@ -448,10 +425,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "10"),
         ("e", "118°"),
     ]);
-    let construction =
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &threaded)
-            .expect("resource budget")
-            .expect("required invariant");
+    let construction = hole_sketch_construction(&threaded)
+        .expect("read the hole sketch construction")
+        .expect("required invariant");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.2).unwrap()
@@ -478,12 +454,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "11.62"),
         ("f", "<MOD-DIAM>10.29"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &tapered_thread,
-    )
-    .expect("resource budget")
-    .expect("tapered thread profile");
+    let construction = hole_sketch_construction(&tapered_thread)
+        .expect("read the hole sketch construction")
+        .expect("tapered thread profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(8.43).unwrap()
@@ -521,12 +494,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "<MOD-DIAM>4.5"),
         ("f", "<MOD-DIAM>4.55"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &counterbore_with_exit_countersink,
-    )
-    .expect("resource budget")
-    .expect("dual-ended profile");
+    let construction = hole_sketch_construction(&counterbore_with_exit_countersink)
+        .expect("read the hole sketch construction")
+        .expect("dual-ended profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap()
@@ -559,12 +529,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("f", "5.4"),
         ("g", "<MOD-DIAM>9.95"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &counterdrill,
-    )
-    .expect("resource budget")
-    .expect("counterdrill profile");
+    let construction = hole_sketch_construction(&counterdrill)
+        .expect("read the hole sketch construction")
+        .expect("counterdrill profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
@@ -581,7 +548,6 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
                 Some(cadmpeg_ir::scalar::PositiveLength::new(10.05).unwrap())
             )
             .unwrap(),
-
             depth: cadmpeg_ir::scalar::PositiveLength::new(5.4).unwrap(),
             angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
@@ -601,12 +567,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "4"),
         ("e", "6"),
     ]);
-    assert!(hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &placement_dimensions
-    )
-    .expect("resource budget")
-    .is_none());
+    assert!(hole_sketch_construction(&placement_dimensions)
+        .expect("read the hole sketch construction")
+        .is_none());
 
     let unsupported_countersink = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -614,12 +577,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("depth", "6"),
         ("angle", "82°"),
     ]);
-    assert!(hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &unsupported_countersink
-    )
-    .expect("resource budget")
-    .is_none());
+    assert!(hole_sketch_construction(&unsupported_countersink)
+        .expect("read the hole sketch construction")
+        .is_none());
 
     let unsupported_counterbore = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -627,12 +587,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("entry depth", "3"),
         ("depth", "6"),
     ]);
-    assert!(hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &unsupported_counterbore
-    )
-    .expect("resource budget")
-    .is_none());
+    assert!(hole_sketch_construction(&unsupported_counterbore)
+        .expect("read the hole sketch construction")
+        .is_none());
 
     let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
     native_profile.id = "native-profile".into();
@@ -643,12 +600,11 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         native_profile.id.clone(),
     );
     let projected = project_hole(
-        &cadmpeg_test_support::service_decode_context(),
         &native_owned,
         &HashMap::new(),
         &[native_owned.clone(), native_profile],
     )
-    .expect("resource budget")
+    .expect("project hole")
     .unwrap();
     assert!(matches!(
         projected, FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -678,16 +634,14 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     ]
     .into();
     let projected = project_hole(
-        &cadmpeg_test_support::service_decode_context(),
         &canonical,
         &HashMap::new(),
         std::slice::from_ref(&canonical),
     )
-    .expect("resource budget")
+    .expect("project hole")
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         ref shape,
-
         extent: Some(LinearTermination::Blind { length }),
         ..
     }) = projected
@@ -729,14 +683,7 @@ fn scene_class_binds_only_its_explicit_source_identifier() {
     }];
     let scene = HashMap::from([(153, "moDirectionLight_c".into())]);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    enrich_scene_classes(&ctx, &mut histories, &scene).unwrap();
+    enrich_scene_classes(&mut histories, &scene);
 
     assert_eq!(
         histories[0].features[0].input_class.as_deref(),
@@ -1033,11 +980,9 @@ fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
     ];
 
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
-        &cadmpeg_test_support::service_decode_context(),
         &mut histories,
         &[lane],
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         histories[0].features[1]
@@ -1131,7 +1076,6 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
     assert!(!is_offset_plane(&plane));
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
@@ -1161,7 +1105,6 @@ fn length_plane_parameter_claims_offset_semantics() {
     assert!(is_offset_plane(&plane));
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
@@ -1183,7 +1126,6 @@ fn frameless_reference_plane_remains_typed_unresolved() {
 
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
@@ -1289,11 +1231,7 @@ fn native_attribute_records_are_metadata_not_model_features() {
         features: vec![definition, attribute, comments, alignment, model],
     };
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
     assert!(
@@ -1321,12 +1259,9 @@ fn native_attribute_definition_type_is_metadata_without_an_instance_name_match()
         features: vec![definition],
     };
 
-    assert!(project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history)
-    )
-    .unwrap()
-    .is_empty());
+    assert!(project_features(std::slice::from_ref(&history))
+        .unwrap()
+        .is_empty());
     assert!(
         project_parameters(&cadmpeg_test_support::service_decode_context(), &[history])
             .unwrap()
@@ -1345,11 +1280,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
         configurations: Vec::new(),
         features: vec![light],
     };
-    let mut configured = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    let mut configured = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -1362,12 +1293,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
 
-    restore_configuration_tree_node_definitions(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut configured,
-        &base,
-    )
-    .unwrap();
+    restore_configuration_tree_node_definitions(&mut configured, &base);
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -1396,11 +1322,9 @@ fn hole_profile_rejects_more_than_supported_dimension_roles() {
         );
         profile.content.push(FeatureContent::Dimension(name.into()));
     }
-    assert!(
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
-            .expect("resource budget")
-            .is_none()
-    );
+    assert!(hole_sketch_construction(&profile)
+        .expect("read the hole sketch construction")
+        .is_none());
 }
 
 #[test]
@@ -1413,10 +1337,9 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("depth"), "9".into());
-    let construction =
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
-            .expect("resource budget")
-            .expect("fallback hole dimensions");
+    let construction = hole_sketch_construction(&profile)
+        .expect("read the hole sketch construction")
+        .expect("fallback hole dimensions");
     assert_eq!(construction.diameter.get(), 5.0);
     assert_eq!(
         construction
@@ -1427,9 +1350,7 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .content
         .push(FeatureContent::Dimension("missing".into()));
-    assert!(
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
-            .expect("resource budget")
-            .is_none()
-    );
+    assert!(hole_sketch_construction(&profile)
+        .expect("read the hole sketch construction")
+        .is_none());
 }

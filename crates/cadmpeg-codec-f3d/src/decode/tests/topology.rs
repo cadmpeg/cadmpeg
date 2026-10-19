@@ -10,7 +10,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -111,7 +110,7 @@ fn decode_builds_valid_topology_and_geometry() {
     // The decoded document is internally valid: refs resolve, the loop ring
     // closes, no bounds violations.
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
     // Edges carry no analytic curve (their carriers were null), which is legal.
@@ -135,9 +134,7 @@ fn history_topology_decode_matches_full_brep_graph() {
         )
         .expect("fixture is within the service input limit");
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-        let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-            .expect("history scan")
-            .expect("solved record limit");
+        let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
         let records = cadmpeg_asm::test_support::sab::frame(
             &bytes,
             start,
@@ -148,13 +145,13 @@ fn history_topology_decode_matches_full_brep_graph() {
 
         let full_brep = crate::brep::decode(&ctx, &records, &bytes, "full", crate::ids::ID_FORMAT)
             .expect("valid BREP tolerances");
-        let full = crate::history::historical_topology_with_tags(&ctx, &full_brep)
+        let full = crate::history::historical_topology_with_tags(&full_brep)
             .expect("topology budget")
             .expect("full topology");
         let history_brep =
             crate::brep::decode_history_topology(&ctx, &records, &bytes, crate::ids::ID_FORMAT)
                 .expect("valid BREP tolerances");
-        let history = crate::history::historical_topology_with_tags(&ctx, &history_brep)
+        let history = crate::history::historical_topology_with_tags(&history_brep)
             .expect("topology budget")
             .expect("history topology");
 
@@ -212,7 +209,7 @@ fn decode_transfers_generated_wire_body_topology() {
         cadmpeg_asm::brep::records::WireSide::In
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -249,7 +246,7 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         Some(result.ir().model.vertices[0].id.clone())
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -280,7 +277,7 @@ fn decode_classifies_generated_mixed_face_wire_body_as_general() {
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.curves.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -371,7 +368,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .iter()
         .any(|curve| curve.geometry == expected));
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "degenerate-curve findings: {:?}",
@@ -410,7 +407,7 @@ fn generated_source_less_writes_general_face_wire_body() {
     assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(round_trip.ir().model.edges.len(), 4);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -470,7 +467,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         .iter()
         .any(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some()));
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "face-and-point-wire findings: {:?}",
@@ -527,7 +524,7 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
     assert_eq!(round_trip.ir().model.faces.len(), 6);
     assert_eq!(round_trip.ir().model.shells[1].wire_edges().len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "combined-body findings: {:?}",
@@ -590,7 +587,7 @@ fn generated_source_less_writes_wire_body_topology() {
     );
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -645,7 +642,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
     );
     assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -715,7 +712,7 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     assert_eq!(round_trip.ir().model.vertices.len(), 4);
     assert_eq!(round_trip.ir().model.points.len(), 4);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "mixed-wire findings: {:?}",
@@ -788,7 +785,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         25.0
     );
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -837,7 +834,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
     assert_eq!(round_trip.ir().model.edges.len(), 2);
     assert_eq!(round_trip.ir().model.curves.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -898,7 +895,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .all(|region| region.body == round_trip.ir().model.bodies[0].id));
     assert_eq!(round_trip.ir().model.edges.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -958,7 +955,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .all(|shell| shell.region == round_trip.ir().model.regions[0].id));
     assert_eq!(round_trip.ir().model.edges.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -982,13 +979,8 @@ fn analytic_carrier_decode_covers_each_shape() {
             len: 0,
         }
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let decode_surface =
-        |record: &Record| geometry::decode_surface(&ctx, record).transpose().unwrap();
-    let decode_curve = |record: &Record| geometry::decode_curve(&ctx, record).transpose().unwrap();
+    let decode_surface = |record: &Record| geometry::decode_surface(record);
+    let decode_curve = |record: &Record| geometry::decode_curve(record);
     let refn = || Token::Ref(-1);
     let base = || vec![refn(), Token::Long(-1), refn()];
 
@@ -1258,7 +1250,7 @@ fn decode_keeps_face_on_unknown_surface() {
 
     // The decoded document still validates.
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -1320,9 +1312,7 @@ fn decode_reports_faces_with_missing_surface_references() {
     for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
-        let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
-            .expect("history scan")
-            .unwrap();
+        let limit = asm_header::solved_record_limit(&smbh).unwrap();
         let records = cadmpeg_asm::test_support::sab::frame(
             &smbh,
             start,
@@ -1395,9 +1385,7 @@ fn decode_reports_undecoded_edge_curve_kinds() {
 fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&smbh).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &smbh,
         start,

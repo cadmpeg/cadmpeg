@@ -79,7 +79,7 @@ fn surface_routes(
     u: f64,
     v: f64,
 ) -> [Result<FinitePoint3, EvaluationFailure<Point3>>; 3] {
-    let index = crate::index::ModelIndex::build(ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(ir);
     [
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -160,7 +160,6 @@ fn a_nurbs_curve_whose_projection_overflows_reports_the_point_it_reached() {
     // zero.
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         crate::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -170,7 +169,6 @@ fn a_nurbs_curve_whose_projection_overflows_reports_the_point_it_reached() {
             Some(vec![1.0, -1.0 + 2.0_f64.powi(-40)]),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("NURBS curve fixture"),
     ));
     assert_eq!(
@@ -226,12 +224,7 @@ fn procedural_curve_model(
         source_object: None,
     });
     ir.model
-        .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
-            &owner,
-            ProceduralCurve::new(construction, definition(&ids)),
-        )
-        .unwrap()
+        .add_procedural_curve(&owner, ProceduralCurve::new(construction, definition(&ids)))
         .expect("procedural curve fixture");
     (ir, owner)
 }
@@ -252,7 +245,7 @@ fn a_replica_curve_whose_placement_overflows_reports_the_point_it_reached() {
             ])
             .expect("affine transform"),
         });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_curve_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -295,7 +288,7 @@ fn a_subset_curve_whose_span_overflows_keeps_its_finite_local_point() {
             .expect("subset fixture"),
         )
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_curve_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -355,7 +348,7 @@ fn a_helix_whose_tangent_overflows_has_its_finite_point() {
     // The tangent at angle 0 leaves the finite range; the point reads no
     // tangent.
     let (ir, helix) = procedural_curve_model(Vec::new(), |_| large_helix(10.0));
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_curve_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -723,7 +716,7 @@ fn assert_second_order_alone_overflows(
     for route in surface_routes(&ir, &surface, &geometry, u, v) {
         assert_eq!(route.map(FinitePoint3::get), Ok(point));
     }
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = cadmpeg_core::decode::WorkBudget::new(1_000_000);
     let expected = Ok(crate::eval::SurfacePartials { point, du, dv });
     assert_eq!(
@@ -972,7 +965,7 @@ fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partia
         ),
         None,
     ));
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = Point3::new(0.9 * f64::MAX, 0.0, 2.0);
     let partials = crate::eval::model_surface_partials_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -1023,7 +1016,7 @@ fn a_helix_whose_axis_length_overflows_has_its_point() {
             .expect("helix fixture"),
         )
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_curve_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,

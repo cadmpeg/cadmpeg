@@ -146,7 +146,6 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
                 length: actual_length,
             }),
@@ -225,7 +224,9 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             ref groups,
             ..
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
-            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle) },
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle)
+            },
             ..
         }])
     ));

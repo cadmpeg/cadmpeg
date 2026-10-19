@@ -61,16 +61,8 @@ fn nurbs_curve(
     periodic: bool,
 ) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        )
-        .expect("fixture constructor admission")
-        .expect("cardinality-valid test curve"),
+        NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic)
+            .expect("cardinality-valid test curve"),
     ))
 }
 
@@ -136,7 +128,7 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
             &nurbs,
             [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         Some([2.0, 5.0])
     );
     assert_eq!(
@@ -145,7 +137,7 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
             &nurbs,
             [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 }
@@ -175,7 +167,7 @@ fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
             &mut nurbs,
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("orient nonperiodic NURBS edge carrier"),
         Some([0.0, 1.0])
     );
     assert_eq!(evaluated(&nurbs, 0.0), [0.0, 0.0, 0.0]);
@@ -214,7 +206,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &nurbs,
             [[3.0, 3.0, 0.0], [1.0, 0.0, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         Some([3.5, 7.0])
     );
     assert_eq!(
@@ -223,7 +215,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &nurbs,
             [[3.0, 3.0, 0.0], [1.0, 0.1, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -243,7 +235,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &translated,
             [[100_000_001.0, 0.01, 0.0], [100_000_003.0, 0.0, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -264,7 +256,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &self_intersecting,
             [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -286,7 +278,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &constant_span,
             [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 }
@@ -315,7 +307,7 @@ fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
             &nurbs,
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -333,12 +325,12 @@ fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
     );
     assert_eq!(
         full_periodic_nurbs_edge_parameter_range(&evaluation_ctx, &closed, [1.0, 0.0, 0.0])
-            .expect("evaluation resources"),
+            .expect("compute the full periodic NURBS edge parameter range"),
         Some([2.0, 9.0])
     );
     assert_eq!(
         full_periodic_nurbs_edge_parameter_range(&evaluation_ctx, &closed, [0.0, 1.0, 0.0])
-            .expect("evaluation resources"),
+            .expect("compute the full periodic NURBS edge parameter range"),
         None
     );
 }
@@ -359,7 +351,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
             .expect("root");
             periodic_conic_edge_parameter_range(&ctx, &circle, points, [root_two, root_two, 0.0])
         })
-        .expect("evaluation resources"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
@@ -373,7 +365,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
             .expect("root");
             periodic_conic_edge_parameter_range(&ctx, &circle, points, [-root_two, -root_two, 0.0])
         })
-        .expect("evaluation resources"),
+        .expect("find the periodic conic edge parameter range"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
@@ -392,7 +384,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
                 [-2.0, 0.0, 0.0],
             )
         })
-        .expect("evaluation resources"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::TAU])
     );
     assert_eq!(
@@ -406,7 +398,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
             .expect("root");
             periodic_conic_edge_parameter_range(&ctx, &circle, [points[0], points[0]], points[0])
         })
-        .expect("evaluation resources"),
+        .expect("find the periodic conic edge parameter range"),
         None
     );
 }
@@ -437,7 +429,7 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
                 [2.0 * root_two, root_two, 0.0],
             )
         })
-        .expect("evaluation resources"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
@@ -456,7 +448,7 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
                 [-2.0 * root_two, -root_two, 0.0],
             )
         })
-        .expect("evaluation resources"),
+        .expect("find the periodic conic edge parameter range"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
@@ -475,7 +467,7 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
                 [-4.0, 0.0, 0.0],
             )
         })
-        .expect("evaluation resources"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::TAU])
     );
 }
@@ -562,10 +554,7 @@ fn solved_endpoints_select_one_hyperbola_branch() {
         )
         .expect("valid HyperbolaCurve fixture"),
     ));
-    let branches = crate::decode::with_test_decode_ctx(|ctx| {
-        analytic_curve_branches(ctx, &hyperbola, "hyperbola")
-    })
-    .expect("analytic branches admitted");
+    let branches = { analytic_curve_branches(&hyperbola, "hyperbola") };
     let points = [
         evaluated(&branches[1].0, -1.0),
         evaluated(&branches[1].0, 2.0),
@@ -604,7 +593,7 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
         [[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]],
         [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
     )
-    .expect("evaluation resources")
+    .expect("compute the native pcurve midpoint")
     .expect("periodic midpoint");
     assert!((midpoint[0] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
     assert!((midpoint[1] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
@@ -658,7 +647,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
             points,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-        .expect("evaluation resources"),
+        .expect("compute the pcurve backed periodic conic parameter range"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
 
@@ -676,20 +665,17 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
             points,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-        .expect("evaluation resources"),
+        .expect("compute the pcurve backed periodic conic parameter range"),
         None
     );
 }
 
 #[test]
-fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
+fn analytic_nurbs_endpoints_of_a_degree_sixteen_spline() {
     // Degree 16 needs a heap basis; lower degrees evaluate inline.
     let mut knots = vec![0.0; 17];
     knots.extend(vec![1.0; 17]);
     let nurbs = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         16,
         knots,
         (0..17)
@@ -698,21 +684,13 @@ fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("degree-16 spline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(
-        matches!(super::nonperiodic_nurbs_endpoint_points(&ctx, &geometry), Err(CodecError::ResourceLimit(limit)) if limit.operation == "IR B-spline basis")
-    );
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        super::nonperiodic_nurbs_endpoint_points(&ctx, &geometry).expect("service resources"),
+        crate::decode::with_service_context(|ctx| {
+            super::nonperiodic_nurbs_endpoint_points(ctx, &geometry)
+        })
+        .expect("compute the nonperiodic NURBS endpoint points"),
         Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     );
 }

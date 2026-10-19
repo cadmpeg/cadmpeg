@@ -3,8 +3,6 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
-use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -30,9 +28,8 @@ use crate::IgesCodec;
 
 use super::{
     clipping_plane_valid, depth_clipping_valid, display_flag_valid, drawing_directory_valid,
-    drawing_property_value, has_in_plane_component, push_drawing_entity_loss, standard_color_valid,
-    standard_line_font_valid, view_directory_valid, views_visible_directory_valid,
-    DrawingPropertyValue,
+    drawing_property_value, has_in_plane_component, standard_color_valid, standard_line_font_valid,
+    view_directory_valid, views_visible_directory_valid, DrawingPropertyValue,
 };
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 
@@ -58,40 +55,6 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         label: [b' '; 8],
         subscript: Some(0),
     }
-}
-
-#[test]
-fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
-    let entry = directory_entry(404, 0);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut losses = Vec::new();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges drawing loss slots")
-    );
-    assert!(losses.is_empty());
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges drawing loss message")
-    );
-    assert!(losses.is_empty());
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap();
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].message,
-        "IGES entity type 404 form 0 was not projected: missing"
-    );
 }
 
 #[test]
@@ -661,22 +624,25 @@ fn decode_types_orthographic_and_perspective_views() {
         .unwrap();
     let views = &result.ir().native.namespace("iges").unwrap().arenas()["views"];
     assert_eq!(views.len(), 3);
-    assert_eq!(views[0].fields()["projection"], "orthographic_parallel");
-    assert!(views[0].fields()["scale"].is_null());
     assert_eq!(
-        views[0].fields()["clipping_planes"]
+        views[0].fields().unwrap()["projection"],
+        "orthographic_parallel"
+    );
+    assert!(views[0].fields().unwrap()["scale"].is_null());
+    assert_eq!(
+        views[0].fields().unwrap()["clipping_planes"]
             .as_array()
             .unwrap()
             .len(),
         6
     );
-    assert_eq!(views[1].fields()["projection"], "perspective");
-    assert_eq!(views[1].fields()["view_plane_normal"][2], 1.0);
-    assert_eq!(views[1].fields()["center_of_projection"][2], 10.0);
-    assert_eq!(views[1].fields()["clipping_window"][0], -2.0);
-    assert_eq!(views[1].fields()["depth_clipping"], 3);
-    assert_eq!(views[2].fields()["view_plane_normal"][2], 1.0e-200);
-    assert_eq!(views[2].fields()["view_up"][1], 1.0e-200);
+    assert_eq!(views[1].fields().unwrap()["projection"], "perspective");
+    assert_eq!(views[1].fields().unwrap()["view_plane_normal"][2], 1.0);
+    assert_eq!(views[1].fields().unwrap()["center_of_projection"][2], 10.0);
+    assert_eq!(views[1].fields().unwrap()["clipping_window"][0], -2.0);
+    assert_eq!(views[1].fields().unwrap()["depth_clipping"], 3);
+    assert_eq!(views[2].fields().unwrap()["view_plane_normal"][2], 1.0e-200);
+    assert_eq!(views[2].fields().unwrap()["view_up"][1], 1.0e-200);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -758,16 +724,22 @@ fn decode_types_view_visibility_and_display_overrides() {
         .unwrap();
     let visibility = &result.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
     assert_eq!(visibility.len(), 2);
-    assert_eq!(visibility[0].fields()["form"], 3);
+    assert_eq!(visibility[0].fields().unwrap()["form"], 3);
     assert_eq!(
-        visibility[0].fields()["displays"][0]["view"],
+        visibility[0].fields().unwrap()["displays"][0]["view"],
         "iges:presentation:view#D1"
     );
-    assert!(visibility[0].fields()["displays"][0]["line_font"].is_null());
-    assert_eq!(visibility[1].fields()["form"], 4);
-    assert_eq!(visibility[1].fields()["displays"][0]["line_font"], 1);
-    assert_eq!(visibility[1].fields()["displays"][0]["color"], 2);
-    assert_eq!(visibility[1].fields()["displays"][0]["line_weight"], 3);
+    assert!(visibility[0].fields().unwrap()["displays"][0]["line_font"].is_null());
+    assert_eq!(visibility[1].fields().unwrap()["form"], 4);
+    assert_eq!(
+        visibility[1].fields().unwrap()["displays"][0]["line_font"],
+        1
+    );
+    assert_eq!(visibility[1].fields().unwrap()["displays"][0]["color"], 2);
+    assert_eq!(
+        visibility[1].fields().unwrap()["displays"][0]["line_weight"],
+        3
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -798,7 +770,7 @@ fn decode_view_visibility_defaults_omitted_entity_count_and_color() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let visibility = &result.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
-        let fields = visibility[0].fields();
+        let fields = visibility[0].fields().unwrap();
         assert_eq!(fields["declared_view_count"], 1, "form={form}");
         assert!(fields["declared_entity_count"].is_null(), "form={form}");
         assert_eq!(
@@ -877,10 +849,13 @@ fn decode_view_visibility_entity_count_requirement_follows_dialect() {
     let visibility = &v5.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
     assert_eq!(visibility.len(), 1);
     assert_eq!(
-        visibility[0].fields()["displays"].as_array().unwrap().len(),
+        visibility[0].fields().unwrap()["displays"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
-    assert!(visibility[0].fields()["entities"]
+    assert!(visibility[0].fields().unwrap()["entities"]
         .as_array()
         .unwrap()
         .is_empty());
@@ -896,12 +871,27 @@ fn decode_preserves_ordered_segmented_view_display() {
         .unwrap();
     let segmented =
         &result.ir().native.namespace("iges").unwrap().arenas()["segmented_visibility"][0];
-    assert_eq!(segmented.fields()["blocks"].as_array().unwrap().len(), 2);
-    assert_eq!(segmented.fields()["blocks"][0]["breakpoint"], 0.5);
-    assert_eq!(segmented.fields()["blocks"][0]["color"]["kind"], "omitted");
-    assert_eq!(segmented.fields()["blocks"][1]["breakpoint"], 1.0);
-    assert_eq!(segmented.fields()["blocks"][1]["color"]["value"], 2);
-    assert_eq!(segmented.fields()["blocks"][1]["line_font"]["value"], 3);
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(segmented.fields().unwrap()["blocks"][0]["breakpoint"], 0.5);
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"][0]["color"]["kind"],
+        "omitted"
+    );
+    assert_eq!(segmented.fields().unwrap()["blocks"][1]["breakpoint"], 1.0);
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"][1]["color"]["value"],
+        2
+    );
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"][1]["line_font"]["value"],
+        3
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -918,26 +908,26 @@ fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
         )
         .unwrap();
     let drawing = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"][0];
-    assert_eq!(drawing.fields()["form"], 1);
+    assert_eq!(drawing.fields().unwrap()["form"], 1);
     assert_eq!(
-        drawing.fields()["views"][0]["view"],
+        drawing.fields().unwrap()["views"][0]["view"],
         "iges:presentation:view#D1"
     );
-    assert_eq!(drawing.fields()["views"][0]["origin"][0], 10.0);
-    assert_eq!(drawing.fields()["views"][0]["rotation"], 0.5);
+    assert_eq!(drawing.fields().unwrap()["views"][0]["origin"][0], 10.0);
+    assert_eq!(drawing.fields().unwrap()["views"][0]["rotation"], 0.5);
     assert_eq!(
-        drawing.fields()["annotations"][0],
+        drawing.fields().unwrap()["annotations"][0],
         "iges:entity:directory#3"
     );
-    assert_eq!(drawing.fields()["size"][0], 210.0);
-    assert_eq!(drawing.fields()["size"][1], 297.0);
-    assert_eq!(drawing.fields()["units_flag"], 2);
+    assert_eq!(drawing.fields().unwrap()["size"][0], 210.0);
+    assert_eq!(drawing.fields().unwrap()["size"][1], 297.0);
+    assert_eq!(drawing.fields().unwrap()["units_flag"], 2);
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&drawing.fields()["units_name"])[0]),
+        u64::from(crate::test_support::native_bytes(&drawing.fields().unwrap()["units_name"])[0]),
         77
     );
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&drawing.fields()["name"])[0]),
+        u64::from(crate::test_support::native_bytes(&drawing.fields().unwrap()["name"])[0]),
         68
     );
     assert!(
@@ -957,8 +947,8 @@ fn decode_reports_conflicting_drawing_property_values() {
         .unwrap();
     let drawing = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"][0];
 
-    assert!(drawing.fields()["size"].is_null());
-    assert_eq!(drawing.fields()["ambiguous_property_forms"][0], 16);
+    assert!(drawing.fields().unwrap()["size"].is_null());
+    assert_eq!(drawing.fields().unwrap()["ambiguous_property_forms"][0], 16);
     let loss = result
         .report()
         .losses
@@ -983,12 +973,15 @@ fn decode_types_view_list_with_required_back_pointers() {
         .unwrap();
     let view_list = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
-        .find(|value| value.fields()["kind"] == "view_list")
+        .find(|value| value.fields().unwrap()["kind"] == "view_list")
         .unwrap();
-    assert_eq!(view_list.fields()["declared_visible_count"], 1);
-    assert_eq!(view_list.fields()["view"], "iges:entity:directory#1");
+    assert_eq!(view_list.fields().unwrap()["declared_visible_count"], 1);
     assert_eq!(
-        view_list.fields()["visible_entities"][0],
+        view_list.fields().unwrap()["view"],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(
+        view_list.fields().unwrap()["visible_entities"][0],
         "iges:entity:directory#5"
     );
     assert!(
@@ -1020,13 +1013,28 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
         .unwrap();
     let view_list = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
-        .find(|value| value.fields()["kind"] == "view_list")
+        .find(|value| value.fields().unwrap()["kind"] == "view_list")
         .unwrap();
-    assert_eq!(view_list.fields()["declared_visible_count"], 1);
-    assert_eq!(view_list.fields()["view"], "iges:entity:directory#1");
+    assert_eq!(view_list.fields().unwrap()["declared_visible_count"], 1);
     assert_eq!(
-        view_list.fields()["visible_entities"][0],
+        view_list.fields().unwrap()["view"],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(
+        view_list.fields().unwrap()["visible_entities"][0],
         "iges:entity:directory#5"
     );
     assert!(result.report().losses.is_empty(), "{:#?}", result.report());
+}
+
+#[test]
+fn drawing_entity_loss_names_the_entity_and_reason() {
+    let entry = directory_entry(404, 0);
+    let mut losses = Vec::new();
+    super::push_drawing_entity_loss(&mut losses, &entry, "missing");
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].message,
+        "IGES entity type 404 form 0 was not projected: missing"
+    );
 }

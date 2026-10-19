@@ -36,10 +36,9 @@ fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
         expression("p6", "p4_ + 2", None),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[1]
@@ -78,10 +77,9 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
         expression("p9", "p8 + p7", None),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[2]
@@ -119,10 +117,9 @@ fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
         expression("p3", "-p1^2", None),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[1]
@@ -185,10 +182,9 @@ fn nx_expression_graph_scopes_names_to_their_expression_table() {
         ),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[1]
@@ -258,10 +254,9 @@ fn nx_expression_graph_rejects_every_duplicate_name_in_one_table() {
         ),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[0]
@@ -347,10 +342,9 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
         ),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[0]
@@ -546,20 +540,15 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
             .map(String::as_str),
         Some("degree")
     );
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        feature_completeness::incomplete_expression_parameters(ctx, &ir)
-    })
-    .unwrap()
-    .is_empty());
+    assert!(feature_completeness::incomplete_expression_parameters(&ir)
+        .unwrap()
+        .is_empty());
 
     ir.model.parameters[0]
         .properties
         .insert(cadmpeg_core::nonblank_literal!("unit"), "native".into());
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            feature_completeness::incomplete_expression_parameters(ctx, &ir)
-        })
-        .unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         [
             ir.model.parameters[0].id.clone(),
             ir.model.parameters[2].id.clone(),
@@ -652,31 +641,23 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
             cadmpeg_ir::scalar::Length::new(value).unwrap(),
         ));
     }
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        feature_completeness::incomplete_expression_parameters(ctx, &ir)
-    })
-    .unwrap()
-    .is_empty());
+    assert!(feature_completeness::incomplete_expression_parameters(&ir)
+        .unwrap()
+        .is_empty());
 
     let mut inconsistent = ir.clone();
     inconsistent.model.parameters[1].value = Some(cadmpeg_ir::features::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
     ));
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            feature_completeness::incomplete_expression_parameters(ctx, &inconsistent)
-        })
-        .unwrap(),
+        feature_completeness::incomplete_expression_parameters(&inconsistent).unwrap(),
         [inconsistent.model.parameters[1].id.clone()].into()
     );
 
     let mut duplicate_name = ir.clone();
     duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            feature_completeness::incomplete_expression_parameters(ctx, &duplicate_name)
-        })
-        .unwrap(),
+        feature_completeness::incomplete_expression_parameters(&duplicate_name).unwrap(),
         duplicate_name.model.parameters[..2]
             .iter()
             .map(|parameter| parameter.id.clone())
@@ -686,10 +667,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     let mut unevaluated = ir.clone();
     unevaluated.model.parameters[1].value = None;
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            feature_completeness::incomplete_expression_parameters(ctx, &unevaluated)
-        })
-        .unwrap(),
+        feature_completeness::incomplete_expression_parameters(&unevaluated).unwrap(),
         [unevaluated.model.parameters[1].id.clone()].into()
     );
 
@@ -703,10 +681,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
         ),
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            feature_completeness::incomplete_expression_parameters(ctx, &operation_owned)
-        })
-        .unwrap(),
+        feature_completeness::incomplete_expression_parameters(&operation_owned).unwrap(),
         [operation_owned.model.parameters[1].id.clone()].into()
     );
 }
@@ -753,10 +728,7 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
         .iter()
         .all(|parameter| parameter.dependencies.is_empty()));
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            feature_completeness::incomplete_expression_parameters(ctx, &ir)
-        })
-        .unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         ir.model
             .parameters
             .iter()
@@ -764,10 +736,7 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
             .collect()
     );
     let mut losses = Vec::new();
-    crate::test_support::with_decode_context(|ctx| {
-        crate::decode::report::append_design_intent_losses(ctx, &ir, &mut losses)
-    })
-    .unwrap();
+    crate::decode::report::append_design_intent_losses(&ir, &mut losses).unwrap();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("2 NX expression parameter(s)"));
 }
@@ -829,10 +798,7 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
         ));
     }
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            feature_completeness::incomplete_expression_parameters(ctx, &ir)
-        })
-        .unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         ir.model.parameters[2..]
             .iter()
             .map(|parameter| parameter.id.clone())
@@ -855,17 +821,13 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
         object_id: 20,
         source_offset: offset,
     };
-    let uses = crate::test_support::with_decode_context(|ctx| {
-        feature_parameter_uses(
-            ctx,
-            &[
-                binding("late", "nx:feature-history:operation-label#1-2", 1, 30),
-                binding("early", "nx:feature-history:operation-label#1-2", 0, 20),
-                binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
-            ],
-        )
-    })
-    .expect("admitted parameter uses");
+    let uses = {
+        feature_parameter_uses(&[
+            binding("late", "nx:feature-history:operation-label#1-2", 1, 30),
+            binding("early", "nx:feature-history:operation-label#1-2", 0, 20),
+            binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
+        ])
+    };
     assert_eq!(uses.len(), 2);
     assert_eq!(
         uses[0]
@@ -1016,9 +978,8 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect();
-    let dependencies = crate::test_support::with_decode_context(|ctx| {
+    let dependencies = {
         crate::native::attach::parameter_owner_dependencies(
-            ctx,
             &parameter_owners,
             &[
                 cadmpeg_ir::features::ParameterId::mint("nx:test:parameter#20")
@@ -1027,8 +988,7 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
                     .expect("identity grammar"),
             ],
         )
-    })
-    .unwrap();
+    };
 
     assert_eq!(ir.model.features[0].ordinal, 0);
     assert_eq!(
@@ -1084,15 +1044,13 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
             .unwrap(),
         source_offset: 900,
     };
-    let bindings = crate::test_support::with_decode_context(|ctx| {
+    let bindings = {
         crate::native::features::feature_parameter_bindings(
-            ctx,
             std::slice::from_ref(&input),
             &references,
             std::slice::from_ref(&expression),
         )
-    })
-    .expect("admitted parameter bindings");
+    };
     assert_eq!(bindings.len(), 1);
     assert_eq!(
         bindings[0].id,
@@ -1112,15 +1070,13 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
 
     let mut duplicate = expression.clone();
     duplicate.id = "nx:om-entry-9:expression#30".to_string();
-    let ambiguous = crate::test_support::with_decode_context(|ctx| {
+    let ambiguous = {
         crate::native::features::feature_parameter_bindings(
-            ctx,
             &[input],
             &references,
             &[expression, duplicate],
         )
-    })
-    .expect("ambiguous parameter binding");
+    };
     assert_eq!(ambiguous.len(), 1);
     assert_eq!(ambiguous[0].expression, None);
 }

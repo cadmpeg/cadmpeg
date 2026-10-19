@@ -77,7 +77,6 @@ fn encoder_writes_source_less_curved_sketches() {
         .unwrap(),
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
             curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -88,7 +87,6 @@ fn encoder_writes_source_less_curved_sketches() {
                 Some(vec![1.0, 0.75, 1.0]),
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         })
         .unwrap(),
@@ -270,7 +268,6 @@ fn encoder_writes_source_less_curved_sketches() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -948,7 +945,6 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
@@ -1026,7 +1022,6 @@ fn encoder_writes_source_less_native_features() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "BossExtrude".into(),
@@ -1096,19 +1091,16 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![ir.model.bodies[0].id.clone()],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies
+                        [0]
+                    .id
+                    .clone()])
                     .expect("distinct bodies"),
                     native: "body-a".into(),
                 },
                 BodySelection::Native("body-b,body-c".into()),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
-
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         }),
@@ -1154,7 +1146,6 @@ fn encoder_writes_source_less_native_features() {
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
             )
             .unwrap(),
-
             extent: Some(LinearTermination::Blind {
                 length: cadmpeg_ir::scalar::NonZeroLength::new(20.0).unwrap(),
             }),
@@ -1175,7 +1166,6 @@ fn encoder_writes_source_less_native_features() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -1221,16 +1211,12 @@ fn encoder_writes_source_less_native_features() {
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![seed_id.clone()],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![seed_id.clone()])
+                .unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: vec![cadmpeg_ir::features::patterns::PatternSeed::Feature(
@@ -1482,18 +1468,34 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .iter()
         .map(|feature| feature.evaluation.definition())
         .collect::<Vec<_>>();
-    assert!(
-        matches!(modes[0], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Bending { angle }, .. }) if (angle.get() - 0.1).abs() < 1.0e-12)
-    );
-    assert!(
-        matches!(modes[1], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Twisting { angle }, .. }) if (angle.get() - 0.2).abs() < 1.0e-12)
-    );
-    assert!(
-        matches!(modes[2], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Tapering { factor }, .. }) if (factor.get() - 2.0).abs() < EPS_SCALAR_ROUND_TRIP)
-    );
-    assert!(
-        matches!(modes[3], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Stretching { distance }, .. }) if (distance.get() - 12.0).abs() < 1.0e-12)
-    );
+    assert!(matches!(
+        modes[0],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Bending { angle }, .. }
+        )
+            if (angle.get() - 0.1).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        modes[1],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Twisting { angle }, .. }
+        )
+            if (angle.get() - 0.2).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        modes[2],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Tapering { factor }, .. }
+        )
+            if (factor.get() - 2.0).abs() < EPS_SCALAR_ROUND_TRIP
+    ));
+    assert!(matches!(
+        modes[3],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Stretching { distance }, .. }
+        )
+            if (distance.get() - 12.0).abs() < 1.0e-12
+    ));
 }
 
 #[test]

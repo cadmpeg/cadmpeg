@@ -11,74 +11,6 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
-#[test]
-fn parameter_quarantine_identity_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let record = super::QuarantinedParameterRecord {
-        sequence: 3,
-        ownership: super::QuarantinedCards::None {
-            directory_offset: 160,
-        },
-        failing_offset: None,
-        defect: super::ParameterDefect::NoOwnedCards,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        record.identity(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges parameter quarantine identity"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        record.identity(&ctx).unwrap(),
-        "iges:quarantine:parameter#3"
-    );
-}
-
-#[test]
-fn parameter_quarantine_loss_refuses_owned_range_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let record = super::QuarantinedParameterRecord {
-        sequence: 3,
-        ownership: super::QuarantinedCards::Owned {
-            range: 2..3,
-            bytes: Vec::new(),
-            first_offset: 160,
-        },
-        failing_offset: None,
-        defect: super::ParameterDefect::NoOwnedCards,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        record.loss_note(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges parameter quarantine owned card range"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let loss = record.loss_note(&ctx).unwrap();
-    assert_eq!(
-        loss.provenance.unwrap().tag.as_deref(),
-        Some("D3:parameter")
-    );
-    assert!(loss.message.contains("D3 (P2 through P2)"));
-}
-
 /// Zero-based index of the Parameter Data count field in the second card.
 const PARAMETER_COUNT_FIELD: usize = 3;
 
@@ -120,13 +52,19 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
     let result = decode(bytes.clone());
     let native = result.ir().native.namespace("iges").unwrap();
     let entity = &native.arenas()["entities"][0];
-    assert!(!entity.fields()["parameter_bytes"]
+    assert!(!entity.fields().unwrap()["parameter_bytes"]
         .as_str()
         .unwrap()
         .is_empty());
-    assert_eq!(entity.fields()["parameters"].as_array().unwrap().len(), 5);
     assert_eq!(
-        entity.fields()["parameters"][3]["value"]["kind"],
+        entity.fields().unwrap()["parameters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(
+        entity.fields().unwrap()["parameters"][3]["value"]["kind"],
         "unreadable"
     );
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
@@ -153,7 +91,7 @@ fn a_first_token_disagreeing_with_the_entity_type_quarantines_the_parameter_data
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(
-        quarantined[0].fields()["defect"],
+        quarantined[0].fields().unwrap()["defect"],
         "entity-type-token-mismatch"
     );
     assert_eq!(
@@ -190,7 +128,7 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
-    let fields = quarantined[0].fields();
+    let fields = quarantined[0].fields().unwrap();
     assert_eq!(fields["cards"], 0);
     assert!(fields["bytes"].as_str().unwrap().is_empty());
     assert_eq!(fields["defect"], "declared-count-zero");
@@ -245,8 +183,11 @@ fn a_declared_card_that_does_not_exist_quarantines_the_parameter_data() {
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].fields()["defect"], "declared-card-missing");
-    assert_eq!(quarantined[0].fields()["cards"], 0);
+    assert_eq!(
+        quarantined[0].fields().unwrap()["defect"],
+        "declared-card-missing"
+    );
+    assert_eq!(quarantined[0].fields().unwrap()["cards"], 0);
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
@@ -273,7 +214,7 @@ fn every_token_defect_key_names_its_own_failure() {
         let native = result.ir().native.namespace("iges").unwrap();
         let quarantined = &native.arenas()["quarantined_parameter_records"];
         assert_eq!(quarantined.len(), 1, "{defect}");
-        assert_eq!(quarantined[0].fields()["defect"], defect);
+        assert_eq!(quarantined[0].fields().unwrap()["defect"], defect);
     }
 }
 
@@ -311,7 +252,7 @@ fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
-    assert_eq!(quarantined[0].fields()["defect"], "no-owned-cards");
+    assert_eq!(quarantined[0].fields().unwrap()["defect"], "no-owned-cards");
     assert_eq!(
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
         1
@@ -349,7 +290,10 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].fields()["defect"], "delimiter-missing");
+    assert_eq!(
+        quarantined[0].fields().unwrap()["defect"],
+        "delimiter-missing"
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
@@ -390,7 +334,7 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
     assert!(result.ir().model.points.is_empty());
     assert_eq!(quarantined.len(), 2);
     for record in quarantined {
-        assert_eq!(record.fields()["defect"], "ownership-conflict");
+        assert_eq!(record.fields().unwrap()["defect"], "ownership-conflict");
     }
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
@@ -411,7 +355,7 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         .decode(
             &mut Cursor::new(bytes.clone()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -444,4 +388,25 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         ),
         other => panic!("expected a strict refusal, got {other:?}"),
     }
+}
+
+#[test]
+fn parameter_quarantine_record_names_its_identity_and_owned_range() {
+    let record = super::QuarantinedParameterRecord {
+        sequence: 3,
+        ownership: super::QuarantinedCards::Owned {
+            range: 2..3,
+            bytes: Vec::new(),
+            first_offset: 160,
+        },
+        failing_offset: None,
+        defect: super::ParameterDefect::NoOwnedCards,
+    };
+    assert_eq!(record.identity(), "iges:quarantine:parameter#3");
+    let loss = record.loss_note().unwrap();
+    assert_eq!(
+        loss.provenance.unwrap().tag.as_deref(),
+        Some("D3:parameter")
+    );
+    assert!(loss.message.contains("D3 (P2 through P2)"));
 }

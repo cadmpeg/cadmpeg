@@ -46,7 +46,7 @@ fn e5_boundary_line_rejects_overflowing_uv_start() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .is_none()
     );
 }
@@ -87,7 +87,7 @@ fn e5_boundary_line_rejects_overflowing_uv_end() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .is_none()
     );
 }
@@ -132,7 +132,7 @@ fn e5_plane_boundary_line_keeps_finite_wide_parameter_endpoints() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("build the E5 boundary curve")
     .expect("finite line carrier across a wide parameter range");
     assert!(matches!(
         curve,
@@ -179,7 +179,7 @@ fn e5_boundary_line_normalizes_subnormal_chord() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("build the E5 boundary curve")
     .expect("subnormal line chord");
     assert_eq!(range, [0.0, tiny]);
     assert!(
@@ -231,7 +231,7 @@ fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("build the E5 boundary curve")
     .expect("plane boundary circle");
     assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
     assert!(
@@ -262,7 +262,7 @@ fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("build the E5 boundary curve")
     .expect("reflected plane boundary circle");
     assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
     assert!(
@@ -281,118 +281,7 @@ fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
 }
 
 #[test]
-fn e5_boundary_nurbs_lift_refuses_low_collection_and_retained_limits() {
-    let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-        Point3::new(1.0, 2.0, 3.0),
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, 0.0),
-    )
-    .expect("valid plane fixture");
-    let nurbs = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
-        None,
-        false,
-    )
-    .expect("fixture pcurve construction admission")
-    .expect("valid pcurve fixture");
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &nurbs,
-            17,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_e5_boundary_lifted_poles")
-    );
-    let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &nurbs,
-            17,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_e5_boundary_lifted_poles")
-    );
-    let lifted = crate::test_support::with_service_context(|ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &nurbs,
-            17,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service profile admits lifted pcurve")
-    .expect("valid lifted NURBS");
-    assert_eq!(lifted.pole_count(), 2);
-
-    let rational = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
-        Some(vec![1.0, 2.0]),
-        false,
-    )
-    .expect("fixture pcurve construction admission")
-    .expect("valid rational pcurve fixture");
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &rational,
-            18,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_e5_boundary_lifted_poles")
-    );
-    let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &rational,
-            18,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_e5_boundary_lifted_poles")
-    );
-    let lifted = crate::test_support::with_service_context(|ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &rational,
-            18,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service profile admits rational lift")
-    .expect("valid rational NURBS");
-    assert_eq!(lifted.pole_rows().weights(), Some(vec![1.0, 2.0]));
-}
-
-#[test]
 fn e5_plane_jet_boundary_lifts_control_net_affinely() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input limit");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
@@ -414,7 +303,6 @@ fn e5_plane_jet_boundary_lifts_control_net_affinely() {
         [0.0, 1.0],
     );
     let pcurve = quintic_jet_pcurve(
-        &ctx,
         5,
         &[0.0, 1.0],
         &points,
@@ -422,7 +310,6 @@ fn e5_plane_jet_boundary_lifts_control_net_affinely() {
         &mut crate::nurbs::LaneRefusals::new(),
         "test record",
     )
-    .expect("service resource budget")
     .expect("quintic pcurve");
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         e5_boundary_curve(
@@ -438,7 +325,7 @@ fn e5_plane_jet_boundary_lifts_control_net_affinely() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("build the E5 boundary curve")
     .expect("plane jet curve");
     assert_eq!(range, [0.0, 1.0]);
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = curve else {
@@ -472,14 +359,12 @@ fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
     };
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(large, 0.0), Point2::new(large, 1.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("valid finite pcurve carrier"),
     };
     assert!(
@@ -498,7 +383,7 @@ fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .is_none()
     );
 }
@@ -553,7 +438,7 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
             [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
         )
     })
-    .expect("evaluation resources"));
+    .expect("check E5 circle carriers have same ordered sweep"));
     assert!(!crate::test_support::with_service_context(|ctx| {
         e5_circle_carriers_have_same_ordered_sweep(
             ctx,
@@ -563,7 +448,7 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
             [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2],
         )
     })
-    .expect("evaluation resources"));
+    .expect("check E5 circle carriers have same ordered sweep"));
     let displaced = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.01),
@@ -655,7 +540,6 @@ fn e5_nurbs_pcurve_evaluates_on_nurbs_surface() {
         record_id: 7,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -675,7 +559,6 @@ fn e5_nurbs_pcurve_evaluates_on_nurbs_surface() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid planar NURBS surface"),
         )),
         uv_scale: finite_pair([1.0, 1.0]),
@@ -905,7 +788,7 @@ fn e5_boundary_circle_rejects_nonfinite_center() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .is_none()
     );
 }
@@ -1019,4 +902,46 @@ fn occurrence_intersection_accepts_roundoff_equivalent_side_ranges() {
     assert!(e5_occurrence_intersection_context(&tiny_sides).is_some());
     tiny_sides[1].2 = [0.0, 2.0 * tiny];
     assert!(e5_occurrence_intersection_context(&tiny_sides).is_none());
+}
+
+#[test]
+fn e5_plane_nurbs_lift_keeps_poles_and_rational_weights() {
+    let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        Point3::new(1.0, 2.0, 3.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("valid plane fixture");
+    let nurbs = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
+        None,
+        false,
+    )
+    .expect("valid pcurve fixture");
+    let lifted = super::super::e5_lift_plane_nurbs(
+        &plane,
+        &nurbs,
+        17,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("valid lifted NURBS");
+    assert_eq!(lifted.pole_count(), 2);
+    let rational = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
+        Some(vec![1.0, 2.0]),
+        false,
+    )
+    .expect("valid rational pcurve fixture");
+    let lifted = super::super::e5_lift_plane_nurbs(
+        &plane,
+        &rational,
+        18,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("valid rational NURBS");
+    assert_eq!(lifted.pole_rows().weights(), Some(vec![1.0, 2.0]));
 }

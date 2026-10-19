@@ -15,7 +15,6 @@ use crate::validate::validate_neutral;
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 2.0, 2.0],
         vec![
@@ -26,7 +25,6 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         None,
         true,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     assert_eq!(
@@ -54,7 +52,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.5, 2.5]))
             .unwrap();
     assert!(!validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -65,7 +63,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     )
     .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -84,13 +82,11 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         let replacement = false;
         edit::replace(nurbs, |previous| {
             crate::geometry::nurbs::NurbsCurve::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -98,7 +94,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.5, 2.5]))
             .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -109,7 +105,6 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
     // Quarter circle of radius 5 as a rational quadratic Bezier.
     let weight = 0.5_f64.sqrt();
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -120,7 +115,6 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
         Some(vec![1.0, weight, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let point = crate::eval::decode::nurbs_curve_point_at(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -135,14 +129,12 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 #[test]
 fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     assert_eq!(
         curve
@@ -170,9 +162,7 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
                 .unwrap(),
         },
         0.01,
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("polyline construction admission")
     .unwrap();
     assert_eq!(
         polyline.point_at(1).map(crate::features::FinitePoint3::get),
@@ -218,28 +208,24 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     .unwrap();
     assert_eq!(
         crate::eval::nurbs_pcurve_contains_point(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
             Some(&weights),
             *interior.as_raw(),
             1.0e-9,
-        )
-        .expect("resource allocation did not fail"),
+        ),
         Some(true)
     );
     assert_eq!(
         crate::eval::nurbs_pcurve_contains_point(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
             Some(&weights),
             Point2::new(4.0, 4.0),
             1.0e-6,
-        )
-        .expect("resource allocation did not fail"),
+        ),
         Some(false)
     );
 }
@@ -359,9 +345,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(
@@ -386,9 +370,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(
@@ -531,7 +513,7 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
         geometry: SurfaceGeometry::Solved(overflowing_plane()),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     for point in [
         model_surface_point_by_id(
@@ -952,18 +934,15 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     // The u range runs down from 1e308 while its sense runs up, so the
     // support parameter at the far end of the span is 2e308.
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &subset_id,
-            procedural_surface! {
+        .add_procedural_surface(&subset_id, procedural_surface! {
                 id: subset_construction,
                 definition: crate::geometry::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
+            })
         .expect("subset surface exists and has no procedural construction");
 
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert!(
         matches!(
             crate::eval::model_surface_point_by_id(

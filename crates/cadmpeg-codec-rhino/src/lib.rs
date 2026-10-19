@@ -9,12 +9,12 @@
 //! The codec provides bounded 3DM container inspection, typed decoding, and
 //! explicitly versioned native writing from neutral IR.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -143,14 +143,11 @@ impl CodecBackend for RhinoCodec {
 
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+
         if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
             Ok(Confidence::High)
         } else {
@@ -173,6 +170,9 @@ impl CodecBackend for RhinoCodec {
 
 impl EncoderBackend for RhinoCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Writes B-rep, meshes and placements only; design arenas are refused, not
+    /// read.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 

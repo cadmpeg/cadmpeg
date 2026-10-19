@@ -32,6 +32,10 @@ pub(crate) fn transfer_dimensions(
     transferred_sketch_ranges: &HashSet<String>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
+    let mut present = HashSet::new();
+    for annotation in &ir.model.pmi {
+        present.insert(annotation.id.clone());
+    }
     for entity in native
         .entity_records
         .iter()
@@ -43,48 +47,25 @@ pub(crate) fn transfer_dimensions(
         let Some(definition) = dimension_definition(entity) else {
             continue;
         };
-        let id = pmi_id(ctx, entity.byte_offset)?;
-        let mut duplicate = false;
-        for annotation in &ir.model.pmi {
-            let work = cadmpeg_core::decode::u64_from_index(annotation.id.as_str().len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("catia_pmi_duplicate_search", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(work, "catia_pmi_duplicate_search")?;
-            if annotation.id == id {
-                duplicate = true;
-                break;
-            }
-        }
-        if duplicate {
+        let id = pmi_id(entity.byte_offset)?;
+        if !present.insert(id.clone()) {
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
-        ctx.push_vec(
-            &mut ir.model.pmi,
-            PmiAnnotation {
-                id,
-                name: None,
-                visible: None,
-                targets: Vec::new(),
-                definition,
-            },
-            "catia_pmi_dimensions",
-        )?;
+        ir.model.pmi.push(PmiAnnotation {
+            id,
+            name: None,
+            visible: None,
+            targets: Vec::new(),
+            definition,
+        });
         transferred += 1;
     }
     Ok(transferred)
 }
 
-fn pmi_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source_offset: u64,
-) -> Result<PmiId, cadmpeg_core::CodecError> {
-    let value = ctx.format_retained(
-        format_args!("catia:model:pmi#entity-record-{source_offset:010}"),
-        "catia_pmi_dimension_id",
-    )?;
+fn pmi_id(source_offset: u64) -> Result<PmiId, cadmpeg_core::CodecError> {
+    let value = format!("catia:model:pmi#entity-record-{source_offset:010}");
     PmiId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -299,48 +280,10 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
             )
-            .expect("service profile admits the source dimensions")),
+            .expect("transfer dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());
-    }
-
-    #[test]
-    fn pmi_duplicate_search_refuses_work() {
-        let native = CatiaNative {
-            entity_records: vec![range_only_entity("DiameterThread")],
-            ..CatiaNative::default()
-        };
-        let mut ir = CadIr::empty();
-        crate::test_support::with_service_context(|ctx| {
-            transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-        })
-        .expect("first dimension");
-        // The formatted identity charges its length twice (measure, then append); the
-        // scan then charges both ids.
-        let id_work = 2 * u64::try_from("catia:model:pmi#entity-record-0000000000".len())
-            .expect("identity length fits u64");
-        crate::test_support::with_work_limit(id_work, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-            .expect_err("duplicate scan consumes work") else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_pmi_duplicate_search");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-        assert_eq!(ir.model.pmi.len(), 1);
     }
 
     #[test]
@@ -362,7 +305,7 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
             )
-            .expect("service profile admits two dimensions")),
+            .expect("transfer dimensions")),
             2
         );
         let dimensions = ir
@@ -422,44 +365,6 @@ mod tests {
                 && limit.operation == "admit CATIA PMI dimension")
         );
         assert_eq!(ir.model.pmi.len(), 1);
-    }
-
-    #[test]
-    fn pmi_dimension_identity_refuses_retained_limit() {
-        let native = CatiaNative {
-            entity_records: vec![range_only_entity("DiameterThread")],
-            ..CatiaNative::default()
-        };
-        let mut ir = CadIr::empty();
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_pmi_dimension_id")
-        );
-        assert!(ir.model.pmi.is_empty());
-        let admitted = with_service_context(|ctx| {
-            transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-        })
-        .expect("service profile admits dimension");
-        assert_eq!(admitted, 1);
-        assert_eq!(
-            ir.model.pmi[0].id.as_str(),
-            "catia:model:pmi#entity-record-0000000000"
-        );
     }
 
     #[test]
@@ -532,9 +437,96 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
             )
-            .expect("service profile admits the source dimensions")),
+            .expect("transfer dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());
+    }
+
+    #[test]
+    fn one_thread_diameter_record_adds_one_pmi_entry() {
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("first dimension");
+
+        assert_eq!(ir.model.pmi.len(), 1);
+    }
+
+    #[test]
+    fn many_dimensions_transfer_once_per_identity() {
+        const DIMENSIONS: u64 = 4_096;
+        let mut entity_records = Vec::new();
+        for byte_offset in (0..DIMENSIONS).chain(0..DIMENSIONS / 2) {
+            let mut entity = range_only_entity("DiameterThread");
+            entity.byte_offset = byte_offset;
+            entity_records.push(entity);
+        }
+        let native = CatiaNative {
+            entity_records,
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        let transfer = |ir: &mut CadIr| {
+            with_service_context(|ctx| {
+                transfer_dimensions(
+                    ctx,
+                    ir,
+                    &native,
+                    &crate::decode::ModelingGraphScope::Unscoped,
+                    &HashSet::new(),
+                )
+            })
+            .expect("transfer dimensions")
+        };
+        assert_eq!(transfer(&mut ir), 4_096);
+        ir.model.pmi.truncate(1);
+        assert_eq!(transfer(&mut ir), 4_095);
+        let ids = ir
+            .model
+            .pmi
+            .iter()
+            .map(|annotation| annotation.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let expected = (0..DIMENSIONS)
+            .map(|offset| format!("catia:model:pmi#entity-record-{offset:010}"))
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
+    }
+
+    #[test]
+    fn transferred_dimension_id_names_its_entity_record() {
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        assert!(ir.model.pmi.is_empty());
+        let admitted = with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("transfer dimensions");
+        assert_eq!(admitted, 1);
+        assert_eq!(
+            ir.model.pmi[0].id.as_str(),
+            "catia:model:pmi#entity-record-0000000000"
+        );
     }
 }

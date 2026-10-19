@@ -2,7 +2,12 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 mod attribute_colors;
+mod design_containment;
+mod history_deltas;
+mod history_scale;
+mod inconsistent_records;
 mod optional_payloads;
+mod placement_history;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
@@ -43,7 +48,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -255,6 +260,57 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
         .any(|loss| loss.message.contains("reference cycle")));
 }
 
+/// A geometry request stops a standalone geometry document before design
+/// intent. A document with no body source classifies itself by what design
+/// intent projects, and an F3Z archive merges its members into one document,
+/// so both decode in full. Each agrees with its full decode.
+#[test]
+fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("component.f3d", XREF_ROLE)],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    );
+    let inputs = [
+        ("standalone", component),
+        ("no body source", root),
+        ("archive", archive),
+    ];
+    let delivered = inputs
+        .iter()
+        .map(|(name, bytes)| {
+            let result = F3dCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("geometry-depth decode");
+            (*name, result.ir().decode_depth())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        delivered,
+        [
+            ("standalone", cadmpeg_core::decode::DecodeDepth::Geometry),
+            ("no body source", cadmpeg_core::decode::DecodeDepth::Full),
+            ("archive", cadmpeg_core::decode::DecodeDepth::Full),
+        ]
+    );
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
+    assert_eq!(summary.cut, 1, "{summary:?}");
+}
+
 #[test]
 fn container_only_pipeline_retains_native_sections_without_semantic_projection() {
     let bytes = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
@@ -263,7 +319,7 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

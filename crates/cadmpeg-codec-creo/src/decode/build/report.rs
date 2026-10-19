@@ -72,7 +72,6 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
 
 /// Build the decode body from the entry point's one dialect classification.
 pub(in super::super) fn build_report(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
     ir: &CadIr,
@@ -119,28 +118,23 @@ pub(in super::super) fn build_report(
                 .map(|plane| plane.surface_id),
         )
     {
-        ctx.insert_btree_set(
-            &mut placed_plane_ids,
-            id,
-            "creo report placed plane ID nodes",
-        )?;
+        placed_plane_ids.insert(id);
     }
     let placed_plane_count = placed_plane_ids.len();
     let mut losses = Vec::new();
     for message in &scan.framing.expansion_losses {
         push_report_loss(
-            ctx,
             &mut losses,
             CreoLossCode::CompressedSectionUnexpanded,
             &message.message,
-        )?;
+        );
     }
+    losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in
     // `ir.source`; the report body carries only the charge.
-    if let Some(loss) = classification.loss(ctx)? {
-        ctx.reserve_vec(&mut losses, 1, "creo dialect report losses")?;
+    if let Some(loss) = classification.loss() {
         losses.push(loss);
     }
 
@@ -148,7 +142,7 @@ pub(in super::super) fn build_report(
 
     let srf = OptionalCount(scan.framing.census.srf_array_count);
     let crv = OptionalCount(scan.framing.census.crv_array_count);
-    push_report_loss(ctx, &mut losses, CreoLossCode::ContainerCensus, format_args!(
+    push_report_loss(&mut losses, CreoLossCode::ContainerCensus, format_args!(
         "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
          census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
          prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
@@ -171,22 +165,52 @@ pub(in super::super) fn build_report(
         scan.curves.prototypes.len(),
         scan.curves.topology_rows.len(),
         scan.topology.loops.len(),
-    ))?;
+    ));
 
-    push_legacy_value_losses(ctx, &mut losses, &coverage)?;
+    push_legacy_value_losses(&mut losses, &coverage);
 
-    push_brep_transfer_note(ctx, &mut losses, brep_diagnostics, geom_sections)?;
+    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections);
 
     push_carrier_transfer_notes(
-        ctx,
         &mut losses,
         scan,
         &coverage,
         container_only,
         placed_plane_count,
-    )?;
-    push_structural_layer_notes(ctx, &mut losses, scan)?;
-    push_coverage_drop_losses(ctx, &mut losses, &coverage)?;
+    );
+    push_structural_layer_notes(&mut losses, scan);
+    let mut solve_work_caps = Vec::new();
+    for bound in scan
+        .curves
+        .expressions
+        .iter()
+        .flat_map(|record| &record.solve_blocks)
+        .flat_map(|block| block.work_caps.iter().copied())
+    {
+        if !solve_work_caps.contains(&bound) {
+            solve_work_caps.push(bound);
+        }
+    }
+    push_coverage_drop_losses(&mut losses, &coverage, &solve_work_caps)?;
+    let mut text_work_caps = std::collections::BTreeMap::<&str, usize>::new();
+    for (bound, count) in scan
+        .curves
+        .expressions
+        .iter()
+        .flat_map(|record| &record.text_work_caps)
+    {
+        *text_work_caps.entry(bound).or_default() += count;
+    }
+    for (bound, count) in text_work_caps {
+        push_report_loss(
+            &mut losses,
+            CreoLossCode::CurveExpressionTextCapped,
+            format_args!(
+                "{count} curve-equation relation condition(s) or assignment(s) have no value: \
+                 their string text exceeded {bound}."
+            ),
+        );
+    }
 
     Ok(DecodeBody {
         transfer: if container_only {
@@ -196,52 +220,10 @@ pub(in super::super) fn build_report(
         },
         coverage,
         losses,
-        notes: container::notes(ctx, scan)?,
+        notes: container::notes(scan),
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::build_report;
-    use crate::decode::surfaces::brep::BrepTransferDiagnostics;
-    use crate::surface::OutlinePlane;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::units::UnitVector3;
-
-    #[test]
-    fn placed_plane_id_nodes_refuse_collection_limit() {
-        let mut scan =
-            crate::container::scan_bytes_ok(crate::test_support::build_prt("report", &[]));
-        scan.planes.outlines.push(OutlinePlane {
-            surface_id: 17,
-            origin: [0.0; 3],
-            normal: UnitVector3::Z_AXIS,
-            u_axis: UnitVector3::X_AXIS,
-            offset: 0,
-        });
-        let classification = crate::decode::with_test_decode_ctx(|ctx| {
-            crate::dialect::classify(ctx, &scan).expect("service classification admitted")
-        });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = build_report(
-            &ctx,
-            &scan,
-            &classification,
-            &CadIr::empty(),
-            cadmpeg_ir::report::decode::Coverage::default(),
-            &BrepTransferDiagnostics::default(),
-            false,
-        )
-        .expect_err("placed plane node refused");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo report placed plane ID nodes"));
-    }
-}
+mod tests {}

@@ -35,13 +35,13 @@ fn hem_bend_carriers_prove_directional_gap_forms() {
 fn hem_carrier_offsets_prove_fold_direction() {
     use crate::history_records::{
         AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder,
-        AsmHistoricalEntityDelta, AsmHistoricalPlane, AsmHistoricalRelation, AsmHistoricalTopology,
-        AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+        AsmHistoricalPlane, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTransition,
     };
     use cadmpeg_ir::features::SheetMetalHemDirection;
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let previous = AsmHistoricalTopology {
+        surfaces: vec![11],
         coedge_topology: vec![AsmHistoricalCoedge {
             coedge: 6,
             owner_loop: 5,
@@ -69,17 +69,25 @@ fn hem_carrier_offsets_prove_fold_direction() {
         }],
         ..Default::default()
     };
-    let transition = AsmHistoricalTransition {
-        previous_state_id: Some(1),
-        records: Default::default(),
-        topology: AsmHistoricalTopologyDelta {
-            surfaces: AsmHistoricalEntityDelta {
-                inserted: vec![12, 13],
-                ..Default::default()
-            },
-            ..Default::default()
-        },
+    let newer = AsmHistoricalTopology {
+        surfaces: vec![11, 12, 13],
+        ..previous.clone()
     };
+    let old_versions = std::collections::BTreeMap::from([(11, 11)]);
+    let new_versions = std::collections::BTreeMap::from([(11, 11), (12, 12), (13, 13)]);
+    let transition = AsmHistoricalTransition::between(
+        Some(crate::history_records::AsmStateSnapshot {
+            state_id: 1,
+            topology: &previous,
+            versions: &old_versions,
+        }),
+        crate::history_records::AsmStateSnapshot {
+            state_id: 2,
+            topology: &newer,
+            versions: &new_versions,
+        },
+    )
+    .unwrap();
     let cylinder = |origin| AsmHistoricalCylinder {
         surface: 12,
         origin,
@@ -89,47 +97,35 @@ fn hem_carrier_offsets_prove_fold_direction() {
     let forward_first = cylinder(Point3::new(1.0, 0.0, 0.0));
     let forward_second = cylinder(Point3::new(2.0, 0.0, 0.0));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            super::super::super::hem_direction_from_transition(
-                decode_ctx,
-                7,
-                &[&forward_first, &forward_second].into_iter(),
-                &previous,
-                &transition,
-            )
-        })
-        .unwrap(),
+        super::super::super::hem_direction_from_transition(
+            7,
+            &[&forward_first, &forward_second].into_iter(),
+            &previous,
+            &transition,
+        ),
         Some(SheetMetalHemDirection::Forward)
     );
 
     let reverse_first = cylinder(Point3::new(-1.0, 0.0, 0.0));
     let reverse_second = cylinder(Point3::new(-2.0, 0.0, 0.0));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            super::super::super::hem_direction_from_transition(
-                decode_ctx,
-                7,
-                &[&reverse_first, &reverse_second].into_iter(),
-                &previous,
-                &transition,
-            )
-        })
-        .unwrap(),
+        super::super::super::hem_direction_from_transition(
+            7,
+            &[&reverse_first, &reverse_second].into_iter(),
+            &previous,
+            &transition,
+        ),
         Some(SheetMetalHemDirection::Reverse)
     );
 
     let zero_offset = cylinder(Point3::new(0.0, 0.0, 0.0));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            super::super::super::hem_direction_from_transition(
-                decode_ctx,
-                7,
-                &[&zero_offset, &forward_second].into_iter(),
-                &previous,
-                &transition,
-            )
-        })
-        .unwrap(),
+        super::super::super::hem_direction_from_transition(
+            7,
+            &[&zero_offset, &forward_second].into_iter(),
+            &previous,
+            &transition,
+        ),
         None
     );
 }

@@ -180,43 +180,33 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
         .expect("identity grammar");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &axis_pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), TEST_LINEAR_TOLERANCE)).transpose().unwrap(),
+        null_locus_dimension_definition(&axis_pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), TEST_LINEAR_TOLERANCE),
         Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
         }) if actual_entity == entity.id() && actual_parameter == &parameter
     ));
-    assert!(crate::test_support::with_decode_context(
-        |decode_ctx| null_locus_dimension_definition(
-            decode_ctx,
-            &axis_pair,
-            &entity,
-            "Angular Dimension-2",
-            0.5,
-            parameter.clone(),
-            TEST_LINEAR_TOLERANCE
-        )
+    assert!(null_locus_dimension_definition(
+        &axis_pair,
+        &entity,
+        "Angular Dimension-2",
+        0.5,
+        parameter.clone(),
+        TEST_LINEAR_TOLERANCE
     )
-    .transpose()
-    .unwrap()
     .is_none());
     let mut draft = axis_pair.into_draft();
     draft.loci[0].role = 13;
     axis_pair = crate::records::dimensions::DesignDimensionLocusPair::try_new(draft).unwrap();
-    assert!(crate::test_support::with_decode_context(
-        |decode_ctx| null_locus_dimension_definition(
-            decode_ctx,
-            &axis_pair,
-            &entity,
-            "Angular Dimension-2",
-            std::f64::consts::FRAC_PI_4,
-            parameter.clone(),
-            TEST_LINEAR_TOLERANCE
-        )
+    assert!(null_locus_dimension_definition(
+        &axis_pair,
+        &entity,
+        "Angular Dimension-2",
+        std::f64::consts::FRAC_PI_4,
+        parameter.clone(),
+        TEST_LINEAR_TOLERANCE
     )
-    .transpose()
-    .unwrap()
     .is_none());
 
     let radial_entity = SketchEntity::new(
@@ -229,25 +219,20 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &pair, &radial_entity, "Diameter Dimension-2", 0.2, parameter.clone(), TEST_LINEAR_TOLERANCE)).transpose().unwrap(),
+        null_locus_dimension_definition(&pair, &radial_entity, "Diameter Dimension-2", 0.2, parameter.clone(), TEST_LINEAR_TOLERANCE),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
         }) if actual_entity == radial_entity.id() && actual_parameter == &parameter
     ));
-    assert!(crate::test_support::with_decode_context(
-        |decode_ctx| null_locus_dimension_definition(
-            decode_ctx,
-            &pair,
-            &radial_entity,
-            "Diameter Dimension-2",
-            0.2,
-            parameter,
-            0.0
-        )
+    assert!(null_locus_dimension_definition(
+        &pair,
+        &radial_entity,
+        "Diameter Dimension-2",
+        0.2,
+        parameter,
+        0.0
     )
-    .transpose()
-    .unwrap()
     .is_none());
 }
 
@@ -278,15 +263,13 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&250u32.to_le_bytes());
 
     let group = parse_dimension_locus_group(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         240,
         &HashSet::from([175, 217]),
         &HashSet::from([172]),
     )
-    .expect("counted dimension locus frame")
-    .expect("admitted dimension locus frame");
+    .expect("counted dimension locus frame");
     assert_eq!(group.companion_record_index, 240);
     assert_eq!(group.record_index, 249);
     assert_eq!(group.frame_length, 101);
@@ -307,25 +290,6 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     );
     assert_eq!(group.next_class_tag.as_str(), "314");
     assert_eq!(group.next_record_index, 250);
-
-    for (limit, operation) in [
-        (1, "f3d dimension locus geometry"),
-        (2, "f3d dimension locus return members"),
-    ] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            parse_dimension_locus_group(
-                &ctx, &bytes, 0, 240, &HashSet::from([175, 217]),
-                &HashSet::from([172]),
-            ),
-            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
-                if failure.operation == operation
-        ));
-    }
 
     let relation_at = |stream: &str, byte_offset| {
         SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
@@ -377,11 +341,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
     let mut group = group;
     group.id = "f3d:native:design-dimension-locus-group#0".into();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    remove_dimension_frame_relations(&ctx, &mut relations, &[], &[group], &[]).unwrap();
+    remove_dimension_frame_relations(&mut relations, &[], &[group], &[]);
     assert_eq!(relations.len(), 1);
     assert!(relations[0].id.starts_with("f3d:other:"));
 
@@ -390,29 +350,14 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"315");
     bytes.extend_from_slice(&251u32.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 4;
-    let (limited, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        find_dimension_locus_groups(
-            &limited, &bytes, 0, bytes.len(), 240,
-            &HashSet::from([175, 217]), &HashSet::from([172]),
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d dimension locus group candidates"
-    ));
     let groups = find_dimension_locus_groups(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         bytes.len(),
         240,
         &HashSet::from([175, 217]),
         &HashSet::from([172]),
-    )
-    .unwrap();
+    );
     assert_eq!(
         groups
             .iter()

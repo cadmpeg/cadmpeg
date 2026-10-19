@@ -129,10 +129,7 @@ pub(super) fn validate_consolidated_pcurves(
             || pcurve.points.len() != count
             || pcurve.first_derivatives.len() != count
             || pcurve.second_derivatives.len() != count
-            || !knots_strictly_increasing(&FiniteReal::raw_lane(&pcurve.knots), |_| {
-                Ok::<(), std::convert::Infallible>(())
-            })
-            .unwrap()
+            || !knots_strictly_increasing(&FiniteReal::raw_lane(&pcurve.knots))
             || !matches!(pcurve.tail.as_slice(), [0x07] | [0x07, 0x00])
             || index > 0 && pcurves[index - 1].byte_offset >= pcurve.byte_offset
         {

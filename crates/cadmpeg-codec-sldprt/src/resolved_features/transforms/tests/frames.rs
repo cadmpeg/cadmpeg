@@ -18,6 +18,7 @@ use crate::resolved_features::relation_geometry::declared_entity_handle_circular
 use crate::resolved_features::relation_geometry::implicit_circle_marker;
 use crate::resolved_features::relation_geometry::owned_relation_parameters;
 use crate::resolved_features::relation_geometry::relation_parameter_by_display_name;
+use crate::resolved_features::relation_geometry::{LaneIds, RelationParameters};
 use crate::resolved_features::relation_loci::typed_relation_definition;
 use crate::resolved_features::relation_records::bind_circle_dimension_centers;
 use crate::resolved_features::relation_records::bind_detached_relation_drivers;
@@ -62,7 +63,6 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         name: "dimension-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
-
         operands,
     };
     let display_operand = operand(2, "display-handle");
@@ -115,12 +115,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         operands: vec![display_operand],
     }];
 
-    bind_circle_dimension_centers(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut relations,
-        &lane,
-    )
-    .unwrap();
+    bind_circle_dimension_centers(&mut relations, &lane).unwrap();
 
     assert_eq!(relations[0].scalar_refs(), ["display", "driver"]);
     assert_eq!(relations[0].operands.len(), 2);
@@ -358,13 +353,6 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
 
 #[test]
 fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test",
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
@@ -375,7 +363,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -406,7 +393,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.012).expect("finite test scalar"),
         role: FeatureInputScalarRole::Display,
-
         operands: Vec::new(),
     };
     let lane = FeatureInputLane {
@@ -450,27 +436,25 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     };
     assert_eq!(
         relation_parameter_by_display_name(
-            &ctx,
             &relation,
-            &lane,
-            std::slice::from_ref(&feature),
-            std::slice::from_ref(&parameter),
+            &LaneIds::new(&lane),
+            &RelationParameters::new(
+                std::slice::from_ref(&feature),
+                std::slice::from_ref(&parameter),
+            ),
         )
-        .unwrap()
         .map(|parameter| &parameter.id),
         Some(&parameter.id)
     );
     assert_eq!(
         owned_relation_parameters(
-            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&FeatureInputLane {
                 relation_instances: vec![relation.clone()],
                 ..lane.clone()
             }),
-        )
-        .unwrap()["relation"]
+        )["relation"]
             .as_ref(),
         Some(&parameter.id)
     );
@@ -478,19 +462,18 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     mismatched_parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     assert_eq!(
         relation_parameter_by_display_name(
-            &ctx,
             &relation,
-            &lane,
-            std::slice::from_ref(&feature),
-            std::slice::from_ref(&mismatched_parameter),
+            &LaneIds::new(&lane),
+            &RelationParameters::new(
+                std::slice::from_ref(&feature),
+                std::slice::from_ref(&mismatched_parameter),
+            ),
         )
-        .unwrap()
         .map(|parameter| &parameter.id),
         None
     );
     let mut synthesized_parameters = vec![mismatched_parameter.clone()];
     crate::resolved_features::projections::synthesize_display_relation_parameters(
-        &ctx,
         &mut synthesized_parameters,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
@@ -516,7 +499,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     };
     let mut nested_parameters = vec![mismatched_parameter];
     crate::resolved_features::projections::synthesize_display_relation_parameters(
-        &ctx,
         &mut nested_parameters,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
@@ -537,15 +519,13 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     );
     assert_eq!(
         owned_relation_parameters(
-            &ctx,
             std::slice::from_ref(&feature),
             &synthesized_parameters,
             std::slice::from_ref(&FeatureInputLane {
                 relation_instances: vec![relation.clone()],
                 ..lane.clone()
             }),
-        )
-        .unwrap()["relation"]
+        )["relation"]
             .as_ref(),
         Some(&synthetic.id)
     );
@@ -563,12 +543,10 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     }];
     assert_eq!(
         owned_relation_parameters(
-            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&exact_parameter),
             std::slice::from_ref(&exact_lane),
-        )
-        .unwrap()["relation"]
+        )["relation"]
             .as_ref(),
         Some(&exact_parameter.id)
     );
@@ -583,15 +561,13 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         ..relation.clone()
     };
     let ownership = owned_relation_parameters(
-        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&FeatureInputLane {
             relation_instances: vec![relation.clone(), driving_relation],
             ..lane.clone()
         }),
-    )
-    .unwrap();
+    );
     assert_eq!(ownership.len(), 1);
     assert_eq!(ownership["driving-relation"].as_ref(), Some(&parameter.id));
 
@@ -623,7 +599,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     driving_name.id = driving_scalar.name.clone();
     driving_name.value = driving_parameter.name.clone();
     let ownership = owned_relation_parameters(
-        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&driving_parameter),
         std::slice::from_ref(&FeatureInputLane {
@@ -632,8 +607,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             relation_instances: vec![driving_relation],
             ..lane.clone()
         }),
-    )
-    .unwrap();
+    );
     assert_eq!(
         ownership["driving-by-name-relation"].as_ref(),
         Some(&driving_parameter.id)
@@ -646,14 +620,13 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let mut detached_lane = lane.clone();
     detached_lane.scalars.push(detached);
     let mut detached_relation = vec![relation.clone()];
-    bind_detached_relation_drivers(&ctx, &mut detached_relation, &detached_lane).unwrap();
+    bind_detached_relation_drivers(&mut detached_relation, &detached_lane).unwrap();
     assert_eq!(detached_relation[0].parameter_scalar_ref(), Some("driver"));
     assert_eq!(detached_relation[0].scalar_refs(), ["scalar", "driver"]);
 
     let mut parameter = parameter;
     parameter.value = Some(ParameterValue::Integer(12));
     type_display_relation_parameters(
-        &ctx,
         std::slice::from_mut(&mut parameter),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
@@ -679,7 +652,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     parameter.display = None;
     parameter.native_ref = Some("driver".into());
     type_display_relation_parameters(
-        &ctx,
         std::slice::from_mut(&mut parameter),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
@@ -688,7 +660,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
                     family: FeatureInputRelationFamily::PointPointDistance,
                     scalars: {
                         let mut scalars = relation.scalars.clone();
-                        scalars.push_parameter(&ctx, "driver").unwrap();
+                        scalars.push_parameter("driver").unwrap();
                         scalars
                     },
                     ..relation.clone()
@@ -698,7 +670,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
                     family: FeatureInputRelationFamily::Angle,
                     scalars: {
                         let mut scalars = relation.scalars.clone();
-                        scalars.push_parameter(&ctx, "other-driver").unwrap();
+                        scalars.push_parameter("other-driver").unwrap();
                         scalars
                     },
                     ..relation
@@ -901,7 +873,6 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1004,13 +975,6 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
 
 #[test]
 fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test",
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let DimensionedCircleFixture {
         mut entities,
         feature,
@@ -1019,7 +983,6 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     } = dimensioned_circle_fixture();
 
     project_dimensioned_sketch_geometry(
-        &ctx,
         &mut entities,
         &[],
         &[],
@@ -1044,26 +1007,22 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     implicit_radial = implicit_radial.with_test_position(implicit_radial.ordinal(), 200);
     implicit_lane.sketch_entities = vec![implicit_center, implicit_radial];
     let (resolved, radius) = implicit_circle_marker(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&implicit_lane),
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
     )
-    .unwrap()
     .expect("implicit circle pair");
     assert_eq!(resolved.id(), "implicit-center");
     assert!((radius - 5.0).abs() < 1.0e-12);
     assert!(implicit_circle_marker(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&implicit_lane),
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
         0,
         5.0,
     )
-    .unwrap()
     .is_none());
 }
 
@@ -1114,14 +1073,12 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
 
     let lanes = [lane];
     let (resolved, radius) = implicit_circle_marker(
-        &cadmpeg_test_support::service_decode_context(),
         &lanes,
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
     )
-    .unwrap()
     .expect("solver-owned implicit circle");
 
     assert_eq!(resolved.id(), "center");
@@ -1161,14 +1118,12 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
     let lanes = [lane];
 
     let (resolved, radius) = implicit_circle_marker(
-        &cadmpeg_test_support::service_decode_context(),
         &lanes,
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
     )
-    .unwrap()
     .expect("unique terminal radial pair");
 
     assert_eq!(resolved.id(), "center");
@@ -1226,13 +1181,11 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     };
 
     let (resolved, radius) = declared_entity_handle_circular_marker(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         "feature-native",
         &operand,
         5.0,
     )
-    .unwrap()
     .expect("declared entity-handle circle");
 
     assert_eq!(resolved.id(), "center");
@@ -1242,25 +1195,21 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         let mut lane = lane.clone();
         lane.sketch_entities[0].reclassify(kind);
         assert!(declared_entity_handle_circular_marker(
-            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             "feature-native",
             &operand,
             5.0,
         )
-        .unwrap()
         .is_some());
     }
     let mut invalid_radial = lane.clone();
     invalid_radial.sketch_entities[1].reclassify(SketchInputKind::Arc);
     assert!(declared_entity_handle_circular_marker(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&invalid_radial),
         "feature-native",
         &operand,
         5.0,
     )
-    .unwrap()
     .is_none());
 
     let mut ambiguous = lane;
@@ -1274,13 +1223,11 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         .sketch_entities
         .extend([second_center, second_radial]);
     assert!(declared_entity_handle_circular_marker(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous),
         "feature-native",
         &operand,
         5.0,
     )
-    .unwrap()
     .is_none());
 }
 
@@ -1342,13 +1289,6 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
 
 #[test]
 fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test",
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let native_feature = NativeFeature {
         id: "feature-native".into(),
         parent: "history".into(),
@@ -1384,7 +1324,6 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -1526,21 +1465,9 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: None,
     }];
     let mut builder = AnnotationBuilder::new();
-    let stream = cadmpeg_ir::annotations::StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::stream_name!("test:support"),
-        "fixture stream handle",
-    )
-    .unwrap();
-    builder
-        .note(
-            &cadmpeg_test_support::service_decode_context(),
-            sketch_id.as_str(),
-            &stream,
-            200,
-            Some("support"),
-        )
-        .unwrap();
+    let stream =
+        cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:support"));
+    builder.note(sketch_id.as_str(), &stream, 200, Some("support"));
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
     for id in [
@@ -1548,18 +1475,11 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         entity_id.as_str(),
         constraint_id.as_str(),
     ] {
-        builder
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                id,
-                cadmpeg_ir::Exactness::Derived,
-            )
-            .unwrap();
+        builder.exactness(id, cadmpeg_ir::Exactness::Derived);
     }
     annotations = builder.build();
 
     bind_sketch_profiles(
-        &ctx,
         &mut features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut sketches,
@@ -1570,8 +1490,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         &[parameter],
         &[history],
         &[lane],
-    )
-    .unwrap();
+    );
 
     assert!(sketches.is_empty());
     assert!(entities.is_empty());
@@ -1636,90 +1555,24 @@ fn numerical_ranges_sketch_matrix_refuses_unrepresentable_axes() {
     }
 }
 
-fn assert_dimensioned_circle_projection_refusal(
-    dimension: cadmpeg_core::decode::ResourceDimension,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+#[test]
+fn dimensioned_sketch_projection_projects_circle() {
     let DimensionedCircleFixture {
         mut entities,
         feature,
         parameter,
         lane,
     } = dimensioned_circle_fixture();
-    project_dimensioned_sketch_geometry(
-        &service,
-        &mut entities,
-        &[],
-        &[],
-        &[feature],
-        &[parameter],
-        &[lane],
-    )
-    .unwrap();
+    project_dimensioned_sketch_geometry(&mut entities, &[], &[], &[feature], &[parameter], &[lane])
+        .unwrap();
     assert!(matches!(entities[2].geometry.definition(),
         SketchGeometryDefinition::Circle { center, radius }
             if *center == Point2::new(15.0, 40.0) && Length::from(*radius) == Length::new(4.0).unwrap()));
     assert!(!entities[2].construction);
-
-    let DimensionedCircleFixture {
-        mut entities,
-        feature,
-        parameter,
-        lane,
-    } = dimensioned_circle_fixture();
-    let mut policy = DecodePolicy::service();
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-        _ => panic!("unsupported circular projection test dimension"),
-    }
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_dimensioned_sketch_geometry(
-        &limited,
-        &mut entities,
-        &[],
-        &[],
-        &[feature],
-        &[parameter],
-        &[lane],
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
-    );
 }
 
 #[test]
-fn dimensioned_sketch_projection_refuses_collection_limit() {
-    assert_dimensioned_circle_projection_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn dimensioned_sketch_projection_refuses_retained_limit() {
-    assert_dimensioned_circle_projection_refusal(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn dimensioned_sketch_projection_refuses_work_limit() {
-    assert_dimensioned_circle_projection_refusal(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-    );
-}
-
-fn assert_marker_circle_projection_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+fn marker_circle_projection_leaves_fixture_unchanged() {
     let DimensionedCircleFixture {
         mut entities,
         feature,
@@ -1728,7 +1581,6 @@ fn assert_marker_circle_projection_refusal(dimension: cadmpeg_core::decode::Reso
     } = dimensioned_circle_fixture();
     let expected = entities.clone();
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
-        &service,
         &mut entities,
         &mut [],
         &[feature],
@@ -1737,46 +1589,6 @@ fn assert_marker_circle_projection_refusal(dimension: cadmpeg_core::decode::Reso
     )
     .unwrap();
     assert_eq!(entities, expected);
-
-    let DimensionedCircleFixture {
-        mut entities,
-        feature,
-        parameter,
-        lane,
-    } = dimensioned_circle_fixture();
-    let mut policy = DecodePolicy::service();
-    // Admit the fixture indexes, then refuse the first nonempty transform vote.
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 26,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 3518,
-        _ => panic!("unsupported marker circle projection dimension"),
-    }
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::resolved_features::dimensions::project_marker_dimensioned_circles(
-        &limited,
-        &mut entities,
-        &mut [],
-        &[feature],
-        &[parameter],
-        &[lane],
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == dimension && limit.operation == "score SLDPRT compatible marker transforms")
-    );
-}
-
-#[test]
-fn marker_circle_projection_refuses_collection_limit() {
-    assert_marker_circle_projection_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn marker_circle_projection_refuses_work_limit() {
-    assert_marker_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }
 
 #[test]
@@ -1812,25 +1624,17 @@ fn direct_marker_votes_do_not_build_unused_fallback_matches() {
             .unwrap(),
         ));
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 1_000_000;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let features = [feature];
     let result = crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(
-        &ctx,
         &features,
         &[],
         &entities,
         &[lane],
-    )
-    .unwrap();
+    );
     let candidates = &result["feature-native"];
     assert_eq!(candidates.len(), 1);
     assert_eq!(
         candidates[0].apply((0, 0)),
         Some((700_000_000, 1_100_000_000))
     );
-    assert!(ctx.resource_refusal().is_none());
 }

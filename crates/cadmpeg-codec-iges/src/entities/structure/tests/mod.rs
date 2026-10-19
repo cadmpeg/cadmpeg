@@ -6,11 +6,7 @@ use crate::directory::SourceStatus;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeArena;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::DecodePolicy;
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 
@@ -19,16 +15,10 @@ use super::functional_level_identifier_valid;
 use super::line_font_property_code_valid;
 use super::signal_string_geometry_target;
 use crate::loss::IgesLossCode;
-use crate::test_support::test_drawing_and_trimming::admitted_containing_network_file;
 use crate::test_support::test_drawing_and_trimming::associativity_definition_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file_with_global;
-use crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file;
-use crate::test_support::test_drawing_and_trimming::flow_associativity_forms_file;
 use crate::test_support::test_drawing_and_trimming::legacy_perforated_plane_file;
-use crate::test_support::test_drawing_and_trimming::nested_subfigure_file;
-use crate::test_support::test_drawing_and_trimming::network_subfigure_file;
-use crate::test_support::test_drawing_and_trimming::units_data_file;
 use crate::test_support::test_owned::owned_test_file;
 use crate::test_support::test_owned::owned_test_file_with_global;
 use crate::test_support::test_owned::OwnedTestEntity;
@@ -48,7 +38,6 @@ use crate::test_support::test_solids_and_structure::lep_property_forms_file;
 use crate::test_support::test_solids_and_structure::patterned_instance_file;
 use crate::test_support::test_solids_and_structure::product_property_file;
 use crate::test_support::test_solids_and_structure::scalar_property_forms_file;
-use crate::test_support::test_solids_and_structure::solid_assembly_file;
 use crate::test_support::test_solids_and_structure::solid_instance_file;
 use crate::test_support::test_solids_and_structure::structure_target_rules_file;
 use crate::test_support::test_solids_and_structure::text_score_property_forms_file;
@@ -214,15 +203,12 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         .map(|sequence| (sequence, sequence + 1))
         .collect::<BTreeMap<_, _>>();
     let mut visited = std::collections::BTreeSet::new();
-    // The target table supplies the byte envelope for the traversal node storage.
-    let input = serde_json::to_vec(&targets).unwrap();
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&input, &arena, &DecodePolicy::service()).unwrap();
 
-    assert!(
-        !crate::entities::structure::single_target_cycle(1, &targets, &mut visited, &ctx,).unwrap()
-    );
+    assert!(!crate::entities::structure::single_target_cycle(
+        1,
+        &targets,
+        &mut visited,
+    ));
     assert_eq!(visited.len(), 100_000);
 
     let mut cyclic = targets;
@@ -231,135 +217,7 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         1,
         &cyclic,
         &mut std::collections::BTreeSet::new(),
-        &ctx,
-    )
-    .unwrap());
-}
-
-#[test]
-fn single_target_cycle_refuses_path_and_tree_nodes_before_storage() {
-    let targets = BTreeMap::from([(1_u32, 2_u32), (2, 3)]);
-    for operation in [
-        "iges structure active cycle nodes",
-        "iges structure cycle path",
-        "iges structure visited cycle nodes",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..32 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match crate::entities::structure::single_target_cycle(
-                1,
-                &targets,
-                &mut std::collections::BTreeSet::new(),
-                &ctx,
-            ) {
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                other => panic!("expected cycle storage refusal at {operation}: {other:?}"),
-            }
-        }
-        assert!(
-            reached,
-            "cycle storage refusal was not reached: {operation}"
-        );
-    }
-}
-
-#[test]
-fn array_and_solid_instance_indexes_refuse_unadmitted_nodes() {
-    for (bytes, operation) in [
-        (patterned_instance_file(), "iges array target index nodes"),
-        (patterned_instance_file(), "iges array mask positions"),
-        (solid_instance_file(), "iges solid instance index nodes"),
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected structure collection refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "structure collection refusal was not reached: {operation}"
-        );
-        assert!(IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-            .is_ok());
-    }
-}
-
-#[test]
-fn flow_associativity_refuses_pointer_lanes_and_index_node() {
-    let bytes = flow_associativity_forms_file();
-    for operation in [
-        "iges flow connection pointers",
-        "iges flow join pointers",
-        "iges flow display pointers",
-        "iges flow continuation pointers",
-        "iges flow index nodes",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected flow collection refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "flow collection refusal was not reached: {operation}"
-        );
-    }
-    assert!(IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .is_ok());
+    ));
 }
 
 #[test]
@@ -373,7 +231,10 @@ fn decode_preserves_solid_definition_and_instance_identities() {
     let instances = &result.ir().native.namespace("iges").unwrap().arenas()["solid_instances"];
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].id(), "iges:product:solid-instance#D3");
-    assert_eq!(instances[0].fields()["solid"], "iges:entity:directory#1");
+    assert_eq!(
+        instances[0].fields().unwrap()["solid"],
+        "iges:entity:directory#1"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -391,15 +252,21 @@ fn decode_preserves_rectangular_and_circular_pattern_order() {
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
     let rectangular = &native.arenas()["rectangular_arrays"][0];
-    assert_eq!(rectangular.fields()["base"], "iges:entity:directory#1");
-    assert_eq!(rectangular.fields()["columns"], 2);
-    assert_eq!(rectangular.fields()["rows"], 3);
-    assert_eq!(rectangular.fields()["positions"][0], 2);
+    assert_eq!(
+        rectangular.fields().unwrap()["base"],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(rectangular.fields().unwrap()["columns"], 2);
+    assert_eq!(rectangular.fields().unwrap()["rows"], 3);
+    assert_eq!(rectangular.fields().unwrap()["positions"][0], 2);
     let circular = &native.arenas()["circular_arrays"][0];
-    assert_eq!(circular.fields()["base"], "iges:entity:directory#3");
-    assert_eq!(circular.fields()["location_count"], 4);
-    assert_eq!(circular.fields()["positions"][0], 1);
-    assert_eq!(circular.fields()["positions"][1], 3);
+    assert_eq!(
+        circular.fields().unwrap()["base"],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(circular.fields().unwrap()["location_count"], 4);
+    assert_eq!(circular.fields().unwrap()["positions"][0], 1);
+    assert_eq!(circular.fields().unwrap()["positions"][1], 3);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -426,30 +293,35 @@ fn decode_distinguishes_all_external_reference_forms_without_resolution() {
     let references = &result.ir().native.namespace("iges").unwrap().arenas()["external_references"];
     assert_eq!(references.len(), 5);
     assert_eq!(
-        references[0].fields()["reference_kind"],
+        references[0].fields().unwrap()["reference_kind"],
         "external_definition"
     );
     assert_eq!(
-        references[1].fields()["reference_kind"],
+        references[1].fields().unwrap()["reference_kind"],
         "external_file_definition"
     );
-    assert!(references[1].fields()["symbolic_name"].is_null());
-    assert_eq!(references[2].fields()["reference_kind"], "external_logical");
+    assert!(references[1].fields().unwrap()["symbolic_name"].is_null());
     assert_eq!(
-        references[3].fields()["reference_kind"],
+        references[2].fields().unwrap()["reference_kind"],
+        "external_logical"
+    );
+    assert_eq!(
+        references[3].fields().unwrap()["reference_kind"],
         "native_definition"
     );
     assert_eq!(
-        references[4].fields()["reference_kind"],
+        references[4].fields().unwrap()["reference_kind"],
         "native_library_definition"
     );
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&references[4].fields()["library_name"])[0]),
+        u64::from(
+            crate::test_support::native_bytes(&references[4].fields().unwrap()["library_name"])[0]
+        ),
         68
     );
     assert!(references
         .iter()
-        .all(|reference| reference.fields()["resolution_state"] == "not_attempted"));
+        .all(|reference| reference.fields().unwrap()["resolution_state"] == "not_attempted"));
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -467,17 +339,20 @@ fn decode_preserves_group_order_and_back_pointer_policy() {
         .unwrap();
     let groups = &result.ir().native.namespace("iges").unwrap().arenas()["groups"];
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].fields()["ordered"], true);
-    assert_eq!(groups[0].fields()["back_pointers_required"], true);
-    assert_eq!(groups[0].fields()["members"][0], "iges:entity:directory#1");
-    assert_eq!(groups[1].fields()["ordered"], false);
-    assert_eq!(groups[1].fields()["back_pointers_required"], false);
+    assert_eq!(groups[0].fields().unwrap()["ordered"], true);
+    assert_eq!(groups[0].fields().unwrap()["back_pointers_required"], true);
+    assert_eq!(
+        groups[0].fields().unwrap()["members"][0],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(groups[1].fields().unwrap()["ordered"], false);
+    assert_eq!(groups[1].fields().unwrap()["back_pointers_required"], false);
     let entities = &result.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert_eq!(
-        entities[0].fields()["association_links"][0],
+        entities[0].fields().unwrap()["association_links"][0],
         "iges:entity:directory#3"
     );
-    assert!(entities[0].fields()["property_links"]
+    assert!(entities[0].fields().unwrap()["property_links"]
         .as_array()
         .unwrap()
         .is_empty());
@@ -520,11 +395,11 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
         .find(|entity| entity.id() == "iges:entity:directory#3")
         .unwrap();
 
-    assert!(member.fields()["association_links"]
+    assert!(member.fields().unwrap()["association_links"]
         .as_array()
         .unwrap()
         .is_empty());
-    let reference = &member.fields()["references"][0];
+    let reference = &member.fields().unwrap()["references"][0];
     assert_eq!(reference["kind"], "parameter");
     assert_eq!(reference["parameter_index"], 6);
     assert_eq!(reference["raw_pointer"], 99);
@@ -617,7 +492,13 @@ fn decode_reports_an_ambiguous_required_trailing_back_pointer_boundary() {
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#3")
         .unwrap();
-    assert_eq!(member.fields()["parameters"].as_array().unwrap().len(), 10);
+    assert_eq!(
+        member.fields().unwrap()["parameters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        10
+    );
 }
 
 #[test]
@@ -631,24 +512,27 @@ fn decode_types_all_attribute_table_definition_forms() {
     let definitions =
         &result.ir().native.namespace("iges").unwrap().arenas()["attribute_table_definitions"];
     assert_eq!(definitions.len(), 3);
-    assert_eq!(definitions[0].fields()["form"], 0);
+    assert_eq!(definitions[0].fields().unwrap()["form"], 0);
     assert_eq!(
-        definitions[0].fields()["attributes"][0]["declared_value_count"],
+        definitions[0].fields().unwrap()["attributes"][0]["declared_value_count"],
         1
     );
     assert_eq!(
-        definitions[1].fields()["attributes"][0]["values"][0]["value"]["kind"],
+        definitions[1].fields().unwrap()["attributes"][0]["values"][0]["value"]["kind"],
         "integer"
     );
     assert_eq!(
-        definitions[1].fields()["attributes"][1]["values"][0]["value"]["kind"],
+        definitions[1].fields().unwrap()["attributes"][1]["values"][0]["value"]["kind"],
         "string"
     );
     assert_eq!(
-        definitions[2].fields()["attributes"][0]["values"][0]["value"]["kind"],
+        definitions[2].fields().unwrap()["attributes"][0]["values"][0]["value"]["kind"],
         "real"
     );
-    assert!(definitions[2].fields()["attributes"][0]["values"][0]["display_template"].is_null());
+    assert!(
+        definitions[2].fields().unwrap()["attributes"][0]["values"][0]["display_template"]
+            .is_null()
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -683,7 +567,7 @@ fn type322_attribute_list_value_follows_the_declared_dialect() {
         );
         let definition = &result.ir().native.namespace("iges").unwrap().arenas()
             ["attribute_table_definitions"][0];
-        assert_eq!(definition.fields()["attribute_list_type"], 5);
+        assert_eq!(definition.fields().unwrap()["attribute_list_type"], 5);
         assert!(!result
             .report()
             .losses
@@ -724,14 +608,20 @@ fn type322_accepts_no_value_and_not_used_data_types() {
             .unwrap();
         let definition = &result.ir().native.namespace("iges").unwrap().arenas()
             ["attribute_table_definitions"][0];
-        assert_eq!(definition.fields()["attributes"][0]["value_data_type"], 0);
-        assert_eq!(definition.fields()["attributes"][1]["value_data_type"], 5);
         assert_eq!(
-            definition.fields()["attributes"][0]["values"][0]["value"]["kind"],
+            definition.fields().unwrap()["attributes"][0]["value_data_type"],
+            0
+        );
+        assert_eq!(
+            definition.fields().unwrap()["attributes"][1]["value_data_type"],
+            5
+        );
+        assert_eq!(
+            definition.fields().unwrap()["attributes"][0]["values"][0]["value"]["kind"],
             "omitted"
         );
         assert_eq!(
-            definition.fields()["attributes"][1]["values"][0]["value"]["kind"],
+            definition.fields().unwrap()["attributes"][1]["values"][0]["value"]["kind"],
             "omitted"
         );
         assert!(
@@ -801,14 +691,32 @@ fn decode_types_attribute_table_tuple_and_row_major_instances() {
         &result.ir().native.namespace("iges").unwrap().arenas()["attribute_table_instances"];
     assert_eq!(instances.len(), 2);
     assert_eq!(
-        instances[0].fields()["definition"],
+        instances[0].fields().unwrap()["definition"],
         "iges:product:attribute-definition#D1"
     );
-    assert_eq!(instances[0].fields()["rows"].as_array().unwrap().len(), 1);
-    assert_eq!(instances[1].fields()["declared_row_count"], 2);
-    assert_eq!(instances[1].fields()["rows"].as_array().unwrap().len(), 2);
-    assert_eq!(instances[1].fields()["rows"][1][0]["kind"], "integer");
-    assert_eq!(instances[1].fields()["rows"][1][1]["kind"], "string");
+    assert_eq!(
+        instances[0].fields().unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(instances[1].fields().unwrap()["declared_row_count"], 2);
+    assert_eq!(
+        instances[1].fields().unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        instances[1].fields().unwrap()["rows"][1][0]["kind"],
+        "integer"
+    );
+    assert_eq!(
+        instances[1].fields().unwrap()["rows"][1][1]["kind"],
+        "string"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -829,15 +737,21 @@ fn decode_ignores_nonnegative_attribute_instance_structure_values() {
 
     assert_eq!(instances.len(), 2);
     for instance in instances {
-        assert!(instance.fields()["definition"].is_null());
-        assert!(instance.fields()["rows"].as_array().unwrap().is_empty());
+        assert!(instance.fields().unwrap()["definition"].is_null());
+        assert!(instance.fields().unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
     for sequence in [3, 5] {
         let entity = native.arenas()["entities"]
             .iter()
             .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
             .unwrap();
-        assert!(entity.fields()["references"].as_array().unwrap().is_empty());
+        assert!(entity.fields().unwrap()["references"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }
 
@@ -855,7 +769,7 @@ fn decode_validates_structure_targets_by_source_entity() {
             .iter()
             .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
             .unwrap();
-        entity.fields()["references"][0].clone()
+        entity.fields().unwrap()["references"][0].clone()
     };
 
     let attribute = reference(3);
@@ -893,7 +807,7 @@ fn decode_validates_structure_targets_by_source_entity() {
         ["attribute_table_instances"]
         .first()
         .unwrap();
-    assert!(attribute_instance.fields()["definition"].is_null());
+    assert!(attribute_instance.fields().unwrap()["definition"].is_null());
 }
 
 #[test]
@@ -907,33 +821,33 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
     let properties = &result.ir().native.namespace("iges").unwrap().arenas()["product_properties"];
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[0].fields()["property_kind"],
+        properties[0].fields().unwrap()["property_kind"],
         "reference_designator"
     );
     assert_eq!(
-        properties[0].fields()["owners"][0],
+        properties[0].fields().unwrap()["owners"][0],
         "iges:entity:directory#1"
     );
-    assert_eq!(properties[1].fields()["property_kind"], "name");
+    assert_eq!(properties[1].fields().unwrap()["property_kind"], "name");
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&properties[1].fields()["value"])[0]),
+        u64::from(crate::test_support::native_bytes(&properties[1].fields().unwrap()["value"])[0]),
         66
     );
     assert_eq!(
-        properties[1].fields()["owners"][0],
+        properties[1].fields().unwrap()["owners"][0],
         "iges:entity:directory#1"
     );
     let owner = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
-    assert!(owner.fields()["association_links"]
+    assert!(owner.fields().unwrap()["association_links"]
         .as_array()
         .unwrap()
         .is_empty());
     assert_eq!(
-        owner.fields()["property_links"][0],
+        owner.fields().unwrap()["property_links"][0],
         "iges:entity:directory#3"
     );
     assert_eq!(
-        owner.fields()["property_links"][1],
+        owner.fields().unwrap()["property_links"][1],
         "iges:entity:directory#5"
     );
     assert!(
@@ -959,31 +873,45 @@ fn decode_types_scalar_and_string_property_forms() {
     let property = |form| {
         properties
             .iter()
-            .find(|property| property.fields()["form"] == form)
+            .find(|property| property.fields().unwrap()["form"] == form)
             .unwrap()
     };
-    assert_eq!(property(2).fields()["property_kind"], "region_restriction");
-    assert_eq!(property(2).fields()["electrical_circuitry"], 2);
-    assert_eq!(property(4).fields()["property_kind"], "region_fill");
-    assert_eq!(property(4).fields()["fill_code"], 1);
-    assert_eq!(property(4).fields()["obsolete_pointer"], 0);
-    assert_eq!(property(5).fields()["extension_flag"], 2);
-    assert_eq!(property(6).fields()["lower_layer"], 2);
-    assert_eq!(property(6).fields()["upper_layer"], 8);
-    assert_eq!(property(12).fields()["names"].as_array().unwrap().len(), 2);
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&property(13).fields()["standard"])[0]),
+        property(2).fields().unwrap()["property_kind"],
+        "region_restriction"
+    );
+    assert_eq!(property(2).fields().unwrap()["electrical_circuitry"], 2);
+    assert_eq!(
+        property(4).fields().unwrap()["property_kind"],
+        "region_fill"
+    );
+    assert_eq!(property(4).fields().unwrap()["fill_code"], 1);
+    assert_eq!(property(4).fields().unwrap()["obsolete_pointer"], 0);
+    assert_eq!(property(5).fields().unwrap()["extension_flag"], 2);
+    assert_eq!(property(6).fields().unwrap()["lower_layer"], 2);
+    assert_eq!(property(6).fields().unwrap()["upper_layer"], 8);
+    assert_eq!(
+        property(12).fields().unwrap()["names"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        u64::from(
+            crate::test_support::native_bytes(&property(13).fields().unwrap()["standard"])[0]
+        ),
         65
     );
-    assert_eq!(property(18).fields()["percent"], 12.5);
-    assert_eq!(property(20).fields()["highlighted"], true);
-    assert_eq!(property(21).fields()["pickable"], true);
-    assert_eq!(property(10).fields()["line_font"], 1);
-    assert_eq!(property(10).fields()["view"], 0);
-    assert_eq!(property(10).fields()["level"], 1);
-    assert_eq!(property(10).fields()["blank"], 0);
-    assert_eq!(property(10).fields()["line_weight"], 1);
-    assert_eq!(property(10).fields()["color"], 0);
+    assert_eq!(property(18).fields().unwrap()["percent"], 12.5);
+    assert_eq!(property(20).fields().unwrap()["highlighted"], true);
+    assert_eq!(property(21).fields().unwrap()["pickable"], true);
+    assert_eq!(property(10).fields().unwrap()["line_font"], 1);
+    assert_eq!(property(10).fields().unwrap()["view"], 0);
+    assert_eq!(property(10).fields().unwrap()["level"], 1);
+    assert_eq!(property(10).fields().unwrap()["blank"], 0);
+    assert_eq!(property(10).fields().unwrap()["line_weight"], 1);
+    assert_eq!(property(10).fields().unwrap()["color"], 0);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1010,10 +938,10 @@ fn decode_admits_v4_region_fill_property() {
         )
         .unwrap();
     let property = &result.ir().native.namespace("iges").unwrap().arenas()["properties"][0];
-    assert_eq!(property.fields()["form"], 4);
-    assert_eq!(property.fields()["property_kind"], "region_fill");
-    assert_eq!(property.fields()["fill_code"], 1);
-    assert_eq!(property.fields()["obsolete_pointer"], 0);
+    assert_eq!(property.fields().unwrap()["form"], 4);
+    assert_eq!(property.fields().unwrap()["property_kind"], "region_fill");
+    assert_eq!(property.fields().unwrap()["fill_code"], 1);
+    assert_eq!(property.fields().unwrap()["obsolete_pointer"], 0);
     assert!(result.report().losses.is_empty(), "{:#?}", result.report());
 }
 
@@ -1108,10 +1036,13 @@ fn decode_types_grid_group_and_lep_property_forms() {
     let grid = decode(grid_property_file());
     let property = &grid.ir().native.namespace("iges").unwrap().arenas()["properties"][0];
     assert_eq!(
-        property.fields()["property_kind"],
+        property.fields().unwrap()["property_kind"],
         "uniform_rectangular_grid"
     );
-    assert_eq!(property.fields()["owners"][0], "iges:entity:directory#5");
+    assert_eq!(
+        property.fields().unwrap()["owners"][0],
+        "iges:entity:directory#5"
+    );
     assert!(
         grid.report().losses.is_empty(),
         "{:#?}",
@@ -1120,8 +1051,11 @@ fn decode_types_grid_group_and_lep_property_forms() {
 
     let group = decode(group_type_property_file());
     let property = &group.ir().native.namespace("iges").unwrap().arenas()["properties"][0];
-    assert_eq!(property.fields()["associativity_type"], 5);
-    assert_eq!(property.fields()["owners"][0], "iges:entity:directory#3");
+    assert_eq!(property.fields().unwrap()["associativity_type"], 5);
+    assert_eq!(
+        property.fields().unwrap()["owners"][0],
+        "iges:entity:directory#3"
+    );
     assert!(
         group.report().losses.is_empty(),
         "{:#?}",
@@ -1133,20 +1067,26 @@ fn decode_types_grid_group_and_lep_property_forms() {
     let property = |form| {
         properties
             .iter()
-            .find(|value| value.fields()["form"] == form)
+            .find(|value| value.fields().unwrap()["form"] == form)
             .unwrap()
     };
     assert_eq!(
-        property(24).fields()["definitions"]
+        property(24).fields().unwrap()["definitions"]
             .as_array()
             .unwrap()
             .len(),
         2
     );
-    assert_eq!(property(25).fields()["levels"].as_array().unwrap().len(), 3);
-    assert_eq!(property(26).fields()["function_code"], 5);
     assert_eq!(
-        property(26).fields()["owners"][0],
+        property(25).fields().unwrap()["levels"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(property(26).fields().unwrap()["function_code"], 5);
+    assert_eq!(
+        property(26).fields().unwrap()["owners"][0],
         "iges:entity:directory#5"
     );
     assert!(lep.report().losses.is_empty(), "{:#?}", lep.report().losses);
@@ -1164,22 +1104,31 @@ fn decode_types_tabular_and_generic_data_properties() {
     let property = |form| {
         properties
             .iter()
-            .find(|value| value.fields()["form"] == form)
+            .find(|value| value.fields().unwrap()["form"] == form)
             .unwrap()
     };
-    assert_eq!(property(11).fields()["property_kind"], "tabular_data");
     assert_eq!(
-        property(11).fields()["independent_variables"][0]["values"][1],
+        property(11).fields().unwrap()["property_kind"],
+        "tabular_data"
+    );
+    assert_eq!(
+        property(11).fields().unwrap()["independent_variables"][0]["values"][1],
         25.0
     );
-    assert_eq!(property(11).fields()["dependent_values"][1], 46.0);
-    assert_eq!(property(27).fields()["values"].as_array().unwrap().len(), 6);
+    assert_eq!(property(11).fields().unwrap()["dependent_values"][1], 46.0);
     assert_eq!(
-        property(27).fields()["values"][4]["value"]["kind"],
+        property(27).fields().unwrap()["values"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    assert_eq!(
+        property(27).fields().unwrap()["values"][4]["value"]["kind"],
         "integer"
     );
     assert_eq!(
-        property(27).fields()["owners"][0],
+        property(27).fields().unwrap()["owners"][0],
         "iges:entity:directory#1"
     );
     assert!(
@@ -1201,9 +1150,10 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     let property = |form| {
         properties
             .iter()
-            .find(|property| property.fields()["form"] == form)
+            .find(|property| property.fields().unwrap()["form"] == form)
             .expect("dimension property form exists")
             .fields()
+            .unwrap()
     };
     let units = property(28);
     assert_eq!(units["property_kind"], "dimension_units");
@@ -1266,9 +1216,10 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     let properties = &drawing.ir().native.namespace("iges").unwrap().arenas()["properties"];
     let approval = properties
         .iter()
-        .find(|property| property.fields()["form"] == 32)
+        .find(|property| property.fields().unwrap()["form"] == 32)
         .expect("approval property")
-        .fields();
+        .fields()
+        .unwrap();
     assert_eq!(approval["property_kind"], "drawing_sheet_approval");
     assert_eq!(
         crate::test_support::native_bytes(&approval["name"]),
@@ -1284,9 +1235,10 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     );
     let sheet = properties
         .iter()
-        .find(|property| property.fields()["form"] == 33)
+        .find(|property| property.fields().unwrap()["form"] == 33)
         .expect("sheet-id property")
-        .fields();
+        .fields()
+        .unwrap();
     assert_eq!(sheet["property_kind"], "drawing_sheet_id");
     assert_eq!(sheet["sheet_number"], 2);
     assert_eq!(crate::test_support::native_bytes(&sheet["revision"]), [67]);
@@ -1301,9 +1253,10 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     for (form, kind, first, last) in [(34, "underscore", 2, 4), (35, "overscore", 3, 5)] {
         let property = properties
             .iter()
-            .find(|property| property.fields()["form"] == form)
+            .find(|property| property.fields().unwrap()["form"] == form)
             .expect("text-score property")
-            .fields();
+            .fields()
+            .unwrap();
         assert_eq!(property["property_kind"], kind);
         assert_eq!(property["ranges"][0]["text_index"], 1);
         assert_eq!(property["ranges"][0]["first_character"], first);
@@ -1316,8 +1269,9 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     );
 
     let closure = decode(closure_property_file());
-    let property =
-        closure.ir().native.namespace("iges").unwrap().arenas()["properties"][0].fields();
+    let property = closure.ir().native.namespace("iges").unwrap().arenas()["properties"][0]
+        .fields()
+        .unwrap();
     assert_eq!(property["property_kind"], "closure");
     assert_eq!(property["u"], 0);
     assert_eq!(property["v"], 1);
@@ -1374,17 +1328,17 @@ fn decode_preserves_property_defaults_without_coercing_non_boolean_flags() {
     let property = |form| {
         properties
             .iter()
-            .find(|property| property.fields()["form"] == form)
+            .find(|property| property.fields().unwrap()["form"] == form)
             .unwrap()
     };
 
-    assert!(property(20).fields()["highlighted"].is_null());
-    assert!(property(21).fields()["pickable"].is_null());
-    assert!(property(22).fields()["finite"].is_null());
-    assert!(property(22).fields()["lines"].is_null());
-    assert!(property(22).fields()["weighted"].is_null());
-    assert!(property(29).fields()["suppress_plus"].is_null());
-    let display = property(30).fields();
+    assert!(property(20).fields().unwrap()["highlighted"].is_null());
+    assert!(property(21).fields().unwrap()["pickable"].is_null());
+    assert!(property(22).fields().unwrap()["finite"].is_null());
+    assert!(property(22).fields().unwrap()["lines"].is_null());
+    assert!(property(22).fields().unwrap()["weighted"].is_null());
+    assert!(property(29).fields().unwrap()["suppress_plus"].is_null());
+    let display = property(30).fields().unwrap();
     assert!(display["declared_character_set"].is_null());
     assert_eq!(display["character_set"], 1);
     assert!(display["declared_witness_line_angle"].is_null());
@@ -1400,22 +1354,37 @@ fn decode_preserves_implementor_associativity_class_grammar() {
         )
         .unwrap();
     let definition = &result.ir().native.namespace("iges").unwrap().arenas()["associativities"][0];
-    assert_eq!(definition.fields()["kind"], "definition");
-    assert_eq!(definition.fields()["associativity_form"], 5001);
-    assert_eq!(definition.fields()["classes"].as_array().unwrap().len(), 2);
+    assert_eq!(definition.fields().unwrap()["kind"], "definition");
+    assert_eq!(definition.fields().unwrap()["associativity_form"], 5001);
     assert_eq!(
-        definition.fields()["classes"][0]["back_pointers_required"],
+        definition.fields().unwrap()["classes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        definition.fields().unwrap()["classes"][0]["back_pointers_required"],
         true
     );
-    assert_eq!(definition.fields()["classes"][0]["ordered"], true);
-    assert_eq!(definition.fields()["classes"][0]["item_types"][0], 1);
-    assert_eq!(definition.fields()["classes"][0]["item_types"][1], 2);
+    assert_eq!(definition.fields().unwrap()["classes"][0]["ordered"], true);
     assert_eq!(
-        definition.fields()["classes"][1]["back_pointers_required"],
+        definition.fields().unwrap()["classes"][0]["item_types"][0],
+        1
+    );
+    assert_eq!(
+        definition.fields().unwrap()["classes"][0]["item_types"][1],
+        2
+    );
+    assert_eq!(
+        definition.fields().unwrap()["classes"][1]["back_pointers_required"],
         false
     );
-    assert_eq!(definition.fields()["classes"][1]["ordered"], false);
-    assert_eq!(definition.fields()["classes"][1]["item_types"][0], 3);
+    assert_eq!(definition.fields().unwrap()["classes"][1]["ordered"], false);
+    assert_eq!(
+        definition.fields().unwrap()["classes"][1]["item_types"][0],
+        3
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1436,49 +1405,72 @@ fn decode_types_bounded_predefined_associativity_roles() {
     assert_eq!(associativities.len(), 6);
     let parent = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "single_parent")
+        .find(|value| value.fields().unwrap()["kind"] == "single_parent")
         .unwrap();
-    assert_eq!(parent.fields()["parent"], "iges:entity:directory#9");
-    assert_eq!(parent.fields()["declared_child_count"], 1);
-    assert_eq!(parent.fields()["children"][0], "iges:entity:directory#11");
+    assert_eq!(
+        parent.fields().unwrap()["parent"],
+        "iges:entity:directory#9"
+    );
+    assert_eq!(parent.fields().unwrap()["declared_child_count"], 1);
+    assert_eq!(
+        parent.fields().unwrap()["children"][0],
+        "iges:entity:directory#11"
+    );
     let labels = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "label_display")
+        .find(|value| value.fields().unwrap()["kind"] == "label_display")
         .unwrap();
     assert_eq!(
-        labels.fields()["placements"][0]["view"],
+        labels.fields().unwrap()["placements"][0]["view"],
         "iges:entity:directory#1"
     );
-    assert_eq!(labels.fields()["placements"][0]["text_location"][2], 3.0);
     assert_eq!(
-        labels.fields()["placements"][0]["leader"],
+        labels.fields().unwrap()["placements"][0]["text_location"][2],
+        3.0
+    );
+    assert_eq!(
+        labels.fields().unwrap()["placements"][0]["leader"],
         "iges:entity:directory#3"
     );
     let dimension = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "dimensioned_geometry")
+        .find(|value| value.fields().unwrap()["kind"] == "dimensioned_geometry")
         .unwrap();
-    assert_eq!(dimension.fields()["dimension"], "iges:entity:directory#21");
-    assert_eq!(dimension.fields()["declared_geometry_count"], 1);
-    assert_eq!(dimension.fields()["geometry"][0], "iges:entity:directory#9");
+    assert_eq!(
+        dimension.fields().unwrap()["dimension"],
+        "iges:entity:directory#21"
+    );
+    assert_eq!(dimension.fields().unwrap()["declared_geometry_count"], 1);
+    assert_eq!(
+        dimension.fields().unwrap()["geometry"][0],
+        "iges:entity:directory#9"
+    );
     let planar = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "planar")
+        .find(|value| value.fields().unwrap()["kind"] == "planar")
         .unwrap();
-    assert!(planar.fields()["plane_transform"].is_null());
-    assert_eq!(planar.fields()["declared_entity_count"], 2);
-    assert_eq!(planar.fields()["entities"].as_array().unwrap().len(), 2);
+    assert!(planar.fields().unwrap()["plane_transform"].is_null());
+    assert_eq!(planar.fields().unwrap()["declared_entity_count"], 2);
+    assert_eq!(
+        planar.fields().unwrap()["entities"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     let external_index = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "external_reference_index")
+        .find(|value| value.fields().unwrap()["kind"] == "external_reference_index")
         .unwrap();
-    assert_eq!(external_index.fields()["declared_count"], 1);
+    assert_eq!(external_index.fields().unwrap()["declared_count"], 1);
     assert_eq!(
-        crate::test_support::native_bytes(&external_index.fields()["entries"][0]["symbolic_name"]),
+        crate::test_support::native_bytes(
+            &external_index.fields().unwrap()["entries"][0]["symbolic_name"]
+        ),
         [78, 65, 77, 69]
     );
     assert_eq!(
-        external_index.fields()["entries"][0]["entity"],
+        external_index.fields().unwrap()["entries"][0]["entity"],
         "iges:entity:directory#9"
     );
     assert!(
@@ -1502,15 +1494,15 @@ fn decode_preserves_external_logical_reference_index_in_v4_and_v5_profiles() {
         let external_index = result.ir().native.namespace("iges").unwrap().arenas()
             ["associativities"]
             .iter()
-            .find(|value| value.fields()["kind"] == "external_reference_index")
+            .find(|value| value.fields().unwrap()["kind"] == "external_reference_index")
             .unwrap_or_else(|| panic!("missing Type 402 Form 2 in IGES {version}"));
         assert_eq!(
-            external_index.fields()["declared_count"],
+            external_index.fields().unwrap()["declared_count"],
             1,
             "IGES {version}"
         );
         assert_eq!(
-            external_index.fields()["entries"][0]["entity"],
+            external_index.fields().unwrap()["entries"][0]["entity"],
             "iges:entity:directory#9",
             "IGES {version}"
         );
@@ -1568,255 +1560,11 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
         }));
         assert!(
             cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok(),
             "IGES {version} legacy hole topology is invalid"
         );
     }
-}
-
-#[test]
-fn legacy_single_parent_face_refuses_nested_topology_storage() {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let bytes = legacy_perforated_plane_file(global);
-    for operation in [
-        "iges legacy plane child pointers",
-        "iges legacy plane boundary pointers",
-        "iges legacy plane boundary edges",
-        "iges legacy plane sequence list",
-        "iges legacy plane loop IDs",
-        "iges legacy plane ring coedges",
-        "iges legacy plane shell faces",
-        "iges legacy plane region shells",
-        "iges legacy plane body regions",
-        "iges legacy plane sequence nodes",
-        "iges legacy face candidates",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected legacy plane collection refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "legacy plane collection refusal was not reached: {operation}"
-        );
-    }
-    let mut cap = 0_u64;
-    let mut reached = false;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == "iges plane boundary active curve ID" {
-                    reached = true;
-                    break;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            _ => panic!("expected legacy plane retained refusal before the active curve copy"),
-        }
-    }
-    assert!(
-        reached,
-        "legacy plane active curve identity copy was not reached"
-    );
-}
-
-#[test]
-fn structure_lists_and_indexes_refuse_unadmitted_storage() {
-    for (bytes, operation) in [
-        (product_property_file(), "iges property owner sequences"),
-        (units_data_file(), "iges unit type nodes"),
-        (solid_assembly_file(), "iges solid assembly items"),
-        (solid_assembly_file(), "iges solid assembly index nodes"),
-        (nested_subfigure_file(), "iges subfigure definition members"),
-        (
-            nested_subfigure_file(),
-            "iges subfigure definition index nodes",
-        ),
-        (
-            admitted_containing_network_file(),
-            "iges network definition members",
-        ),
-        (
-            network_subfigure_file(),
-            "iges network definition index nodes",
-        ),
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected structure storage refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "structure storage refusal was not reached: {operation}"
-        );
-        assert!(IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-            .is_ok());
-    }
-}
-
-#[test]
-fn structure_projection_refuses_attribute_and_occurrence_nodes() {
-    for (bytes, operation) in [
-        (
-            attribute_definition_forms_file(),
-            "iges attribute type nodes",
-        ),
-        (
-            attribute_definition_forms_file(),
-            "iges attribute shape descriptors",
-        ),
-        (
-            attribute_definition_forms_file(),
-            "iges attribute shape index nodes",
-        ),
-        (nested_subfigure_file(), "iges subfigure instance nodes"),
-        (
-            nested_subfigure_file(),
-            "iges valid subfigure instance nodes",
-        ),
-        (network_subfigure_file(), "iges network instance nodes"),
-        (
-            network_subfigure_file(),
-            "iges valid network instance nodes",
-        ),
-        (
-            owned_test_file(&[OwnedTestEntity {
-                entity_type: 408,
-                form: 0,
-                label: "MISSING".into(),
-                status: "00000000",
-                parameters: "408,99,0,0,0,1;".into(),
-            }]),
-            "iges placement rejection nodes",
-        ),
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected structure index refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "structure index refusal was not reached: {operation}"
-        );
-    }
-}
-
-#[test]
-fn network_connect_point_lists_refuse_per_item_storage() {
-    let bytes = connected_network_subfigure_file();
-    for operation in [
-        "iges network definition connect points",
-        "iges network instance connect points",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                other => panic!("expected network connect-point refusal at {operation}: {other:?}"),
-            }
-        }
-        assert!(
-            reached,
-            "network connect-point refusal was not reached: {operation}"
-        );
-    }
-    assert!(IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .is_ok());
 }
 
 mod flow;

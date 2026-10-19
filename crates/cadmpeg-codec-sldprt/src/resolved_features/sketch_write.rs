@@ -377,13 +377,7 @@ pub(super) fn sketch_brep(
         color: None,
         visible: None,
     });
-    let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &ordering_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    ir.model.finalize(&ordering_ctx)?;
+    ir.model.finalize();
     Ok(ir)
 }
 
@@ -445,7 +439,13 @@ fn generated_sketch_curve(
         SketchGeometryDefinition::Circle { center, radius } => {
             let point = offset_point(center.get(), Point2::new(radius.get(), 0.0));
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(center.get()), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(
+                    SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            lift(center.get()), normal, u_axis, radius.get()
+                        ).map_err(cadmpeg_core::CodecError::malformed)?
+                    )
+                ),
                 start: point,
                 end: point,
                 param_range: [0.0, std::f64::consts::TAU],
@@ -457,7 +457,13 @@ fn generated_sketch_curve(
             start_angle,
             end_angle,
         } => Ok(GeneratedSketchCurve {
-            curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(center.get()), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+            curve: CurveGeometry::Solved(
+                SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        lift(center.get()), normal, u_axis, radius.get()
+                    ).map_err(cadmpeg_core::CodecError::malformed)?
+                )
+            ),
             start: offset_point(center.get(), polar(radius.get(), start_angle.get())),
             end: offset_point(center.get(), polar(radius.get(), end_angle.get())),
             param_range: [start_angle.get(), end_angle.get()],
@@ -972,9 +978,10 @@ fn edit_stream(
         &mut std::io::Cursor::new(payload.as_slice()),
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
-        false,
+        cadmpeg_core::decode::DecodeDepth::Full,
     )?;
     let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
+        .streams
         .into_iter()
         .nth(stream_ordinal)
         .ok_or_else(|| {

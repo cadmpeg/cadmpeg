@@ -11,7 +11,10 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT, VERIFIED_KERNELS};
+use super::{
+    dialect_loss, dialect_losses, SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT,
+    VERIFIED_KERNELS,
+};
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
@@ -26,60 +29,7 @@ use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
 fn classify_layers(scan: &crate::container::ContainerScan<'_>) -> super::LayerClassification {
-    super::classify_layers(&cadmpeg_test_support::service_decode_context(), scan)
-        .expect("test dialect classification fits service policy")
-}
-
-fn dialect_loss(
-    matched: &cadmpeg_core::dialect::DialectMatch,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    super::dialect_loss(&cadmpeg_test_support::service_decode_context(), matched)
-        .expect("test dialect loss fits service policy")
-}
-
-fn dialect_losses(layers: &DialectLayers) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    super::dialect_losses(&cadmpeg_test_support::service_decode_context(), layers)
-        .expect("test dialect losses fit service policy")
-}
-
-#[test]
-fn dialect_classification_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let source = synthetic_sldprt();
-    let scan = scan(&source);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let Err(error) = super::classify_layers(&ctx, &scan) else {
-        panic!("classification must refuse the collection limit");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT Parasolid layers")
-    );
-}
-
-#[test]
-fn dialect_classification_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let source = synthetic_sldprt();
-    let scan = scan(&source);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let Err(error) = super::classify_layers(&ctx, &scan) else {
-        panic!("classification must refuse the retained limit");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT Parasolid carrier")
-    );
+    super::classify_layers(scan).expect("admitted Parasolid schemas are schema tokens")
 }
 
 #[test]
@@ -148,14 +98,12 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
             .expect("the fixture text is a schema token"),
         cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
-    )
-    .expect("kernel classification fits policy");
+    );
     let layers = DialectLayers::of(host)
         .with(kernel.into_matched())
         .expect("distinct dialect layer keys");
@@ -207,9 +155,7 @@ fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
 
     assert_eq!(kernel_count, 2);
     let mut losses = Vec::new();
-    classification
-        .append_losses(&cadmpeg_test_support::service_decode_context(), &mut losses)
-        .expect("test dialect losses fit service policy");
+    classification.append_losses(&mut losses);
     assert_eq!(
         losses
             .iter()
@@ -490,57 +436,4 @@ fn exactly_one_entry_names_the_reporting_format() {
             .map(cadmpeg_core::dialect::DialectMatch::dialect),
         Some(&SldprtDialect::SwVersion12000Plus.id())
     );
-}
-
-#[test]
-fn dialect_decode_route_refuses_work_at_minimum_admission() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    use cadmpeg_ir::codec::DecodeOptions;
-    use std::io::Cursor;
-    let source = container_declaring("unverified-declaration");
-    let mut options = DecodeOptions {
-        policy: DecodePolicy::service(),
-        ..DecodeOptions::default()
-    };
-    let expected = SldprtCodec
-        .decode(&mut Cursor::new(&source), &options)
-        .unwrap()
-        .ir()
-        .clone();
-    let admitted = |options: &DecodeOptions| match SldprtCodec
-        .decode(&mut Cursor::new(&source), options)
-    {
-        Ok(actual) => {
-            assert_eq!(actual.ir(), &expected);
-            true
-        }
-        Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            false
-        }
-        Err(error) => panic!("unexpected dialect decode error: {error}"),
-    };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        options.policy.limits.max_work_units = upper;
-        if admitted(&options) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        options.policy.limits.max_work_units = middle;
-        if admitted(&options) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    options.policy.limits.max_work_units = upper;
-    assert!(admitted(&options));
-    options.policy.limits.max_work_units = upper - 1;
-    assert!(!admitted(&options));
 }

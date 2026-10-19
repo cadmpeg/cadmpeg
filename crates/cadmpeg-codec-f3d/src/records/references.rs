@@ -66,14 +66,6 @@ impl From<DesignClassTag> for String {
 }
 
 impl DesignClassTag {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(ctx.copy_retained_text(&self.0, operation)?))
-    }
-
     /// Numeric value of the three-digit tag.
     pub(crate) fn code(&self) -> u32 {
         self.0
@@ -326,7 +318,6 @@ impl DesignVisualToken {
     }
 
     /// The admitted visual token as an identity key.
-    #[cfg(test)]
     pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
         self.0.clone()
     }

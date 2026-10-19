@@ -997,7 +997,7 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     ));
     assert!(result.report().losses.is_empty());
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(
         findings

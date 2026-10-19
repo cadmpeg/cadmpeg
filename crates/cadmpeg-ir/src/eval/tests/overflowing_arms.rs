@@ -193,14 +193,12 @@ fn a_polar_nurbs_pcurve_whose_axial_spline_overflows_reports_the_point_it_reache
     };
     let pcurve = PcurveGeometry::PolarNurbs {
         nurbs: PolarPcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![pole(0.0), pole(f64::MAX)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("polar NURBS pcurve fixture"),
     };
     // At `t = 2` the axial spline reaches `2 MAX`; the radial spline stays at
@@ -252,14 +250,12 @@ fn a_spherical_great_circle_pcurve_whose_azimuth_or_phase_overflows_reports_the_
 fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() {
     let linear = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("NURBS pcurve fixture"),
     };
     assert_eq!(
@@ -299,16 +295,8 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
         })
         .collect();
     let high_degree = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            20,
-            knots,
-            poles,
-            None,
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .expect("degree-20 NURBS pcurve fixture"),
+        nurbs: PcurveNurbs::from_lanes(20, knots, poles, None, false)
+            .expect("degree-20 NURBS pcurve fixture"),
     };
     assert!(is_non_finite_point2(
         crate::eval::decode::pcurve_uv(
@@ -453,16 +441,8 @@ fn pcurve_tangents_whose_helper_quotient_overflows_report_the_tangent_they_reach
 #[test]
 fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_they_reached() {
     let nurbs = |degree, knots: Vec<f64>, poles: Vec<Point2>| PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            degree,
-            knots,
-            poles,
-            None,
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .expect("NURBS pcurve fixture"),
+        nurbs: PcurveNurbs::from_lanes(degree, knots, poles, None, false)
+            .expect("NURBS pcurve fixture"),
     };
     // The derivative projection `1e10 / 1e-300` overflows.
     let projected = nurbs(
@@ -522,7 +502,6 @@ fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_
 /// `x = xs[1]`; at `u = 2` its `x` coordinate is `2 xs[1]`.
 fn bilinear_nurbs(u_knots: [f64; 4], x: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, u_knots.to_vec(), false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -534,7 +513,6 @@ fn bilinear_nurbs(u_knots: [f64; 4], x: f64) -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("bilinear NURBS surface fixture")
 }
 
@@ -578,7 +556,7 @@ fn a_nurbs_surface_whose_point_overflows_reports_the_point_it_reached() {
         geometry: surface,
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -722,7 +700,7 @@ fn a_replica_whose_placement_overflows_reports_the_point_it_reached() {
             ])
             .expect("affine transform"),
         });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -772,7 +750,7 @@ fn an_offset_surface_whose_support_point_overflows_reaches_no_coordinate() {
             .expect("offset construction fixture"),
         )
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert!(matches!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &offset, 2.0, 0.5),
         Err(EvaluationFailure::NonFinite(point))
@@ -823,7 +801,6 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
     });
     ir.model
         .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#intersection")
@@ -846,7 +823,6 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
                 },
             ),
         )
-        .unwrap()
         .expect("procedural curve fixture");
     (ir, curve)
 }
@@ -854,7 +830,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
 #[test]
 fn curve_surface_curve_cycle_terminates_on_unbudgeted_point_evaluation() {
     let (ir, curve, _) = cyclic_model();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_curve_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -869,7 +845,7 @@ fn curve_surface_curve_cycle_terminates_on_unbudgeted_point_evaluation() {
 #[test]
 fn surface_curve_surface_cycle_terminates_on_unbudgeted_point_evaluation() {
     let (ir, _, surface) = cyclic_model();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -885,7 +861,7 @@ fn surface_curve_surface_cycle_terminates_on_unbudgeted_point_evaluation() {
 #[test]
 fn curve_surface_curve_cycle_exhausts_the_shared_budget_depth() {
     let (ir, curve, _) = cyclic_model();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = WorkBudget::new(usize::MAX);
     assert_eq!(
         crate::eval::admission::EvaluationAdmission::Standard
@@ -900,7 +876,7 @@ fn curve_surface_curve_cycle_exhausts_the_shared_budget_depth() {
 #[test]
 fn surface_curve_surface_cycle_exhausts_the_shared_budget_depth() {
     let (ir, _, surface) = cyclic_model();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = WorkBudget::new(usize::MAX);
     assert_eq!(
         crate::eval::admission::EvaluationAdmission::Standard
@@ -939,7 +915,6 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
         });
         ir.model
             .add_procedural_curve(
-                &crate::document::admission::StandardAdmission,
                 &replica,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(format!("test:model:procedural#replica-{ordinal}"))
@@ -950,11 +925,10 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
                     },
                 ),
             )
-            .unwrap()
             .expect("replica fixture");
         source = replica;
     }
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let expected = Ok(Point3::new(0.25, 0.0, 0.0));
     assert_eq!(
         model_curve_point_by_id(
@@ -997,7 +971,6 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#replica").expect("valid identity"),
@@ -1007,7 +980,6 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
                 },
             ),
         )
-        .unwrap()
         .expect("procedural curve fixture");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
@@ -1016,7 +988,6 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
             &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:procedural#ruled").expect("valid identity"),
@@ -1028,9 +999,8 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
                 None,
             ),
         )
-        .unwrap()
         .expect("procedural surface fixture");
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = WorkBudget::new(usize::MAX);
     assert_eq!(
         crate::eval::admission::EvaluationAdmission::Standard
@@ -1047,7 +1017,7 @@ fn a_tolerant_intersection_reads_the_point_of_a_pcurve_whose_placed_tangent_over
     // The placed pcurve's point at the origin is reached by an evaluation
     // that left the finite range; both supports lift it to the model origin.
     let (ir, curve) = tolerant_intersection_model(doubled_line());
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_curve_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1080,7 +1050,7 @@ fn a_tolerant_intersection_has_no_point_where_its_offset_pcurve_point_overflows(
         Err(EvaluationFailure::NonFinite(_))
     ));
     let (ir, curve) = tolerant_intersection_model(offset);
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert!(matches!(
         model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve, 0.0),
         Err(EvaluationFailure::NonFinite(point))
@@ -1107,7 +1077,7 @@ fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows
         geometry: plane,
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let side = |pcurve| RollingBallSide {
         support_kind: VariableBlendSupportKind::Surface,
         surface: Some(RollingBallSupportSurface {
@@ -1177,7 +1147,6 @@ fn a_difference_quotient_over_an_empty_domain_has_no_value_and_one_that_overflow
 /// order `1e-190 / 1e-400` overflows.
 fn narrow_quadratic_nurbs() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0e-200, 1.0e-200, 1.0e-200], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1188,7 +1157,6 @@ fn narrow_quadratic_nurbs() -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("quadratic NURBS surface fixture")
 }
 
@@ -1287,7 +1255,7 @@ fn an_analytic_surface_whose_point_overflows_has_no_partials() {
         geometry: plane,
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert!(reached(
         crate::eval::model_surface_partials_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1379,7 +1347,7 @@ fn an_arena_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_i
             .expect("subset fixture"),
         )
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let support = SurfaceId::mint("test:model:surface#support").expect("valid identity");
     for surface in [&support, &subset] {
         assert_eq!(
@@ -1434,7 +1402,7 @@ fn an_offset_surface_whose_support_partial_overflows_reaches_no_coordinate() {
             .expect("offset construction fixture"),
         )
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     for route in [
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1465,7 +1433,6 @@ fn an_offset_surface_whose_support_partial_overflows_reaches_no_coordinate() {
 fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
     let support = solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1480,7 +1447,6 @@ fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("wide partials NURBS"),
     ));
     let (ir, offset) = procedural_surface_model(support, |support| {
@@ -1499,7 +1465,7 @@ fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
             .expect("offset construction fixture"),
         )
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,

@@ -4,6 +4,8 @@ use crate::native::attach::feature_projection::block_placement;
 use crate::native::attach::feature_projection::non_boolean_feature_definition;
 use crate::native::attach::feature_projection::non_modeling_history_definition;
 use crate::native::attach::feature_projection::sphere_body_projection;
+use crate::native::attach::feature_projection::FeatureProjectionIndex;
+use crate::native::attach::feature_projection::ProjectionArenas;
 use crate::native::attach::projects_neutral_feature;
 use crate::native::attach::text_semantic_annotation;
 use crate::native::attach::BodyId;
@@ -13,97 +15,17 @@ use crate::native::attach::DeleteBodyField;
 use crate::native::attach::FeatureDefinition;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
+use crate::native::attach::{
+    boolean_feature_definition, delete_body_feature_definition, extract_body_feature_definition,
+    offset_store_trim_body_feature_definition, sew_body_feature_definition,
+    trim_body_feature_definition,
+};
 use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
-
-fn boolean_feature_definition(
-    operation: &crate::native::features::FeatureBooleanOperation,
-    roots: &BTreeMap<u32, u32>,
-    resolution: &BooleanOffsetStoreResolution,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::boolean_feature_definition(ctx, operation, roots, resolution, bodies)
-    })
-}
-
-fn delete_body_feature_definition(
-    field: DeleteBodyField<'_>,
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::delete_body_feature_definition(ctx, field, roots, bodies)
-            .expect("resource admission")
-    })
-}
-
-fn extract_body_feature_definition(
-    body: Option<u32>,
-    offset_bodies: &[(u32, String)],
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::extract_body_feature_definition(
-            ctx,
-            body,
-            offset_bodies,
-            roots,
-            bodies,
-        )
-        .expect("resource admission")
-    })
-}
-
-fn offset_store_trim_body_feature_definition(
-    offset_bodies: &[(u32, String)],
-    operands: &[&crate::native::features::FeatureOperationBodyOperand],
-) -> Option<FeatureDefinition> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::offset_store_trim_body_feature_definition(
-            ctx,
-            offset_bodies,
-            operands,
-        )
-        .expect("resource admission")
-    })
-}
-
-fn sew_body_feature_definition(
-    primary: Option<u32>,
-    offset_bodies: &[(u32, String)],
-    operands: &[&crate::native::features::FeatureOperationBodyOperand],
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::sew_body_feature_definition(
-            ctx,
-            primary,
-            offset_bodies,
-            operands,
-            roots,
-            bodies,
-        )
-        .expect("resource admission")
-    })
-}
-
-fn trim_body_feature_definition(
-    target: u32,
-    operands: &[&crate::native::features::FeatureOperationBodyOperand],
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::trim_body_feature_definition(ctx, target, operands, roots, bodies)
-    })
-}
 
 #[test]
 fn nx_boolean_keeps_body_namespace_proofs_atomic() {
@@ -136,9 +58,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
                 BodySelection::Native("nx:om-object-indices#122".to_string()),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -160,9 +80,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
                 BodySelection::Native("nx:om-object-indices#122".to_string()),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -190,20 +108,14 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#94".to_string()],
                     "nx:om-object-index#94".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#122".to_string()],
                     "nx:om-object-indices#122".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -239,9 +151,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#401".to_string()),
                 BodySelection::Native("nx:om-object-indices#402,403".to_string()),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Join,
@@ -287,9 +197,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#30".to_string(),
                 ],
                 "nx:om-object-indices#10,20,30".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -332,17 +240,13 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![
-                        BodyId::mint("test:model:entity#target".to_string())
-                            .expect("identity grammar"),
-                        BodyId::mint("test:model:entity#first-tool".to_string())
-                            .expect("identity grammar"),
-                        BodyId::mint("test:model:entity#second-tool".to_string())
-                            .expect("identity grammar"),
-                    ],
-                    &cadmpeg_test_support::service_decode_context()
-                )
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar"),
+                    BodyId::mint("test:model:entity#first-tool".to_string())
+                        .expect("identity grammar"),
+                    BodyId::mint("test:model:entity#second-tool".to_string())
+                        .expect("identity grammar"),
+                ],)
                 .expect("distinct bodies"),
                 native: "nx:om-object-indices#10,20,30".to_string(),
             })
@@ -366,9 +270,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#20".to_string(),
                 ],
                 "nx:om-object-indices#10,20,30".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -416,9 +318,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-data-blocks-4:block#70".to_string(),
                 ],
                 "nx:om-object-indices#72,71,70".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -456,9 +356,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#20".to_string()],
                 "nx:om-object-index#20".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -469,9 +367,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#72".to_string()],
                 "nx:om-object-index#72".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -489,9 +385,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
             bodies: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
                 "nx:om-object-index#72".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -523,20 +417,14 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
                     "nx:om-object-index#114".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#113".to_string()],
                     "nx:om-object-indices#113".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -556,14 +444,10 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
                     "nx:om-object-index#114".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::Unresolved,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -600,20 +484,14 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
                     "nx:om-object-index#10".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-body-object#20".to_string()],
                     "nx:om-object-indices#20".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -634,26 +512,22 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![BodyId::mint("test:model:entity#target".to_string())
-                            .expect("identity grammar")],
-                        &cadmpeg_test_support::service_decode_context()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                        "test:model:entity#target".to_string()
                     )
+                    .expect("identity grammar")],)
                     .expect("distinct bodies"),
                     native: "nx:om-object-index#10".to_string(),
                 },
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![BodyId::mint("test:model:entity#tool".to_string())
-                            .expect("identity grammar")],
-                        &cadmpeg_test_support::service_decode_context()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                        "test:model:entity#tool".to_string()
                     )
+                    .expect("identity grammar")],)
                     .expect("distinct bodies"),
                     native: "nx:om-object-indices#20".to_string(),
                 },
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -666,14 +540,10 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
                     "nx:om-object-index#10".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::Unresolved,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -682,32 +552,40 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 
     let same_body = BTreeMap::from([(10, 10), (20, 10)]);
     assert!(matches!(
-        trim_body_feature_definition(
-            10,
-            &references,
-            &same_body,
-            &BTreeMap::new(),
-        ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-            operands,
+    trim_body_feature_definition(
+        10,
+        &references,
+        &same_body,
+        &BTreeMap::new(),
+    ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+        operands,
 
-            ..
-        }) if matches!((operands.targets(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
+        ..
+    }) if matches!(
+        (operands.targets(), operands.tools(),),
+        (BodySelection::Native(target), BodySelection::Native(tools),)
+            if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+    )));
 
     let mut mixed_operand = operands[0].clone();
     mixed_operand.operand_data_block = Some("nx:om-data-blocks-2:block#20".to_string());
     mixed_operand.segment_body_bindings.clear();
     let mixed_references = vec![&mixed_operand];
     assert!(matches!(
-        trim_body_feature_definition(
-            10,
-            &mixed_references,
-            &roots,
-            &BTreeMap::new(),
-        ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-            operands,
+    trim_body_feature_definition(
+        10,
+        &mixed_references,
+        &roots,
+        &BTreeMap::new(),
+    ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+        operands,
 
-            ..
-        }) if matches!((operands.targets(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
+        ..
+    }) if matches!(
+        (operands.targets(), operands.tools(),),
+        (BodySelection::Native(target), BodySelection::Native(tools),)
+            if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+    )));
 }
 
 #[test]
@@ -988,91 +866,29 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
-    crate::test_support::with_decode_context(|ctx| {
-        let annotation =
-            text_semantic_annotation(ctx, "nx:test:text#1", 7, &["plate label", "Arial"])
-                .expect("annotation admission")
-                .expect("valid text annotation");
-        assert_eq!(annotation.object, "nx:test:text#1");
-        assert_eq!(
-            annotation.kind,
-            cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
-        );
-        assert_eq!(annotation.text, ["plate label"]);
-        assert_eq!(annotation.parameters["font_family"], "Arial");
-        assert_eq!(annotation.native_ref, "nx:test:text#1");
-        assert_eq!(annotation.order, 7);
-
-        let empty = text_semantic_annotation(ctx, "nx:test:text#empty", 8, &["", ""])
-            .expect("annotation admission")
-            .expect("empty text fields remain a valid annotation");
-        assert_eq!(empty.text, [""]);
-        assert_eq!(empty.parameters["font_family"], "");
-
-        assert!(text_semantic_annotation(
-            ctx,
-            "nx:test:text#2",
-            0,
-            &["ambiguous", "Arial", "extra"],
-        )
-        .unwrap()
-        .is_none());
-    });
-}
-
-fn text_annotation_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<(), cadmpeg_core::CodecError> {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            let annotation =
-                text_semantic_annotation(ctx, "nx:test:text#1", 7, &["plate label", "Arial"])?;
-            assert!(annotation.is_some());
-            Ok(())
-        },
-    )
-}
-
-#[test]
-fn text_annotation_refuses_collection_limit() {
-    let error =
-        text_annotation_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    let annotation = text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
+        .expect("annotation admission")
+        .expect("valid text annotation");
+    assert_eq!(annotation.object, "nx:test:text#1");
+    assert_eq!(
+        annotation.kind,
+        cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
     );
-}
+    assert_eq!(annotation.text, ["plate label"]);
+    assert_eq!(annotation.parameters["font_family"], "Arial");
+    assert_eq!(annotation.native_ref, "nx:test:text#1");
+    assert_eq!(annotation.order, 7);
 
-#[test]
-fn text_annotation_refuses_retained_limit() {
-    let error =
-        text_annotation_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
+    let empty = text_semantic_annotation("nx:test:text#empty", 8, &["", ""])
+        .expect("annotation admission")
+        .expect("empty text fields remain a valid annotation");
+    assert_eq!(empty.text, [""]);
+    assert_eq!(empty.parameters["font_family"], "");
 
-#[test]
-fn text_annotation_refuses_scoped_limit() {
-    let error =
-        text_annotation_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn text_annotation_refuses_work_limit() {
-    let error = text_annotation_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        text_semantic_annotation("nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],)
+            .unwrap()
+            .is_none()
     );
 }
 
@@ -1091,11 +907,10 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         extract_body_feature_definition(Some(20), &[], &roots, &bodies),
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![BodyId::mint("test:model:entity#body".to_string())
-                        .expect("identity grammar")],
-                    &cadmpeg_test_support::service_decode_context()
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                    "test:model:entity#body".to_string()
                 )
+                .expect("identity grammar")],)
                 .expect("distinct bodies"),
                 native: "nx:om-object-index#20".to_string(),
             },
@@ -1112,9 +927,7 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
             source: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
                 "nx:om-object-index#72".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
         })
     );
@@ -1153,9 +966,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Unresolved,
                     BodySelection::Unresolved,
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("operand admission")
                 .unwrap(),
 
                 op,
@@ -1294,9 +1105,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
                 BodySelection::Unresolved,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -1365,7 +1174,7 @@ fn nx_container_record_is_not_a_modeling_feature() {
 
 #[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let dimensions = [10.0, 20.0, 30.0];
         for axis in 0..3 {
@@ -1408,10 +1217,12 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             }
         }
         let output = ir.model.bodies[0].id.clone();
+        let block = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
+            let index = FeatureProjectionIndex::new(ProjectionArenas::of(ir));
+            block_placement(&index, &ir.tolerances, dimensions, outputs)
+        };
         let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
-            block_placement(ctx, ir, dimensions, outputs)
-                .unwrap()
-                .map(|(_, transform)| transform)
+            block(ir, dimensions, outputs).map(|(_, transform)| transform)
         };
 
         assert_eq!(
@@ -1419,7 +1230,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             Some(cadmpeg_ir::transform::Transform::identity())
         );
         assert_eq!(
-            block_placement(ctx, &ir, dimensions, &[]).unwrap(),
+            block(&ir, dimensions, &[]),
             Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
         );
         assert_eq!(
@@ -1585,183 +1396,9 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     });
 }
 
-fn primitive_faces_with_limit(
-    sphere: bool,
-    dimension: cadmpeg_core::decode::ResourceDimension,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        _ => {
-            return Err(cadmpeg_core::CodecError::InvalidInput(
-                "unsupported primitive face test limit".to_string(),
-            ))
-        }
-    };
-    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let body = ir.model.bodies[0].id.clone();
-        if sphere {
-            drop(sphere_body_projection(
-                ctx,
-                &ir,
-                std::slice::from_ref(&body),
-            )?);
-        } else {
-            drop(block_placement(
-                ctx,
-                &ir,
-                [1.0, 1.0, 1.0],
-                std::slice::from_ref(&body),
-            )?);
-        }
-        Ok(())
-    })
-}
-
-#[test]
-fn block_faces_refuse_collection_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
-    assert!(
-        matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn block_faces_refuse_scoped_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
-    assert!(
-        matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn block_faces_refuse_work_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
-    assert!(
-        matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn block_placement_refuses_retained_limit() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-            for (axis, extent) in [(1usize, 20.0), (2, 30.0)] {
-                let plane = ir
-                    .model
-                    .surfaces
-                    .iter_mut()
-                    .find_map(|surface| {
-                        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
-                            &mut surface.geometry
-                        else {
-                            return None;
-                        };
-                        let origin = plane.origin();
-                        let normal = plane.frame().axis().as_raw();
-                        let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
-                        let coordinates = [origin.x, origin.y, origin.z];
-                        (components[axis] > 0.5 && coordinates[axis] > 0.0).then_some(plane)
-                    })
-                    .unwrap();
-                let mut origin = *plane.origin();
-                let normal = *plane.frame().axis().as_raw();
-                let reference = *plane.frame().reference().as_raw();
-                if axis == 1 {
-                    origin.y = extent;
-                } else {
-                    origin.z = extent;
-                }
-                *plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    origin, normal, reference,
-                )
-                .unwrap();
-            }
-            let body = &ir.model.bodies[0].id;
-            assert!(
-                matches!(block_placement(ctx, &ir, [10.0, 20.0, 30.0], std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
-    );
-}
-
-#[test]
-fn sphere_faces_refuse_collection_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
-    assert!(
-        matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn sphere_faces_refuse_scoped_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
-    assert!(
-        matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn sphere_faces_refuse_work_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
-    assert!(
-        matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn sphere_projection_refuses_retained_limit() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-            let face = ir.model.faces[0].id.clone();
-            let surface = ir.model.faces[0].surface.clone();
-            ir.model.shells[0]
-                .edit_topology(|faces, _, _| *faces = vec![face.clone()])
-                .unwrap();
-            ir.model.faces.retain(|candidate| candidate.id == face);
-            ir.model
-                .surfaces
-                .retain(|candidate| candidate.id == surface);
-            ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    Point3::new(1.0, 2.0, 3.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    1.0,
-                )
-                .unwrap(),
-            ));
-            let body = &ir.model.bodies[0].id;
-            assert!(
-                matches!(sphere_body_projection(ctx, &ir, std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
-    );
-}
-
 #[test]
 fn nx_sphere_projection_requires_one_complete_spherical_body() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let body = ir.model.bodies[0].id.clone();
         let face = ir.model.faces[0].id.clone();
@@ -1786,9 +1423,15 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             )
             .unwrap(),
         ));
+        let sphere = |ir: &CadIr, outputs: &[BodyId]| {
+            sphere_body_projection(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
+        };
 
         assert_eq!(
-            sphere_body_projection(ctx, &ir, &[]).unwrap(),
+            sphere(&ir, &[]),
             Some((
                 body.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1798,7 +1441,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             ))
         );
         assert_eq!(
-            sphere_body_projection(ctx, &ir, std::slice::from_ref(&body)).unwrap(),
+            sphere(&ir, std::slice::from_ref(&body)),
             Some((
                 body.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1807,6 +1450,16 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
                     .expect("the sphere radius is positive")
             ))
         );
+        let mut shadowed = ir.clone();
+        let mut shadow = shadowed.model.surfaces[0].clone();
+        shadow.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        shadowed.model.surfaces.push(shadow);
+        assert_eq!(
+            sphere(&shadowed, std::slice::from_ref(&body)),
+            sphere(&ir, std::slice::from_ref(&body))
+        );
+        shadowed.model.surfaces.swap(0, 1);
+        assert!(sphere(&shadowed, std::slice::from_ref(&body)).is_none());
 
         let mut second_body = ir.model.bodies[0].clone();
         second_body.id = BodyId::mint("test:model:entity#second-body").expect("identity grammar");
@@ -1850,16 +1503,14 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         ir.model.faces.push(second_face);
         ir.model.surfaces.push(second_surface);
 
-        assert!(sphere_body_projection(ctx, &ir, &[]).unwrap().is_none());
-        assert!(sphere_body_projection(
-            ctx,
+        assert!(sphere(&ir, &[]).is_none());
+        assert!(sphere(
             &ir,
             &[
                 body,
                 BodyId::mint("test:model:entity#second-body").expect("identity grammar")
             ]
         )
-        .unwrap()
         .is_none());
     });
 }

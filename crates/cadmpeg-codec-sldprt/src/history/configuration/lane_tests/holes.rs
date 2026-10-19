@@ -27,7 +27,6 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
@@ -53,7 +52,6 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                     Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
                 )
                 .unwrap(),
-
                 extent: Some(LinearTermination::Blind {
                     length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
                 }),
@@ -79,7 +77,6 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                 None,
             )
             .unwrap(),
-
             extent: None,
             bottom: None,
             taper_angle: None,
@@ -87,12 +84,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         }));
 
     configured.evaluation.edit(|definition, _| {
-        inherit_configuration_shared_semantics(
-            &cadmpeg_test_support::service_decode_context(),
-            definition,
-            base.evaluation.definition(),
-        )
-        .unwrap();
+        inherit_configuration_shared_semantics(definition, base.evaluation.definition()).unwrap();
     });
 
     assert_eq!(
@@ -142,7 +134,6 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
             Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
         )
         .unwrap(),
-
         extent: Some(LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
         }),
@@ -162,25 +153,17 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
             None,
         )
         .unwrap(),
-
         extent: None,
         bottom: None,
         taper_angle: None,
         allow_multi_profile_faces: None,
     });
 
-    inherit_configuration_hole_semantics(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut local,
-        &base,
-        false,
-    )
-    .unwrap();
+    inherit_configuration_hole_semantics(&mut local, &base, false).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
-
         extent,
         ..
     }) = local
@@ -244,7 +227,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
         )
         .unwrap(),
-
         extent: Some(LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
         }),
@@ -264,7 +246,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             None,
         )
         .unwrap(),
-
         extent: None,
         bottom: None,
         taper_angle: None,
@@ -281,14 +262,9 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             base_definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: None,
     });
@@ -322,7 +298,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     &ir.model.configurations[0].feature_states[&id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
-
         extent: None,
         ..
     }) if matches!((shape.construction(), &shape.diameter(),), (construction, None,) if placements.is_none()

@@ -20,8 +20,9 @@ use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
     global_parameter_owners, parameters_with_incoherent_evaluated_values,
 };
-use crate::history::project::project_configurations_charged;
+use crate::history::project::project_configurations;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
+use crate::resolved_features::scalars::FeatureObjectNames;
 
 /// Resolve neutral/native configuration edit authority before writing.
 ///
@@ -97,9 +98,7 @@ pub(crate) fn prepare_configurations_for_write(
             (true, true) => {
                 let projected = native
                     .as_ref()
-                    .map(|value| {
-                        project_configurations_charged(&hash_ctx, &value.feature_histories)
-                    })
+                    .map(|value| project_configurations(&value.feature_histories))
                     .transpose()?
                     .unwrap_or_default();
                 if configuration_hash(&hash_ctx, &projected)? != neutral_hash {
@@ -187,7 +186,7 @@ fn sync_configuration_design_state(
     let design_arena = DecodeArena::new();
     let (design_ctx, _) =
         DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
-    project_configuration_design_states(
+    let unprojected = project_configuration_design_states(
         &design_ctx,
         &mut current_projection,
         &native.feature_histories,
@@ -195,7 +194,12 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
         form_padding,
     )?;
-    align_configuration_parameter_kinds(&design_ctx, &mut current_projection)?;
+    if unprojected > 0 {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration design states exceed the local projection work cap".into(),
+        ));
+    }
+    align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
     let projection_bytes = native
         .feature_input_lanes
@@ -283,7 +287,7 @@ fn sync_configuration_design_state(
     let design_arena = DecodeArena::new();
     let (design_ctx, _) =
         DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
-    project_configuration_design_states(
+    let unprojected = project_configuration_design_states(
         &design_ctx,
         &mut projected,
         &native.feature_histories,
@@ -291,7 +295,12 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
         form_padding,
     )?;
-    align_configuration_parameter_kinds(&design_ctx, &mut projected)?;
+    if unprojected > 0 {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration design states exceed the local projection work cap".into(),
+        ));
+    }
+    align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
     let projection_bytes = native
         .feature_input_lanes
@@ -329,13 +338,6 @@ fn patch_configuration_parameter_scalars(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
-    let bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())?;
     let parameters = ir
         .model
         .parameters
@@ -349,7 +351,7 @@ fn patch_configuration_parameter_scalars(
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
     for (configuration_index, lane_index) in
-        configuration_lane_assignments(&ctx, &ir.model.configurations, &native.feature_input_lanes)?
+        configuration_lane_assignments(&ir.model.configurations, &native.feature_input_lanes)
     {
         let configuration = &ir.model.configurations[configuration_index];
         let lane = &mut native.feature_input_lanes[lane_index];
@@ -358,14 +360,12 @@ fn patch_configuration_parameter_scalars(
             .iter()
             .map(|name| (name.id.as_str(), name.value.as_str()))
             .collect::<HashMap<_, _>>();
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = native
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter_map(|record| {
-                crate::resolved_features::scalars::feature_object_name(record, lane)
-                    .map(|name| (name.offset, record))
-            })
+            .filter_map(|record| object_names.of(record).map(|name| (name.offset, record)))
             .collect::<Vec<_>>();
         starts.sort_by_key(|(offset, _)| *offset);
         for (parameter_id, value) in &configuration.parameter_values {

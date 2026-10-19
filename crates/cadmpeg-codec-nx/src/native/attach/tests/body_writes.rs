@@ -90,9 +90,8 @@ fn body_image_outputs_require_one_body_per_binding() {
         ),
     ]);
 
-    crate::test_support::with_decode_context(|ctx| {
-        let (outputs, _reservation) =
-            operation_body_image_outputs_by_write(ctx, &uses, &bodies).unwrap();
+    ({
+        let outputs = operation_body_image_outputs_by_write(&uses, &bodies);
 
         assert_eq!(
             outputs.get("write-a"),
@@ -102,59 +101,9 @@ fn body_image_outputs_require_one_body_per_binding() {
     });
 }
 
-fn body_image_index_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<(), cadmpeg_core::CodecError> {
-    let uses = [body_image_use("use", "write", "binding")];
-    let body = BodyId::mint("test:model:entity#body").unwrap();
-    let bodies = BTreeMap::from([("binding", vec![body.clone()])]);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            let (outputs, _reservation) =
-                operation_body_image_outputs_by_write(ctx, &uses, &bodies)?;
-            assert_eq!(outputs["write"], body);
-            Ok(())
-        },
-    )
-}
-
-#[test]
-fn body_image_index_refuses_collection_limit() {
-    let error =
-        body_image_index_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn body_image_index_refuses_scoped_limit() {
-    let error =
-        body_image_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn body_image_index_refuses_work_limit() {
-    let error = body_image_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
 #[test]
 fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let write_a = native_body_write("write-a");
         let write_b = native_body_write("write-b");
         let writes = [&write_a, &write_b];
@@ -169,7 +118,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
             ),
         ]);
         assert_eq!(
-            complete_operation_body_image_outputs(ctx, &writes, &complete).unwrap(),
+            complete_operation_body_image_outputs(&writes, &complete),
             [
                 BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
                 BodyId::mint("test:model:entity#body-b").expect("identity grammar")
@@ -180,11 +129,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
             "write-a",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
         )]);
-        assert!(
-            complete_operation_body_image_outputs(ctx, &writes, &partial)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(complete_operation_body_image_outputs(&writes, &partial).is_empty());
 
         let duplicate = BTreeMap::from([
             (
@@ -196,64 +141,8 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
                 BodyId::mint("test:model:entity#body").expect("identity grammar"),
             ),
         ]);
-        assert!(
-            complete_operation_body_image_outputs(ctx, &writes, &duplicate)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
     });
-}
-
-fn complete_body_image_output_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<(), cadmpeg_core::CodecError> {
-    let write = native_body_write("write-a");
-    let body = BodyId::mint("test:model:entity#body-a").unwrap();
-    let outputs = BTreeMap::from([("write-a", body.clone())]);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            let selected = complete_operation_body_image_outputs(ctx, &[&write], &outputs)?;
-            assert_eq!(selected, [body]);
-            Ok(())
-        },
-    )
-}
-
-#[test]
-fn complete_body_image_output_refuses_collection_limit() {
-    let error =
-        complete_body_image_output_with_limit(|policy| policy.limits.max_collection_items = 0)
-            .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn complete_body_image_output_refuses_retained_limit() {
-    let error =
-        complete_body_image_output_with_limit(|policy| policy.limits.max_retained_bytes = 0)
-            .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn complete_body_image_output_refuses_work_limit() {
-    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_work_units = 0)
-        .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }
 
 fn native_boolean(
@@ -317,11 +206,8 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
         vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
     )]);
 
-    crate::test_support::with_decode_context(|ctx| {
-        assert!(operation_body_image_outputs_by_write(ctx, &uses, &bodies)
-            .unwrap()
-            .0
-            .is_empty());
+    ({
+        assert!(operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
     });
 }
 
@@ -345,9 +231,8 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
         ),
     ]);
 
-    crate::test_support::with_decode_context(|ctx| {
-        let (outputs, _reservation) =
-            operation_body_identity_outputs_by_write(ctx, &uses, &bodies).unwrap();
+    ({
+        let outputs = operation_body_identity_outputs_by_write(&uses, &bodies);
 
         assert_eq!(
             outputs.get("write-a"),
@@ -359,10 +244,7 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
 
 #[test]
 fn conflicting_body_output_witnesses_remain_unresolved() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut reservation = ctx
-            .reserve_scoped(0, "NX body image output indexes")
-            .unwrap();
+    ({
         let mut outputs = BTreeMap::from([(
             "write",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
@@ -370,27 +252,21 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
         let mut conflicts = BTreeSet::new();
 
         merge_operation_body_outputs(
-            ctx,
-            &mut reservation,
             &mut outputs,
             &mut conflicts,
             &BTreeMap::from([(
                 "write",
                 BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
             )]),
-        )
-        .unwrap();
+        );
         merge_operation_body_outputs(
-            ctx,
-            &mut reservation,
             &mut outputs,
             &mut conflicts,
             &BTreeMap::from([(
                 "write",
                 BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
             )]),
-        )
-        .unwrap();
+        );
 
         assert!(!outputs.contains_key("write"));
         assert!(conflicts.contains("write"));
@@ -430,9 +306,8 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
 
     let writes = [write_a, write_b];
 
-    crate::test_support::with_decode_context(|ctx| {
-        let (outputs, _reservation) = operation_body_group_partition_outputs_by_write(
-            ctx,
+    ({
+        let outputs = operation_body_group_partition_outputs_by_write(
             &writes,
             &[use_],
             std::slice::from_ref(&body),
@@ -494,128 +369,69 @@ fn direct_group_use(
 
 #[test]
 fn result_topology_uses_only_unique_current_group_members() {
-    crate::test_support::with_decode_context(|ctx| {
-        let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
-        let members = [
-            group_member("face", GroupNodeFamily::Face, Some(40)),
-            group_member("edge", GroupNodeFamily::Edge, Some(41)),
-            group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
-            group_member("historical", GroupNodeFamily::Face, None),
-            group_member("shell", GroupNodeFamily::Shell, Some(43)),
-        ];
-        let result = feature_result_group_members(
-            ctx,
-            use_.partition_stream_ordinal,
-            &use_.parasolid_group_members,
-            &members,
-        )
-        .unwrap();
+    let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
+    let members = [
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
+        group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
+        group_member("historical", GroupNodeFamily::Face, None),
+        group_member("shell", GroupNodeFamily::Shell, Some(43)),
+    ];
+    let result = feature_result_group_members(
+        use_.partition_stream_ordinal,
+        &use_.parasolid_group_members,
+        &members,
+    )
+    .unwrap();
 
-        assert_eq!(result.faces, ["nx:s4:face#40"]);
-        assert_eq!(result.edges, ["nx:s4:edge#41"]);
-        assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
+    assert_eq!(result.faces, ["nx:s4:face#40"]);
+    assert_eq!(result.edges, ["nx:s4:edge#41"]);
+    assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
 
-        let duplicate_members = [
-            group_member("face", GroupNodeFamily::Face, Some(40)),
-            group_member("face", GroupNodeFamily::Face, Some(40)),
-        ];
-        assert!(
-            feature_result_group_members(ctx, 4, &["face".into()], &duplicate_members)
-                .unwrap()
-                .faces
-                .is_empty()
-        );
-    });
+    let duplicate_members = [
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+    ];
+    assert!(
+        feature_result_group_members(4, &["face".into()], &duplicate_members)
+            .unwrap()
+            .faces
+            .is_empty()
+    );
 }
 
 #[test]
 fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
-    crate::test_support::with_decode_context(|ctx| {
-        let members = [
-            group_member("face", GroupNodeFamily::Face, Some(40)),
-            group_member("edge", GroupNodeFamily::Edge, Some(41)),
-        ];
-        let image = group_use(&["face"]);
-        let direct = direct_group_use(&["face"]);
+    let members = [
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
+    ];
+    let image = group_use(&["face"]);
+    let direct = direct_group_use(&["face"]);
 
-        let from_image = operation_body_write_result_group_members(
-            ctx,
-            "write",
-            std::slice::from_ref(&image),
-            &[],
-            &members,
-        )
-        .unwrap();
-        let from_direct = operation_body_write_result_group_members(
-            ctx,
-            "write",
-            &[],
-            std::slice::from_ref(&direct),
-            &members,
-        )
-        .unwrap();
-        assert_eq!(from_image.faces, ["nx:s4:face#40"]);
-        assert_eq!(from_direct.faces, from_image.faces);
-
-        let conflict = direct_group_use(&["edge"]);
-        let rejected = operation_body_write_result_group_members(
-            ctx,
-            "write",
-            &[image],
-            &[conflict],
-            &members,
-        )
-        .unwrap();
-        assert!(rejected.faces.is_empty());
-        assert!(rejected.edges.is_empty());
-    });
-}
-
-fn result_group_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<(), cadmpeg_core::CodecError> {
-    crate::test_support::with_decode_context_over(
+    let from_image = operation_body_write_result_group_members(
+        "write",
+        std::slice::from_ref(&image),
         &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            let members = [group_member("face", GroupNodeFamily::Face, Some(40))];
-            let uses = [group_use(&["face"])];
-            let result =
-                operation_body_write_result_group_members(ctx, "write", &uses, &[], &members)?;
-            assert_eq!(result.faces, ["nx:s4:face#40"]);
-            Ok(())
-        },
+        &members,
     )
-}
+    .unwrap();
+    let from_direct = operation_body_write_result_group_members(
+        "write",
+        &[],
+        std::slice::from_ref(&direct),
+        &members,
+    )
+    .unwrap();
+    assert_eq!(from_image.faces, ["nx:s4:face#40"]);
+    assert_eq!(from_direct.faces, from_image.faces);
 
-#[test]
-fn result_group_refuses_collection_limit() {
-    let error =
-        result_group_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn result_group_refuses_retained_limit() {
-    let error = result_group_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn result_group_refuses_work_limit() {
-    let error = result_group_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
+    let conflict = direct_group_use(&["edge"]);
+    let rejected =
+        operation_body_write_result_group_members("write", &[image], &[conflict], &members)
+            .unwrap();
+    assert!(rejected.faces.is_empty());
+    assert!(rejected.edges.is_empty());
 }
 
 #[test]
@@ -654,35 +470,31 @@ fn repeated_body_identity_builds_output_lineage() {
 
 #[test]
 fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let original = ir.model.clone();
-        let mut losses = Vec::new();
-        crate::native::attach::append_feature_result_topology(
-            ctx,
-            &mut ir,
-            crate::native::attach::PendingFeatureResult {
-                result_id: "nx:history:result#1".try_into().unwrap(),
-                output_of: &"nx:history:feature#1".try_into().unwrap(),
-                bodies: vec![cadmpeg_core::nonblank_literal!("native-body")],
-                members: crate::native::attach::FeatureResultGroupMembers {
-                    faces: vec![
-                        cadmpeg_core::nonblank_literal!("nx:s4:face#40"),
-                        cadmpeg_core::nonblank_literal!("nx:s4:face#40"),
-                    ],
-                    ..Default::default()
-                },
-                native_ref: "nx:history:write#1".into(),
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let original = ir.model.clone();
+    let mut losses = Vec::new();
+    crate::native::attach::append_feature_result_topology(
+        &mut ir.model.feature_result_topologies,
+        crate::native::attach::PendingFeatureResult {
+            result_id: "nx:history:result#1".try_into().unwrap(),
+            output_of: &"nx:history:feature#1".try_into().unwrap(),
+            bodies: vec![cadmpeg_core::nonblank_literal!("native-body")],
+            members: crate::native::attach::FeatureResultGroupMembers {
+                faces: vec![
+                    cadmpeg_core::nonblank_literal!("nx:s4:face#40"),
+                    cadmpeg_core::nonblank_literal!("nx:s4:face#40"),
+                ],
+                ..Default::default()
             },
-            &mut losses,
-        )
-        .unwrap();
-        assert_eq!(ir.model, original);
-        assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code,
-            crate::loss::NxLossCode::FeatureOutputLineageIncomplete.kind()
-        );
-        assert!(losses[0].message.contains("nx:history:write#1"));
-    });
+            native_ref: "nx:history:write#1".into(),
+        },
+        &mut losses,
+    );
+    assert_eq!(ir.model, original);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::NxLossCode::FeatureOutputLineageIncomplete.kind()
+    );
+    assert!(losses[0].message.contains("nx:history:write#1"));
 }

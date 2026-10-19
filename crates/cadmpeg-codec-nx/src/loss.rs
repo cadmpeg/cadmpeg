@@ -121,13 +121,39 @@ loss_codes! {
     TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
+    /// A record search reached its local work bound and skipped the records
+    /// it was locating.
+    SourceScanBounded => ("source.scan-bounded", Warning, ObjectRecordsUntransferred),
+    /// Indexed OM object records reached the identity graph work bound and
+    /// were kept without a stable identity.
+    ObjectRecordIdentityBounded => ("native.record-identity-bounded", Warning, MetadataNotTransferred),
+    /// An arithmetic-coded Display-JT lane reached its decoder work bound and
+    /// was left undecoded.
+    DisplayJtArithmeticLaneBounded => ("container.display-jt-arithmetic-lane-bounded", Warning, ObjectRecordsUntransferred),
+    /// A Display-JT polygon mesh did not resolve to a tessellation and was
+    /// skipped.
+    DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
+    /// Native object-model attachment failed; none of its records were kept.
+    NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
 }
 
 impl NxLossCode {
-    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
+    /// Strict floor pinned from this local code.
+    ///
+    /// Defaults to the taxonomy floor. `NativeAttachmentFailed` pins Error
+    /// above its `DecodeDiagnostic` taxonomy, which strict mode otherwise
+    /// tolerates.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::NativeAttachmentFailed => Some(Severity::Error),
+            other => other.shared_taxonomy().strict_floor(),
+        }
+    }
+
+    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("nx") {
                     Ok(namespace) => namespace,
@@ -137,30 +163,18 @@ impl NxLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `nx/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code; the strict floor comes from [`Self::strict_floor`].
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
-}
-
-pub(crate) fn charge_loss_code(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    code: NxLossCode,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = "nx"
-        .len()
-        .checked_add(code.code().len())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx loss code text",
-    )
 }
 
 #[cfg(test)]
@@ -207,6 +221,11 @@ mod tests {
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
                 "annotation.semantic-order-unstatable",
+                "source.scan-bounded",
+                "native.record-identity-bounded",
+                "container.display-jt-arithmetic-lane-bounded",
+                "carrier.display-jt-tessellations-dropped",
+                "native.attachment-failed",
             ]
         );
     }
@@ -237,5 +256,24 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    /// Only an attachment failure pins a floor above its taxonomy floor.
+    #[test]
+    fn strict_floor_follows_taxonomy_except_attachment_failure() {
+        use cadmpeg_ir::report::loss::StrictConsequence;
+        for code in NxLossCode::ALL {
+            let expected = match code {
+                NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
+                other => other.shared_taxonomy().strict_floor(),
+            };
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+        }
+        assert_eq!(
+            NxLossCode::NativeAttachmentFailed
+                .note("x")
+                .strict_consequence(),
+            StrictConsequence::Reject
+        );
     }
 }

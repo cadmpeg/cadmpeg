@@ -81,7 +81,7 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         }
         assert!(
             cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok(),
             "{version:?}"
         );
@@ -176,13 +176,8 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         id: loop_id.clone(),
         face,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids.clone(),
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
         ),
     });
     ir.model.surfaces.push(Surface {
@@ -247,8 +242,7 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
             use_curve: None,
         });
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     ir
 }
 
@@ -303,13 +297,8 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         id: loop_id.clone(),
         face,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids.clone(),
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
         ),
     });
     for index in 0..points.len() {
@@ -365,8 +354,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             use_curve: None,
         });
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
 }
 
 fn adjacent_quad_sheet() -> CadIr {
@@ -491,26 +479,16 @@ fn adjacent_quad_sheet() -> CadIr {
         id: loop_ids[0].clone(),
         face: face_ids[0].clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids[0..4].to_vec(),
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids[0..4].to_vec(), Vec::new())
+                .expect("valid loop ring"),
         ),
     });
     ir.model.loops.push(Loop {
         id: loop_ids[1].clone(),
         face: face_ids[1].clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids[4..8].to_vec(),
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids[4..8].to_vec(), Vec::new())
+                .expect("valid loop ring"),
         ),
     });
     for index in 0..positions.len() {
@@ -589,8 +567,7 @@ fn adjacent_quad_sheet() -> CadIr {
             use_curve: None,
         });
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     ir
 }
 
@@ -792,11 +769,9 @@ fn planar_tetrahedron() -> CadIr {
             face: face_ids[face].clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     coedge_ids[start..start + 3].to_vec(),
                     Vec::new(),
                 )
-                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         });
@@ -837,8 +812,7 @@ fn planar_tetrahedron() -> CadIr {
         ir.model.coedges[uses[0]].radial_next = coedge_ids[uses[1]].clone();
         ir.model.coedges[uses[1]].radial_next = coedge_ids[uses[0]].clone();
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     ir
 }
 
@@ -858,7 +832,6 @@ fn rectangular_nurbs_patch() -> CadIr {
     let mut ir = polygon_sheet(&points);
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
@@ -872,7 +845,6 @@ fn rectangular_nurbs_patch() -> CadIr {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid patch surface"),
     ));
     let edge_data = [
@@ -915,14 +887,12 @@ fn rectangular_nurbs_patch() -> CadIr {
         .unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 control_points,
                 Some(weights),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid patch edge"),
         ));
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}")
@@ -948,8 +918,7 @@ fn rectangular_nurbs_patch() -> CadIr {
             parameter_range: None,
         }];
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     ir
 }
 
@@ -969,7 +938,6 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
     ];
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
@@ -983,7 +951,6 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid mixed surface"),
     ));
     let edge_data = [
@@ -1026,14 +993,12 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
         .unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 control_points,
                 Some(weights),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid mixed edge"),
         ));
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}")
@@ -1059,8 +1024,7 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
             parameter_range: None,
         }];
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     ir
 }
 
@@ -1073,7 +1037,6 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1085,7 +1048,6 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid planar patch"),
     ));
     for index in 0..ir.model.coedges.len() {
@@ -1142,8 +1104,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             parameter_range: None,
         }];
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
 }
 
 mod trim_domain;

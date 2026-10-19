@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Subdivision-surface control cages.
 
-mod admission;
-
 use crate::features::FinitePoint3;
 use crate::ids::SubdId;
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::units::UnitVector3;
-use admission::{StandardAdmission, SubdAdmission};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -98,7 +95,7 @@ impl TryFrom<SubdCageWire> for SubdCage {
             faces: wire.faces,
             symmetries: wire.symmetries,
         };
-        cage.validate(&StandardAdmission)??;
+        cage.validate()?;
         Ok(cage)
     }
 }
@@ -110,109 +107,51 @@ impl SubdCage {
         edges: Vec<SubdEdge>,
         faces: Vec<SubdFace>,
         symmetries: Vec<SubdSymmetry>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, SubdError> {
         let cage = Self {
             vertices,
             edges,
             faces,
             symmetries,
         };
-        Ok(cage.validate(ctx)?.map(|()| cage))
+        cage.validate()?;
+        Ok(cage)
     }
 
     /// Atomically edit admitted vertex copies while preserving cage invariants.
     pub fn edit_vertices(
         &mut self,
         edit: impl FnOnce(&mut [SubdVertex]) -> Result<(), SubdError>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<(), SubdError>, cadmpeg_core::CodecError> {
-        let mut storage = ctx.reserve_scoped(0, "SubD vertex edit storage")?;
-        let mut vertices = storage.with_storage(|| {
-            let copy_grips = |grips: &[Option<SubdSecondaryGrip>]| {
-                ctx.try_collect_retained_with(grips, "copy SubD edit grips", |grip| {
-                    Ok::<_, cadmpeg_core::CodecError>(grip.as_ref().map(|grip| SubdSecondaryGrip {
-                        source_index: grip.source_index,
-                        point: grip.point,
-                        weight: grip.weight,
-                    }))
-                })
-            };
-            ctx.try_collect_retained_with(&self.vertices, "copy SubD edit vertices", |vertex| {
-                let secondary_grips = match &vertex.secondary_grips {
-                    None => None,
-                    Some(layout) => Some(SubdVertexGripLayout {
-                        direction: layout.direction,
-                        wedges: ctx.try_collect_retained_with(
-                            &layout.wedges,
-                            "copy SubD edit wedges",
-                            |wedge| {
-                                Ok::<_, cadmpeg_core::CodecError>(match wedge {
-                                    SubdGripWedge::Phantom {} => SubdGripWedge::Phantom {},
-                                    SubdGripWedge::Slot {
-                                        edge,
-                                        sector_face,
-                                        spokes,
-                                        sectors,
-                                    } => SubdGripWedge::Slot {
-                                        edge: *edge,
-                                        sector_face: *sector_face,
-                                        spokes: copy_grips(spokes)?,
-                                        sectors: copy_grips(sectors)?,
-                                    },
-                                })
-                            },
-                        )?,
-                    }),
-                };
-                Ok::<_, cadmpeg_core::CodecError>(SubdVertex {
-                    point: vertex.point,
-                    tag: vertex.tag,
-                    secondary_grips,
-                })
-            })
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(vertices.len()),
-            "edit SubD vertices",
-        )?;
-        if let Err(error) = edit(&mut vertices) {
-            return Ok(Err(error));
-        }
-        if let Err(error) = self.validate_vertices(&vertices, ctx)? {
-            return Ok(Err(error));
-        }
-        storage.commit()?;
+    ) -> Result<(), SubdError> {
+        let mut vertices = self.vertices.clone();
+        edit(&mut vertices)?;
+        self.validate_vertices(&vertices)?;
         self.vertices = vertices;
-        Ok(Ok(()))
+        Ok(())
     }
 
-    fn validate<A: SubdAdmission>(&self, admission: &A) -> Result<Result<(), SubdError>, A::Error> {
+    fn validate(&self) -> Result<(), SubdError> {
         for (index, edge) in self.edges.iter().enumerate() {
-            admission.work(1, "validate SubD edge rows")?;
             for vertex in edge.vertices {
-                admission.work(1, "validate SubD edge vertices")?;
                 if cadmpeg_core::decode::index_from_u32(vertex) >= self.vertices.len() {
-                    return Ok(Err(admission.message(format_args!(
+                    return Err(SubdError::Admission(format!(
                         "edges[{index}].vertices contains an out-of-range index"
-                    ))?));
+                    )));
                 }
             }
         }
         for (index, face) in self.faces.iter().enumerate() {
-            admission.work(1, "validate SubD face rows")?;
             let mut first = None;
             let mut previous = None;
             let mut closed = true;
             for use_ in &face.edges {
-                admission.work(1, "validate SubD face edge references")?;
                 let Some(edge) = self
                     .edges
                     .get(cadmpeg_core::decode::index_from_u32(use_.edge))
                 else {
-                    return Ok(Err(admission.message(format_args!(
+                    return Err(SubdError::Admission(format!(
                         "faces[{index}].edges references a missing edge"
-                    ))?));
+                    )));
                 };
                 let endpoints = if use_.reversed {
                     [edge.vertices[1], edge.vertices[0]]
@@ -221,7 +160,6 @@ impl SubdCage {
                 };
                 if closed {
                     if let Some(previous) = previous {
-                        admission.work(1, "validate SubD directed ring")?;
                         closed = previous == endpoints[0];
                     }
                 }
@@ -232,21 +170,17 @@ impl SubdCage {
             }
             if closed {
                 if let (Some(first), Some(previous)) = (first, previous) {
-                    admission.work(1, "validate SubD directed ring")?;
                     closed = previous == first;
                 }
             }
             if !closed {
-                return Ok(Err(admission.message(format_args!(
+                return Err(SubdError::Admission(format!(
                     "faces[{index}].edges is not a directed closed ring"
-                ))?));
+                )));
             }
         }
-        if let Err(error) = self.validate_vertices(&self.vertices, admission)? {
-            return Ok(Err(error));
-        }
+        self.validate_vertices(&self.vertices)?;
         for symmetry in &self.symmetries {
-            admission.work(1, "validate SubD symmetry rows")?;
             for (field, pairs, count) in [
                 ("face_pairs", &symmetry.face_pairs, self.faces.len()),
                 ("edge_pairs", &symmetry.edge_pairs, self.edges.len()),
@@ -254,33 +188,25 @@ impl SubdCage {
             ] {
                 for pair in pairs {
                     for index in pair {
-                        admission.work(1, "validate SubD symmetry indices")?;
                         if cadmpeg_core::decode::index_from_u32(*index) >= count {
-                            return Ok(Err(admission.message(format_args!(
+                            return Err(SubdError::Admission(format!(
                                 "symmetries.{field} contains an out-of-range index"
-                            ))?));
+                            )));
                         }
                     }
                 }
             }
         }
-        Ok(Ok(()))
+        Ok(())
     }
 
-    fn validate_vertices<A: SubdAdmission>(
-        &self,
-        vertices: &[SubdVertex],
-        admission: &A,
-    ) -> Result<Result<(), SubdError>, A::Error> {
-        let mut storage = admission.storage()?;
+    fn validate_vertices(&self, vertices: &[SubdVertex]) -> Result<(), SubdError> {
         let mut grip_indices = std::collections::BTreeSet::new();
         for (index, vertex) in vertices.iter().enumerate() {
-            admission.work(1, "validate SubD vertex rows")?;
             let Some(layout) = &vertex.secondary_grips else {
                 continue;
             };
             for wedge in &layout.wedges {
-                admission.work(1, "validate SubD grip wedges")?;
                 let SubdGripWedge::Slot {
                     edge,
                     sector_face,
@@ -291,42 +217,37 @@ impl SubdCage {
                     continue;
                 };
                 if let Some(edge) = edge {
-                    admission.work(1, "validate SubD grip edge")?;
                     let Some(edge) = self.edges.get(cadmpeg_core::decode::index_from_u32(*edge))
                     else {
-                        return Ok(Err(admission.message(format_args!(
+                        return Err(SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips edge is out of range"
-                        ))?));
+                        )));
                     };
                     let mut incident = false;
                     for owner in edge.vertices {
-                        admission.work(1, "validate SubD grip edge owner")?;
                         if cadmpeg_core::decode::index_from_u32(owner) == index {
                             incident = true;
                             break;
                         }
                     }
                     if !incident {
-                        return Ok(Err(admission.message(format_args!(
+                        return Err(SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips edge is not incident to its owner"
-                        ))?));
+                        )));
                     }
                 }
                 if let Some(face) = sector_face {
-                    admission.work(1, "validate SubD grip face")?;
                     let Some(face) = self.faces.get(cadmpeg_core::decode::index_from_u32(*face))
                     else {
-                        return Ok(Err(admission.message(format_args!(
+                        return Err(SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips sector_face is out of range"
-                        ))?));
+                        )));
                     };
                     let mut incident = false;
                     for use_ in &face.edges {
-                        admission.work(1, "validate SubD grip face edges")?;
                         for owner in
                             self.edges[cadmpeg_core::decode::index_from_u32(use_.edge)].vertices
                         {
-                            admission.work(1, "validate SubD grip face owner")?;
                             if cadmpeg_core::decode::index_from_u32(owner) == index {
                                 incident = true;
                                 break;
@@ -337,23 +258,22 @@ impl SubdCage {
                         }
                     }
                     if !incident {
-                        return Ok(Err(admission.message(format_args!("vertices[{index}].secondary_grips sector_face is not incident to its owner"))?));
+                        return Err(SubdError::Admission(format!("vertices[{index}].secondary_grips sector_face is not incident to its owner")));
                     }
                 }
                 for grip in spokes.iter().chain(sectors) {
-                    admission.work(1, "validate SubD grip slots")?;
                     let Some(grip) = grip else {
                         continue;
                     };
-                    if !admission.insert(&mut storage, &mut grip_indices, grip.source_index)? {
-                        return Ok(Err(admission.message(format_args!(
+                    if !grip_indices.insert(grip.source_index) {
+                        return Err(SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips repeats a source_index"
-                        ))?));
+                        )));
                     }
                 }
             }
         }
-        Ok(Ok(()))
+        Ok(())
     }
 }
 
@@ -456,61 +376,50 @@ impl TryFrom<SubdRadialSymmetryWire> for SubdRadialSymmetry {
     type Error = SubdError;
 
     fn try_from(wire: SubdRadialSymmetryWire) -> Result<Self, Self::Error> {
-        Self::new(
-            wire.segments,
-            wire.sweep,
-            wire.radial_maps,
-            &StandardAdmission,
-        )?
+        Self::new(wire.segments, wire.sweep, wire.radial_maps)
     }
 }
 
 impl SubdRadialSymmetry {
-    fn new<A: SubdAdmission>(
+    fn new(
         segments: std::num::NonZeroU32,
         sweep: f64,
         radial_maps: Vec<SubdRadialSymmetryMap>,
-        admission: &A,
-    ) -> Result<Result<Self, SubdError>, A::Error> {
+    ) -> Result<Self, SubdError> {
         let Some(sweep) = FiniteReal::new(sweep) else {
-            return Ok(Err(
-                admission.message(format_args!("kind.radial.sweep must be finite"))?
+            return Err(SubdError::Admission(
+                "kind.radial.sweep must be finite".to_owned(),
             ));
         };
-        Self::from_parts(segments, sweep, radial_maps, admission)
+        Self::from_parts(segments, sweep, radial_maps)
     }
 
-    fn from_parts<A: SubdAdmission>(
+    fn from_parts(
         segments: std::num::NonZeroU32,
         sweep: FiniteReal,
         radial_maps: Vec<SubdRadialSymmetryMap>,
-        admission: &A,
-    ) -> Result<Result<Self, SubdError>, A::Error> {
-        let mut selector_storage = admission.storage()?;
+    ) -> Result<Self, SubdError> {
         let mut selectors = std::collections::BTreeSet::new();
         for map in &radial_maps {
-            admission.work(1, "validate SubD radial maps")?;
-            if !admission.insert(&mut selector_storage, &mut selectors, map.selector)? {
-                return Ok(Err(
-                    admission.message(format_args!("radial_maps repeats a selector"))?
+            if !selectors.insert(map.selector) {
+                return Err(SubdError::Admission(
+                    "radial_maps repeats a selector".to_owned(),
                 ));
             }
-            let mut source_storage = admission.storage()?;
             let mut sources = std::collections::BTreeSet::new();
             for [source, _] in &map.pairs {
-                admission.work(1, "validate SubD radial map sources")?;
-                if !admission.insert(&mut source_storage, &mut sources, *source)? {
-                    return Ok(Err(
-                        admission.message(format_args!("radial_maps.pairs repeats a source"))?
+                if !sources.insert(*source) {
+                    return Err(SubdError::Admission(
+                        "radial_maps.pairs repeats a source".to_owned(),
                     ));
                 }
             }
         }
-        Ok(Ok(Self {
+        Ok(Self {
             segments,
             sweep,
             radial_maps,
-        }))
+        })
     }
 }
 
@@ -520,9 +429,8 @@ impl SubdSymmetryKind {
         segments: std::num::NonZeroU32,
         sweep: f64,
         radial_maps: Vec<SubdRadialSymmetryMap>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Ok(SubdRadialSymmetry::new(segments, sweep, radial_maps, ctx)?.map(Self::Radial))
+    ) -> Result<Self, SubdError> {
+        SubdRadialSymmetry::new(segments, sweep, radial_maps).map(Self::Radial)
     }
 
     /// Admit radial maps with a sweep that the reader already checked.
@@ -530,9 +438,8 @@ impl SubdSymmetryKind {
         segments: std::num::NonZeroU32,
         sweep: FiniteReal,
         radial_maps: Vec<SubdRadialSymmetryMap>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Ok(SubdRadialSymmetry::from_parts(segments, sweep, radial_maps, ctx)?.map(Self::Radial))
+    ) -> Result<Self, SubdError> {
+        SubdRadialSymmetry::from_parts(segments, sweep, radial_maps).map(Self::Radial)
     }
 }
 
@@ -612,45 +519,29 @@ impl SubdSymmetry {
         face_pairs: Vec<[u32; 2]>,
         edge_pairs: Vec<[u32; 2]>,
         vertex_pairs: Vec<[u32; 2]>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Self::from_rows(kind, plane, face_pairs, edge_pairs, vertex_pairs, ctx)
-    }
-
-    fn from_rows<A: SubdAdmission>(
-        kind: SubdSymmetryKind,
-        plane: SubdPlaneFrame,
-        face_pairs: Vec<[u32; 2]>,
-        edge_pairs: Vec<[u32; 2]>,
-        vertex_pairs: Vec<[u32; 2]>,
-        admission: &A,
-    ) -> Result<Result<Self, SubdError>, A::Error> {
+    ) -> Result<Self, SubdError> {
         for (field, pairs) in [
             ("face_pairs", &face_pairs),
             ("edge_pairs", &edge_pairs),
             ("vertex_pairs", &vertex_pairs),
         ] {
-            let mut storage = admission.storage()?;
             let mut sources = std::collections::BTreeSet::new();
             let mut targets = std::collections::BTreeSet::new();
             for [source, target] in pairs {
-                admission.work(1, "validate SubD correspondence pairs")?;
-                if !admission.insert(&mut storage, &mut sources, *source)?
-                    || !admission.insert(&mut storage, &mut targets, *target)?
-                {
-                    return Ok(Err(
-                        admission.message(format_args!("{field} repeats a source or target"))?
-                    ));
+                if !sources.insert(*source) || !targets.insert(*target) {
+                    return Err(SubdError::Admission(format!(
+                        "{field} repeats a source or target"
+                    )));
                 }
             }
         }
-        Ok(Ok(Self {
+        Ok(Self {
             kind,
             plane,
             face_pairs,
             edge_pairs,
             vertex_pairs,
-        }))
+        })
     }
 }
 
@@ -658,14 +549,13 @@ impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
     type Error = SubdError;
 
     fn try_from(wire: SubdSymmetryWire) -> Result<Self, Self::Error> {
-        Self::from_rows(
+        Self::new(
             wire.kind,
             wire.plane,
             wire.face_pairs,
             wire.edge_pairs,
             wire.vertex_pairs,
-            &StandardAdmission,
-        )?
+        )
     }
 }
 
@@ -795,7 +685,7 @@ impl TryFrom<SubdVertexGripLayoutWire> for SubdVertexGripLayout {
     type Error = SubdError;
 
     fn try_from(wire: SubdVertexGripLayoutWire) -> Result<Self, Self::Error> {
-        Self::from_wedges(wire.direction, wire.wedges, &StandardAdmission)?
+        Self::new(wire.direction, wire.wedges)
     }
 }
 
@@ -804,19 +694,10 @@ impl SubdVertexGripLayout {
     pub fn new(
         direction: SubdGripDirection,
         wedges: Vec<SubdGripWedge>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Self::from_wedges(direction, wedges, ctx)
-    }
-
-    fn from_wedges<A: SubdAdmission>(
-        direction: SubdGripDirection,
-        wedges: Vec<SubdGripWedge>,
-        admission: &A,
-    ) -> Result<Result<Self, SubdError>, A::Error> {
+    ) -> Result<Self, SubdError> {
         if wedges.is_empty() {
-            return Ok(Err(
-                admission.message(format_args!("secondary_grips.wedges is empty"))?
+            return Err(SubdError::Admission(
+                "secondary_grips.wedges is empty".to_owned(),
             ));
         }
         let spoke_count = |wedge: &SubdGripWedge| match wedge {
@@ -824,18 +705,17 @@ impl SubdVertexGripLayout {
             SubdGripWedge::Slot { spokes, .. } => spokes.len(),
         };
         for (index, (wedge, next)) in wedges.iter().zip(wedges.iter().cycle().skip(1)).enumerate() {
-            admission.work(1, "validate SubD wedge arity")?;
             let sector_count = match wedge {
                 SubdGripWedge::Phantom {} => 0,
                 SubdGripWedge::Slot { sectors, .. } => sectors.len(),
             };
             if spoke_count(wedge).checked_mul(spoke_count(next)) != Some(sector_count) {
-                return Ok(Err(admission.message(format_args!(
+                return Err(SubdError::Admission(format!(
                     "secondary_grips.wedges[{index}].sectors has invalid arity"
-                ))?));
+                )));
             }
         }
-        Ok(Ok(Self { direction, wedges }))
+        Ok(Self { direction, wedges })
     }
 }
 
@@ -982,20 +862,13 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
     type Error = SubdError;
 
     fn try_from(wire: SubdEdgeWire) -> Result<Self, Self::Error> {
-        Self::admit_raw_controls(
+        Self::new(
             wire.vertices,
             wire.sharpness,
             wire.tag,
-            || match wire.knot_interval {
-                None => Ok(Ok(None)),
-                Some(value) => Ok(PositiveReal::new(value).map(Some).ok_or_else(|| {
-                    SubdError::Admission("knot_interval must be finite and positive".into())
-                })),
-            },
+            wire.knot_interval,
             wire.sector_coefficients,
-            |_, _| Ok::<(), SubdError>(()),
-            |message| Ok(SubdError::Admission(message.into())),
-        )?
+        )
     }
 }
 
@@ -1008,55 +881,45 @@ impl SubdEdge {
         tag: SubdEdgeTag,
         knot_interval: Option<PositiveReal>,
         sector_coefficients: [FiniteReal; 2],
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "SubD edge endpoints")?;
+    ) -> Result<Self, SubdError> {
         if vertices[0] == vertices[1] {
-            return Ok(Err(SubdError::Admission(ctx.copy_retained_text(
-                "vertices must name distinct endpoints",
-                "SubD edge admission error",
-            )?)));
+            return Err(SubdError::Admission(
+                "vertices must name distinct endpoints".to_owned(),
+            ));
         }
-        Ok(Ok(Self {
+        Ok(Self {
             vertices,
             sharpness,
             tag,
             knot_interval,
             sector_coefficients,
-        }))
+        })
     }
 
-    /// Admit raw numeric controls under the caller decode policy.
+    /// Admit raw numeric controls.
     pub fn new(
         vertices: [u32; 2],
         sharpness: [f64; 2],
         tag: SubdEdgeTag,
         knot_interval: Option<f64>,
         sector_coefficients: [f64; 2],
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, SubdError> {
         Self::admit_raw_controls(
             vertices,
             sharpness,
             tag,
-            || match knot_interval {
-                None => Ok(Ok(None)),
-                Some(value) => match PositiveReal::new(value) {
-                    Some(value) => Ok(Ok(Some(value))),
-                    None => Ok(Err(SubdError::Admission(ctx.copy_retained_text(
-                        "knot_interval must be finite and positive",
-                        "SubD edge admission error",
-                    )?))),
-                },
+            || {
+                knot_interval
+                    .map(|value| {
+                        PositiveReal::new(value).ok_or_else(|| {
+                            SubdError::Admission(
+                                "knot_interval must be finite and positive".to_owned(),
+                            )
+                        })
+                    })
+                    .transpose()
             },
             sector_coefficients,
-            |count, operation| ctx.charge_work(count, operation),
-            |message| {
-                Ok(SubdError::Admission(ctx.copy_retained_text(
-                    message,
-                    "SubD edge admission error",
-                )?))
-            },
         )
     }
 
@@ -1067,58 +930,43 @@ impl SubdEdge {
         tag: SubdEdgeTag,
         knot_interval: Option<PositiveReal>,
         sector_coefficients: [f64; 2],
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, SubdError> {
         Self::admit_raw_controls(
             vertices,
             sharpness,
             tag,
-            || Ok(Ok(knot_interval)),
+            || Ok(knot_interval),
             sector_coefficients,
-            |count, operation| ctx.charge_work(count, operation),
-            |message| {
-                Ok(SubdError::Admission(ctx.copy_retained_text(
-                    message,
-                    "SubD edge admission error",
-                )?))
-            },
         )
     }
 
-    fn admit_raw_controls<E>(
+    fn admit_raw_controls(
         vertices: [u32; 2],
         sharpness: [f64; 2],
         tag: SubdEdgeTag,
-        interval: impl FnOnce() -> Result<Result<Option<PositiveReal>, SubdError>, E>,
+        interval: impl FnOnce() -> Result<Option<PositiveReal>, SubdError>,
         sector_coefficients: [f64; 2],
-        mut work: impl FnMut(u64, &'static str) -> Result<(), E>,
-        mut error: impl FnMut(&'static str) -> Result<SubdError, E>,
-    ) -> Result<Result<Self, SubdError>, E> {
-        work(1, "SubD edge endpoints")?;
+    ) -> Result<Self, SubdError> {
+        let error = |message: &str| SubdError::Admission(message.to_owned());
         if vertices[0] == vertices[1] {
-            return Ok(Err(error("vertices must name distinct endpoints")?));
+            return Err(error("vertices must name distinct endpoints"));
         }
-        work(2, "SubD edge sharpness")?;
         let [start, end] = sharpness.map(NonNegativeReal::new);
         let (Some(start), Some(end)) = (start, end) else {
-            return Ok(Err(error("sharpness must be finite and non-negative")?));
+            return Err(error("sharpness must be finite and non-negative"));
         };
-        let knot_interval = match interval()? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        work(2, "SubD edge sector coefficients")?;
+        let knot_interval = interval()?;
         let [first, second] = sector_coefficients.map(FiniteReal::new);
         let (Some(first), Some(second)) = (first, second) else {
-            return Ok(Err(error("sector_coefficients must be finite")?));
+            return Err(error("sector_coefficients must be finite"));
         };
-        Ok(Ok(Self {
+        Ok(Self {
             vertices,
             sharpness: [start, end],
             tag,
             knot_interval,
             sector_coefficients: [first, second],
-        }))
+        })
     }
 }
 

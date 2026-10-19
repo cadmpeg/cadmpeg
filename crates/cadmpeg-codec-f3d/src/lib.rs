@@ -32,7 +32,7 @@
 //! ```
 //!
 //! [`Codec::inspect`](cadmpeg_ir::Codec::inspect) classifies the ZIP entries and reads ASM B-rep headers
-//! without building geometry. `DecodeOptions::container_only` provides the
+//! without building geometry. `DecodeDepth::Container` provides the
 //! corresponding metadata-only `CadIr`.
 //!
 //! # Encode
@@ -113,11 +113,11 @@ mod xref;
 mod zip_write;
 
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -171,7 +171,7 @@ impl CodecBackend for F3dCodec {
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-        validate::validate_native_charged(ctx, ir)
+        validate::validate_native(ctx, ir)
     }
 
     fn detect_impl(
@@ -180,19 +180,8 @@ impl CodecBackend for F3dCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len().min(ZIP_MAGIC.len())),
-            "detect ZIP magic",
-        )?;
         if !prefix.starts_with(ZIP_MAGIC) {
-            if cadmpeg_container::ArchiveSnapshot::has_footer(ctx, prefix)? {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(prefix.len())
-                        * cadmpeg_core::decode::u64_from_index(
-                            container::DETECT_MARKERS.len() + container::F3Z_DETECT_MARKERS.len(),
-                        ),
-                    "detect Fusion central names",
-                )?;
+            if cadmpeg_container::ArchiveSnapshot::has_footer(prefix) {
                 match cadmpeg_container::ArchiveSnapshot::contains_matching_name(
                     ctx,
                     cadmpeg_core::decode::View::over_retained(prefix),
@@ -214,10 +203,6 @@ impl CodecBackend for F3dCodec {
             .iter()
             .chain(container::F3Z_DETECT_MARKERS)
         {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(prefix.len()),
-                "detect Fusion marker",
-            )?;
             if contains(prefix, marker) {
                 return Ok(Confidence::High);
             }
@@ -233,9 +218,7 @@ impl CodecBackend for F3dCodec {
         let scan = container::scan(ctx, root)?;
         match &scan.kind {
             container::F3dContainerKind::MultiDocument { .. } => f3z::inspect(ctx, &scan),
-            container::F3dContainerKind::Document { .. } => {
-                report::build_inspection_summary(ctx, &scan)
-            }
+            container::F3dContainerKind::Document { .. } => report::build_inspection_summary(&scan),
         }
     }
 
@@ -246,6 +229,9 @@ impl CodecBackend for F3dCodec {
 
 impl EncoderBackend for F3dCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Patches the retained source, so the history and design records it rewrites
+    /// must be present.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

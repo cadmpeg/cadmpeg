@@ -28,32 +28,6 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 #[test]
-fn decode_refuses_when_max_entities_is_below_section_cardinality() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let data = build_prt(
-        "c",
-        &[
-            ("THMB_IMG_MAIN", jpeg_payload()),
-            ("VisibGeom", visibgeom_payload(0, 0)),
-        ],
-    );
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = 1;
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .expect_err("max_entities below section count must refuse at admission");
-    assert!(
-        matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-        ),
-        "{error:?}"
-    );
-}
-
-#[test]
 fn decode_keeps_section_and_model_entity_admission_additive() {
     use cadmpeg_core::decode::ResourceDimension;
 
@@ -149,7 +123,7 @@ fn sketch_entity_refuses_before_model_insertion() {
 
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("service profile admits the sketch");
+        .expect("decode the fixture");
     assert_eq!(decoded.ir().model.sketch_entities.len(), 2);
 }
 
@@ -172,7 +146,7 @@ fn sketch_constraint_refuses_before_model_insertion() {
 
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("service profile admits the sketch constraints");
+        .expect("decode the fixture");
     assert_eq!(decoded.ir().model.sketch_constraints.len(), 2);
 
     let mut exact = DecodeOptions::default();
@@ -191,7 +165,7 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
             .decode(
                 &mut Cursor::new(data),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )
@@ -231,84 +205,6 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
 }
 
 #[test]
-fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let jpeg = jpeg_payload();
-    let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg.clone())]);
-    let mut options = DecodeOptions {
-        container_only: true,
-        policy: DecodePolicy::service(),
-    };
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "retain Creo passthrough section",
-        |limit| options_for_limit(&data, &options, limit),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Creo passthrough section"
-    ));
-
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "native unknown product identity",
-        |limit| options_for_limit(&data, &options, limit),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "native unknown product identity"
-    ));
-    options.policy = DecodePolicy::service();
-    CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .expect("the service retained-byte limit admits the thumbnail");
-}
-
-#[test]
-fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let geometry = visibgeom_payload(0, 0);
-    let data = build_prt("c", &[("VisibGeom", geometry)]);
-    let mut options = DecodeOptions {
-        container_only: true,
-        policy: DecodePolicy::service(),
-    };
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "retain Creo passthrough section",
-        |limit| options_for_limit(&data, &options, limit),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Creo passthrough section"
-    ));
-
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "native unknown product identity",
-        |limit| options_for_limit(&data, &options, limit),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "native unknown product identity"
-    ));
-    options.policy = DecodePolicy::service();
-    CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .expect("the service retained-byte limit admits the geometry section");
-}
-
-#[test]
 fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     let jpeg = jpeg_payload();
     let compressed = unix_compress_literals(&jpeg);
@@ -318,16 +214,11 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
     assert!(container::has_thumbnail(&scan));
-    let classification =
-        crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
-            .expect("dialect classification admitted");
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
-            .expect("container summary admitted")
-            .notes
-            .iter()
-            .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview"))
-    );
+    let classification = crate::dialect::classify(&scan).expect("dialect classification admitted");
+    assert!(container::summarize(&scan, classification)
+        .notes
+        .iter()
+        .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
 
     let source_offset = scan.framing.expanded_sections[0].source_offset;
     let result = EditableDecodeResult::from(
@@ -335,7 +226,7 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
             .decode(
                 &mut Cursor::new(data),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )
@@ -356,137 +247,6 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         "jpeg_thumbnail",
         Exactness::Derived,
     );
-}
-
-#[test]
-fn compressed_toc_section_propagates_expansion_limit() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let jpeg = jpeg_payload();
-    let compressed = unix_compress_literals(&jpeg);
-    let data = build_toc_section_prt("THMB_IMG_MAIN", &compressed, jpeg.len());
-    let mut options = DecodeOptions {
-        container_only: true,
-        policy: DecodePolicy::service(),
-    };
-    options.policy.limits.max_decompressed_bytes_per_expand =
-        u64::try_from(jpeg.len() - 1).expect("fixture length fits the resource limit");
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data.clone()), &options)
-        .expect_err("TOC section expansion must propagate the resource refusal");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::DecompressedBytes
-                && limit.operation == "begin_expand"
-    ));
-
-    options.policy.limits.max_decompressed_bytes_per_expand =
-        u64::try_from(jpeg.len()).expect("fixture length fits the resource limit");
-    CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .expect("the exact per-expansion limit admits the section");
-}
-
-#[test]
-fn decode_propagates_spline_grid_collection_limit() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let mut payload =
-        b"srf_array\0\xf8\0srf_prim_ptr(spline)\0\xe0\x02i_points\0\xf9\x02\x03".to_vec();
-    payload.extend([0x0f; 6]);
-    let data = build_prt("c", &[("VisibGeom", payload)]);
-    let mut options = DecodeOptions {
-        policy: DecodePolicy::service(),
-        ..DecodeOptions::default()
-    };
-    // Five scalar slots remain after the parser's fixed 40-item storage.
-    options.policy.limits.max_collection_items = 45;
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data.clone()), &options)
-        .expect_err("six scalar slots exceed the five-item limit");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo named spline scalar slots"
-    ));
-
-    options.policy.limits.max_collection_items = 6;
-    let exact = exact_collection_limit_for_decode(&data, &mut options);
-    assert!(exact > 6, "native arena storage adds collection items");
-    options.policy.limits.max_collection_items = exact - 1;
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .expect_err("one fewer item than the exact fixture need refuses");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-    ));
-}
-
-#[test]
-fn decode_propagates_counted_scalar_array_collection_limit() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let payload =
-        b"srf_array\0\xf8\0srf_prim_ptr(splsrf)\0\xe0\x02u_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
-    let data = build_prt("c", &[("VisibGeom", payload.to_vec())]);
-    let mut options = DecodeOptions {
-        policy: DecodePolicy::service(),
-        ..DecodeOptions::default()
-    };
-    // Three scalar slots remain after the parser's fixed 40-item storage.
-    options.policy.limits.max_collection_items = 43;
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data.clone()), &options)
-        .expect_err("four scalar slots exceed the three-item limit");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo named spline scalar slots"
-    ));
-
-    options.policy.limits.max_collection_items = 4;
-    let exact = exact_collection_limit_for_decode(&data, &mut options);
-    assert!(exact > 4, "native arena storage adds collection items");
-    options.policy.limits.max_collection_items = exact - 1;
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .expect_err("one fewer item than the exact fixture need refuses");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-    ));
-}
-
-fn exact_collection_limit_for_decode(data: &[u8], options: &mut DecodeOptions) -> u64 {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    // Each refusal advances by at least one item within the service ceiling.
-    for _ in 0..cadmpeg_core::decode::DecodePolicy::service()
-        .limits
-        .max_collection_items
-    {
-        match CreoCodec.decode(&mut Cursor::new(data), options) {
-            Ok(_) => return options.policy.limits.max_collection_items,
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
-                limit,
-            ))) if limit.dimension == ResourceDimension::CollectionItems => {
-                let next = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("fixture item need fits u64");
-                assert!(next > options.policy.limits.max_collection_items);
-                options.policy.limits.max_collection_items = next;
-            }
-            Err(error) => panic!("expected collection admission: {error:?}"),
-        }
-    }
-    panic!("fixture did not reach its exact collection limit");
 }
 
 #[test]
@@ -602,10 +362,16 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         (&associations[2], 7, 12, 1),
         (&associations[3], 8, 13, 1),
     ] {
-        assert_eq!(association.fields()["owner_feature_id"], 4);
-        assert_eq!(association.fields()["visible_surface_id"], visible_id);
-        assert_eq!(association.fields()["replay_surface_id"], replay_id);
-        assert_eq!(association.fields()["replay_ordinal"], ordinal);
+        assert_eq!(association.fields().unwrap()["owner_feature_id"], 4);
+        assert_eq!(
+            association.fields().unwrap()["visible_surface_id"],
+            visible_id
+        );
+        assert_eq!(
+            association.fields().unwrap()["replay_surface_id"],
+            replay_id
+        );
+        assert_eq!(association.fields().unwrap()["replay_ordinal"], ordinal);
     }
     assert_eq!(
         wire::coverage_count(
@@ -751,21 +517,30 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(states.len(), 7);
     let feature_40 = states
         .iter()
-        .filter(|state| state.fields()["feature_id"] == 40)
+        .filter(|state| state.fields().unwrap()["feature_id"] == 40)
         .collect::<Vec<_>>();
     assert_eq!(feature_40.len(), 2);
-    assert_eq!(feature_40[0].fields()["state_ordinal"], 0);
-    assert_eq!(feature_40[0].fields()["current"], false);
-    assert_eq!(feature_40[0].fields()["stored_name"], "xProtrusion id 40");
+    assert_eq!(feature_40[0].fields().unwrap()["state_ordinal"], 0);
+    assert_eq!(feature_40[0].fields().unwrap()["current"], false);
     assert_eq!(
-        crate::test_support::native_bytes(&feature_40[0].fields()["stored_name_bytes"]),
+        feature_40[0].fields().unwrap()["stored_name"],
+        "xProtrusion id 40"
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&feature_40[0].fields().unwrap()["stored_name_bytes"]),
         b"xProtrusion id 40"
     );
-    assert_eq!(feature_40[0].fields()["identifier_keyword"], "id");
-    assert_eq!(feature_40[0].fields()["display_state_conflict"], true);
-    assert_eq!(feature_40[1].fields()["state_ordinal"], 1);
-    assert_eq!(feature_40[1].fields()["current"], false);
-    assert_eq!(feature_40[1].fields()["display_state_conflict"], true);
+    assert_eq!(feature_40[0].fields().unwrap()["identifier_keyword"], "id");
+    assert_eq!(
+        feature_40[0].fields().unwrap()["display_state_conflict"],
+        true
+    );
+    assert_eq!(feature_40[1].fields().unwrap()["state_ordinal"], 1);
+    assert_eq!(feature_40[1].fields().unwrap()["current"], false);
+    assert_eq!(
+        feature_40[1].fields().unwrap()["display_state_conflict"],
+        true
+    );
     assert_eq!(result.ir().model.features.len(), 6);
     assert_eq!(
         result.ir().model.features[0].id.as_str(),
@@ -950,7 +725,7 @@ fn container_only_preserves_sections_without_transferring_entities() {
         .decode(
             &mut Cursor::new(data),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -966,19 +741,4 @@ fn container_only_preserves_sections_without_transferring_entities() {
         .losses
         .iter()
         .all(|loss| !loss.message.starts_with("Transferred ")));
-}
-
-fn options_for_limit(
-    data: &[u8],
-    options: &DecodeOptions,
-    limit: u64,
-) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::CodecError> {
-    let mut options = *options;
-    options.policy.limits.max_retained_bytes = limit;
-    CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .map_err(|error| match error {
-            cadmpeg_ir::DecodeFailure::Codec(error) => error,
-            other => panic!("unexpected decode failure: {other:?}"),
-        })
 }

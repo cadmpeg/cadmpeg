@@ -58,7 +58,6 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
@@ -148,7 +147,7 @@ fn mutated_semantic_write_round_trips() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written triangle should decode");
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert_eq!(round_trip.ir().model.bodies.len(), expected_bodies);
     assert_eq!(round_trip.ir().model.faces.len(), expected_faces);
@@ -193,7 +192,7 @@ fn bake_transform_is_applied_and_output_stays_valid() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written translated triangle should decode");
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(
         floats_agree(

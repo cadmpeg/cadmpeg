@@ -5,48 +5,6 @@ use super::*;
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 
 #[test]
-fn bezier_parameter_search_refuses_before_nodes_queue_and_parameters() {
-    use cadmpeg_core::CodecError;
-
-    let point = Point3::new(0.0, 0.0, 0.0);
-    for (limit, operation) in [
-        (0, "catia_bezier_search_nodes"),
-        (1, "catia_bezier_search_queue"),
-        (2, "catia_bezier_parameters"),
-    ] {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            let mut parameters = Vec::new();
-            collect_bezier_point_parameters(
-                ctx,
-                [point; 6],
-                [0.0, 1.0],
-                point,
-                0.01,
-                1.0,
-                &mut parameters,
-            )
-        });
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(error)) if error.operation == operation)
-        );
-    }
-    crate::test_support::with_service_context(|ctx| {
-        let mut parameters = Vec::new();
-        collect_bezier_point_parameters(
-            ctx,
-            [point; 6],
-            [0.0, 1.0],
-            point,
-            0.01,
-            1.0,
-            &mut parameters,
-        )
-        .expect("service budget");
-        assert!(!parameters.is_empty());
-    });
-}
-
-#[test]
 fn numerical_0922_quintic_keeps_both_branches() {
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let mut poles = (0..6)
@@ -56,22 +14,10 @@ fn numerical_0922_quintic_keeps_both_branches() {
         let mut knots = vec![0.; 6];
         knots.extend(vec![0.5 * d; 6]);
         knots.extend(vec![d; 6]);
-        let n = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            5,
-            knots,
-            poles,
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid quintic curve");
-        let result = crate::test_support::with_service_context(|ctx| {
-            standard_limit_curve_point_parameter(ctx, &n, Point3::new(0., 0., 0.), 2e-3)
-        })
-        .expect("service budget");
+        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
+        let result = standard_limit_curve_point_parameter(&n, Point3::new(0., 0., 0.), 2e-3);
         println!("CATIA folded quintic locus d{d:e}: {result:?}");
-        assert_eq!(result, None);
+        assert_eq!(result, Ok(None));
     }
 }
 #[test]
@@ -82,22 +28,10 @@ fn numerical_0922_finite_bezier_midpoint() {
             .collect::<Vec<_>>();
         let mut knots = vec![0.; 6];
         knots.extend(vec![1.; 6]);
-        let n = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            5,
-            knots,
-            poles,
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid quintic curve");
-        let result = crate::test_support::with_service_context(|ctx| {
-            standard_limit_curve_point_parameter(ctx, &n, Point3::new(x, 0.5, 0.), 2e-3)
-        })
-        .expect("service budget");
+        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
+        let result = standard_limit_curve_point_parameter(&n, Point3::new(x, 0.5, 0.), 2e-3);
         println!("CATIA straight quintic at x{x:e} midpoint: {result:?}");
-        assert_eq!(result, Some(0.5));
+        assert_eq!(result, Ok(Some(0.5)));
     }
 }
 
@@ -108,28 +42,17 @@ fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
         .collect::<Vec<_>>();
     let mut knots = vec![-f64::MAX; 6];
     knots.extend(vec![f64::MAX; 6]);
-    let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        5,
-        knots,
-        poles,
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("wide finite quintic domain");
-    let parameter = crate::test_support::with_service_context(|ctx| {
-        standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
-    })
-    .expect("service budget")
-    .expect("interior point parameter");
+    let curve =
+        NurbsCurve::from_lanes(5, knots, poles, None, false).expect("wide finite quintic domain");
+    let parameter = standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
+        .expect("the point search stays within its bound")
+        .expect("interior point parameter");
     assert!((parameter / f64::MAX + 0.6).abs() <= 0.01);
 }
 
 use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![d[0], d[0], d[1], d[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -141,7 +64,6 @@ fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid bilinear surface")
 }
 #[test]
@@ -167,4 +89,27 @@ fn numerical_0922b_surface_membership_large_plane() {
         println!("CATIA plane scale{scale:e}: {r:?}");
         assert_eq!(r, Ok(Some(true)));
     }
+}
+
+#[test]
+fn degenerate_bezier_at_the_target_point_yields_parameters() {
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let mut parameters = Vec::new();
+    assert_eq!(
+        collect_bezier_point_parameters([point; 6], [0.0, 1.0], point, 0.01, 1.0, &mut parameters),
+        Ok(())
+    );
+    assert!(!parameters.is_empty());
+}
+
+#[test]
+fn degenerate_bezier_search_stops_at_its_node_bound() {
+    // A span collapsed onto the point is never pruned, so a fine resolution
+    // expands a binary tree of 2^30 nodes.
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let mut parameters = Vec::new();
+    assert_eq!(
+        collect_bezier_point_parameters([point; 6], [0.0, 1.0], point, 0.01, 1e-9, &mut parameters),
+        Err(SearchBounded)
+    );
 }

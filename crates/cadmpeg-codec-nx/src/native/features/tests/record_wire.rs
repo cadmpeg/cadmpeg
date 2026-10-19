@@ -604,7 +604,15 @@ fn operation_body_operand_preserves_exact_token_and_optional_relations() {
         "",
         r#", "operand_data_block":"block", "segment_body_bindings":["binding"]"#,
     ] {
-        let wire = format!(r#"{{"id":"operand","operation_label":"operation","body_object_index":66,"body_reference_ordinal":0,"ordinal":0,"operand_object_index":4097,"raw_operand_object_index":"9001"{relations},"source_offset":122}}"#).replace(", ", ",");
+        let wire = [
+            r#"{"id":"operand","operation_label":"operation","body_object_index":66,"#,
+            r#""body_reference_ordinal":0,"ordinal":0,"operand_object_index":4097,"#,
+            r#""raw_operand_object_index":"9001""#,
+            relations,
+            r#","source_offset":122}"#,
+        ]
+        .concat()
+        .replace(", ", ",");
         let record: super::super::FeatureOperationBodyOperand =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), wire);

@@ -35,61 +35,6 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
     run(&ctx)
 }
 
-fn ordering_feature() -> cadmpeg_ir::features::Feature {
-    cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("synthetic:test:id#ordering").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference: None,
-                distance: Length::ZERO,
-            }),
-        ),
-        native_ref: None,
-    }
-}
-
-#[test]
-fn feature_regeneration_adjacency_reports_collection_limit() {
-    let mut features = vec![ordering_feature()];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    let error = order_features_for_regeneration(&ctx, &mut features)
-        .expect_err("one adjacency row exceeds the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "sldprt feature regeneration adjacency")
-    );
-}
-
-#[test]
-fn feature_regeneration_indegree_reports_collection_limit() {
-    let mut features = vec![ordering_feature()];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    let error = order_features_for_regeneration(&ctx, &mut features)
-        .expect_err("indegree row exceeds the remaining collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "sldprt feature regeneration indegree")
-    );
-}
-
 #[test]
 fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
@@ -128,8 +73,7 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -197,8 +141,7 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -282,7 +225,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
     principal.native_ref = Some("sldprt:history:feature#0:right".into());
 
     let mut features = vec![offset, principal];
-    with_test_ctx(|ctx| bind_offset_plane_references(ctx, &mut features)).unwrap();
+    bind_offset_plane_references(&mut features);
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -405,7 +348,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     );
 
     let mut features = vec![base, alias, offset];
-    with_test_ctx(|ctx| bind_offset_plane_references(ctx, &mut features)).unwrap();
+    bind_offset_plane_references(&mut features);
 
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -483,7 +426,7 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     reference.native_ref = Some("sldprt:history:feature#0:reference".into());
 
     let mut features = vec![offset, reference];
-    with_test_ctx(|ctx| bind_offset_plane_references(ctx, &mut features)).unwrap();
+    bind_offset_plane_references(&mut features);
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -555,8 +498,7 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
         features: vec![reference, duplicate, offset],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -605,8 +547,7 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
         features: vec![reference, offset],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -644,26 +585,22 @@ fn planar_face_reference_requires_one_coincident_face() {
     let surfaces = HashMap::from([(&surface.id, &surface)]);
     let mut selection = FaceSelection::Unresolved;
     resolve_planar_face_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         Point3::new(5.0, -3.0, 12.0),
         Vector3::new(0.0, 0.0, -1.0),
         std::slice::from_ref(&face),
         &surfaces,
-    )
-    .unwrap();
+    );
     assert_eq!(selection, FaceSelection::Faces(vec![face.id.clone()]));
 
     let mut native = FaceSelection::Native("component-path".into());
     resolve_planar_face_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut native,
         Point3::new(5.0, -3.0, 12.0),
         Vector3::new(0.0, 0.0, -1.0),
         std::slice::from_ref(&face),
         &surfaces,
-    )
-    .unwrap();
+    );
     assert_eq!(
         native,
         FaceSelection::Resolved {
@@ -677,26 +614,22 @@ fn planar_face_reference_requires_one_coincident_face() {
         cadmpeg_ir::ids::FaceId::mint("test:model:entity#duplicate").expect("identity grammar");
     let mut ambiguous = FaceSelection::Unresolved;
     resolve_planar_face_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut ambiguous,
         Point3::new(0.0, 0.0, 12.0),
         Vector3::new(0.0, 0.0, 1.0),
         &[face.clone(), duplicate.clone()],
         &surfaces,
-    )
-    .unwrap();
+    );
     assert_eq!(ambiguous, FaceSelection::Unresolved);
 
     let mut split = FaceSelection::Native("historical-face".into());
     resolve_planar_face_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut split,
         Point3::new(0.0, 0.0, 12.0),
         Vector3::new(0.0, 0.0, 1.0),
         &[face.clone(), duplicate.clone()],
         &surfaces,
-    )
-    .unwrap();
+    );
     assert_eq!(
         split,
         FaceSelection::Resolved {
@@ -743,15 +676,13 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
     };
 
     resolve_offset_plane_face_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         origin,
         Vector3::new(0.0, 0.0, 1.0),
         &face_selection_context,
         std::slice::from_ref(&face),
         &surfaces,
-    )
-    .unwrap();
+    );
 
     assert_eq!(origin, Point3::new(0.0, 0.0, 5.0));
     assert_eq!(selection, FaceSelection::Native("component-path".into()));
@@ -790,13 +721,7 @@ fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
             offset.properties.insert(name, value.into());
         }
 
-        let definition = project_offset_plane(
-            &cadmpeg_test_support::service_decode_context(),
-            &offset,
-            &HashMap::new(),
-        )
-        .unwrap()
-        .unwrap();
+        let definition = project_offset_plane(&offset, &HashMap::new()).unwrap();
         let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face { face }),
             distance,
@@ -838,8 +763,7 @@ fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
         features: vec![offset, principal],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -871,17 +795,14 @@ fn explicit_offset_plane_reference_cannot_bind_itself() {
         .properties
         .insert(cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0".into());
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        &[FeatureHistory {
-            id: "history".into(),
-            part_name: None,
-            properties: BTreeMap::new(),
-            content: Vec::new(),
-            configurations: Vec::new(),
-            features: vec![offset],
-        }],
-    )
+    let projected = project_features(&[FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![offset],
+    }])
     .unwrap();
 
     assert!(matches!(
@@ -926,8 +847,7 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
         features: vec![offset, principal],
     };
 
-    let mut projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let mut projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -979,8 +899,7 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
         features: vec![offset, principal],
     };
 
-    let mut projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let mut projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -1040,8 +959,7 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
         features: vec![offset, principal],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),
@@ -1094,8 +1012,7 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
         features: vec![offset, reference],
     };
 
-    let mut projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let mut projected = project_features(&[history]).unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),

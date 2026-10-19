@@ -304,8 +304,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, round_trip.ir())
-            .expect("service native validation")
+        crate::validate::validate_native(ctx, round_trip.ir())
+            .expect("validate the native namespace")
     })
     .is_empty());
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
@@ -509,7 +509,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
         30.0
     );
     let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -577,12 +577,12 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     let actual = &f3d_native(round_trip.ir()).asm_histories[0];
     assert_eq!(actual.stream_size(), expected.stream_size());
     assert_eq!(actual.history_entry_count(), expected.history_entry_count());
-    assert_eq!(actual.states.len(), expected.states.len());
-    assert_eq!(actual.states[0].state_id, expected.states[0].state_id);
-    assert_eq!(actual.states[0].bulletin_boards.len(), 1);
-    assert_eq!(actual.states[0].bulletin_boards[0].changes.len(), 2);
-    assert_eq!(actual.states[0].records.len(), 1);
-    assert_eq!(actual.states[0].records[0].name(), "history_payload");
+    assert_eq!(actual.states().len(), expected.states().len());
+    assert_eq!(actual.states()[0].state_id, expected.states()[0].state_id);
+    assert_eq!(actual.states()[0].bulletin_boards.len(), 1);
+    assert_eq!(actual.states()[0].bulletin_boards[0].changes.len(), 2);
+    assert_eq!(actual.states()[0].records.len(), 1);
+    assert_eq!(actual.states()[0].records[0].name(), "history_payload");
 }
 
 #[test]
@@ -602,7 +602,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .arenas_mut()
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
-    let mut orphan_fields = orphan.fields().clone();
+    let mut orphan_fields = orphan.fields().unwrap().clone();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
     *orphan = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"),
@@ -642,7 +642,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     broken_chain
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
+    f3d_native_mut(&mut broken_chain).asm_histories[0].states_mut()[0].next_ref = Some(99);
     let error = F3dCodec
         .plan(
             EncodeInput::new(&broken_chain, None),
@@ -653,4 +653,25 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     assert!(error
         .to_string()
         .contains("not a coherent doubly linked state chain"));
+}
+
+#[test]
+fn generated_source_less_rejects_a_history_skipped_under_the_retained_allowance() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated history decode");
+    let (mut skipped, _, _) = decoded.into_parts();
+    skipped.source = None;
+    skipped
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
+    f3d_native_mut(&mut skipped).asm_histories[0].binding_budget_exceeded = true;
+    let error = F3dCodec
+        .plan(EncodeInput::new(&skipped, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("a history kept as state headers must not be written in place of the source");
+    assert!(error
+        .to_string()
+        .contains("whose bulletin boards and records were not retained"));
 }

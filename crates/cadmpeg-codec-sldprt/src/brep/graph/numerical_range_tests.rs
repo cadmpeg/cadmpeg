@@ -8,7 +8,6 @@ use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, Nu
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![domain[0], domain[0], domain[1], domain[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -20,25 +19,15 @@ fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 #[test]
 fn numerical_0922_wide_domain_keeps_distinct_roots() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let r = unique_inverse_parameter(
-        &ctx,
         vec![(-5e307, 0.), (5e307, 0.)],
         INVERSE_FIT_TOLERANCE,
         [-1e308, 1e308],
-    )
-    .unwrap();
+    );
     assert!(matches!(r, InverseResolution::Ambiguous));
 }
 #[test]
@@ -51,36 +40,28 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
     )
     .expect("test context");
     let mut s = bilinear([0., 1.], 1.);
-    s.try_map_control_points(
-        |_, p| {
-            let mut p = p.get();
-            p.z = p.x * p.y;
-            cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        },
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("pole edit admission")
+    s.try_map_control_points(|_, p| {
+        let mut p = p.get();
+        p.z = p.x * p.y;
+        cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| {
+            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                "control_points contains a non-finite point".into(),
+            )
+        })
+    })
     .unwrap();
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let c = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., d, d],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 1., 1.)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
-        let samples = nurbs_curve_sample_parameters(&ctx, &c, [0., d])
-            .unwrap()
-            .unwrap();
+        let samples = nurbs_curve_sample_parameters(&c, [0., d]).unwrap();
         let (uv, error) = nurbs_degree_one_cache_lanes(&ctx, &s, &c, [0., d])
-            .expect("resource allocation did not fail")
+            .expect("parse the NURBS degree one cache lanes")
             .unwrap();
         let observed = Point3::new(0.5, 0.5, 0.5).distance(
             cadmpeg_ir::eval::decode::nurbs_surface_point(
@@ -180,12 +161,7 @@ fn derive_sphere(out: &mut Brep) {
         &ctx,
         out,
         &mut AnnotationBuilder::new(),
-        &StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap(),
-            "fixture stream handle",
-        )
-        .unwrap(),
+        &StreamHandle::new(cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap()),
     )
     .expect("spherical pcurve derivation");
 }
@@ -281,14 +257,12 @@ fn numerical_0922b_wide_curve_inverse() {
     .unwrap();
     for d in [[0., 1.], [-1e308, 1e308], [1e308, 1.1e308]] {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![d[0], d[0], d[1], d[1]],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let r = nurbs_parameter_at_point(&ctx, &curve, Point3::new(0.3, 0., 0.)).unwrap();
         let result = match r {

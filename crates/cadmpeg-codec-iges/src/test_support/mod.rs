@@ -21,7 +21,7 @@ pub(crate) fn parse_global(
     ),
     cadmpeg_core::CodecError,
 > {
-    with_service_context(&[], |ctx| crate::global::parse(scan, ctx))
+    crate::global::parse(scan)
 }
 
 /// Plans a write at one Fixed ASCII target, the request the command line
@@ -138,11 +138,6 @@ pub(crate) fn only_match(
     assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
     assert_eq!(layers.primary().format(), "iges");
     layers.primary()
-}
-
-/// Scans a test source under the service decode policy.
-pub(crate) fn scan(source: &[u8]) -> Result<crate::card::CardScan<'_>, cadmpeg_core::CodecError> {
-    with_service_context(source, |ctx| crate::card::scan_with_context(source, ctx))
 }
 
 pub(crate) fn with_service_context<T>(

@@ -60,7 +60,6 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
@@ -74,7 +73,6 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
                     Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
                 )
                 .unwrap(),
-
                 extent: None,
                 bottom: None,
                 taper_angle: None,

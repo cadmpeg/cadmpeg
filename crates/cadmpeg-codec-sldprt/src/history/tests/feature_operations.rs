@@ -86,11 +86,14 @@ fn decode_resolves_feature_topology_selections() {
         }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
-
-            ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },) if bodies.as_slice() == [base.ir().model.bodies[0].id.clone()] && native == body)));
+    decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
+        ..
+    }) if matches!(
+        (operands.target(), operands.tools(),),
+        (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },)
+            if bodies.as_slice() == [base.ir().model.bodies[0].id.clone()] && native == body
+    )));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -116,11 +119,16 @@ fn decode_resolves_feature_topology_selections() {
         }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        decoded.ir().model.features[5].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape,
-            path: Some(PathRef::Edges(edges)),
-            ..
-        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Faces(faces)),) if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id))));
+    decoded.ir().model.features[5].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
+        shape,
+        path: Some(PathRef::Edges(edges)),
+        ..
+    }) if matches!(
+        (shape.referenced_profile(),),
+        (Some(PlanarProfileRef::Faces(faces)),)
+            if faces == std::slice::from_ref(&face_id)
+            && edges == std::slice::from_ref(&edge_id)
+    )));
 
     decoded.ir_mut().model.features[0]
         .evaluation
@@ -147,17 +155,13 @@ fn decode_resolves_feature_topology_selections() {
                 operands
                     .try_edit(|target, tools| {
                         *target = BodySelection::Bodies(
-                            cadmpeg_ir::features::DistinctMembers::try_from(
-                                vec![body_id.clone()],
-                                &cadmpeg_test_support::service_decode_context(),
-                            )
-                            .expect("distinct bodies"),
+                            cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()])
+                                .expect("distinct bodies"),
                         );
                         *tools = BodySelection::Bodies(
-                            cadmpeg_ir::features::DistinctMembers::try_from(
-                                vec![tool_body_id.clone()],
-                                &cadmpeg_test_support::service_decode_context(),
-                            )
+                            cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                                tool_body_id.clone()
+                            ])
                             .expect("distinct bodies"),
                         );
                     })
@@ -303,7 +307,6 @@ fn decode_dispatches_typed_features_by_xml_family() {
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
@@ -358,11 +361,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
     let mut dependencies = regenerated.ir().model.features[2].dependencies.to_vec();
     dependencies.pop();
     regenerated.ir_mut().model.features[2].dependencies =
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            dependencies,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+        cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
     let error = crate::test_support::plan_inherited_write(
         regenerated.ir(),
         regenerated.source_fidelity(),
@@ -446,24 +445,14 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         payload
     }
 
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let resolved_selection = combine_payload(true);
     assert_eq!(
         (12..resolved_selection.len())
             .filter(
                 |offset| crate::resolved_features::terminations::compact_body_path_at(
-                    &path_ctx,
                     &resolved_selection,
                     *offset
                 )
-                .expect("component path resource admission")
                 .is_some()
             )
             .count(),
@@ -494,7 +483,6 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         matches!(
             decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands,
-
                 ..
             }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))),
         "feature: {:?}",
@@ -502,16 +490,18 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
-
-            ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target.starts_with("sldprt:feature-input:body-path:")
-            && tools.starts_with("sldprt:feature-input:body-path:"))));
+        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!(
+                (operands.target(), operands.tools()),
+                (BodySelection::Native(target), BodySelection::Native(tools))
+                    if target.starts_with("sldprt:feature-input:body-path:")
+                        && tools.starts_with("sldprt:feature-input:body-path:")
+            )
+    ));
     assert!(matches!(
         &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
-
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
 
@@ -551,16 +541,18 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
-
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
     assert!(matches!(
-        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
-
-            ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target.starts_with("sldprt:feature-input:body-path:")
-            && tools.starts_with("sldprt:feature-input:body-path:"))));
+        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!(
+                (operands.target(), operands.tools()),
+                (BodySelection::Native(target), BodySelection::Native(tools))
+                    if target.starts_with("sldprt:feature-input:body-path:")
+                        && tools.starts_with("sldprt:feature-input:body-path:")
+            )
+    ));
 }
 
 #[test]

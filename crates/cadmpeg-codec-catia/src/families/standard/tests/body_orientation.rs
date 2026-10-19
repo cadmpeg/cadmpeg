@@ -12,7 +12,7 @@ fn radial_orientation_solves_each_face_boundary_independently() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows = (0..18)
         .map(|edge| {
             assert!(EdgeRow::new(
@@ -70,19 +70,23 @@ fn radial_orientation_solves_each_face_boundary_independently() {
         [8, 10],
         [9, 11],
     ];
-    let topology = reconstruct_incidence(&ctx, rows, points, &edge_faces, &edge_points, 9)
-        .expect("service resource budget")
-        .expect("orientable multi-boundary shell");
+    let topology = reconstruct_incidence(
+        &ctx,
+        &crate::test_support::topology_budget(),
+        rows,
+        points,
+        &edge_faces,
+        &edge_points,
+        9,
+    )
+    .expect("reconstruct incidence")
+    .expect("orientable multi-boundary shell");
     assert_eq!(
-        topology
-            .body_kinds(&ctx, &[9])
-            .expect("service resource budget"),
+        topology.body_kinds(&[9]).expect("classify the bodies"),
         Some(vec![BodyKind::Solid])
     );
     assert_eq!(
-        topology
-            .body_kinds(&ctx, &[4, 5])
-            .expect("service resource budget"),
+        topology.body_kinds(&[4, 5]).expect("classify the bodies"),
         None
     );
     assert_eq!(topology.faces[4].boundaries.len(), 2);
@@ -101,10 +105,6 @@ fn radial_orientation_solves_each_face_boundary_independently() {
 
 #[test]
 fn open_standard_edge_incidence_classifies_a_sheet_body() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
     let mut topology = StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
             boundaries: vec![BoundaryDraft::new(vec![CoedgeUse {
@@ -126,26 +126,18 @@ fn open_standard_edge_incidence_classifies_a_sheet_body() {
     };
 
     assert_eq!(
-        topology
-            .body_kinds(&ctx, &[1])
-            .expect("service resource budget"),
+        topology.body_kinds(&[1]).expect("classify the bodies"),
         None
     );
     topology.edge_rows.pop();
     assert_eq!(
-        topology
-            .body_kinds(&ctx, &[1])
-            .expect("service resource budget"),
+        topology.body_kinds(&[1]).expect("classify the bodies"),
         Some(vec![BodyKind::Sheet])
     );
 }
 
 #[test]
 fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
     let use_ = |edge_row| CoedgeUse {
         edge_row,
         reversed: false,
@@ -188,27 +180,23 @@ fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
         };
 
     assert_eq!(
-        topology
-            .body_kinds(&ctx, &[2, 1])
-            .expect("service resource budget"),
+        topology.body_kinds(&[2, 1]).expect("classify the bodies"),
         Some(vec![BodyKind::Solid, BodyKind::Sheet])
     );
     assert_eq!(
-        topology
-            .body_kinds(&ctx, &[3])
-            .expect("service resource budget"),
+        topology.body_kinds(&[3]).expect("classify the bodies"),
         Some(vec![BodyKind::General])
     );
     assert_eq!(
         topology
-            .face_components(&ctx)
-            .expect("service resource budget"),
+            .face_components()
+            .expect("compute the face components"),
         vec![vec![0, 1], vec![2]]
     );
     crate::test_support::with_service_context(|ctx| {
         topology.orient_solid_body_cycles(ctx, &[2, 1])
     })
-    .expect("service resource budget")
+    .expect("orient solid body cycles")
     .expect("closed group orientation");
 
     for edge in 0..2 {

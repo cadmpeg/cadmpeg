@@ -90,7 +90,9 @@ pub use diff::{
     diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
     NonEmptyFields, SourceDiff,
 };
-pub use document::{ArenaName, CadIr, CensusKey, SourceMeta, IR_VERSION};
+pub use document::{
+    ArenaClass, ArenaName, CadIr, CensusKey, DesignBelowFullDepth, SourceMeta, IR_VERSION,
+};
 pub use draft::ModelDraft;
 pub use features::{
     BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,

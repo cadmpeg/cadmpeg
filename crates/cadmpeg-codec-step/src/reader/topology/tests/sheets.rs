@@ -27,7 +27,7 @@ pub(crate) fn decode_and_write_singular_vertex_loops() {
         .iter()
         .all(|loop_| loop_.singular_vertex().is_some()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();
     write_step(
@@ -120,7 +120,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         [cadmpeg_ir::PresentationItem::Face { .. }]
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -218,7 +218,7 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
                 && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId::mint("step:data:curve#34").expect("identity grammar")]
         )));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -271,7 +271,7 @@ fn decode_builds_a_face_based_surface_model() {
         .iter()
         .all(|loss| !loss.message.contains("does not resolve to a complete")));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -311,7 +311,7 @@ fn decode_builds_faceted_brep_polygon_loops() {
         .iter()
         .all(|edge| edge.curve().is_none()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -348,7 +348,7 @@ fn sheet_root_salvages_independent_shells() {
         .iter()
         .any(|loss| loss.message.contains("shell carrier #34")));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -370,7 +370,7 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
         "step:data:surface#11"
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -423,7 +423,7 @@ fn complex_geometric_set_representation_uses_its_named_items() {
         )
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -450,6 +450,6 @@ pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
     assert_eq!(result.ir().model.edges.len(), 12);
     assert_eq!(result.ir().model.vertices.len(), 8);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

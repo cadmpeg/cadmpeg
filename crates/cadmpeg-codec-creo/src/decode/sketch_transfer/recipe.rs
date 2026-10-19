@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature recipe, schema class, and revolution-extent helpers.
 
-use super::super::uniqueness::unique_feature_definition_for_transform;
+use super::super::uniqueness::{unique_feature_definition_for_transform, UniqueById};
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
-#[cfg(test)]
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_recipe(
     scan: &ContainerScan,
@@ -70,10 +68,9 @@ pub(in super::super) fn first_material_feature_by_definition_order(
 }
 
 pub(in super::super) fn feature_is_first_material_operation(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> bool {
     let mut target_offset = None;
     let mut earliest_other_offset: Option<usize> = None;
     for operation in &scan.features.operations {
@@ -109,7 +106,7 @@ pub(in super::super) fn feature_is_first_material_operation(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -122,10 +119,7 @@ pub(in super::super) fn feature_is_first_material_operation(
                 }));
         }
     }
-    Ok(
-        target_offset
-            .is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target)),
-    )
+    target_offset.is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target))
 }
 
 pub(in super::super) fn current_feature_recipe(
@@ -180,6 +174,67 @@ pub(in super::super) fn feature_schema_class(
     })
 }
 
+/// The feature schema classes of a scan, indexed once.
+///
+/// [`FeatureSchemaClasses::get`] returns what `feature_schema_class` returns,
+/// without scanning the operations and feature rows per lookup.
+pub(in super::super) struct FeatureSchemaClasses<'a> {
+    operations: UniqueById<'a, crate::feature::operations::FeatureOperation>,
+    /// `None` marks a feature whose rows state two different classes.
+    row_classes: BTreeMap<u32, Option<SchemaClass>>,
+    legacy_rounds: BTreeSet<u32>,
+}
+
+impl<'a> FeatureSchemaClasses<'a> {
+    pub(in super::super) fn new(scan: &'a ContainerScan) -> Self {
+        let mut row_classes = BTreeMap::new();
+        for row in scan
+            .features
+            .rows
+            .iter()
+            .chain(scan.features.depdb_recipe_rows.iter())
+        {
+            let Some(schema_class) = row.root_schema_class else {
+                continue;
+            };
+            match row_classes.entry(row.feature_id) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if *entry.get() != Some(schema_class) {
+                        entry.insert(None);
+                    }
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(schema_class));
+                }
+            }
+        }
+        Self {
+            operations: UniqueById::new(&scan.features.operations, |operation| {
+                operation.feature_id
+            }),
+            row_classes,
+            legacy_rounds: scan
+                .features
+                .legacy_rounds
+                .iter()
+                .map(|round| round.feature_id)
+                .collect(),
+        }
+    }
+
+    pub(in super::super) fn get(&self, feature_id: u32) -> Option<SchemaClass> {
+        self.operations
+            .get(feature_id)
+            .and_then(crate::feature::operations::FeatureOperation::root_schema_class)
+            .or_else(|| self.row_classes.get(&feature_id).copied().flatten())
+            .or_else(|| {
+                self.legacy_rounds
+                    .contains(&feature_id)
+                    .then_some(SchemaClass::Round)
+            })
+    }
+}
+
 pub(in super::super) fn resolved_feature_schema_class_from_classes(
     operations: &[crate::feature::operations::FeatureOperation],
     classes: impl IntoIterator<Item = SchemaClass>,
@@ -201,10 +256,9 @@ pub(in super::super) fn resolved_feature_schema_class_from_classes(
 }
 
 pub(in super::super) fn feature_row_schema_classes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<BTreeSet<SchemaClass>, cadmpeg_core::CodecError> {
+) -> BTreeSet<SchemaClass> {
     let mut classes = BTreeSet::new();
     for row in scan
         .features
@@ -214,29 +268,24 @@ pub(in super::super) fn feature_row_schema_classes(
     {
         if row.feature_id == feature_id {
             if let Some(schema_class) = row.root_schema_class {
-                ctx.insert_btree_set(
-                    &mut classes,
-                    schema_class,
-                    "creo feature schema class nodes",
-                )?;
+                classes.insert(schema_class);
             }
         }
     }
-    Ok(classes)
+    classes
 }
 
 pub(in super::super) fn row_feature_schema_classes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &[crate::feature::rows::FeatureRow],
     feature_id: u32,
-) -> Result<BTreeSet<SchemaClass>, cadmpeg_core::CodecError> {
+) -> BTreeSet<SchemaClass> {
     let mut classes = BTreeSet::new();
     for row in rows.iter().filter(|row| row.feature_id == feature_id) {
         if let Some(schema_class) = row.root_schema_class {
-            ctx.insert_btree_set(&mut classes, schema_class, "creo row schema class nodes")?;
+            classes.insert(schema_class);
         }
     }
-    Ok(classes)
+    classes
 }
 
 pub(in super::super) fn feature_revolution_extent(

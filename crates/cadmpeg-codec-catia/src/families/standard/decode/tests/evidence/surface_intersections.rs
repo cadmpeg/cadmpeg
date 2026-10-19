@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
-use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
 use crate::families::standard::decode::edge_geometry::standard_spline_line;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::CYLINDER_PLANE_CONIC_TOLERANCE;
@@ -519,9 +518,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                     },
                 })
                 .collect(),
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .expect("valid RollingBallJetStations fixture"),
     );
     let native = StandardEdgeSupport {
@@ -536,30 +533,6 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         pcurves: [pcurve.clone(), pcurve],
         parameter_range: [2.0, 5.0],
     };
-    let mut saw_copy_refusal = false;
-    for cap in 0..32 {
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            let mut candidate = CadIr::empty();
-            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            ensure_native_edge_support_surface(
-                &mut candidate,
-                &mut AnnotationBuilder::new(),
-                21,
-                &native.carriers[1],
-                &mut admission,
-            )
-        });
-        if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_b5_rolling_ball_jet_stations")
-        {
-            saw_copy_refusal = true;
-            break;
-        }
-    }
-    assert!(
-        saw_copy_refusal,
-        "rolling-ball station copy must refuse at its own admission"
-    );
     let (curve, _) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
@@ -830,7 +803,7 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service budget admits standard pcurve");
+        .expect("compute the standard pcurve geometry");
         assert_eq!(result.is_some(), accepted);
     }
 }

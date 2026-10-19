@@ -64,18 +64,16 @@ fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0e308, 1.0e308, 0.0),
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!(
         crate::design::dimensions::owner_scoped_spatial_line_length_dimension_definition(
-            decode_ctx,
             std::slice::from_ref(&diagonal),
             &sketch,
             &parameter,
             &parameter_id,
-            0.0,
+            0.0
         )
-    })
-    .unwrap()
-    .is_none());
+        .is_none()
+    );
 
     let first_start = Point3::new(0.0, 0.0, 0.0);
     let first_end = Point3::new(1.0e308, 0.0, 0.0);
@@ -95,19 +93,16 @@ fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
         ),
         Some(f64::INFINITY)
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!(
         crate::design::dimensions::owner_scoped_spatial_parallel_line_set_dimension_definition(
-            decode_ctx,
             &entities,
             &sketch,
             &parameter,
             &parameter_id,
-            0.0,
+            0.0
         )
-    })
-    .transpose()
-    .unwrap()
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]
@@ -179,12 +174,12 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radius Dimension-2", 0.5, radius_parameter.clone())).transpose().unwrap(),
+        radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radial Dimension-3", 0.5, radius_parameter.clone())).transpose().unwrap(),
+        radial_dimension_definition(&entity, "Radial Dimension-3", 0.5, radius_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
@@ -192,22 +187,17 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
             .expect("identity grammar");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone())).transpose().unwrap(),
+        radial_dimension_definition(&entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(
-            decode_ctx,
-            &entity,
-            "Diameter Dimension-2",
-            0.5,
-            diameter_parameter.clone()
-        ))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(radial_dimension_definition(
+        &entity,
+        "Diameter Dimension-2",
+        0.5,
+        diameter_parameter.clone()
+    )
+    .is_none());
     let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "10 mm",
@@ -218,7 +208,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     ))
     .expect("diameter parameter");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_radial_dimension_definition(decode_ctx, std::slice::from_ref(&entity), &entity.sketch, &parameter, &diameter_parameter, 1.0e-6)).transpose().unwrap(),
+        owner_scoped_radial_dimension_definition(std::slice::from_ref(&entity), &entity.sketch, &parameter, &diameter_parameter, 1.0e-6),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual,
             ..
@@ -249,7 +239,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     })
     .unwrap();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_radial_dimension_definition(decode_ctx, &[entity.clone(), duplicate.clone()], &entity.sketch, &parameter, &diameter_parameter, 1.0e-6)).transpose().unwrap(),
+        owner_scoped_radial_dimension_definition(&[entity.clone(), duplicate.clone()], &entity.sketch, &parameter, &diameter_parameter, 1.0e-6),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities,
             parameter,
@@ -267,7 +257,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     ))
     .expect("radial parameter");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_radial_dimension_definition(decode_ctx, &[entity.clone(), duplicate.clone()], &entity.sketch, &radial_parameter, &radius_parameter, 1.0e-6)).transpose().unwrap(),
+        owner_scoped_radial_dimension_definition(&[entity.clone(), duplicate.clone()], &entity.sketch, &radial_parameter, &radius_parameter, 1.0e-6),
         Some(SketchConstraintDefinitionInput::RepeatedRadius {
             entities,
             parameter,
@@ -283,16 +273,8 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     })
     .unwrap();
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(
-            decode_ctx,
-            &entity,
-            "Diameter Dimension",
-            1.0,
-            diameter_parameter
-        ))
-        .transpose()
-        .unwrap()
-        .is_some()
+        radial_dimension_definition(&entity, "Diameter Dimension", 1.0, diameter_parameter)
+            .is_some()
     );
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(2.0, 3.0),
@@ -305,16 +287,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     })
     .unwrap();
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(
-            decode_ctx,
-            &entity,
-            "Radius Dimension-2",
-            0.5,
-            radius_parameter
-        ))
-        .transpose()
-        .unwrap()
-        .is_none()
+        radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter).is_none()
     );
 }
 
@@ -348,7 +321,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             .expect("identity grammar");
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_line_length_dimension_definition(decode_ctx, std::slice::from_ref(&first), &sketch, &parameter, &parameter_id, 1.0e-6)).transpose().unwrap(),
+        owner_scoped_line_length_dimension_definition(std::slice::from_ref(&first), &sketch, &parameter, &parameter_id, 1.0e-6),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Start(ref entity),
             second: SketchLocus::End(ref other),
@@ -356,7 +329,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
         }) if entity == first.id() && other == first.id() && actual_parameter == &parameter_id
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_line_length_dimension_definition(decode_ctx, &[first.clone(), second.clone()], &sketch, &parameter, &parameter_id, 1.0e-6)).transpose().unwrap(),
+        owner_scoped_line_length_dimension_definition(&[first.clone(), second.clone()], &sketch, &parameter, &parameter_id, 1.0e-6),
         Some(SketchConstraintDefinitionInput::RepeatedLength {
             entities,
             parameter,
@@ -395,7 +368,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
         .expect("identity grammar");
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_angular_dimension_definition(decode_ctx, &[horizontal.clone(), sloped.clone(), vertical.clone()], &sketch, &parameter, &parameter_id)).transpose().unwrap(),
+        owner_scoped_angular_dimension_definition(&[horizontal.clone(), sloped.clone(), vertical.clone()], &sketch, &parameter, &parameter_id),
         Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
@@ -404,17 +377,12 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
     ));
 
     let other_sloped = line("other-sloped", -std::f64::consts::FRAC_PI_6);
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        owner_scoped_angular_dimension_definition(
-            decode_ctx,
-            &[horizontal, sloped, vertical, other_sloped],
-            &sketch,
-            &parameter,
-            &parameter_id,
-        )
-    })
-    .transpose()
-    .unwrap()
+    assert!(owner_scoped_angular_dimension_definition(
+        &[horizontal, sloped, vertical, other_sloped],
+        &sketch,
+        &parameter,
+        &parameter_id
+    )
     .is_none());
 }
 
@@ -493,17 +461,14 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let parameter = crate::design::decode::parameters::parse_design_parameter(
-        &cadmpeg_test_support::service_decode_context(),
-        &parameter_record(
-            Some(1),
-            "135 deg",
-            "Angular Dimension-2",
-            Some("deg"),
-            "d1",
-            3.0 * std::f64::consts::FRAC_PI_4,
-        ),
-    )
+    let parameter = crate::design::decode::parameters::parse_design_parameter(&parameter_record(
+        Some(1),
+        "135 deg",
+        "Angular Dimension-2",
+        Some("deg"),
+        "d1",
+        3.0 * std::f64::consts::FRAC_PI_4,
+    ))
     .unwrap()
     .expect("angular parameter")
     .into_record("Design/BulkStream.dat", 100)
@@ -512,7 +477,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| preceding_incident_angular_dimension_definition(decode_ctx, stream, &points, &curves, &projected, &sketch, (&parameter, &parameter_id))).transpose().unwrap(),
+        preceding_incident_angular_dimension_definition(stream, &points, &curves, &projected, &sketch, (&parameter, &parameter_id)),
         Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
@@ -551,7 +516,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             .expect("identity grammar");
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| unique_point_class_dimension_definition(decode_ctx, &[lower.clone(), lower_duplicate, upper.clone()], &sketch, &parameter, &parameter_id, 1.0e-6)).transpose().unwrap(),
+        unique_point_class_dimension_definition(&[lower.clone(), lower_duplicate, upper.clone()], &sketch, &parameter, &parameter_id, 1.0e-6),
         Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
@@ -560,18 +525,13 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
     ));
 
     let another_upper = point("another-upper", -40.0, -7.875);
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        unique_point_class_dimension_definition(
-            decode_ctx,
-            &[lower, upper, another_upper],
-            &sketch,
-            &parameter,
-            &parameter_id,
-            1.0e-6,
-        )
-    })
-    .transpose()
-    .unwrap()
+    assert!(unique_point_class_dimension_definition(
+        &[lower, upper, another_upper],
+        &sketch,
+        &parameter,
+        &parameter_id,
+        1.0e-6
+    )
     .is_none());
 }
 
@@ -615,17 +575,17 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
         .expect("identity grammar");
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_locus_dimension_definition(decode_ctx, &[&measured, &annotation], &all, "Radial Dimension-2", 0.5, &parameter)).transpose().unwrap(),
+        radial_locus_dimension_definition(&[&measured, &annotation], &all, "Radial Dimension-2", 0.5, &parameter),
         Some(SketchConstraintDefinitionInput::Radius { entity, .. }) if entity == measured.id().clone()
     ));
     let repeated = circle("synthetic:test:id#repeated", 12.0, 3.0, 5.0);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_locus_dimension_definition(decode_ctx, &[&measured, &annotation, &repeated], &all, "Diameter Dimension-3", 1.0, &parameter)).transpose().unwrap(),
+        radial_locus_dimension_definition(&[&measured, &annotation, &repeated], &all, "Diameter Dimension-3", 1.0, &parameter),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter { entities, parameter: actual })
             if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == parameter
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_locus_dimension_definition(decode_ctx, &[&center], &all, "Diameter Dimension-2", 1.0, &parameter)).transpose().unwrap(),
+        radial_locus_dimension_definition(&[&center], &all, "Diameter Dimension-2", 1.0, &parameter),
         Some(SketchConstraintDefinitionInput::Diameter { entity, .. }) if entity == measured.id().clone()
     ));
 }
@@ -726,22 +686,14 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         },
     ] {
         let geometry = SketchGeometry::try_from(definition).unwrap();
-        assert!(!crate::test_support::with_decode_context(|decode_ctx| {
-            point_lies_on_sketch_geometry(
-                decode_ctx,
-                Point2::new(short_length / 2.0, 0.0001),
-                &geometry,
-            )
-        })
-        .expect("resource allocation did not fail"));
-        assert!(crate::test_support::with_decode_context(|decode_ctx| {
-            point_lies_on_sketch_geometry(
-                decode_ctx,
-                Point2::new(short_length / 2.0, 0.0),
-                &geometry,
-            )
-        })
-        .expect("resource allocation did not fail"));
+        assert!(!point_lies_on_sketch_geometry(
+            Point2::new(short_length / 2.0, 0.0001),
+            &geometry,
+        ));
+        assert!(point_lies_on_sketch_geometry(
+            Point2::new(short_length / 2.0, 0.0),
+            &geometry,
+        ));
     }
     let ellipse = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(0.0, 0.0),
@@ -753,34 +705,146 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         bounds: None,
     })
     .unwrap();
-    assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
-            decode_ctx,
-            Point2::new(1e200, 0.0),
-            &ellipse
-        ))
-        .expect("resource allocation did not fail")
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
-            decode_ctx,
-            Point2::new(1.0, 0.0),
-            &ellipse
-        ))
-        .expect("resource allocation did not fail")
+    assert!(!point_lies_on_sketch_geometry(
+        Point2::new(1e200, 0.0),
+        &ellipse,
+    ));
+    assert!(point_lies_on_sketch_geometry(
+        Point2::new(1.0, 0.0),
+        &ellipse,
+    ));
+}
+
+#[test]
+fn unique_spatial_parallel_line_pair_projects_their_distance() {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityId,
+        SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
+    };
+
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#parallel").unwrap();
+    // 0.2 cm is the 2 mm distance between the two parallel lines.
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(1),
+        "2 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d1",
+        0.2,
+    ))
+    .unwrap();
+    let parameter_id = ParameterId::mint("synthetic:test:parameter#spatial-parallel").unwrap();
+    let line = |index: u32, x0: f64, x1: f64, y: f64| {
+        SpatialSketchEntity::new(
+            SpatialSketchEntityId::mint(format!("synthetic:test:spatial-line#{index}")).unwrap(),
+            sketch.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                start: Point3::new(x0, y, 0.0),
+                end: Point3::new(x1, y, 0.0),
+            })
+            .unwrap(),
+        )
+    };
+    let entities = [line(1, 0.0, 4.0, 0.0), line(2, 0.0, 4.0, 2.0)];
+    assert_eq!(
+        crate::design::dimensions::unique_spatial_parallel_line_dimension_definition(
+            &entities,
+            &sketch,
+            &parameter,
+            &parameter_id,
+        )
+        .unwrap(),
+        SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
+            first: entities[0].id().clone(),
+            second: entities[1].id().clone(),
+            parameter: parameter_id.clone(),
+        }
     );
 }
 
-mod refusal_radial_dimension_definition_at_tolerance;
+#[test]
+fn repeated_spatial_profile_sides_project_a_repeated_distance() {
+    use cadmpeg_ir::sketches::{
+        SpatialSketch, SpatialSketchConstraintDefinitionInput, SpatialSketchEntity,
+        SpatialSketchEntityId, SpatialSketchEntityPair, SpatialSketchEntityUse,
+        SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
+        SpatialSketchProfile,
+    };
 
-mod refusal_owner_scoped_radial;
-
-mod refusal_owner_scoped_line_length;
-
-mod refusal_owner_scoped_angular;
-
-mod refusal_preceding_incident_angular;
-
-mod refusal_unique_point_class;
-
-mod refusal_radial_locus;
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#repeated").unwrap();
+    // 0.2 cm is the 2 mm distance between opposite long sides of each profile.
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(1),
+        "2 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d1",
+        0.2,
+    ))
+    .unwrap();
+    let parameter_id = ParameterId::mint("synthetic:test:parameter#spatial-repeated").unwrap();
+    let mut entities = Vec::new();
+    let mut profiles = Vec::new();
+    // Two 4 mm by 2 mm rectangles; edges 0 and 2 of each are 2 mm apart and
+    // edges 1 and 3 are 4 mm apart.
+    for (first_edge, x) in [(0_u32, 0.0), (4, 10.0)] {
+        let corners = [
+            Point3::new(x, 0.0, 0.0),
+            Point3::new(x + 4.0, 0.0, 0.0),
+            Point3::new(x + 4.0, 2.0, 0.0),
+            Point3::new(x, 2.0, 0.0),
+        ];
+        let mut boundary = Vec::new();
+        for (edge, ordinal) in (first_edge..).zip(0..4) {
+            let entity = SpatialSketchEntity::new(
+                SpatialSketchEntityId::mint(format!("synthetic:test:spatial-edge#{edge}")).unwrap(),
+                sketch.clone(),
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                    start: corners[ordinal],
+                    end: corners[(ordinal + 1) % 4],
+                })
+                .unwrap(),
+            );
+            boundary.push(SpatialSketchEntityUse {
+                entity: entity.id().clone(),
+                reversed: false,
+            });
+            entities.push(entity);
+        }
+        profiles.push(
+            SpatialSketchProfile::try_new(
+                corners[0],
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                boundary,
+            )
+            .unwrap(),
+        );
+    }
+    let sketches = [SpatialSketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        profiles,
+        native_ref: None,
+    }];
+    let pair = |first: usize, second: usize| SpatialSketchEntityPair {
+        first: entities[first].id().clone(),
+        second: entities[second].id().clone(),
+    };
+    assert_eq!(
+        crate::design::dimensions::owner_scoped_spatial_repeated_profile_line_distance_definition(
+            &entities,
+            &sketches,
+            &sketch,
+            &parameter,
+            &parameter_id,
+        )
+        .unwrap(),
+        SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
+            pairs: vec![pair(0, 2), pair(4, 6)],
+            parameter: parameter_id.clone(),
+        }
+    );
+}

@@ -77,7 +77,7 @@ fn source_meta_mirrors_the_primary_layer_on_every_decode_path() {
         for options in [
             DecodeOptions::default(),
             DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         ] {

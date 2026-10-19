@@ -44,18 +44,24 @@ fn decode_preserves_counted_curve_expression_programs() {
     );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].fields()["entity_id"], 0x094c);
-    assert_eq!(records[0].fields()["lines"][2]["text"], "theta=w*t*360");
+    assert_eq!(records[0].fields().unwrap()["entity_id"], 0x094c);
     assert_eq!(
-        records[0].fields()["assignments"][2]["target"]["name"],
+        records[0].fields().unwrap()["lines"][2]["text"],
+        "theta=w*t*360"
+    );
+    assert_eq!(
+        records[0].fields().unwrap()["assignments"][2]["target"]["name"],
         "theta"
     );
     assert_eq!(
-        records[0].fields()["assignments"][2]["dependencies"][0],
+        records[0].fields().unwrap()["assignments"][2]["dependencies"][0],
         "w"
     );
-    assert_eq!(records[0].fields()["assignments"][0]["value"], 5.0);
-    assert_eq!(records[0].fields()["local_system"]["dimensions"], 4);
+    assert_eq!(records[0].fields().unwrap()["assignments"][0]["value"], 5.0);
+    assert_eq!(
+        records[0].fields().unwrap()["local_system"]["dimensions"],
+        4
+    );
     assert_eq!(result.ir().model.features.len(), 1);
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Helix {
@@ -207,7 +213,7 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
             .collect::<Vec<_>>()
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -304,30 +310,36 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["solve_blocks"][0]["variables"][0], "width");
-    assert_eq!(native.fields()["solve_blocks"][0]["variables"][1], "height");
     assert_eq!(
-        native.fields()["solve_blocks"][0]["equations"][0]["left"],
+        native.fields().unwrap()["solve_blocks"][0]["variables"][0],
         "width"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["equations"][0]["right"],
+        native.fields().unwrap()["solve_blocks"][0]["variables"][1],
+        "height"
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["equations"][0]["left"],
+        "width"
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["equations"][0]["right"],
         "height+1"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["equations"][1]["dependencies"][2],
+        native.fields().unwrap()["solve_blocks"][0]["equations"][1]["dependencies"][2],
         "area"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["assignments"][0]["target"]["name"],
+        native.fields().unwrap()["solve_blocks"][0]["assignments"][0]["target"]["name"],
         "offset"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["assignments"][0]["dependencies"][0],
+        native.fields().unwrap()["solve_blocks"][0]["assignments"][0]["dependencies"][0],
         "base"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["assignments"][0]["value"],
+        native.fields().unwrap()["solve_blocks"][0]["assignments"][0]["value"],
         11.0
     );
     assert_eq!(
@@ -393,8 +405,8 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         ),
         0
     );
-    assert!(native.fields()["solve_blocks"][0]["solutions"][0].is_null());
-    assert!(native.fields()["solve_blocks"][0]["solutions"][1].is_null());
+    assert!(native.fields().unwrap()["solve_blocks"][0]["solutions"][0].is_null());
+    assert!(native.fields().unwrap()["solve_blocks"][0]["solutions"][1].is_null());
 }
 
 #[test]
@@ -442,8 +454,14 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][0],
+        6.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][1],
+        4.0
+    );
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -462,6 +480,145 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
         loss.message
             .contains("ordered equations and unknowns without solved values")
     }));
+}
+
+#[test]
+fn decode_leaves_a_nonconverging_nonlinear_solve_block_unsolved() {
+    // x*x+1=0 has no real root: every line-search probe from a small
+    // nonzero seed is valid and none improves the residual.
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04x=0.0000001\0SOLVE\0x*x+1=0\0FOR x\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("the nonlinear solver ceiling is not a decode failure");
+
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
+    assert!(native.fields().unwrap()["solve_blocks"][0]["solutions"][0].is_null());
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT.as_str()
+        ),
+        0
+    );
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.kind()
+        && loss
+            .message
+            .contains("1 active curve-equation simultaneous-solve block(s)")
+        && loss
+            .message
+            .contains("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS")));
+}
+
+#[test]
+fn decode_reports_a_doubling_relation_string_at_the_text_cap() {
+    let mut payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x0bs=\"aaaaaaaa\"\0"
+        .to_vec();
+    for _ in 0..10 {
+        payload.extend_from_slice(b"s=s+s\0");
+    }
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("the relation text cap is not a decode failure");
+    let capped = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::CreoLossCode::CurveExpressionTextCapped.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        capped,
+        [
+            "1 curve-equation relation condition(s) or assignment(s) have no value: their \
+             string text exceeded MAX_RELATION_EXPRESSION_TEXT_BYTES."
+        ]
+    );
+}
+
+#[test]
+fn decode_leaves_a_nonlinear_solve_block_unsolved_at_the_variable_cap() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x14\
+x1=1\0x2=1\0x3=1\0x4=1\0x5=1\0x6=1\0x7=1\0x8=1\0x9=1\0\
+SOLVE\0x1*x1=1\0x2*x2=1\0x3*x3=1\0x4*x4=1\0x5*x5=1\0x6*x6=1\0x7*x7=1\0x8*x8=1\0x9*x9=1\0\
+FOR x1,x2,x3,x4,x5,x6,x7,x8,x9\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("the nonlinear variable cap is not a decode failure");
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.kind()
+        && loss.message.contains("MAX_NONLINEAR_SOLVE_VARIABLES")));
+}
+
+fn solve_unresolved_losses(payload: Vec<u8>) -> Vec<String> {
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("a local solver cap is not a decode failure");
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.kind()
+        })
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+#[test]
+fn decode_names_no_cap_for_a_solve_block_another_seed_solved() {
+    // A stalled seed spends the line-search cap on the first block, which the
+    // declared value still solves. The second block's seeds reach both roots.
+    let losses = solve_unresolved_losses(
+        b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x08x=-2\0SOLVE\0x*x*x-3*x+3=0\0FOR x\0\
+        y=2\0SOLVE\0y*y-4=0\0FOR y\0"
+            .to_vec(),
+    );
+    assert_eq!(
+        losses,
+        [
+            "1 active curve-equation simultaneous-solve block(s) retain their ordered equations \
+          and unknowns without solved values or derived curves."
+        ]
+    );
+}
+
+#[test]
+fn decode_names_every_cap_that_left_a_solve_block_unsolved() {
+    let losses = solve_unresolved_losses(
+        b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x18x=0.0000001\0SOLVE\0x*x+1=0\0FOR x\0\
+x1=1\0x2=1\0x3=1\0x4=1\0x5=1\0x6=1\0x7=1\0x8=1\0x9=1\0\
+SOLVE\0x1*x1=1\0x2*x2=1\0x3*x3=1\0x4*x4=1\0x5*x5=1\0x6*x6=1\0x7*x7=1\0x8*x8=1\0x9*x9=1\0\
+FOR x1,x2,x3,x4,x5,x6,x7,x8,x9\0"
+            .to_vec(),
+    );
+    assert_eq!(
+        losses,
+        [
+            "2 active curve-equation simultaneous-solve block(s) retain their ordered equations \
+          and unknowns without solved values or derived curves \
+          (MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS, MAX_NONLINEAR_SOLVE_VARIABLES)."
+        ]
+    );
 }
 
 #[test]
@@ -497,8 +654,14 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][0],
+        6.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][1],
+        4.0
+    );
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -553,7 +716,7 @@ fn decode_evaluates_dimensioned_relation_string_conversion() {
         3
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -577,7 +740,7 @@ fn decode_retains_scoped_model_name_call_as_model_context() {
     assert!(parameter.dependencies.is_empty());
     assert!(!parameter.properties.contains_key("external_dependencies"));
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert!(native.fields()["assignments"][0]["dependencies"]
+    assert!(native.fields().unwrap()["assignments"][0]["dependencies"]
         .as_array()
         .is_some_and(Vec::is_empty));
 }
@@ -616,12 +779,15 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
     );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["kind"],
+        native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "scoped_symbol"
     );
-    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d7:0");
     assert_eq!(
-        native.fields()["assignments"][1]["target"]["name"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "d7:0"
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][1]["target"]["name"],
         "width:fid_25:cid_12"
     );
     assert_eq!(
@@ -665,12 +831,15 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
     assert_eq!(parameter.properties["external_dependencies"], "d42");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["kind"],
+        native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "system_symbol"
     );
-    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d42");
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["family"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "d42"
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][0]["target"]["family"],
         "dimension"
     );
     assert_eq!(
@@ -709,14 +878,14 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
     assert_eq!(parameter.name, "result");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["kind"],
+        native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "function_write"
     );
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["name"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
         "store_value"
     );
-    let fields = native.fields();
+    let fields = native.fields().unwrap();
     let arguments = fields["assignments"][0]["target"]["arguments"]
         .as_array()
         .expect("function arguments");
@@ -771,7 +940,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
         "samples,row_index,column_index"
     );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    let first = &native.fields()["assignments"][0];
+    let first = &native.fields().unwrap()["assignments"][0];
     assert_eq!(first["target"]["kind"], "table_cell");
     assert_eq!(first["target"]["parameter"], "samples");
     assert_eq!(first["target"]["row"], "row_index");
@@ -780,7 +949,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     assert_eq!(first["dependencies"][1], "row_index");
     assert_eq!(first["dependencies"][2], "column_index");
     assert_eq!(first["dependencies"][3], "driver");
-    let second = &native.fields()["assignments"][1];
+    let second = &native.fields().unwrap()["assignments"][1];
     assert_eq!(second["target"]["kind"], "table_cell");
     assert_eq!(second["target"]["parameter"], "series");
     assert_eq!(second["target"]["row"], "2");
@@ -864,7 +1033,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         ))
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -889,7 +1058,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .namespace("creo")
         .expect("Creo native data")
         .arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["prohibited_constructs"][0], "itos");
+    assert_eq!(native.fields().unwrap()["prohibited_constructs"][0], "itos");
     let coverage = result.report();
     assert_eq!(
         wire::coverage_count(
@@ -929,15 +1098,15 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
             "1 active curve-equation record(s) containing prohibited datum-curve constructs"
         )));
     assert_eq!(
-        native.fields()["assignments"][4]["expression"],
+        native.fields().unwrap()["assignments"][4]["expression"],
         "rtos(123.456,2)"
     );
-    assert!(native.fields()["assignments"][5]["value"].is_null());
+    assert!(native.fields().unwrap()["assignments"][5]["value"].is_null());
     assert_eq!(parameters[4].expression, "rtos(123.456,2)");
     assert_eq!(parameters[5].expression, "rel_model_type()");
     assert_eq!(parameters[5].value, None);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -996,9 +1165,12 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     };
     assert!((copy.get() - 76.2).abs() < 1.0e-12);
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["declared_unit"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "span"
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][0]["target"]["declared_unit"],
         "inch"
     );
     assert_eq!(parameters[2].properties["declared_unit"], "N/mm^2");
@@ -1011,9 +1183,12 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         "length:-1,mass:1,time:-2,angle:0,temperature:0"
     );
     assert_eq!(parameters[2].value, None);
-    assert_eq!(native.fields()["assignments"][2]["value"]["value"], 2_000.0);
     assert_eq!(
-        native.fields()["assignments"][2]["value"]["length_power"],
+        native.fields().unwrap()["assignments"][2]["value"]["value"],
+        2_000.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][2]["value"]["length_power"],
         -1
     );
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
@@ -1062,7 +1237,8 @@ fn decode_transfers_curve_expression_conditional_activation() {
         .namespace("creo")
         .expect("Creo native data")
         .arenas()["curve_expressions"][0]
-        .fields();
+        .fields()
+        .unwrap();
     let native_assignments = curve_expression_fields["assignments"]
         .as_array()
         .expect("assignments");
@@ -1137,7 +1313,7 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
     assert!(a.dependencies.is_empty());
     assert_eq!(a.properties["cyclic_dependencies"], "r");
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1193,14 +1369,15 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .namespace("creo")
             .expect("Creo native data")
             .arenas()["curve_expressions"][0]
-            .fields()["assignments"]
+            .fields()
+            .unwrap()["assignments"]
             .as_array()
             .expect("assignments")
             .len(),
         4
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

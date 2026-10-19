@@ -24,3 +24,16 @@ pub(crate) fn with_policy_context<T>(
         .expect("fixture fits selected policy");
     use_context(bytes, &ctx)
 }
+
+/// Tokenize one complete clear-text exchange structure.
+pub(crate) fn lex(
+    input: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<crate::lex::Token>, crate::lex::LexError> {
+    let mut lexer = crate::lex::Lexer::new(input, ctx);
+    let mut tokens = Vec::new();
+    while let Some(token) = lexer.next_token()? {
+        tokens.push(token);
+    }
+    Ok(tokens)
+}

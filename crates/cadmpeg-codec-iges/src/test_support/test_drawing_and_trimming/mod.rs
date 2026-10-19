@@ -1856,13 +1856,37 @@ fn subrange_nurbs_surface_boundary_file_with_source_precision_at(
     )
 }
 
+/// The trimmed-surface file of [`subrange_nurbs_surface_boundary_file_with_pcurve`]
+/// with `faces` Type 144 entities that all bound the support by the one
+/// curve on surface, so every face shares its parameter curve.
+pub(crate) fn subrange_nurbs_surfaces_sharing_pcurve_file(
+    preference: i64,
+    pcurve_parameters: &str,
+    faces: usize,
+) -> Vec<u8> {
+    subrange_nurbs_surface_boundary_faces_file(
+        preference,
+        pcurve_parameters,
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+        faces,
+    )
+}
+
 fn subrange_nurbs_surface_boundary_file_with_global(
     preference: i64,
     pcurve_parameters: &str,
     global: &[u8],
 ) -> Vec<u8> {
-    owned_test_file_with_global(
-        &[
+    subrange_nurbs_surface_boundary_faces_file(preference, pcurve_parameters, global, 1)
+}
+
+fn subrange_nurbs_surface_boundary_faces_file(
+    preference: i64,
+    pcurve_parameters: &str,
+    global: &[u8],
+    faces: usize,
+) -> Vec<u8> {
+    let mut entities = vec![
         OwnedTestEntity {
             entity_type: 128,
             form: 0,
@@ -1893,16 +1917,15 @@ fn subrange_nurbs_surface_boundary_file_with_global(
             status: "00010000",
             parameters: format!("142,0,1,5,3,{preference};"),
         },
-        OwnedTestEntity {
-            entity_type: 144,
-            form: 0,
-            label: "TRIMMED".into(),
-            status: "00000000",
-            parameters: "144,1,1,0,7;".into(),
-        },
-        ],
-        global,
-    )
+    ];
+    entities.extend((0..faces).map(|_| OwnedTestEntity {
+        entity_type: 144,
+        form: 0,
+        label: "TRIMMED".into(),
+        status: "00000000",
+        parameters: "144,1,1,0,7;".into(),
+    }));
+    owned_test_file_with_global(&entities, global)
 }
 
 pub(crate) fn independent_boundary_entities_file(include_failing_owner: bool) -> Vec<u8> {

@@ -2,120 +2,16 @@
 
 use super::{
     enrich_history_parameters, native_scalar_matches_discrete_parameter,
-    scalar_unit_from_feature_parameter, sync_changed_feature_scalars, ScalarUnit,
+    scalar_unit_from_feature_parameter, sync_changed_feature_scalars, DeclaredParameters,
+    ScalarOwners, ScalarUnit,
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{
-    FeatureContent, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureInputScalar,
-    FeatureInputScalarRole,
+    FeatureContent, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
+    FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{BTreeMap, HashSet};
-
-fn parameter_limit_fixture() -> (Vec<FeatureHistory>, FeatureInputLane) {
-    let feature = crate::records::Feature {
-        id: "feature".into(),
-        parent: "history".into(),
-        xml_tag: "Feature".into(),
-        tree_parent: None,
-        source_id: None,
-        ordinal: 0,
-        name: "Sketch".into(),
-        kind: "Sketch".into(),
-        input_class: None,
-        suppressed: false,
-        parameters: BTreeMap::new(),
-        dimension_properties: BTreeMap::new(),
-        properties: BTreeMap::new(),
-        text: None,
-        content: Vec::new(),
-    };
-    let history = FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![feature],
-    };
-    let lane = FeatureInputLane {
-        id: "lane".into(),
-        configuration: None,
-        native_payload: Vec::new().into(),
-        classes: Vec::new(),
-        names: vec![
-            FeatureInputName {
-                id: "feature-name".into(),
-                parent: "lane".into(),
-                ordinal: 0,
-                offset: 0,
-                object_id: None,
-                value: "Sketch".into(),
-            },
-            FeatureInputName {
-                id: "scalar-name".into(),
-                parent: "lane".into(),
-                ordinal: 1,
-                offset: 10,
-                object_id: None,
-                value: "D1".into(),
-            },
-        ],
-        scalars: vec![FeatureInputScalar {
-            id: "scalar".into(),
-            parent: "lane".into(),
-            feature_ref: Some("feature".into()),
-            ordinal: 0,
-            offset: 20,
-            object_id: 1,
-            name: "scalar-name".into(),
-            value: cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite test scalar"),
-            role: FeatureInputScalarRole::Driving,
-            operands: Vec::new(),
-        }],
-        relation_bindings: Vec::new(),
-        relation_instances: Vec::new(),
-        body_selections: Vec::new(),
-        edge_selections: Vec::new(),
-        surface_selections: Vec::new(),
-        generated_surface_identities: Vec::new(),
-        references: Vec::new(),
-        sketch_entities: Vec::new(),
-    };
-    (vec![history], lane)
-}
-
-fn parameter_limit_error(
-    limits: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
-) -> cadmpeg_core::CodecError {
-    let (mut histories, lane) = parameter_limit_fixture();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    limits(&mut policy.limits);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("empty lane fits root input limit");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
-        .expect_err("parameter projection must refuse the selected limit")
-}
-
-#[test]
-fn parameter_enrichment_refuses_collection_limit() {
-    let error = parameter_limit_error(|limits| limits.max_collection_items = 1);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn parameter_enrichment_refuses_retained_limit() {
-    let error = parameter_limit_error(|limits| limits.max_retained_bytes = 1);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn parameter_enrichment_refuses_work_limit() {
-    let error = parameter_limit_error(|limits| limits.max_work_units = 4);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
 
 #[test]
 fn native_scalar_must_match_an_existing_discrete_parameter() {
@@ -362,7 +258,6 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             name: "d1-name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.007_137_4).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
-
             operands: Vec::new(),
         }],
         relation_bindings: Vec::new(),
@@ -374,15 +269,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("parameter lane fits service policy");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
-        .expect("parameter enrichment succeeds");
+    enrich_history_parameters(&mut histories, [&lane], true);
     assert_eq!(
         histories[0].features[0].parameters["D1"],
         "<MOD-DIAM>7.1374"
@@ -391,7 +278,6 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
     sync_changed_feature_scalars(
-        &cadmpeg_test_support::service_decode_context(),
         &histories,
         std::slice::from_mut(&mut lane),
         &HashSet::from([("feature".into(), cadmpeg_core::nonblank_literal!("D1"))]),
@@ -399,4 +285,104 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
+}
+
+#[test]
+fn parameter_indexes_match_the_class_name_and_scalar_scans() {
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new().into(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let features = ["feature-0", "feature-1", "feature-2"];
+    for _ in 0..256 {
+        lane.classes = (0..next(6))
+            .map(|ordinal| FeatureInputClass {
+                id: format!("class-{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: next(40),
+                name: "moLengthParameter_c".into(),
+            })
+            .collect();
+        lane.names = (0..next(8))
+            .map(|ordinal| FeatureInputName {
+                id: format!("name-{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: next(40),
+                object_id: None,
+                value: "D1".into(),
+            })
+            .collect();
+        lane.scalars = (0..next(10))
+            .map(|ordinal| FeatureInputScalar {
+                id: format!("scalar-{ordinal}"),
+                parent: "lane".into(),
+                feature_ref: (next(3) == 0)
+                    .then(|| features[usize::try_from(next(3)).unwrap()].to_owned()),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: next(40),
+                object_id: 0,
+                name: "name".into(),
+                value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+                role: FeatureInputScalarRole::Native,
+                operands: Vec::new(),
+            })
+            .collect();
+
+        let declared = DeclaredParameters::new(&lane);
+        for name in &lane.names {
+            let expected = lane
+                .classes
+                .iter()
+                .filter(|class| class.offset < name.offset)
+                .max_by_key(|class| class.offset)
+                .filter(|class| {
+                    !lane.names.iter().any(|intervening| {
+                        intervening.offset > class.offset && intervening.offset < name.offset
+                    })
+                });
+            assert_eq!(
+                declared.class_of(name).map(std::ptr::from_ref),
+                expected.map(std::ptr::from_ref)
+            );
+        }
+        let owners = ScalarOwners::new(&lane.scalars);
+        for feature in features {
+            let start = next(40);
+            let end = (next(4) != 0).then(|| start + next(20));
+            let expected = lane
+                .scalars
+                .iter()
+                .enumerate()
+                .filter(|(_, scalar)| {
+                    scalar.feature_ref.as_deref() == Some(feature)
+                        || (scalar.feature_ref.is_none()
+                            && scalar.offset > start
+                            && end.is_none_or(|end| scalar.offset < end))
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            assert_eq!(owners.owned(feature, start, end), expected);
+        }
+    }
 }

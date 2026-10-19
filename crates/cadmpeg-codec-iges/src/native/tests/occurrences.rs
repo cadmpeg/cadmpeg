@@ -58,16 +58,20 @@ fn occurrence_expansion_reports_a_missing_instance_directory_entry() {
     };
     let mut path = Vec::new();
     let mut occurrences = Vec::new();
+    let mut depth_truncated_at = None;
     let mut malformed = BTreeSet::new();
-    expansion
+    let output_truncated_at = expansion
         .expand(
             1,
             Transform::identity(),
             &mut path,
             &mut occurrences,
+            &mut depth_truncated_at,
             &mut malformed,
         )
         .unwrap();
+    assert_eq!(output_truncated_at, None);
+    assert_eq!(depth_truncated_at, None);
     assert_eq!(malformed, BTreeSet::from([1]));
     assert!(occurrences.is_empty());
     assert!(path.is_empty());

@@ -37,9 +37,7 @@ fn tested_surface_extend_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceExtendOperation> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_surface_extend_operation(ctx, bytes, records, scope).unwrap()
-    })
+    exact_surface_extend_operation(bytes, records, scope)
 }
 
 fn tested_surface_offset_operation(
@@ -47,17 +45,13 @@ fn tested_surface_offset_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceOffsetOperation> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_surface_offset_operation(ctx, bytes, records, scope).unwrap()
-    })
+    exact_surface_offset_operation(bytes, records, scope).unwrap()
 }
 
 pub(super) fn fixed_kind_tail_operations(
     mut bytes: Vec<u8>,
     scope: DesignParameterScope,
     transform: [[f64; 4]; 4],
-    boundary_probe: Option<fn(&[u8], &DesignParameterScope)>,
-    face_group_probe: Option<fn(&[u8], &DesignParameterScope)>,
 ) {
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
@@ -222,14 +216,7 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     let scale_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert_eq!(
-        exact_scale_operation(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &scale_records,
-            &scale_scope,
-            &HashMap::new()
-        )
-        .unwrap(),
+        exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()).unwrap(),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
             center_record_index: 105,
@@ -629,7 +616,7 @@ pub(super) fn fixed_kind_tail_operations(
     )
     .unwrap();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_thicken(decode_ctx, &thicken_scope, &[], std::slice::from_ref(&thicken_group))).unwrap(),
+        crate::design::feature_project::project_thicken(&thicken_scope, &[], std::slice::from_ref(&thicken_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Thicken {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
@@ -642,7 +629,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::ROLE_0X12,
         );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_thicken(decode_ctx, &thicken_scope, &[], std::slice::from_ref(&bounded_face_thicken_group))).unwrap(),
+        crate::design::feature_project::project_thicken(&thicken_scope, &[], std::slice::from_ref(&bounded_face_thicken_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Thicken {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             ..
@@ -731,7 +718,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::ROLE_0X10,
         );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_shell(decode_ctx, &shell_scope, &[], std::slice::from_ref(&shell_group))).unwrap(),
+        crate::design::feature_project::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
@@ -862,7 +849,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::BODIES_A,
         );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_shell(decode_ctx, &compact_shell_scope, &[], std::slice::from_ref(&shell_group))).unwrap(),
+        crate::design::feature_project::project_shell(&compact_shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Shell {
             bodies: Some(cadmpeg_ir::features::BodySelection::Native(body)),
             removed_faces: cadmpeg_ir::features::FaceSelection::Faces(removed),
@@ -907,7 +894,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::ROLE_0X10,
         );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_offset_faces(decode_ctx, &offset_scope, &[], &[], std::slice::from_ref(&offset_group))).unwrap(),
+        crate::design::feature_project::project_offset_faces(&offset_scope, &[], &[], std::slice::from_ref(&offset_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MoveFace {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             motion: cadmpeg_ir::features::FaceMotion::Offset {
@@ -1002,6 +989,8 @@ pub(super) fn fixed_kind_tail_operations(
                 record_index: 76,
                 value_offset: u64_from_index(bytes.len() - 115 + 40),
             }),
+            against_distance: None,
+            side_two_taper_angle: None,
         })
     );
     extrude_scope
@@ -1031,6 +1020,8 @@ pub(super) fn fixed_kind_tail_operations(
                 },
             )),
             taper_angle: None,
+            against_distance: None,
+            side_two_taper_angle: None,
         })
     );
     extrude_scope
@@ -1150,9 +1141,6 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let Some(probe) = boundary_probe {
-        probe(&bytes, &extend_scope);
-    }
     let operation = tested_surface_extend_operation(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
@@ -1183,19 +1171,20 @@ pub(super) fn fixed_kind_tail_operations(
     {
         *slot = Some(operation);
     }
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&extend_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&extend_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features.as_slice(), [Feature {
             evaluation,
@@ -1253,19 +1242,20 @@ pub(super) fn fixed_kind_tail_operations(
     {
         *slot = Some(operation);
     }
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&extend_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&extend_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features.as_slice(), [Feature {
             evaluation,
@@ -1324,9 +1314,6 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let Some(probe) = face_group_probe {
-        probe(&bytes, &grouped_scope);
-    }
     let grouped_operation = tested_surface_offset_operation(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
@@ -1431,6 +1418,8 @@ pub(super) fn fixed_kind_tail_operations(
                 record_index: 274,
                 value_offset: u64_from_index(embedded_default_at + 115 + 40),
             }),
+            against_distance: None,
+            side_two_taper_angle: None,
         })
     );
     extrude_scope

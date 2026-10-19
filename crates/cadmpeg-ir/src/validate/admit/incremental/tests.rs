@@ -3,7 +3,6 @@
 use crate::assets::{Asset, AssetContent, AssetData};
 use crate::draft::CommitSession;
 use crate::{Annotations, CadIr};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn asset_candidate(index: usize) -> CadIr {
     let mut candidate = CadIr::empty();
@@ -32,81 +31,6 @@ fn source_records() -> Vec<crate::UnknownRecord> {
             )
         })
         .collect()
-}
-
-#[test]
-fn incremental_admission_admits_thousands_at_a_budget_that_refuses_combined_scans() {
-    const COUNT: usize = 4096;
-    const WORK: u64 = 512_000_000;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = WORK;
-    // Isolate work from cumulative collection charges in the comparison loop.
-    policy.limits.max_collection_items = WORK;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
-    session.replace_unknowns(source_records()).unwrap();
-    let annotations = Annotations::default();
-    for index in 0..COUNT {
-        let changes = annotations
-            .sparse_transaction(&ctx, "test admission annotations")
-            .unwrap();
-        session
-            .try_admit_append(
-                asset_candidate(index),
-                changes,
-                crate::RHINO_DRAFT_CHECKS,
-                |report, _| {
-                    assert!(report.unwrap().is_ok());
-                    Ok(Ok::<_, ()>(()))
-                },
-            )
-            .unwrap()
-            .unwrap();
-        let (report, _report_storage) = ctx
-            .with_scoped_storage("test instance admission report", || {
-                session.admit_appended(&annotations, crate::RHINO_INSTANCE_CHECKS)
-            })
-            .unwrap();
-        assert!(report.unwrap().is_ok());
-    }
-    assert_eq!(session.document().model.assets.len(), COUNT);
-    drop(session);
-    ctx.finish_session().unwrap();
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ir = CadIr::empty();
-    let records = source_records();
-    let mut refused = false;
-    for index in 0..COUNT {
-        ir.model.assets.extend(asset_candidate(index).model.assets);
-        match ctx.with_scoped_storage("test combined admission report", || {
-            super::super::admit_with_native_unknowns(
-                &ctx,
-                &ir,
-                ("test", &records),
-                Some(&annotations),
-                crate::RHINO_DRAFT_CHECKS,
-                Vec::new(),
-            )
-        }) {
-            Ok((Ok(report), _report_storage)) => assert!(report.is_ok()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                assert_eq!(
-                    limit.dimension,
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits
-                );
-                refused = true;
-                break;
-            }
-            other => panic!("unexpected combined admission result: {other:?}"),
-        }
-    }
-    assert!(
-        refused,
-        "the former combined scan exceeds this unchanged budget"
-    );
 }
 
 fn sourced_point(id: &str) -> crate::topology::Point {
@@ -139,9 +63,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
     session
         .try_admit_append(
             first,
-            annotations
-                .sparse_transaction(&ctx, "first annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.unwrap().is_ok());
@@ -198,9 +120,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
         let result = session
             .try_admit_append(
                 candidate,
-                annotations
-                    .sparse_transaction(&ctx, "vertex annotations")
-                    .unwrap(),
+                annotations.sparse_transaction(),
                 crate::RHINO_DRAFT_CHECKS,
                 |report, _| {
                     let report = report.unwrap();
@@ -237,9 +157,7 @@ fn source_link_mutation_is_checked_after_reusing_admitted_state() {
     session
         .try_admit_append(
             asset_candidate(0),
-            annotations
-                .sparse_transaction(&ctx, "first annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.unwrap().is_ok());
@@ -258,9 +176,7 @@ fn source_link_mutation_is_checked_after_reusing_admitted_state() {
     let result = session
         .try_admit_append(
             asset_candidate(1),
-            annotations
-                .sparse_transaction(&ctx, "next annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.is_err());
@@ -289,9 +205,7 @@ fn native_annotation_field_paths_use_complete_source_records() {
     for index in 0..2 {
         let mut candidate = asset_candidate(index);
         candidate.model.assets[0].native_ref = Some(String::from(source));
-        let mut changes = annotations
-            .sparse_transaction(&ctx, "source field annotations")
-            .unwrap();
+        let mut changes = annotations.sparse_transaction();
         changes
             .field_exactness(source, "links.0", crate::Exactness::Derived)
             .unwrap();
@@ -325,9 +239,7 @@ fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
         .assets
         .extend(asset_candidate(0).model.assets);
     let mut builder = crate::AnnotationBuilder::new();
-    builder
-        .exactness(&ctx, "test:model:asset#missing", crate::Exactness::Derived)
-        .unwrap();
+    builder.exactness("test:model:asset#missing", crate::Exactness::Derived);
     let annotations = builder.build();
     assert!(session
         .admit_appended(&annotations, crate::RHINO_INSTANCE_CHECKS)
@@ -346,9 +258,7 @@ fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
     let result = session
         .try_admit_append(
             asset_candidate(1),
-            annotations
-                .sparse_transaction(&ctx, "draft route annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 let report = report.unwrap();
@@ -369,14 +279,10 @@ fn sparse_deletion_replaces_invalid_base_annotations_in_combined_admission() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut builder = crate::AnnotationBuilder::new();
     let missing = "test:model:asset#missing";
-    builder
-        .exactness(&ctx, missing, crate::Exactness::Derived)
-        .unwrap();
+    builder.exactness(missing, crate::Exactness::Derived);
     let mut annotations = builder.build();
-    let mut changes = annotations
-        .sparse_transaction(&ctx, "annotation deletion")
-        .unwrap();
-    changes.remove_entity(missing).unwrap();
+    let mut changes = annotations.sparse_transaction();
+    changes.remove_entity(missing);
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let prepared = session
         .try_admit_append(
@@ -385,7 +291,7 @@ fn sparse_deletion_replaces_invalid_base_annotations_in_combined_admission() {
             crate::RHINO_DRAFT_CHECKS,
             |report, changes| {
                 assert!(report.unwrap().is_ok());
-                Ok(Ok::<_, ()>(changes.prepare()?))
+                Ok(Ok::<_, ()>(changes.prepare()))
             },
         )
         .unwrap()
@@ -403,9 +309,7 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
     session
         .try_admit_append(
             asset_candidate(0),
-            annotations
-                .sparse_transaction(&ctx, "first annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.unwrap().is_ok());
@@ -416,17 +320,13 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
         .unwrap();
     let missing = "test:model:asset#missing";
     let mut draft = crate::draft::ModelDraft::new().with_accounting();
-    draft
-        .exactness(&ctx, missing, crate::Exactness::Derived)
-        .unwrap();
+    draft.exactness(missing, crate::Exactness::Derived);
     session.commit(draft, &mut annotations).unwrap().unwrap();
     let before = session.document().clone();
     let result = session
         .try_admit_append(
             asset_candidate(1),
-            annotations
-                .sparse_transaction(&ctx, "next annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 let report = report.unwrap();
@@ -443,32 +343,4 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
         annotations.exactness()[missing].entity(),
         crate::Exactness::Derived
     );
-}
-
-#[test]
-fn source_grammar_admission_releases_changed_position_storage_after_each_check() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 64 * 1024;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
-    session
-        .replace_unknowns(vec![crate::UnknownRecord::retained(
-            "test:source:unknown#only".try_into().unwrap(),
-            0,
-            Vec::new(),
-            Vec::new(),
-        )])
-        .unwrap();
-    session.validate_source_records().unwrap().unwrap();
-    for _ in 0..1024 {
-        session.unknown_links_mut(0).unwrap().unwrap().1.clear();
-        session.validate_source_records().unwrap().unwrap();
-        let storage = ctx
-            .reserve_scoped(64 * 1024, "source grammar workspace released")
-            .unwrap();
-        drop(storage);
-    }
-    drop(session);
-    ctx.finish_session().unwrap();
 }

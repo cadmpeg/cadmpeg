@@ -39,7 +39,7 @@ use crate::decode::build::report::build_report;
 mod tests;
 
 #[cfg(test)]
-pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+pub(crate) fn with_service_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
@@ -50,12 +50,12 @@ pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// Decode a `.prt` stream into an IR document and decode body; the sealed
 /// wrapper stamps the report identity from `ir.source`.
 ///
-/// The stream is read from its beginning. When `options.container_only` is set,
-/// the returned IR contains source metadata and preserved geometry sections but
-/// no transferred entities.
+/// The stream is read from its beginning. When the context requests only the
+/// container, the returned IR contains source metadata and preserved geometry
+/// sections but no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(ctx, root.window())?;
-    let classification = crate::dialect::classify(ctx, &scan)?;
+    let classification = crate::dialect::classify(&scan)?;
     // Admit section identities before model construction.
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(scan.framing.sections.len()),
@@ -74,18 +74,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         build_ir(ctx, &scan, &classification)?
     };
     let mut body = build_report(
-        ctx,
         &scan,
         &classification,
         &ir,
         coverage,
         &brep_diagnostics,
         ctx.container_only(),
-    )?;
-    ctx.reserve_vec(
-        &mut body.losses,
-        transfer_losses.len(),
-        "creo transfer report losses",
     )?;
     body.losses.extend(transfer_losses);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);

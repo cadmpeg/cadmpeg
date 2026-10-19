@@ -91,11 +91,9 @@ pub(super) fn edgeless_doc() -> CadIr {
         face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
                 Vec::new(),
             )
-            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });
@@ -1444,9 +1442,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
             ],
             vec![[0, 1, 2]],
             0.1,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polygonal construction admission")
         .expect("valid polygonal surface"),
     ));
     let report = write_step(
@@ -1653,11 +1649,8 @@ fn cone_semi_angle_inside_wr2_is_planned() {
 }
 
 #[test]
-fn zero_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(0.0).expect_err("zero cone angle is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
-    );
+fn zero_cone_semi_angle_is_planned_as_a_cylinder() {
+    assert!(circular_cone_plan(0.0).is_ok());
 }
 
 #[test]
@@ -1736,7 +1729,7 @@ fn transformed_cone_basis(ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry 
 
 #[test]
 fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
-    let ir = transformed_surface_ir(transformed_cone_basis(1.0, 0.0));
+    let ir = transformed_surface_ir(transformed_cone_basis(1.0, std::f64::consts::FRAC_PI_2));
     let error = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, None),
@@ -1744,7 +1737,7 @@ fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
         )
         .expect_err("transformed cone basis remains outside WR2");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
     );
 }
 
@@ -1799,7 +1792,6 @@ fn degenerate_torus_report(
     let owner = ir.model.surfaces[0].id.clone();
     ir.model
         .add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1812,7 +1804,6 @@ fn degenerate_torus_report(
                 None,
             ),
         )
-        .unwrap()
         .expect("a torus carrier admits a degenerate torus construction");
 
     let mut buf = Vec::new();
@@ -1859,7 +1850,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
             1.0,
-            0.0,
+            std::f64::consts::FRAC_PI_2,
         )
         .unwrap(),
     ));
@@ -1868,7 +1859,6 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
     // candidate STEP carrier.
     ir.model
         .add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1885,7 +1875,6 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
                 None,
             ),
         )
-        .unwrap()
         .expect("a cone carrier admits a compound construction");
 
     let error = StepCodec::default()
@@ -1895,7 +1884,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
         )
         .expect_err("a cached cone outside WR2 cannot be written");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
     );
 }
 
@@ -1920,14 +1909,7 @@ fn procedural_construction_reduction_is_reported() {
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
     );
-    ir.model
-        .add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
-            &owner,
-            procedural,
-        )
-        .unwrap()
-        .unwrap();
+    ir.model.add_procedural_curve(&owner, procedural).unwrap();
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1954,8 +1936,7 @@ fn source_native_record_reduction_is_reported() {
         )
         .expect("valid native identity")],
     );
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
 
     let mut buf = Vec::new();
     let report = write_step(

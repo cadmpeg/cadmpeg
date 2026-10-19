@@ -66,8 +66,11 @@ fn write_seekable(
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
-    let mut written_graph =
-        crate::persistence::parse_with_context(&document_xml, schema_version, &ctx)?;
+    let written_xml = crate::container::admit_document(&ctx, &document_xml)?;
+    let mut written_graph = crate::persistence::parse_document(
+        &written_xml,
+        crate::persistence::Vocabulary::from_declaration(schema_version)?,
+    )?;
     validate_declarations(
         &objects,
         &extensions,
@@ -76,15 +79,12 @@ fn write_seekable(
     )?;
     let mut entry_views = std::collections::BTreeMap::new();
     for entry in &entries {
-        ctx.insert_btree_map(
-            &mut entry_views,
+        entry_views.insert(
             entry.name().to_owned(),
             cadmpeg_core::decode::View::over_retained(entry.data()),
-            "FCStd written side entries",
-        )?;
+        );
     }
     crate::persistence::resolve_side_entries(
-        &ctx,
         &mut written_graph.properties,
         &entry_views,
         &mut written_graph.losses,

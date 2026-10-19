@@ -5,8 +5,8 @@
 use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
-use crate::history::project::neutral_feature_id_charged;
-use crate::history::project::project_configurations_charged;
+use crate::history::project::neutral_feature_id;
+use crate::history::project::project_configurations;
 use crate::history::project::project_features;
 use crate::history::project::project_semantic_notes;
 use crate::history::tests::feature;
@@ -23,14 +23,6 @@ use cadmpeg_ir::features::PathRef;
 use cadmpeg_ir::features::RibConstruction;
 use cadmpeg_ir::features::SplitFaceTool;
 use std::collections::BTreeMap;
-
-fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    run(&ctx)
-}
 
 #[test]
 fn split_face_path_uses_the_prebound_source_sketch() {
@@ -69,11 +61,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         features: vec![split.clone(), sketch.clone()],
     };
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     let split_feature = projected
         .iter()
         .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
@@ -87,11 +75,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
     );
     assert_eq!(
         split_feature.dependencies.as_slice(),
-        vec![neutral_feature_id_charged(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch.id
-        )
-        .unwrap()]
+        vec![neutral_feature_id(&sketch.id).unwrap()]
     );
 }
 
@@ -105,15 +89,13 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
     let sketch_id =
         cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch-geometry").unwrap();
 
-    assert!(with_test_ctx(|ctx| bind_definition_sketch(
-        ctx,
+    assert!(bind_definition_sketch(
         &mut definition,
         "sketch-native",
         &feature_id,
         &sketch_id,
         true,
-    ))
-    .unwrap());
+    ));
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -139,15 +121,9 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
         features: vec![note.clone()],
     };
 
-    let annotations = with_test_ctx(|ctx| {
-        project_semantic_notes(ctx, std::slice::from_ref(&history))
-            .expect("semantic note projection")
-    });
-    assert!(
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history])
-            .unwrap()
-            .is_empty()
-    );
+    let annotations =
+        project_semantic_notes(std::slice::from_ref(&history)).expect("semantic note projection");
+    assert!(project_features(&[history]).unwrap().is_empty());
     assert_eq!(
         annotations[0].id.as_str(),
         "sldprt:semantic-annotation:note#7:3"
@@ -164,7 +140,7 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
 }
 
 #[test]
-fn charged_configuration_projection_preserves_writer_projection() {
+fn configuration_projection_preserves_writer_projection() {
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -185,11 +161,9 @@ fn charged_configuration_projection_preserves_writer_projection() {
         features: Vec::new(),
     };
     let histories = [history];
-    let charged = with_test_ctx(|ctx| {
-        project_configurations_charged(ctx, &histories).expect("charged configuration projection")
-    });
+    let projected = project_configurations(&histories).expect("configuration projection");
     assert_eq!(
-        charged,
+        projected,
         vec![cadmpeg_ir::features::DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId::mint(
                 "sldprt:model:configuration#name%20%23%25%20µ"
@@ -212,7 +186,7 @@ fn charged_configuration_projection_preserves_writer_projection() {
         }]
     );
     assert_eq!(
-        charged[0].id.as_str(),
+        projected[0].id.as_str(),
         "sldprt:model:configuration#name%20%23%25%20µ"
     );
 }
@@ -240,8 +214,7 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
         features: vec![principal, offset],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -267,24 +240,20 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         configurations: Vec::new(),
         features: vec![first, second],
     }];
-    let mut projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
-    with_test_ctx(|ctx| {
-        derive_feature_outputs(
-            ctx,
-            &mut projected,
-            &histories,
-            crate::history::bind::FeatureOutputSources {
-                face_producers: &[],
-                body_modifiers: &body_modifiers,
-            },
-            &[],
-            &[],
-            &[],
-        )
-    })
+    derive_feature_outputs(
+        &mut projected,
+        &histories,
+        crate::history::bind::FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &body_modifiers,
+        },
+        &[],
+        &[],
+        &[],
+    )
     .unwrap();
 
     assert!(projected[0].evaluation.outputs().is_empty());
@@ -314,24 +283,20 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
             features: vec![feature("b", None, 0), feature("b-next", None, 1)],
         },
     ];
-    let mut projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
-    with_test_ctx(|ctx| {
-        derive_feature_outputs(
-            ctx,
-            &mut projected,
-            &histories,
-            crate::history::bind::FeatureOutputSources {
-                face_producers: &[],
-                body_modifiers: &body_modifiers,
-            },
-            &[],
-            &[],
-            &[],
-        )
-    })
+    derive_feature_outputs(
+        &mut projected,
+        &histories,
+        crate::history::bind::FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &body_modifiers,
+        },
+        &[],
+        &[],
+        &[],
+    )
     .unwrap();
 
     assert!(projected
@@ -395,29 +360,26 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "3deg".into());
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        &[FeatureHistory {
-            id: "history".into(),
-            part_name: None,
-            properties: BTreeMap::new(),
-            content: Vec::new(),
-            configurations: Vec::new(),
-            features: vec![
-                dome,
-                rib,
-                surface_loft,
-                cut_loft,
-                surface_extrude,
-                offset_surface,
-                knit_surface,
-                filled_surface,
-                trim_surface,
-                extend_surface,
-                draft,
-            ],
-        }],
-    )
+    let projected = project_features(&[FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            dome,
+            rib,
+            surface_loft,
+            cut_loft,
+            surface_extrude,
+            offset_surface,
+            knit_surface,
+            filled_surface,
+            trim_surface,
+            extend_surface,
+            draft,
+        ],
+    }])
     .unwrap();
 
     assert!(matches!(
@@ -527,7 +489,7 @@ fn variable_fillet_does_not_use_d1_as_a_constant_radius() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "R1".into());
     assert!(matches!(
-        project_fillet(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
+        project_fillet(&feature),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
@@ -546,7 +508,7 @@ fn variable_fillet_d_dimensions_require_native_vertex_associations() {
     ]);
 
     assert!(matches!(
-        project_fillet(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
+        project_fillet(&feature),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));

@@ -42,11 +42,14 @@ fn decode_keeps_nonplane_single_parent_relations_native_and_transfers_the_bounde
         }));
         let association = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
             .iter()
-            .find(|value| value.fields()["kind"] == "single_parent")
+            .find(|value| value.fields().unwrap()["kind"] == "single_parent")
             .expect("generic single-parent association");
-        assert_eq!(association.fields()["parent"], "iges:entity:directory#1");
         assert_eq!(
-            association.fields()["children"][0],
+            association.fields().unwrap()["parent"],
+            "iges:entity:directory#1"
+        );
+        assert_eq!(
+            association.fields().unwrap()["children"][0],
             "iges:entity:directory#5"
         );
     }
@@ -65,14 +68,14 @@ fn decode_preserves_legacy_dimensioned_geometry_roles_in_v4_and_v5_profiles() {
             .unwrap();
         let association = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
             .iter()
-            .find(|value| value.fields()["kind"] == "dimensioned_geometry")
+            .find(|value| value.fields().unwrap()["kind"] == "dimensioned_geometry")
             .expect("legacy dimensioned-geometry association");
         assert_eq!(
-            association.fields()["dimension"],
+            association.fields().unwrap()["dimension"],
             "iges:entity:directory#21"
         );
         assert_eq!(
-            association.fields()["geometry"][0],
+            association.fields().unwrap()["geometry"][0],
             "iges:entity:directory#9"
         );
         assert!(
@@ -113,9 +116,9 @@ fn decode_rejects_label_display_without_leader() {
     );
     let label_display = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
-        .find(|associativity| associativity.fields()["kind"] == "label_display")
+        .find(|associativity| associativity.fields().unwrap()["kind"] == "label_display")
         .unwrap();
-    assert!(label_display.fields()["placements"][0]["leader"].is_null());
+    assert!(label_display.fields().unwrap()["placements"][0]["leader"].is_null());
 }
 
 #[test]
@@ -131,52 +134,72 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
     let signal = associativities
         .iter()
         .find(|value| {
-            value.fields()["kind"] == "flow"
-                && value.fields()["form"] == 18
-                && value.fields()["connections"].as_array().unwrap().len() == 1
+            value.fields().unwrap()["kind"] == "flow"
+                && value.fields().unwrap()["form"] == 18
+                && value.fields().unwrap()["connections"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+                    == 1
         })
         .unwrap();
-    assert_eq!(signal.fields()["type_flag"], 1);
-    assert_eq!(signal.fields()["declared_associated_flow_count"], 0);
-    assert_eq!(signal.fields()["declared_connection_count"], 1);
-    assert_eq!(signal.fields()["declared_join_count"], 1);
-    assert_eq!(signal.fields()["declared_name_count"], 1);
-    assert_eq!(signal.fields()["declared_name_display_count"], 1);
-    assert_eq!(signal.fields()["declared_continuation_count"], 1);
-    assert_eq!(signal.fields()["function_flag"], 2);
-    assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#1");
-    assert_eq!(signal.fields()["joins"][0], "iges:entity:directory#3");
+    assert_eq!(signal.fields().unwrap()["type_flag"], 1);
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&signal.fields()["names"][0])[0]),
+        signal.fields().unwrap()["declared_associated_flow_count"],
+        0
+    );
+    assert_eq!(signal.fields().unwrap()["declared_connection_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_join_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_name_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_name_display_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_continuation_count"], 1);
+    assert_eq!(signal.fields().unwrap()["function_flag"], 2);
+    assert_eq!(
+        signal.fields().unwrap()["connections"][0],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(
+        signal.fields().unwrap()["joins"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&signal.fields().unwrap()["names"][0])[0]),
         70
     );
     assert_eq!(
-        signal.fields()["name_displays"][0],
+        signal.fields().unwrap()["name_displays"][0],
         "iges:entity:directory#5"
     );
     assert_eq!(
-        signal.fields()["continuations"][0],
+        signal.fields().unwrap()["continuations"][0],
         "iges:entity:directory#9"
     );
     let pipe = associativities
         .iter()
         .find(|value| {
-            value.fields()["kind"] == "flow"
-                && value.fields()["form"] == 20
-                && value.fields()["connections"].as_array().unwrap().len() == 1
+            value.fields().unwrap()["kind"] == "flow"
+                && value.fields().unwrap()["form"] == 20
+                && value.fields().unwrap()["connections"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+                    == 1
         })
         .unwrap();
-    assert_eq!(pipe.fields()["type_flag"], 2);
-    assert_eq!(pipe.fields()["declared_associated_flow_count"], 0);
-    assert_eq!(pipe.fields()["declared_connection_count"], 1);
-    assert_eq!(pipe.fields()["declared_join_count"], 1);
-    assert_eq!(pipe.fields()["declared_name_count"], 1);
-    assert_eq!(pipe.fields()["declared_name_display_count"], 0);
-    assert_eq!(pipe.fields()["declared_continuation_count"], 1);
-    assert!(pipe.fields()["function_flag"].is_null());
-    assert_eq!(pipe.fields()["connections"][0], "iges:entity:directory#11");
+    assert_eq!(pipe.fields().unwrap()["type_flag"], 2);
+    assert_eq!(pipe.fields().unwrap()["declared_associated_flow_count"], 0);
+    assert_eq!(pipe.fields().unwrap()["declared_connection_count"], 1);
+    assert_eq!(pipe.fields().unwrap()["declared_join_count"], 1);
+    assert_eq!(pipe.fields().unwrap()["declared_name_count"], 1);
+    assert_eq!(pipe.fields().unwrap()["declared_name_display_count"], 0);
+    assert_eq!(pipe.fields().unwrap()["declared_continuation_count"], 1);
+    assert!(pipe.fields().unwrap()["function_flag"].is_null());
     assert_eq!(
-        pipe.fields()["continuations"][0],
+        pipe.fields().unwrap()["connections"][0],
+        "iges:entity:directory#11"
+    );
+    assert_eq!(
+        pipe.fields().unwrap()["continuations"][0],
         "iges:entity:directory#17"
     );
     assert!(
@@ -224,9 +247,9 @@ fn decode_rejects_a_non_geometry_flow_join_target() {
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
     let flow = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
-        .find(|value| value.fields()["kind"] == "flow")
+        .find(|value| value.fields().unwrap()["kind"] == "flow")
         .unwrap();
-    assert!(flow.fields()["joins"][0].is_null());
+    assert!(flow.fields().unwrap()["joins"][0].is_null());
 }
 
 #[test]
@@ -242,58 +265,68 @@ fn decode_preserves_legacy_signal_text_and_connect_associativities() {
 
     let signal = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "legacy_signal_string")
+        .find(|value| value.fields().unwrap()["kind"] == "legacy_signal_string")
         .unwrap();
-    assert_eq!(signal.fields()["declared_signal_name_count"], 1);
-    assert_eq!(signal.fields()["declared_connection_count"], 1);
-    assert_eq!(signal.fields()["declared_schematic_count"], 1);
-    assert_eq!(signal.fields()["declared_physical_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_signal_name_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_connection_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_schematic_count"], 1);
+    assert_eq!(signal.fields().unwrap()["declared_physical_count"], 1);
     assert_eq!(
-        crate::test_support::native_bytes(&signal.fields()["signal_names"][0]),
+        crate::test_support::native_bytes(&signal.fields().unwrap()["signal_names"][0]),
         [78, 69, 84]
     );
-    assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#3");
     assert_eq!(
-        signal.fields()["schematic_entities"][0],
+        signal.fields().unwrap()["connections"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(
+        signal.fields().unwrap()["schematic_entities"][0],
         "iges:entity:directory#11"
     );
     assert_eq!(
-        signal.fields()["physical_entities"][0],
+        signal.fields().unwrap()["physical_entities"][0],
         "iges:entity:directory#11"
     );
 
     let text = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "legacy_text_node")
+        .find(|value| value.fields().unwrap()["kind"] == "legacy_text_node")
         .unwrap();
-    assert_eq!(text.fields()["declared_geometry_count"], 1);
-    assert_eq!(text.fields()["declared_text_description_count"], 1);
-    assert_eq!(text.fields()["geometry"][0], "iges:entity:directory#5");
-    assert_eq!(text.fields()["box_width"], 1.0);
-    assert_eq!(text.fields()["box_height"], 2.0);
-    assert_eq!(text.fields()["font_characteristic"], 1);
+    assert_eq!(text.fields().unwrap()["declared_geometry_count"], 1);
+    assert_eq!(text.fields().unwrap()["declared_text_description_count"], 1);
+    assert_eq!(
+        text.fields().unwrap()["geometry"][0],
+        "iges:entity:directory#5"
+    );
+    assert_eq!(text.fields().unwrap()["box_width"], 1.0);
+    assert_eq!(text.fields().unwrap()["box_height"], 2.0);
+    assert_eq!(text.fields().unwrap()["font_characteristic"], 1);
     assert!(
-        (text.fields()["slant_angle"].as_f64().unwrap() - std::f64::consts::FRAC_PI_2).abs()
+        (text.fields().unwrap()["slant_angle"].as_f64().unwrap() - std::f64::consts::FRAC_PI_2)
+            .abs()
             <= LEGACY_TEXT_ANGLE_TOLERANCE
     );
-    assert_eq!(text.fields()["rotation_angle"], 0.0);
-    assert_eq!(text.fields()["mirror_flag"], 0);
-    assert_eq!(text.fields()["rotate_internal_flag"], 0);
+    assert_eq!(text.fields().unwrap()["rotation_angle"], 0.0);
+    assert_eq!(text.fields().unwrap()["mirror_flag"], 0);
+    assert_eq!(text.fields().unwrap()["rotate_internal_flag"], 0);
 
     let connect = associativities
         .iter()
-        .find(|value| value.fields()["kind"] == "legacy_connect_node")
+        .find(|value| value.fields().unwrap()["kind"] == "legacy_connect_node")
         .unwrap();
-    assert_eq!(connect.fields()["declared_point_count"], 1);
-    assert_eq!(connect.fields()["declared_data_count"], 2);
-    assert_eq!(connect.fields()["points"][0], "iges:entity:directory#1");
-    assert_eq!(connect.fields()["data"][0]["kind"], "string");
+    assert_eq!(connect.fields().unwrap()["declared_point_count"], 1);
+    assert_eq!(connect.fields().unwrap()["declared_data_count"], 2);
     assert_eq!(
-        crate::test_support::native_bytes(&connect.fields()["data"][0]["value"]),
+        connect.fields().unwrap()["points"][0],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(connect.fields().unwrap()["data"][0]["kind"], "string");
+    assert_eq!(
+        crate::test_support::native_bytes(&connect.fields().unwrap()["data"][0]["value"]),
         [67, 79, 78, 83, 84, 82]
     );
-    assert_eq!(connect.fields()["data"][1]["kind"], "integer");
-    assert_eq!(connect.fields()["data"][1]["value"], 42);
+    assert_eq!(connect.fields().unwrap()["data"][1]["kind"], "integer");
+    assert_eq!(connect.fields().unwrap()["data"][1]["value"], 42);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -320,7 +353,7 @@ fn decode_preserves_v4_legacy_signal_text_and_connect_associativities() {
         assert!(
             associativities
                 .iter()
-                .any(|value| value.fields()["kind"] == kind),
+                .any(|value| value.fields().unwrap()["kind"] == kind),
             "missing V4 associativity kind {kind}"
         );
     }

@@ -105,6 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/check-source-policy.py
+          python3 scripts/check-resource-caps.py
           python3 scripts/check-deny-census.py
           python3 scripts/census-panic-calls.py --check
 

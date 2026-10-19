@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Unified resource accounting for one decode session.
+//! Resource ceilings for one decode session, and the local work counter.
+//!
+//! A session counts input bytes, decompressed bytes, retained output bytes,
+//! entities, and recursion depth. A refusal in any of them fuses the session:
+//! every later charge fails and `finish_session` returns the refusal.
 
 use std::cell::Cell;
-use std::num::NonZeroU64;
+use std::rc::Rc;
 
 use crate::CodecError;
 
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
-    DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
-    MATERIALIZED_PER_INPUT_BYTE, RETAINED_BASE, RETAINED_PER_INPUT_BYTE,
+    DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, RETAINED_BASE,
+    RETAINED_PER_INPUT_BYTE,
 };
-use super::view::u64_from_index;
 
 #[derive(Debug)]
 pub(super) struct DecodeBudget {
@@ -19,13 +22,9 @@ pub(super) struct DecodeBudget {
     policy: DecodePolicy,
     input_bytes: Cell<u64>,
     decompressed: Cell<u64>,
-    materialized: Cell<u64>,
     retained: Cell<u64>,
-    scoped_storage: Cell<Option<u64>>,
     entities: Cell<u64>,
-    collection_items: Cell<u64>,
     recursion_depth: Cell<u64>,
-    work: Cell<u64>,
     fuse: Cell<Option<ResourceLimit>>,
 }
 
@@ -40,13 +39,9 @@ impl DecodeBudget {
             policy,
             input_bytes: Cell::new(input_bytes),
             decompressed: Cell::new(0),
-            materialized: Cell::new(0),
             retained: Cell::new(0),
-            scoped_storage: Cell::new(None),
             entities: Cell::new(0),
-            collection_items: Cell::new(0),
             recursion_depth: Cell::new(0),
-            work: Cell::new(0),
             fuse: Cell::new(None),
         }
     }
@@ -55,15 +50,36 @@ impl DecodeBudget {
         self.fuse.get()
     }
 
-    pub(super) fn decompression_allowance(&self) -> u64 {
-        let policy_limit = self.policy.limits.max_decompressed_bytes_total;
-        let Some(proportional) = DECOMPRESSED_TOTAL_PER_INPUT_BYTE
+    /// The smaller of a policy ceiling and `base + per_input_byte * input`.
+    pub(super) fn proportional_allowance(
+        &self,
+        ceiling: u64,
+        base: u64,
+        per_input_byte: u64,
+    ) -> u64 {
+        let Some(proportional) = per_input_byte
             .checked_mul(self.input_bytes.get())
-            .and_then(|bytes| DECOMPRESSED_TOTAL_BASE.checked_add(bytes))
+            .and_then(|amount| base.checked_add(amount))
         else {
-            return policy_limit;
+            return ceiling;
         };
-        policy_limit.min(proportional)
+        ceiling.min(proportional)
+    }
+
+    pub(super) fn decompression_allowance(&self) -> u64 {
+        self.proportional_allowance(
+            self.policy.limits.max_decompressed_bytes_total,
+            DECOMPRESSED_TOTAL_BASE,
+            DECOMPRESSED_TOTAL_PER_INPUT_BYTE,
+        )
+    }
+
+    fn retained_allowance(&self) -> u64 {
+        self.proportional_allowance(
+            self.policy.limits.max_retained_bytes,
+            RETAINED_BASE,
+            RETAINED_PER_INPUT_BYTE,
+        )
     }
 
     pub(super) fn input_bytes(&self) -> u64 {
@@ -104,28 +120,6 @@ impl DecodeBudget {
         self.decompressed.get()
     }
 
-    fn materialized_allowance(&self) -> u64 {
-        let policy_limit = self.policy.limits.max_materialized_bytes;
-        let Some(proportional) = MATERIALIZED_PER_INPUT_BYTE
-            .checked_mul(self.input_bytes.get())
-            .and_then(|bytes| MATERIALIZED_BASE.checked_add(bytes))
-        else {
-            return policy_limit;
-        };
-        policy_limit.min(proportional)
-    }
-
-    fn retained_allowance(&self) -> u64 {
-        let policy_limit = self.policy.limits.max_retained_bytes;
-        let Some(proportional) = RETAINED_PER_INPUT_BYTE
-            .checked_mul(self.input_bytes.get())
-            .and_then(|bytes| RETAINED_BASE.checked_add(bytes))
-        else {
-            return policy_limit;
-        };
-        policy_limit.min(proportional)
-    }
-
     fn charge(
         &self,
         dimension: ResourceDimension,
@@ -161,6 +155,8 @@ impl DecodeBudget {
             ));
         }
         used.set(before + amount);
+        #[cfg(feature = "test-support")]
+        super::test_support::record_charge(dimension, operation, amount);
         Ok(())
     }
 
@@ -198,105 +194,13 @@ impl DecodeBudget {
             .into()
     }
 
-    pub(super) fn reserve_scoped(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-    ) -> Result<ScopedReservation<'_>, CodecError> {
-        self.reserve_scoped_limit(bytes, operation)
-            .map_err(Into::into)
-    }
-
-    pub(super) fn reserve_scoped_limit(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
-        self.charge(
-            ResourceDimension::MaterializedBytes,
-            &self.materialized,
-            self.materialized_allowance(),
-            bytes,
-            operation,
-        )?;
-        Ok(ScopedReservation {
-            budget: self,
-            bytes,
-            operation,
-        })
-    }
-
-    /// Report allocator refusal after a scoped-byte reservation was recorded.
-    pub(super) fn scoped_allocation_failed(
-        &self,
-        charged: u64,
-        operation: &'static str,
-    ) -> CodecError {
-        self.scoped_allocation_failed_limit(charged, operation)
-            .into()
-    }
-
-    pub(super) fn scoped_allocation_failed_limit(
-        &self,
-        charged: u64,
-        operation: &'static str,
-    ) -> ResourceLimit {
-        self.refuse_limit(
-            ResourceDimension::MaterializedBytes,
-            ResourceFailure::AllocationFailed,
-            self.materialized_allowance(),
-            self.materialized.get() - charged,
-            charged,
-            operation,
-        )
-    }
-
-    pub(super) fn scoped_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
-        self.refuse_limit(
-            ResourceDimension::MaterializedBytes,
-            ResourceFailure::BudgetExceeded,
-            self.materialized_allowance(),
-            self.materialized.get(),
-            u64::MAX,
-            operation,
-        )
-    }
-
-    pub(super) fn charge_retained(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_retained_limit(bytes, operation)
-            .map_err(Into::into)
-    }
-
-    pub(super) fn charge_retained_limit(
+    /// Charges bytes that decoded output keeps for the rest of the session:
+    /// native record text, arena buffers, and retained source byte copies.
+    pub(super) fn retain_bytes(
         &self,
         bytes: u64,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        if let Some(current) = self.scoped_storage.get() {
-            let total = current.checked_add(bytes).ok_or_else(|| {
-                self.refuse_limit(
-                    ResourceDimension::MaterializedBytes,
-                    ResourceFailure::BudgetExceeded,
-                    self.materialized_allowance(),
-                    current,
-                    bytes,
-                    operation,
-                )
-            })?;
-            self.charge(
-                ResourceDimension::MaterializedBytes,
-                &self.materialized,
-                self.materialized_allowance(),
-                bytes,
-                operation,
-            )?;
-            self.scoped_storage.set(Some(total));
-            return Ok(());
-        }
         self.charge(
             ResourceDimension::RetainedBytes,
             &self.retained,
@@ -306,70 +210,33 @@ impl DecodeBudget {
         )
     }
 
-    pub(super) fn retained_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
-        let (dimension, limit, used) = if self.scoped_storage.get().is_some() {
-            (
-                ResourceDimension::MaterializedBytes,
-                self.materialized_allowance(),
-                self.materialized.get(),
-            )
-        } else {
-            (
-                ResourceDimension::RetainedBytes,
-                self.retained_allowance(),
-                self.retained.get(),
-            )
+    /// Retained bytes the session can still charge before `retain_bytes` refuses.
+    pub(super) fn retained_bytes_available(&self) -> u64 {
+        if self.fuse.get().is_some() {
+            return 0;
+        }
+        // A session that retained past its allowance can afford nothing more.
+        let Some(remaining) = self.retained_allowance().checked_sub(self.retained.get()) else {
+            return 0;
         };
-        self.refuse_limit(
-            dimension,
-            ResourceFailure::BudgetExceeded,
-            limit,
-            used,
-            u64::MAX,
-            operation,
-        )
+        remaining
     }
 
-    /// Report allocator refusal after a retained charge was already recorded.
+    /// Reports an allocator refusal for `requested` bytes or slots.
     pub(super) fn retained_allocation_failed(
         &self,
-        charged: u64,
+        requested: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.retained_allocation_failed_limit(charged, operation)
-            .into()
-    }
-
-    pub(super) fn retained_allocation_failed_limit(
-        &self,
-        charged: u64,
-        operation: &'static str,
-    ) -> ResourceLimit {
-        let (dimension, current, limit) = if self.scoped_storage.get().is_some() {
-            (
-                ResourceDimension::MaterializedBytes,
-                self.materialized.get(),
-                self.materialized_allowance(),
-            )
-        } else {
-            (
-                ResourceDimension::RetainedBytes,
-                self.retained.get(),
-                self.retained_allowance(),
-            )
-        };
-        let prior = match current.checked_sub(charged) {
-            Some(prior) => prior,
-            None => current,
-        };
         self.refuse_limit(
-            dimension,
+            ResourceDimension::RetainedBytes,
             ResourceFailure::AllocationFailed,
-            limit,
-            prior,
-            charged,
+            self.retained_allowance(),
+            self.retained.get(),
+            requested,
             operation,
         )
+        .into()
     }
 
     pub(super) fn charge_entities(
@@ -387,67 +254,6 @@ impl DecodeBudget {
         .map_err(Into::into)
     }
 
-    pub(super) fn charge_collection_items(
-        &self,
-        count: u64,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_collection_items_limit(count, operation)
-            .map_err(Into::into)
-    }
-
-    pub(super) fn charge_collection_items_limit(
-        &self,
-        count: u64,
-        operation: &'static str,
-    ) -> Result<(), ResourceLimit> {
-        self.charge(
-            ResourceDimension::CollectionItems,
-            &self.collection_items,
-            self.policy.limits.max_collection_items,
-            count,
-            operation,
-        )
-    }
-
-    pub(super) fn collection_allocation_failed(
-        &self,
-        charged: u64,
-        operation: &'static str,
-    ) -> CodecError {
-        self.collection_allocation_failed_limit(charged, operation)
-            .into()
-    }
-
-    pub(super) fn collection_allocation_failed_limit(
-        &self,
-        charged: u64,
-        operation: &'static str,
-    ) -> ResourceLimit {
-        let current = self.collection_items.get();
-        let prior = match current.checked_sub(charged) {
-            Some(prior) => prior,
-            None => current,
-        };
-        self.refuse_limit(
-            ResourceDimension::CollectionItems,
-            ResourceFailure::AllocationFailed,
-            self.policy.limits.max_collection_items,
-            prior,
-            charged,
-            operation,
-        )
-    }
-
-    pub(super) fn storage_scope(&self, operation: &'static str) -> StorageScope<'_> {
-        let prior = self.scoped_storage.replace(Some(0));
-        StorageScope {
-            budget: self,
-            prior,
-            operation,
-        }
-    }
-
     pub(super) fn enter_nested(
         &self,
         operation: &'static str,
@@ -460,164 +266,6 @@ impl DecodeBudget {
             operation,
         )?;
         Ok(DepthGuard { budget: self })
-    }
-
-    pub(super) fn charge_work(
-        &self,
-        units: u64,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_work_limit(units, operation).map_err(Into::into)
-    }
-
-    pub(super) fn charge_work_limit(
-        &self,
-        units: u64,
-        operation: &'static str,
-    ) -> Result<(), ResourceLimit> {
-        self.charge(
-            ResourceDimension::WorkUnits,
-            &self.work,
-            self.policy.limits.max_work_units,
-            units,
-            operation,
-        )
-    }
-}
-
-pub(super) struct StorageScope<'a> {
-    budget: &'a DecodeBudget,
-    prior: Option<u64>,
-    operation: &'static str,
-}
-
-impl<'a> StorageScope<'a> {
-    pub(super) fn finish(self) -> ScopedReservation<'a> {
-        let bytes = self
-            .budget
-            .scoped_storage
-            .replace(Some(0))
-            .map_or(0, std::convert::identity);
-        ScopedReservation {
-            budget: self.budget,
-            bytes,
-            operation: self.operation,
-        }
-    }
-}
-
-impl Drop for StorageScope<'_> {
-    fn drop(&mut self) {
-        let bytes = self
-            .budget
-            .scoped_storage
-            .replace(self.prior)
-            .map_or(0, std::convert::identity);
-        drop(ScopedReservation {
-            budget: self.budget,
-            bytes,
-            operation: self.operation,
-        });
-    }
-}
-
-/// A temporary materialization charged until it is dropped or committed.
-#[derive(Debug)]
-pub struct ScopedReservation<'a> {
-    budget: &'a DecodeBudget,
-    bytes: u64,
-    operation: &'static str,
-}
-
-impl ScopedReservation<'_> {
-    /// Account copied storage in this live temporary reservation.
-    pub fn with_storage<T, E: From<CodecError>>(
-        &mut self,
-        build: impl FnOnce() -> Result<T, E>,
-    ) -> Result<T, E> {
-        self.with_storage_error(build, |limit| E::from(CodecError::ResourceLimit(limit)))
-    }
-
-    /// Account temporary storage with a resource-only refusal channel.
-    pub fn with_storage_limit<T>(
-        &mut self,
-        build: impl FnOnce() -> Result<T, ResourceLimit>,
-    ) -> Result<T, ResourceLimit> {
-        self.with_storage_error(build, |limit| limit)
-    }
-
-    fn with_storage_error<T, E>(
-        &mut self,
-        build: impl FnOnce() -> Result<T, E>,
-        failure: impl FnOnce(ResourceLimit) -> E,
-    ) -> Result<T, E> {
-        let scope = self.budget.storage_scope(self.operation);
-        let value = build();
-        let mut storage = scope.finish();
-        let Some(bytes) = self.bytes.checked_add(storage.bytes) else {
-            return value.and_then(|_| {
-                Err(failure(self.budget.refuse_limit(
-                    ResourceDimension::MaterializedBytes,
-                    ResourceFailure::BudgetExceeded,
-                    self.budget.materialized_allowance(),
-                    self.bytes,
-                    storage.bytes,
-                    self.operation,
-                )))
-            });
-        };
-        self.bytes = bytes;
-        storage.bytes = 0;
-        value
-    }
-
-    /// Increases live temporary storage and returns the resource refusal.
-    pub fn grow_limit(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
-        self.budget.charge(
-            ResourceDimension::MaterializedBytes,
-            &self.budget.materialized,
-            self.budget.materialized_allowance(),
-            bytes,
-            self.operation,
-        )?;
-        self.bytes = self.bytes.checked_add(bytes).ok_or_else(|| {
-            self.budget.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                self.budget.materialized_allowance(),
-                self.bytes,
-                bytes,
-                self.operation,
-            )
-        })?;
-        Ok(())
-    }
-
-    /// Increases the live temporary reservation.
-    pub fn grow(&mut self, bytes: u64) -> Result<(), CodecError> {
-        self.grow_limit(bytes).map_err(Into::into)
-    }
-
-    /// Converts the temporary reservation into session-retained bytes.
-    pub fn commit(self) -> Result<(), CodecError> {
-        self.budget.charge_retained(self.bytes, self.operation)
-    }
-}
-
-impl Drop for ScopedReservation<'_> {
-    fn drop(&mut self) {
-        let Some(remaining) = self.budget.materialized.get().checked_sub(self.bytes) else {
-            self.budget.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                self.budget.materialized_allowance(),
-                self.budget.materialized.get(),
-                self.bytes,
-                self.operation,
-            );
-            return;
-        };
-        self.budget.materialized.set(remaining);
     }
 }
 
@@ -636,95 +284,64 @@ impl Drop for DepthGuard<'_> {
     }
 }
 
-/// A sticky, context-free local work counter.
+/// A local work counter for one bounded search or iteration.
+///
+/// Exhaustion is sticky: once a charge is refused, every later charge is
+/// refused. A caller that runs out skips the step it bounds and reports the
+/// skip; exhaustion never refuses the decode session.
 #[derive(Debug)]
-pub struct WorkBudget<'a> {
+pub struct WorkBudget {
     limit: usize,
-    remaining: Cell<Option<usize>>,
+    account: Rc<WorkAccount>,
     recursion_depth: Cell<usize>,
-    session: Option<&'a DecodeBudget>,
-    session_work_scale: NonZeroU64,
 }
 
-/// RAII guard for one recursive geometry-evaluation frame.
+/// Remaining units of one counter, and the counter that pays for its work.
 #[derive(Debug)]
-pub struct WorkBudgetRecursionGuard<'budget, 'session> {
-    account: WorkRecursionAccount<'budget, 'session>,
+struct WorkAccount {
+    remaining: Cell<Option<usize>>,
+    parent: Option<Rc<WorkAccount>>,
 }
 
+/// RAII guard for one recursive frame of a [`WorkBudget`].
 #[derive(Debug)]
-enum WorkRecursionAccount<'budget, 'session> {
-    Session { _guard: DepthGuard<'session> },
-    Independent(&'budget WorkBudget<'session>),
+pub struct WorkBudgetRecursionGuard<'budget> {
+    budget: &'budget WorkBudget,
 }
 
-impl Drop for WorkBudgetRecursionGuard<'_, '_> {
+impl Drop for WorkBudgetRecursionGuard<'_> {
     fn drop(&mut self) {
-        if let WorkRecursionAccount::Independent(budget) = &self.account {
-            if let Some(depth) = budget.recursion_depth.get().checked_sub(1) {
-                budget.recursion_depth.set(depth);
-            }
+        if let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) {
+            self.budget.recursion_depth.set(depth);
         }
     }
 }
 
-impl WorkBudget<'static> {
-    /// Creates an independent local work slice.
-    pub const fn new(limit: usize) -> Self {
-        Self {
-            limit,
-            remaining: Cell::new(Some(limit)),
-            recursion_depth: Cell::new(0),
-            session: None,
-            session_work_scale: NonZeroU64::MIN,
-        }
-    }
-}
+impl WorkBudget {
+    /// The recursion ceiling of [`WorkBudget::recursion_guard`].
+    pub const RECURSION_DEPTH: usize = 256;
 
-impl<'a> WorkBudget<'a> {
-    pub(super) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
-        let Ok(limit) = usize::try_from(limit) else {
-            drop(session.refuse(
-                ResourceDimension::WorkUnits,
-                ResourceFailure::BudgetExceeded,
-                u64_from_index(usize::MAX),
-                0,
-                limit,
-                "work_budget",
-            ));
-            return Self {
-                limit: 0,
-                remaining: Cell::new(None),
-                recursion_depth: Cell::new(0),
-                session: Some(session),
-                session_work_scale: NonZeroU64::MIN,
-            };
-        };
-        Self {
-            limit,
-            remaining: Cell::new(Some(limit)),
-            recursion_depth: Cell::new(0),
-            session: Some(session),
-            session_work_scale: NonZeroU64::MIN,
-        }
-    }
-
-    /// Set the session work owed by each local unit without changing this
-    /// slice's local ceiling. Attached children preserve the same scale.
+    /// Creates a work counter with `limit` units.
     #[must_use]
-    pub fn with_session_work_scale(mut self, scale: NonZeroU64) -> Self {
-        self.session_work_scale = scale;
-        self
+    pub fn new(limit: usize) -> Self {
+        Self::with_parent(limit, None)
     }
 
-    /// Reserve temporary evaluator storage in the attached decode session.
-    /// Independent slices retain fallible allocation without session charging.
-    pub fn reserve_scratch(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-    ) -> Result<super::work_scratch::WorkScratch<'a>, ResourceLimit> {
-        super::work_scratch::WorkScratch::new(self.session, bytes, operation)
+    fn with_parent(limit: usize, parent: Option<Rc<WorkAccount>>) -> Self {
+        Self {
+            limit,
+            account: Rc::new(WorkAccount {
+                remaining: Cell::new(Some(limit)),
+                parent,
+            }),
+            recursion_depth: Cell::new(0),
+        }
+    }
+
+    fn ancestors(&self) -> impl Iterator<Item = &WorkAccount> {
+        std::iter::successors(self.account.parent.as_deref(), |account| {
+            account.parent.as_deref()
+        })
     }
 
     /// Charges one work unit, returning false after exhaustion.
@@ -733,196 +350,107 @@ impl<'a> WorkBudget<'a> {
     }
 
     /// Charges several work units, with sticky exhaustion on refusal.
+    ///
+    /// A charging slice also charges every counter it was drawn from. A
+    /// charge that one of them cannot pay exhausts this counter only.
     pub fn charge_by(&self, work: usize) -> bool {
-        self.charge_by_against(work, self.session)
+        let charged = self.debit(work);
+        #[cfg(feature = "test-support")]
+        if charged {
+            super::test_support::record_work(work);
+        }
+        charged
     }
 
-    fn charge_by_against(&self, work: usize, session: Option<&DecodeBudget>) -> bool {
-        let Some(remaining) = self.remaining.get() else {
+    fn debit(&self, work: usize) -> bool {
+        let Some(remaining) = self.account.remaining.get() else {
             return false;
         };
-        if work > remaining {
-            self.remaining.set(None);
-            false
-        } else {
-            if let Some(session) = session {
-                let Some(scaled) = u64_from_index(work).checked_mul(self.session_work_scale.get())
-                else {
-                    // The sticky session keeps the refusal for finish_session.
-                    let _failure = session.refuse(
-                        ResourceDimension::Codec("scaled_work_budget"),
-                        ResourceFailure::BudgetExceeded,
-                        u64::MAX - 1,
-                        u64::MAX - 1,
-                        1,
-                        "scaled_work_budget",
-                    );
-                    self.remaining.set(None);
-                    return false;
-                };
-                if session.charge_work(scaled, "work_budget").is_err() {
-                    self.remaining.set(None);
-                    return false;
-                }
-            }
-            self.remaining.set(Some(remaining - work));
-            true
+        let affordable = |account: &WorkAccount| {
+            account
+                .remaining
+                .get()
+                .is_some_and(|remaining| work <= remaining)
+        };
+        if work > remaining || !self.ancestors().all(affordable) {
+            self.exhaust();
+            return false;
         }
+        self.account.remaining.set(Some(remaining - work));
+        for account in self.ancestors() {
+            account
+                .remaining
+                .set(account.remaining.get().map(|remaining| remaining - work));
+        }
+        true
     }
 
-    /// Returns whether this slice has refused a charge.
+    /// Returns whether this counter has refused a charge.
     pub fn exhausted(&self) -> bool {
-        self.remaining.get().is_none()
+        self.account.remaining.get().is_none()
     }
 
-    /// Marks this slice exhausted without consuming additional session work.
+    /// Marks this counter exhausted. The counters it was drawn from are not.
     pub fn exhaust(&self) {
-        self.remaining.set(None);
+        self.account.remaining.set(None);
     }
 
-    /// Returns unconsumed work units.
+    /// Returns the work units a charge can still use: the smallest remainder
+    /// of this counter and every counter it was drawn from.
     pub fn remaining(&self) -> usize {
-        self.remaining.get().unwrap_or(0)
+        std::iter::once(&*self.account)
+            .chain(self.ancestors())
+            .map(|account| account.remaining.get().unwrap_or(0))
+            .min()
+            .unwrap_or(0)
     }
 
-    /// Returns charged work and the remainder forfeited by exhaustion.
+    /// Returns work charged to this counter and the remainder forfeited by
+    /// exhaustion.
     pub fn consumed(&self) -> usize {
-        let remaining = self.remaining();
-        if remaining > self.limit {
-            self.exhaust();
-            return self.limit;
-        }
-        self.limit - remaining
+        self.limit - self.account.remaining.get().unwrap_or(0)
     }
 
-    /// Enters a session frame, or an independent frame with a 256-frame ceiling.
-    /// Attached child slices share the active session depth.
-    pub fn recursion_guard(&self) -> Result<WorkBudgetRecursionGuard<'_, 'a>, ResourceLimit> {
-        const INDEPENDENT_RECURSION_DEPTH: usize = 256;
-        if let Some(session) = self.session {
-            return session.enter_nested("work_budget_recursion").map(|guard| {
-                WorkBudgetRecursionGuard {
-                    account: WorkRecursionAccount::Session { _guard: guard },
-                }
-            });
-        }
+    /// Enters one recursive frame, refusing past [`WorkBudget::RECURSION_DEPTH`].
+    /// The refusal exhausts the counter; it does not touch a decode session.
+    pub fn recursion_guard(&self) -> Result<WorkBudgetRecursionGuard<'_>, BudgetExhausted> {
         let depth = self.recursion_depth.get();
-        if depth >= INDEPENDENT_RECURSION_DEPTH {
+        if depth >= Self::RECURSION_DEPTH {
             self.exhaust();
-            return Err(ResourceLimit {
-                dimension: ResourceDimension::RecursionDepth,
-                reason: ResourceFailure::BudgetExceeded,
-                limit: u64_from_index(INDEPENDENT_RECURSION_DEPTH),
-                used: u64_from_index(depth),
-                additional: 1,
-                operation: "work_budget_recursion",
-            });
+            return Err(BudgetExhausted);
         }
         self.recursion_depth.set(depth + 1);
-        Ok(WorkBudgetRecursionGuard {
-            account: WorkRecursionAccount::Independent(self),
-        })
+        Ok(WorkBudgetRecursionGuard { budget: self })
     }
 
-    /// Copy the active cycle path and admit one new frame slot.
-    /// The reservation covers the copied path until the frame leaves.
-    pub fn copy_recursion_path<T: Copy>(
-        &self,
-        path: &[T],
-    ) -> Result<(Vec<T>, super::work_scratch::WorkScratch<'a>), ResourceLimit> {
-        const OPERATION: &str = "model evaluation cycle path";
-        let capacity = path.len().checked_add(1).ok_or_else(|| ResourceLimit {
-            dimension: ResourceDimension::CollectionItems,
-            reason: ResourceFailure::BudgetExceeded,
-            limit: u64::MAX,
-            used: u64_from_index(path.len()),
-            additional: 1,
-            operation: OPERATION,
-        })?;
-        let bytes = u64_from_index(capacity)
-            .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-            .ok_or(ResourceLimit {
-                dimension: ResourceDimension::MaterializedBytes,
-                reason: ResourceFailure::BudgetExceeded,
-                limit: u64::MAX,
-                used: 0,
-                additional: u64::MAX,
-                operation: OPERATION,
-            })?;
-        if let Some(session) = self.session {
-            session.charge_collection_items_limit(u64_from_index(capacity), OPERATION)?;
-            // Copy each path member and compare it once when binding the frame.
-            session.charge_work_limit(
-                bytes
-                    .checked_add(u64_from_index(path.len()))
-                    .ok_or_else(|| {
-                        session.refuse_limit(
-                            ResourceDimension::WorkUnits,
-                            ResourceFailure::BudgetExceeded,
-                            u64::MAX,
-                            bytes,
-                            u64_from_index(path.len()),
-                            OPERATION,
-                        )
-                    })?,
-                OPERATION,
-            )?;
-        }
-        let storage = self.reserve_scratch(bytes, OPERATION)?;
-        let mut copied = Vec::new();
-        copied
-            .try_reserve_exact(capacity)
-            .map_err(|_| match self.session {
-                Some(session) => session.refuse_limit(
-                    ResourceDimension::MaterializedBytes,
-                    ResourceFailure::AllocationFailed,
-                    session.materialized_allowance(),
-                    session.materialized.get(),
-                    bytes,
-                    OPERATION,
-                ),
-                None => ResourceLimit::allocation_failed(
-                    ResourceDimension::MaterializedBytes,
-                    bytes,
-                    bytes,
-                    OPERATION,
-                ),
-            })?;
-        copied.extend_from_slice(path);
-        Ok((copied, storage))
-    }
-
-    /// Creates an independent child slice capped by this budget's remainder.
-    pub fn child_slice(&self, limit: usize) -> WorkBudget<'static> {
+    /// Creates a child counter capped by this counter's remainder.
+    ///
+    /// The child's charges do not reach this counter until
+    /// [`WorkBudget::consume_child`] transfers them.
+    #[must_use]
+    pub fn child_slice(&self, limit: usize) -> WorkBudget {
         WorkBudget::new(limit.min(self.remaining()))
     }
 
-    /// Creates a child slice capped by this budget's remainder and attached to its session.
-    pub fn session_child_slice(&self, limit: usize) -> WorkBudget<'_> {
-        WorkBudget {
-            limit: limit.min(self.remaining()),
-            remaining: Cell::new(Some(limit.min(self.remaining()))),
-            recursion_depth: Cell::new(0),
-            session: self.session,
-            session_work_scale: self.session_work_scale,
-        }
+    /// Creates a child counter of at most `limit` units whose every charge is
+    /// also charged to this counter, so the work below a counter never
+    /// exceeds its limit.
+    ///
+    /// Exhausting the child, by its own limit or by an ancestor that cannot
+    /// pay, leaves this counter usable.
+    #[must_use]
+    pub fn charging_slice(&self, limit: usize) -> WorkBudget {
+        WorkBudget::with_parent(limit.min(self.remaining()), Some(Rc::clone(&self.account)))
     }
 
-    /// Charges this budget for work consumed by a child slice.
+    /// Charges this counter for work consumed by a child counter.
     ///
     /// # Errors
     ///
-    /// [`BudgetExhausted`] when the child's work is above this budget's
-    /// remainder. The budget marks itself exhausted in that case, so
-    /// [`WorkBudget::exhausted`] answers `true` afterwards.
-    pub fn consume_child(&self, child: &WorkBudget<'_>) -> Result<(), BudgetExhausted> {
-        // A session child already charged the shared session for each unit.
-        // Only transfer its consumption into this parent's local slice.
-        let session = match (self.session, child.session) {
-            (Some(parent), Some(child)) if std::ptr::eq(parent, child) => None,
-            _ => self.session,
-        };
-        if self.charge_by_against(child.consumed(), session) {
+    /// [`BudgetExhausted`] when the child's work is above this counter's
+    /// remainder. The counter marks itself exhausted in that case.
+    pub fn consume_child(&self, child: &WorkBudget) -> Result<(), BudgetExhausted> {
+        if self.debit(child.consumed()) {
             Ok(())
         } else {
             Err(BudgetExhausted)
@@ -951,37 +479,12 @@ pub const fn work_units(items: usize) -> usize {
     }
 }
 
-/// Builds a correctly classified refusal for a codec-local ceiling.
-pub fn refuse_local_limit(what: &'static str, limit: u64, requested: u64) -> CodecError {
-    local_limit_error(what, limit, requested, what)
-}
-
-fn local_limit_error(
-    what: &'static str,
-    limit: u64,
-    requested: u64,
-    operation: &'static str,
-) -> CodecError {
-    let (used, additional) = match requested.checked_sub(limit) {
-        Some(excess) => (limit, excess),
-        None => (requested, 0),
-    };
-    CodecError::ResourceLimit(ResourceLimit {
-        dimension: ResourceDimension::Codec(what),
-        reason: ResourceFailure::BudgetExceeded,
-        limit,
-        used,
-        additional,
-        operation,
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{work_units, DecodeBudget, WorkBudget};
+    use super::{work_units, DecodeBudget, WorkBudget, RETAINED_BASE, RETAINED_PER_INPUT_BYTE};
     use crate::decode::{DecodePolicy, ResourceDimension, ResourceFailure};
 
-    fn descend(budget: &WorkBudget<'_>, depth: usize) -> usize {
+    fn descend(budget: &WorkBudget, depth: usize) -> usize {
         let Ok(_guard) = budget.recursion_guard() else {
             return depth;
         };
@@ -989,41 +492,10 @@ mod tests {
     }
 
     #[test]
-    fn recursion_guard_is_shared_and_bounded() {
+    fn recursion_guard_is_bounded_and_exhausts_the_counter() {
         let budget = WorkBudget::new(10_000);
-        assert_eq!(descend(&budget, 0), 256);
+        assert_eq!(descend(&budget, 0), WorkBudget::RECURSION_DEPTH);
         assert!(budget.exhausted());
-    }
-
-    #[test]
-    fn attached_recursion_refuses_zero_session_depth() {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_recursion_depth = 0;
-        let session = DecodeBudget::new(policy, 1);
-        let budget = WorkBudget::for_session(100, &session);
-        let failure = budget
-            .recursion_guard()
-            .expect_err("zero depth refuses first frame");
-        assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(failure.limit, 0);
-        assert_eq!(failure.used, 0);
-        assert_eq!(failure.additional, 1);
-        assert_eq!(session.fused(), Some(failure));
-    }
-
-    #[test]
-    fn attached_child_preserves_active_session_depth() {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_recursion_depth = 1;
-        let session = DecodeBudget::new(policy, 1);
-        let budget = WorkBudget::for_session(100, &session);
-        let guard = budget.recursion_guard().expect("first frame fits");
-        let child = budget.session_child_slice(100);
-        let failure = child.recursion_guard().expect_err("child shares depth");
-        assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(failure.used, 1);
-        drop(guard);
-        assert_eq!(session.recursion_depth.get(), 0);
     }
 
     #[test]
@@ -1041,60 +513,127 @@ mod tests {
     }
 
     #[test]
-    fn session_child_consumption_charges_the_session_once() {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 1;
-        let session = DecodeBudget::new(policy, 1);
-        let parent = WorkBudget::for_session(2, &session);
-        let child = parent.session_child_slice(1);
+    fn child_consumption_transfers_to_the_parent_once() {
+        let parent = WorkBudget::new(3);
+        let child = parent.child_slice(2);
         assert!(child.charge());
-        assert_eq!(session.work.get(), 1);
-        assert!(parent.consume_child(&child).is_ok());
-        assert_eq!(parent.remaining(), 1);
-        assert_eq!(session.work.get(), 1);
-        assert!(session.fused().is_none());
-    }
-
-    #[test]
-    fn scaled_session_work_preserves_local_ceiling_and_child_accounting() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 8;
-        let session = DecodeBudget::new(policy, 1);
-        let parent = WorkBudget::for_session(3, &session)
-            .with_session_work_scale(std::num::NonZeroU64::new(4).expect("nonzero work scale"));
-        let child = parent.session_child_slice(1);
-        assert!(child.charge());
-        assert_eq!(session.work.get(), 4);
         assert!(parent.consume_child(&child).is_ok());
         assert_eq!(parent.remaining(), 2);
-        assert_eq!(session.work.get(), 4);
-        assert!(parent.charge());
-        assert_eq!(parent.remaining(), 1);
-        assert_eq!(session.work.get(), 8);
-        assert!(!parent.charge());
+        let greedy = WorkBudget::new(5);
+        assert!(greedy.charge_by(5));
+        assert!(parent.consume_child(&greedy).is_err());
         assert!(parent.exhausted());
-        let failure = session.fused().expect("session work refusal");
-        assert_eq!(failure.dimension, super::ResourceDimension::WorkUnits);
-        assert_eq!(failure.used, 8);
-        assert_eq!(failure.additional, 4);
     }
 
     #[test]
-    fn retained_allocation_refusal_uses_the_retained_dimension_and_prior_usage() {
+    fn charging_slices_charge_every_ancestor_and_exhaust_locally() {
+        let root = WorkBudget::new(10);
+        let child = root.charging_slice(8);
+        let grandchild = child.charging_slice(100);
+        assert_eq!(grandchild.remaining(), 8);
+        assert!(grandchild.charge_by(3));
+        assert_eq!((root.remaining(), child.remaining()), (7, 5));
+        assert_eq!(grandchild.consumed(), 3);
+
+        assert!(root.charge_by(5));
+        assert_eq!(grandchild.remaining(), 2);
+        assert!(!grandchild.charge_by(3));
+        assert!(grandchild.exhausted());
+        assert!(!child.exhausted() && !root.exhausted());
+        assert_eq!((root.remaining(), child.remaining()), (2, 2));
+
+        let sibling = child.charging_slice(1);
+        assert!(sibling.charge());
+        assert!(!sibling.charge());
+        assert!(!child.exhausted());
+        assert_eq!(root.remaining(), 1);
+
+        root.exhaust();
+        assert!(!child.charge());
+        assert!(child.exhausted());
+        assert_eq!(root.consumed(), 10);
+    }
+
+    #[test]
+    fn retained_allocation_refusal_fuses_with_current_usage() {
         let session = DecodeBudget::new(DecodePolicy::default(), 1);
         session
-            .charge_retained(3, "copy retained")
+            .retain_bytes(3, "copy retained")
             .expect("retained charge fits the default session allowance");
         let crate::CodecError::ResourceLimit(limit) =
-            session.retained_allocation_failed(3, "copy retained")
+            session.retained_allocation_failed(5, "copy retained")
         else {
             panic!("retained allocation must produce a resource refusal");
         };
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.reason, ResourceFailure::AllocationFailed);
-        assert_eq!(limit.used, 0);
-        assert_eq!(limit.additional, 3);
+        assert_eq!(limit.used, 3);
+        assert_eq!(limit.additional, 5);
         assert_eq!(session.fused(), Some(limit));
+    }
+
+    #[test]
+    fn retained_bytes_available_reports_proportional_allowance() {
+        let policy = DecodePolicy::default();
+        let input = 3;
+        let expected = policy
+            .limits
+            .max_retained_bytes
+            .min(RETAINED_BASE + RETAINED_PER_INPUT_BYTE * input);
+        let session = DecodeBudget::new(policy, input);
+        assert_eq!(session.retained_bytes_available(), expected);
+    }
+
+    #[test]
+    fn retained_bytes_available_reports_policy_ceiling() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = RETAINED_BASE / 2;
+        let session = DecodeBudget::new(policy, 3);
+        assert_eq!(
+            session.retained_bytes_available(),
+            policy.limits.max_retained_bytes
+        );
+    }
+
+    #[test]
+    fn retained_bytes_available_reads_without_charging_or_fusing() {
+        let policy = DecodePolicy::default();
+        let input = 3;
+        let allowance = policy
+            .limits
+            .max_retained_bytes
+            .min(RETAINED_BASE + RETAINED_PER_INPUT_BYTE * input);
+        let session = DecodeBudget::new(policy, input);
+        let retained = 7;
+        assert!(session.retain_bytes(retained, "retain").is_ok());
+        for _ in 0..3 {
+            assert_eq!(session.retained_bytes_available(), allowance - retained);
+            assert_eq!(session.fused(), None);
+        }
+        assert!(session
+            .retain_bytes(allowance - retained, "retain remaining")
+            .is_ok());
+        assert_eq!(session.retained_bytes_available(), 0);
+        assert_eq!(session.fused(), None);
+    }
+
+    #[test]
+    fn retained_bytes_available_is_zero_after_any_dimension_fuses() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = RETAINED_BASE / 2;
+        let retained_session = DecodeBudget::new(policy, 3);
+        assert!(retained_session
+            .retain_bytes(policy.limits.max_retained_bytes + 1, "retain over limit")
+            .is_err());
+        assert!(retained_session.fused().is_some());
+        assert_eq!(retained_session.retained_bytes_available(), 0);
+
+        let entity_session = DecodeBudget::new(policy, 3);
+        assert!(entity_session
+            .charge_entities(policy.limits.max_entities + 1, "entities over limit")
+            .is_err());
+        assert!(entity_session.fused().is_some());
+        assert_eq!(entity_session.retained_bytes_available(), 0);
     }
 
     #[test]
@@ -1112,14 +651,5 @@ mod tests {
                     && limit.used == 2
                     && limit.additional == 0
         ));
-    }
-
-    #[test]
-    fn retained_allocation_refusal_reports_existing_usage_when_charge_exceeds_it() {
-        let session = DecodeBudget::new(DecodePolicy::default(), 1);
-        session.retained.set(2);
-        let limit = session.retained_allocation_failed_limit(3, "retain");
-        assert_eq!(limit.used, 2);
-        assert_eq!(limit.additional, 3);
     }
 }

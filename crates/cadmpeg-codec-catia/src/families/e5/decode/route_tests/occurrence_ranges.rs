@@ -20,89 +20,6 @@ fn support_range_agreement_requires_matching_endpoints() {
 }
 
 #[test]
-fn occurrence_context_refuses_before_retained_surface_copy() {
-    let pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 0.0),
-        )
-        .expect("valid line pcurve"),
-    );
-    let sides = ["left", "right"].map(|name| E5OccurrenceIntersectionSide {
-        surface: SurfaceId::mint(format!("catia:test:surface#{name}")).expect("identity grammar"),
-        pcurve: pcurve.clone(),
-        pcurve_range: [0.0, 1.0],
-        curve: None,
-    });
-    let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        e5_support_occurrence_intersection_context(ctx, [0.0, 1.0], [0.0, 1.0], &sides)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_e5_occurrence_context_surface_id")
-    );
-}
-
-#[test]
-fn e5_boundary_nurbs_cache_refuses_before_copy() {
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid linear NURBS"),
-    ));
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        curve.try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_e5_boundary_curve_copy")
-    );
-}
-
-#[test]
-fn e5_intersection_context_copy_refuses_retained_limit() {
-    let sides = ["left", "right"].map(|name| cadmpeg_ir::geometry::IntcurveSupportSide {
-        surface: Some(
-            SurfaceId::mint(format!("catia:test:surface#{name}")).expect("valid surface identity"),
-        ),
-        pcurve: None,
-    });
-    let context = cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-        sides,
-        [0.0, 1.0],
-        std::array::from_fn(|_| Vec::new()),
-    )
-    .expect("valid support context");
-    let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        crate::resource::copy_intcurve_support_context(
-            ctx,
-            &context,
-            "catia_e5_intersection_context",
-        )
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_e5_intersection_context")
-    );
-    let copied = crate::test_support::with_service_context(|ctx| {
-        crate::resource::copy_intcurve_support_context(
-            ctx,
-            &context,
-            "catia_e5_intersection_context",
-        )
-    })
-    .expect("service budget admits context copy");
-    assert_eq!(copied, context);
-}
-
-#[test]
 fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
     let range = [-f64::MAX, f64::MAX];
     assert!(parameter_range_agreement_tolerance(range, range).is_some());
@@ -136,16 +53,13 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
             curve: Some((line.clone(), range)),
         },
     ];
-    let context = crate::test_support::with_service_context(|ctx| {
-        e5_support_occurrence_intersection_context(ctx, range, range, &sides)
-    })
-    .expect("service budget admits context")
-    .expect("wide support context");
+    let context = e5_support_occurrence_intersection_context(range, range, &sides)
+        .expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
     let (cached, cached_range) = crate::test_support::with_service_context(|ctx| {
         e5_occurrence_intersection_cache(ctx, &sides)
     })
-    .expect("evaluation resources")
+    .expect("compute the E5 occurrence intersection cache")
     .expect("wide exact carrier cache");
     assert_eq!(cached, &line);
     assert_eq!(cached_range, range);
@@ -181,11 +95,8 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
             curve: None,
         },
     ];
-    let context = crate::test_support::with_service_context(|ctx| {
-        e5_support_occurrence_intersection_context(ctx, [10.0, 20.0], [10.0, 20.0], &sides)
-    })
-    .expect("service budget admits context")
-    .expect("support intersection context");
+    let context = e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides)
+        .expect("support intersection context");
     assert_eq!(context.parameter_range().endpoints(), [10.0, 20.0]);
     assert_eq!(
         context.sides()[0]
@@ -236,14 +147,12 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     ));
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid linear NURBS"),
     ));
     let mut sides = vec![
@@ -277,7 +186,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     let (cache, range) = crate::test_support::with_service_context(|ctx| {
         e5_occurrence_intersection_cache(ctx, &sides)
     })
-    .expect("evaluation resources")
+    .expect("compute the E5 occurrence intersection cache")
     .expect("analytic cache");
     assert_eq!(cache, &line);
     assert_eq!(range, [0.0, 1.0]);
@@ -298,7 +207,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(
             ctx, &sides
         ))
-        .expect("evaluation resources")
+        .expect("compute the E5 occurrence intersection cache")
         .is_none()
     );
 
@@ -328,7 +237,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     let (cache, range) = crate::test_support::with_service_context(|ctx| {
         e5_occurrence_intersection_cache(ctx, &sides)
     })
-    .expect("evaluation resources")
+    .expect("compute the E5 occurrence intersection cache")
     .expect("frame-gauged circle cache");
     assert_eq!(cache, &left_circle);
     assert_eq!(range, [0.0, std::f64::consts::PI]);
@@ -336,12 +245,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
 
 #[test]
 fn quintic_jet_reproduces_endpoint_second_order_data() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input limit");
     let curve = quintic_jet_pcurve(
-        &ctx,
         5,
         &[0.0, 2.0],
         &[[0.0, 0.0], [2.0, 0.0]],
@@ -349,7 +253,6 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
         &mut crate::nurbs::LaneRefusals::new(),
         "test record",
     )
-    .expect("service resource budget")
     .expect("linear quintic segment");
     for parameter in [0.0, 0.5, 1.0, 2.0] {
         let point = cadmpeg_ir::eval::decode::pcurve_uv(
@@ -368,26 +271,20 @@ fn reversing_nurbs_preserves_tiny_knot_domain() {
     let tiny = 1e-200;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid tiny-domain NURBS"),
     ));
-    let (reversed, range) = crate::test_support::with_service_context(|ctx| {
-        crate::nurbs::reverse_curve_geometry(
-            ctx,
-            &curve,
-            [tiny, 2.0 * tiny],
-            &mut crate::nurbs::LaneRefusals::new(),
-            "test record",
-        )
-    })
-    .expect("service profile admits range operation")
+    let (reversed, range) = crate::nurbs::reverse_curve_geometry(
+        &curve,
+        [tiny, 2.0 * tiny],
+        &mut crate::nurbs::LaneRefusals::new(),
+        "test record",
+    )
     .expect("reversed NURBS");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reversed)) = reversed else {
         panic!("expected NURBS");

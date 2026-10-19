@@ -51,7 +51,7 @@ use crate::test_support::test_surface_fixtures::{
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("iges").is_some());
 }
@@ -283,7 +283,7 @@ fn decode_matrix(
                 assert_matrix_destination(&matrix, subject_type, expected_arena);
                 let (expected_subjects, expected_total, expected_associated) =
                     expected_counts(name);
-                let scan = crate::test_support::scan(&bytes).expect("integration fixture cards");
+                let scan = crate::card::scan(&bytes).expect("integration fixture cards");
                 let (global, _global_losses) =
                     crate::test_support::parse_global(&scan).expect("integration global");
                 let (directory, _quarantined) =
@@ -585,16 +585,16 @@ fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
         .arenas()["boundary_vertex_sewing"];
 
     assert!(records.iter().any(|record| {
-        record.fields()["sewn"] == true
-            && record.fields()["source_endpoints"]
+        record.fields().unwrap()["sewn"] == true
+            && record.fields().unwrap()["source_endpoints"]
                 .as_array()
                 .is_some_and(|endpoints| endpoints.len() > 1)
     }));
     let sewn = records
         .iter()
-        .find(|record| record.fields()["sewn"] == true)
+        .find(|record| record.fields().unwrap()["sewn"] == true)
         .expect("a boundary coordinate gap is recorded as sewn");
-    let fields = sewn.fields();
+    let fields = sewn.fields().unwrap();
     assert_eq!(fields["source_entity"], "iges:entity:directory#13");
     assert_eq!(fields["tolerance"], 0.01);
     let endpoints = fields["source_endpoints"].as_array().unwrap();
@@ -980,7 +980,7 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
             result.source_fidelity(),
             Vec::new(),
         )
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }

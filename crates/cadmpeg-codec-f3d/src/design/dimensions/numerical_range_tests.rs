@@ -18,7 +18,7 @@ fn entity(name: &str, definition: SketchGeometryDefinition) -> SketchEntity {
 }
 #[test]
 fn numerical_0922_extension_requires_incidence() {
-    crate::test_support::with_decode_context(|decode_ctx| {
+    {
         let line = entity(
             "line",
             SketchGeometryDefinition::Line {
@@ -44,23 +44,20 @@ fn numerical_0922_extension_requires_incidence() {
             parameter: ParameterId::mint("f3d:test:parameter#1").unwrap(),
         };
         let result = recipe_extension_point_dimension(
-            decode_ctx,
             &[candidate],
             &[line, endpoint, detached],
             &SketchId::mint("f3d:test:sketch#1").unwrap(),
-        )
-        .transpose()
-        .unwrap();
+        );
         println!(
             "Fusion short-line detached point 100 chord lengths off carrier selected={}",
             result.is_some()
         );
         assert!(result.is_none());
-    });
+    };
 }
 #[test]
 fn numerical_0922_long_lines_keep_perpendicular_relation() {
-    crate::test_support::with_decode_context(|decode_ctx| {
+    {
         for length in [1., 1e200] {
             let a = entity(
                 "first",
@@ -76,20 +73,19 @@ fn numerical_0922_long_lines_keep_perpendicular_relation() {
                     end: Point2::new(0., length),
                 },
             );
-            let r = exact_counted_dimension_relation(decode_ctx, &[&a, &b])
-                .expect("resource allocation did not fail");
+            let r = exact_counted_dimension_relation(&[&a, &b]);
             println!("Fusion perpendicular lines length{length:e}: {r:?}");
             assert!(matches!(
                 r,
                 Some(SketchConstraintDefinitionInput::Perpendicular { .. })
             ));
         }
-    });
+    };
 }
 
 #[test]
 fn numerical_audit_midpoint_preserves_finite_large_origin() {
-    crate::test_support::with_decode_context(|decode_ctx| {
+    {
         use cadmpeg_ir::math::Point2;
         use cadmpeg_ir::sketches::{
             SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -113,9 +109,7 @@ fn numerical_audit_midpoint_preserves_finite_large_origin() {
                 })
                 .unwrap(),
             );
-            assert!(super::midpoint_constraint(&[&line, &point], decode_ctx)
-                .unwrap()
-                .is_some());
+            assert!(super::midpoint_constraint(&[&line, &point]).is_some());
         }
-    });
+    };
 }

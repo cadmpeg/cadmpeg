@@ -5,8 +5,7 @@ use super::branch_items::BranchItems;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
 use super::unique_candidate;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtrudeProfileReferenceField {
@@ -56,16 +55,11 @@ impl ExtrudeProfileReferenceField {
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
 pub(crate) fn extrude_profile_references(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<ExtrudeProfileReferenceField>, CodecError> {
+) -> Option<ExtrudeProfileReferenceField> {
     if record.name() != "EXTRUDE" {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX extrude profile references",
-    )?;
     let shape = unique_candidate(
         record
             .payload()
@@ -82,33 +76,30 @@ pub(crate) fn extrude_profile_references(
                 extrude_profile_reference_shape(record, start)
             }),
     );
-    let Some((start, count, references_start, witness_start)) = shape else {
-        return Ok(None);
-    };
+    let (start, count, references_start, witness_start) = shape?;
     let count = usize::from(count - 1);
 
-    let mut references = ctx.collection_vec(count, "NX extrude profile references")?;
+    let mut references = Vec::new();
     let mut at = references_start;
     for _ in 0..count {
-        let Some(token) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {
-            return Ok(None);
-        };
+        let token = record
+            .payload()
+            .get(at..)
+            .and_then(PayloadIndexToken::read)?;
         at += token.raw().len();
         references.push(token);
     }
-    let Some(primary_offset) = record.payload_offset().checked_add(references_start) else {
-        return Ok(None);
-    };
+    let primary_offset = record.payload_offset().checked_add(references_start)?;
     let witness_offset =
         witness_start.and_then(|start| record.payload_offset().checked_add(start)?.checked_add(2));
-    Ok(BranchItems::new(references)
+    BranchItems::new(references)
         .ok()
         .map(|references| ExtrudeProfileReferenceField {
             field_tag: record.payload()[start + 2],
             references,
             primary_offset: u64_from_index(primary_offset),
             witness_offset: witness_offset.map(u64_from_index),
-        }))
+        })
 }
 
 fn extrude_profile_reference_shape(
@@ -151,32 +142,10 @@ mod tests {
     fn extrude_profile_references_test(
         record: super::OperationPayload<'_>,
     ) -> Option<super::ExtrudeProfileReferenceField> {
-        crate::test_support::with_decode_context(|ctx| {
-            super::extrude_profile_references(ctx, record)
-        })
-        .unwrap()
+        super::extrude_profile_references(record)
     }
 
     use super::super::operation_record::OperationPayload;
-
-    #[test]
-    fn extrude_profile_references_refuse_collection_limit() {
-        let bytes = b"\x01\x02\x00\x01\x03\xf0\x00\xf1\x01\x00\x01\x03\x79\x01\x03\xf0\x00\xf1\x01\x00\x00\x00";
-        let record = OperationPayload::new(bytes, 100, "EXTRUDE").unwrap();
-
-        crate::test_support::with_decode_context_over(
-            bytes,
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let error = super::extrude_profile_references(ctx, record).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
-            },
-        );
-    }
 
     #[test]
     fn relocation_preserves_the_shared_witness_and_checks_both_complete_spans() {

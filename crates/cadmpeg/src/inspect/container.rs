@@ -347,6 +347,31 @@ mod tests {
     }
 
     #[test]
+    fn zip_member_past_the_zstd_window_allowance_names_the_allowance() {
+        use std::io::Write as _;
+
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "streamed.bin",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Zstd)
+                    .compression_level(Some(22)),
+            )
+            .expect("member");
+        writer.write_all(b"payload").expect("payload");
+        let file = writer.finish().expect("archive").into_inner();
+        let error = extract(&file, ResourceLimits::desktop(), "streamed.bin")
+            .expect_err("the member cannot be expanded");
+        let message = format!("{error:#}");
+        assert!(
+            message.starts_with("opening entry 'streamed.bin': ")
+                && message.ends_with("per-expansion allowance"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn lists_compound_storages_and_streams() {
         let file = compound_fixture();
         let Listing::Cfb(rows) =

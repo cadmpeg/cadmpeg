@@ -34,6 +34,42 @@ fn finite_tolerance_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2
     values.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
 }
 
+/// An invalid configuration payload drops design intent and keeps geometry.
+/// Strict mode still refuses the document with the parser's message.
+fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expected: &str) {
+    let bytes = f3d_with_configuration(&synthetic_geometry_smbh(), name, payload);
+    let contained = F3dCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("an invalid configuration is contained");
+    let undecoded = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::F3dLossCode::DesignIntentUndecoded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(undecoded.len(), 1, "{expected}");
+    assert!(
+        undecoded[0].message.contains(expected),
+        "{}",
+        undecoded[0].message
+    );
+    assert!(f3d_native(contained.ir()).design_configurations.is_empty());
+    assert!(contained.ir().model.configurations.is_empty());
+    assert!(!contained.ir().model.bodies.is_empty());
+
+    let mut strict = DecodeOptions::default();
+    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    let refused = F3dCodec.decode(&mut Cursor::new(bytes), &strict);
+    assert!(
+        matches!(
+            &refused,
+            Err(cadmpeg_ir::DecodeFailure::StrictRejected { rejection })
+                if rejection.loss().message.contains(expected)
+        ),
+        "{refused:?}"
+    );
+}
+
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -106,23 +142,17 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
         let mut order = configuration.variant_order();
         order.push("Narrow".into());
-        *configuration = crate::test_support::with_decode_context(|ctx| {
-            crate::records::configuration::DesignConfiguration::try_new_charged(
-                ctx,
-                configuration.entry_name().clone(),
-                configuration.kind(),
-                order,
-                payload,
-            )
-        })
+        *configuration = crate::records::configuration::DesignConfiguration::try_new(
+            configuration.entry_name().clone(),
+            configuration.kind(),
+            order,
+            payload,
+        )
         .unwrap();
     });
-    retained.model.configurations = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::configurations::project_configurations(
-            decode_ctx,
-            &f3d_native(&retained).design_configurations,
-        )
-    })
+    retained.model.configurations = crate::design::configurations::project_configurations(
+        &f3d_native(&retained).design_configurations,
+    )
     .expect("edited configuration order");
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
@@ -203,21 +233,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert_eq!(rule.payload()["activate"], "wide");
 
-    let invalid = F3dCodec.decode(
-        &mut Cursor::new(f3d_with_configuration(
-            &synthetic_geometry_smbh(),
-            name,
-            b"[]",
-        )),
-        &DecodeOptions::default(),
-    );
-    assert!(matches!(
-        invalid,
-        Err(cadmpeg_ir::DecodeFailure::Codec(
-            cadmpeg_core::CodecError::Malformed(message)
-        ))
-            if message.contains("configuration JSON must be an object")
-    ));
+    assert_invalid_configuration_is_contained(name, b"[]", "configuration JSON must be an object");
 
     for (payload, expected) in [
         (
@@ -237,21 +253,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             "material must be a string",
         ),
     ] {
-        let invalid = F3dCodec.decode(
-            &mut Cursor::new(f3d_with_configuration(
-                &synthetic_geometry_smbh(),
-                name,
-                payload,
-            )),
-            &DecodeOptions::default(),
-        );
-        assert!(matches!(
-            invalid,
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(message)
-            ))
-                if message.contains(expected)
-        ));
+        assert_invalid_configuration_is_contained(name, payload, expected);
     }
 
     let partial_rule = F3dCodec
@@ -978,20 +980,21 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         )
         .unwrap(),
     );
-    let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = &[];
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &f3d_native(&source_less).design_parameters,
-                scopes,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &f3d_native(&source_less).design_parameters,
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     source_less.model.parameters = parameters;
 
     let mut encoded = Vec::new();
@@ -1285,11 +1288,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     coedges.push(coedge_id);
     let vertex_uses = source_less.model.loops[0].anchored_vertex_uses().to_vec();
     source_less.model.loops[0]
-        .replace_ring(
-            &cadmpeg_test_support::service_decode_context(),
-            coedges,
-            vertex_uses,
-        )
+        .replace_ring(coedges, vertex_uses)
         .expect("source-less fixture loop remains a valid ring");
 
     let mut encoded = Vec::new();
@@ -1489,7 +1488,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     assert!(round_trip.ir().model.edges[0].curve().is_some());
     assert!(
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
@@ -1570,7 +1569,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     );
     assert!(
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
@@ -1705,13 +1704,8 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             id: loops[index].clone(),
             face: face.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    vec![coedges[index].clone()],
-                    Vec::new(),
-                )
-                .expect("fixture ring admission")
-                .expect("valid loop ring"),
+                cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
+                    .expect("fixture ring admission"),
             ),
         });
         source_less.model.coedges.push(Coedge {
@@ -1764,9 +1758,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             None,
         ));
     }
-    source_less
-        .finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    source_less.finalize();
 
     let mut encoded = Vec::new();
     F3dCodec

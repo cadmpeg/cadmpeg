@@ -55,56 +55,6 @@ fn pmi_limit_refusal(
 }
 
 #[test]
-fn pmi_payload_reports_work_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units =
-        cadmpeg_core::decode::u64_from_index(pmi_semantic_payload().len()) - 1;
-    let limit = pmi_limit_refusal(policy);
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.operation, "scan SLDPRT PMI candidates");
-}
-
-#[test]
-fn pmi_payload_reports_scoped_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 35;
-    let limit = pmi_limit_refusal(policy);
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-    );
-    assert_eq!(limit.operation, "normalize SLDPRT PMI candidate GUID");
-}
-
-#[test]
-fn pmi_payload_reports_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("sldprt:pmi:dimension#".len() + 35);
-    let limit = pmi_limit_refusal(policy);
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes
-    );
-    assert_eq!(limit.operation, "retain SLDPRT PMI dimension ID");
-}
-
-#[test]
-fn pmi_payload_reports_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let limit = pmi_limit_refusal(policy);
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.operation, "collect SLDPRT PMI map fields");
-}
-
-#[test]
 fn pmi_payload_reports_nesting_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_recursion_depth = 2;
@@ -174,7 +124,6 @@ fn named_feature(id: &str, name: &str) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
@@ -184,24 +133,14 @@ fn named_feature(id: &str, name: &str) -> Feature {
 
 #[test]
 fn empty_subtype_requires_established_count_semantics() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let record = dimension("", 2.0);
     assert_eq!(
-        dimension_subtype(&ctx, &record, false).unwrap(),
+        dimension_subtype(&record, false),
         PmiDimensionSubtype::Native(String::new())
     );
+    assert_eq!(dimension_subtype(&record, true), PmiDimensionSubtype::Count);
     assert_eq!(
-        dimension_subtype(&ctx, &record, true).unwrap(),
-        PmiDimensionSubtype::Count
-    );
-    assert_eq!(
-        dimension_subtype(&ctx, &dimension("", 2.5), true).unwrap(),
+        dimension_subtype(&dimension("", 2.5), true),
         PmiDimensionSubtype::Native(String::new())
     );
 }
@@ -225,7 +164,6 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
@@ -265,14 +203,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     }];
     let record = dimension("Linear", 0.034);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[record]).unwrap();
+    super::apply_to_parameters(&mut parameters, &[feature], &[record]).unwrap();
 
     let parameter = &parameters[0];
     assert_eq!(parameter.expression, "12mm");
@@ -301,14 +232,7 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
     second.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[first, second]).unwrap();
+    super::apply_to_parameters(&mut parameters, &[feature], &[first, second]).unwrap();
 
     assert!(parameters.is_empty());
 }
@@ -322,14 +246,7 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
     alias.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[canonical, alias]).unwrap();
+    super::apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]).unwrap();
 
     let [parameter] = parameters.as_slice() else {
         panic!("one PMI-backed parameter");
@@ -375,14 +292,7 @@ fn conflicting_pmi_metadata_do_not_enrich_history() {
     second.guid = "guid-2".into();
     second.basic = true;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    super::enrich_history_parameters(&ctx, &mut history, &[first, second]).unwrap();
+    super::enrich_history_parameters(&mut history, &[first, second]);
 
     assert!(history[0].features[0].parameters.is_empty());
 }
@@ -926,119 +836,6 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
 }
 
 #[test]
-fn decode_bound_pmi_report_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
-    ));
-    source.extend(make_block(
-        0x49,
-        "Contents/PMISemanticDataDB",
-        &pmi_semantic_payload(),
-    ));
-    let mut options = DecodeOptions::default();
-    let limit = cadmpeg_test_support::decode::resource_refusal_at(
-        &SldprtCodec,
-        &source,
-        &mut options,
-        ResourceDimension::CollectionItems,
-        "collect SLDPRT bound PMI dimensions",
-        0,
-    );
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(options.policy.limits.max_collection_items, limit.used);
-    assert_eq!(limit.additional, 1);
-}
-
-fn pmi_projection_collection_refusal(
-    container_only: bool,
-    operation: &str,
-) -> cadmpeg_core::decode::ResourceLimit {
-    use cadmpeg_core::decode::ResourceDimension;
-    let source = pmi_projection_source();
-    let mut options = DecodeOptions {
-        container_only,
-        ..DecodeOptions::default()
-    };
-    let limit = cadmpeg_test_support::decode::resource_refusal_at(
-        &SldprtCodec,
-        &source,
-        &mut options,
-        ResourceDimension::CollectionItems,
-        operation,
-        0,
-    );
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(options.policy.limits.max_collection_items, limit.used);
-    limit
-}
-
-fn pmi_projection_source() -> Vec<u8> {
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
-    ));
-    source.extend(make_block(
-        0x49,
-        "Contents/PMISemanticDataDB",
-        &pmi_semantic_payload(),
-    ));
-    source
-}
-
-fn pmi_projection_retained_refusal(
-    container_only: bool,
-    operation: &str,
-) -> cadmpeg_core::decode::ResourceLimit {
-    use cadmpeg_core::decode::ResourceDimension;
-    let source = pmi_projection_source();
-    let mut options = DecodeOptions {
-        container_only,
-        ..DecodeOptions::default()
-    };
-    let limit = cadmpeg_test_support::decode::resource_refusal_at(
-        &SldprtCodec,
-        &source,
-        &mut options,
-        ResourceDimension::RetainedBytes,
-        operation,
-        0,
-    );
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    limit
-}
-
-#[test]
-fn geometry_pmi_projection_refuses_collection_limit() {
-    let limit = pmi_projection_collection_refusal(false, "group SLDPRT PMI dimension names");
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_pmi_projection_refuses_collection_limit() {
-    let limit = pmi_projection_collection_refusal(true, "group SLDPRT PMI dimension names");
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_pmi_projection_refuses_retained_limit() {
-    let limit = pmi_projection_retained_refusal(false, "retain SLDPRT PMI parameter native ID");
-    assert!(limit.additional > 1);
-}
-
-#[test]
-fn metadata_pmi_projection_refuses_retained_limit() {
-    let limit = pmi_projection_retained_refusal(true, "retain SLDPRT PMI parameter native ID");
-    assert!(limit.additional > 1);
-}
-
-#[test]
 fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1292,20 +1089,9 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
         pmi: None,
         native_ref: Some("other-dimension".into()),
     }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    let error = super::apply_to_parameters(
-        &ctx,
-        &mut parameters,
-        &[feature],
-        &[dimension("Linear", 0.034)],
-    )
-    .unwrap_err();
+    let error =
+        super::apply_to_parameters(&mut parameters, &[feature], &[dimension("Linear", 0.034)])
+            .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert_eq!(parameters.len(), 1);
 }
@@ -1343,8 +1129,7 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
 }
 
 #[test]
-fn pmi_alias_comparison_refuses_long_semantic_strings() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn pmi_alias_comparison_counts_long_distinct_semantic_strings() {
     let mut first = dimension("linear", 1.0);
     first.id = "bound".into();
     first.cad_text = "x".repeat(1024);
@@ -1353,34 +1138,28 @@ fn pmi_alias_comparison_refuses_long_semantic_strings() {
     second.cad_text.push('y');
     let records = [first, second];
     let bound = std::collections::HashSet::from(["bound"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 100;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::unbound_dimension_count(&ctx, &records, &bound).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare SLDPRT PMI aliases")
-    );
-    assert_eq!(
-        super::unbound_dimension_count(
-            &cadmpeg_test_support::service_decode_context(),
-            &records,
-            &bound
-        )
-        .unwrap(),
-        1
-    );
+    assert_eq!(super::unbound_dimension_count(&records, &bound), 1);
 }
 
 #[test]
-fn pmi_nested_messagepack_refuses_instead_of_malformed_map() {
-    let mut bytes = vec![0x91; 18];
-    bytes.push(0xc0);
+fn pmi_nested_messagepack_depth_cap_rejects_the_value() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let error = super::parse_value(&ctx, &bytes, &mut 0, 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "parse SLDPRT PMI MessagePack depth")
-    );
+    let mut within = vec![0x91; 16];
+    within.push(0xc0);
+    let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
+    let parse = super::Parse {
+        shape: super::Shape::Record,
+        work: &work,
+    };
+    assert!(super::parse_value(&ctx, &within, &mut 0, 0, parse)
+        .unwrap()
+        .is_some());
+    let mut beyond = vec![0x91; 18];
+    beyond.push(0xc0);
+    assert!(super::parse_value(&ctx, &beyond, &mut 0, 0, parse)
+        .unwrap()
+        .is_none());
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]
@@ -1415,4 +1194,136 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         patch_payload(&ir, "block", &mut []),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
+}
+
+/// The default record with one more outer-map entry `key: value` after its
+/// fields, so every field keeps its offset.
+fn record_with_trailing_entry(key: &str, value: &[u8]) -> Vec<u8> {
+    const GUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
+    let mut payload = pmi_semantic_payload();
+    let header = payload
+        .windows(GUID.len())
+        .position(|window| window == GUID.as_bytes())
+        .unwrap()
+        + GUID.len();
+    assert_eq!(payload[header], 0x87);
+    payload[header] = 0x88;
+    fixstr(&mut payload, key);
+    payload.extend_from_slice(value);
+    payload
+}
+
+#[test]
+fn pmi_skipped_values_are_validated_but_not_kept() {
+    const BULK_VALUES: usize = 1 << 20;
+    let mut bulk = vec![0xdd];
+    bulk.extend_from_slice(&u32::try_from(BULK_VALUES).unwrap().to_be_bytes());
+    bulk.extend_from_slice(&vec![0; BULK_VALUES]);
+    let original = parse_payload(&pmi_semantic_payload(), &mut Vec::new());
+    let payload = record_with_trailing_entry("bulk", &bulk);
+    let mut losses = Vec::new();
+    let records = parse_payload(&payload, &mut losses);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(records, original);
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
+    let parse = super::Parse {
+        shape: super::Shape::Record,
+        work: &work,
+    };
+    let mut cursor = usize::try_from(records[0].offset).unwrap();
+    let outer = super::parse_value(&ctx, &payload, &mut cursor, 0, parse)
+        .unwrap()
+        .unwrap();
+    let super::ValueKind::Map(fields) = outer.kind else {
+        panic!("the record is a map");
+    };
+    assert_eq!(
+        fields.keys().copied().collect::<Vec<_>>(),
+        ["cadText", "dimItems", "dimText"]
+    );
+    assert_eq!(cursor, payload.len());
+    assert!(work.consumed() > BULK_VALUES);
+
+    let mut losses = Vec::new();
+    let integer_key = record_with_trailing_entry("bulk", &[0x91, 0x81, 0x01, 0x02]);
+    assert!(parse_payload(&integer_key, &mut losses).is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one malformed-record loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
+    );
+}
+
+/// `count` candidate maps whose arrays run to the end of the payload. Each
+/// later header sits inside a `str8` value of every earlier parse: the `0xd9`
+/// before a GUID turns its first character, `0`, into a 48-byte length.
+fn overlapping_candidates(count: usize, filler: usize) -> (Vec<u8>, usize) {
+    let mut payload = Vec::new();
+    let mut length_slots = Vec::new();
+    let stride = 36 + 8 + filler + 1;
+    for index in 0..count {
+        let guid = format!("{index:08x}-0000-4000-8000-{index:012x}");
+        payload.extend_from_slice(guid.as_bytes());
+        payload.extend_from_slice(&[0x81, 0xa1, b'x', 0xdd]);
+        length_slots.push(payload.len());
+        payload.extend_from_slice(&[0; 4]);
+        payload.extend_from_slice(&vec![0; filler]);
+        payload.push(0xd9);
+    }
+    for slot in length_slots {
+        let remaining = u32::try_from(payload.len() - slot - 4).unwrap();
+        payload[slot..slot + 4].copy_from_slice(&remaining.to_be_bytes());
+    }
+    (payload, stride)
+}
+
+#[test]
+fn pmi_parse_cap_skips_the_remaining_candidates_and_names_the_bound() {
+    const CANDIDATES: usize = 64;
+    let record = pmi_semantic_payload();
+    let original = parse_payload(&record, &mut Vec::new());
+
+    let (moderate, _) = overlapping_candidates(8, 2048);
+    let mut payload = record.clone();
+    payload.extend_from_slice(&moderate);
+    let mut losses = Vec::new();
+    assert_eq!(parse_payload(&payload, &mut losses), original);
+    assert!(losses.is_empty(), "{losses:?}");
+
+    let (chain, stride) = overlapping_candidates(CANDIDATES, 2048);
+    let mut payload = record.clone();
+    payload.extend_from_slice(&chain);
+    let mut losses = Vec::new();
+    assert_eq!(parse_payload(&payload, &mut losses), original);
+    let [loss] = losses.as_slice() else {
+        panic!("one parse-cap loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::PmiSemanticParseCapped.kind()
+    );
+    let prefix = "PMISemanticDataDB section sldprt:block#pmi-payload: ";
+    let suffix = format!(
+        " were not parsed because the section reached the local work cap \
+         PMI_PARSE_WORK_PER_PAYLOAD_BYTE (16) times its {}-byte payload.",
+        payload.len()
+    );
+    let counts = loss
+        .message
+        .strip_prefix(prefix)
+        .and_then(|message| message.strip_suffix(&suffix))
+        .unwrap_or_else(|| panic!("unexpected message: {}", loss.message));
+    let (skipped, offset) = counts.split_once(" candidate map(s) from offset ").unwrap();
+    let skipped = skipped.parse::<usize>().unwrap();
+    let offset = offset.parse::<usize>().unwrap();
+    assert!(0 < skipped && skipped < CANDIDATES, "{skipped}");
+    assert_eq!(
+        offset,
+        record.len() + (CANDIDATES - skipped) * stride + 36,
+        "the loss starts at the candidate the budget ran out in"
+    );
 }

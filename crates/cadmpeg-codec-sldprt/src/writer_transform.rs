@@ -265,11 +265,6 @@ fn transform_surface(
     geometry: &mut SurfaceGeometry,
     transform: Transform,
 ) -> Result<(), CodecError> {
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
-
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = placed_point(transform, plane_surface.origin())?;
@@ -337,14 +332,11 @@ fn transform_surface(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             nurbs
-                .try_map_control_points(
-                    |_, point| {
-                        transform
-                            .apply_point(point.get())
-                            .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
-                    },
-                    &ctx,
-                )?
+                .try_map_control_points(|_, point| {
+                    transform
+                        .apply_point(point.get())
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
+                })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::NotImplemented(message),
                     error => {
@@ -384,11 +376,6 @@ fn transform_surface(
 }
 
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
-
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = placed_point(transform, line_curve.origin())?;
@@ -429,14 +416,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs
-                .try_map_control_points(
-                    |_, point| {
-                        transform
-                            .apply_point(point.get())
-                            .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
-                    },
-                    &ctx,
-                )?
+                .try_map_control_points(|_, point| {
+                    transform
+                        .apply_point(point.get())
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
+                })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::NotImplemented(message),
                     error => {
@@ -563,9 +547,7 @@ mod tests {
                 ],
                 vec![[0, 1, 2]],
                 0.0,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("polygonal construction admission")
             .expect("finite polygonal geometry is admitted"),
         ));
         let error = transform_surface(&mut surface, maximum_translation())
@@ -580,9 +562,7 @@ mod tests {
                         .expect("the polyline has samples"),
                 },
                 0.0,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("polyline construction admission")
             .expect("finite polyline geometry is admitted"),
         ));
         let error = transform_curve(&mut curve, maximum_translation())

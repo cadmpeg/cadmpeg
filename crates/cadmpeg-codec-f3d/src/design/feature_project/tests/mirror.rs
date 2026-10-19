@@ -107,11 +107,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
-        crate::test_support::with_decode_context(|decode_ctx| {
-            project_mirror(decode_ctx, &body_scope, &body_groups, &[], &[])
-        })
-        .unwrap()
-        .expect("body mirror")
+        project_mirror(&body_scope, &body_groups, &[], &[]).expect("body mirror")
     else {
         panic!("mirror projects a pattern");
     };
@@ -131,11 +127,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-        crate::test_support::with_decode_context(|decode_ctx| {
-            project_mirror(decode_ctx, &face_scope, &face_groups, &[], &[])
-        })
-        .unwrap()
-        .expect("face mirror")
+        project_mirror(&face_scope, &face_groups, &[], &[]).expect("face mirror")
     else {
         panic!("mirror projects a pattern");
     };
@@ -144,44 +136,4 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         [PatternSeed::Faces(FaceSelection::Native(native))]
             if native == "f3d:Design/BulkStream.dat:group#40"
     ));
-}
-
-fn assert_mirror_seed_refusal(role: DesignOperandRole, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let scope = mirror_scope(20);
-    let groups = [
-        group(10, 20, role),
-        group(10, 30, DesignOperandRole::ROLE_0X5),
-    ];
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let arena = DecodeArena::new();
-
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_mirror(&ctx, &scope, &groups, &[], &[])).map(|_| ())
-            },
-        );
-        assert!(
-            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation)
-        );
-    }
-}
-
-#[test]
-fn mirror_body_seed_id_refuses_retained_limit() {
-    assert_mirror_seed_refusal(DesignOperandRole::BODIES_B, "f3d mirror body seed id");
-}
-
-#[test]
-fn mirror_face_seed_id_refuses_retained_limit() {
-    assert_mirror_seed_refusal(DesignOperandRole::BODIES_A, "f3d mirror face seed id");
 }

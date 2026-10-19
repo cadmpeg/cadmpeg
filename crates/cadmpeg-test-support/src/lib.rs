@@ -15,10 +15,12 @@ pub mod assembly;
 pub mod bytes;
 pub mod compound;
 pub mod decode;
+pub mod depth;
 pub mod detection;
 pub mod edit;
 pub mod golden;
 pub mod native_serialization;
+pub mod polyhedron;
 pub mod refusal;
 pub mod roundtrip;
 pub mod unknown_keys;
@@ -70,8 +72,7 @@ impl EditableDecodeResult {
     /// Edit the IR and restore canonical order when the guard is dropped.
     pub fn ir_mut(&mut self) -> impl DerefMut<Target = CadIr> + '_ {
         FinalizingEdit::new(&mut self.ir, |ir| {
-            ir.finalize(&service_decode_context())
-                .expect("fixture ordering is admitted");
+            ir.finalize();
         })
     }
 

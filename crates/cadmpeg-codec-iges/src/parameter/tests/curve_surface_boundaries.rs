@@ -1,4 +1,4 @@
-use crate::parameter::analyze_trailing_pointer_groups_for_global_table_with_context;
+use crate::parameter::analyze_trailing_pointer_groups_for_global_table;
 use crate::parameter::entity_primary_end;
 use crate::parameter::ParameterRecord;
 use crate::parameter::Token;
@@ -42,15 +42,11 @@ fn type126_entity_table_boundary_uses_k_and_degree() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-                ctx,
-            )
-            .expect("test-only trailing pointer analysis")
-        });
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1,
@@ -103,15 +99,11 @@ fn type126_entity_table_boundary_precedes_valid_generic_alternative() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -160,15 +152,11 @@ fn type126_malformed_k_or_degree_does_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-                ctx,
-            )
-            .expect("test-only trailing pointer analysis")
-        });
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
@@ -209,15 +197,11 @@ fn type112_entity_table_boundary_uses_segment_count() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-                ctx,
-            )
-            .expect("test-only trailing pointer analysis")
-        });
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -264,15 +248,11 @@ fn type112_entity_table_boundary_precedes_valid_generic_alternatives() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -321,15 +301,11 @@ fn type112_malformed_segment_count_does_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-                ctx,
-            )
-            .expect("test-only trailing pointer analysis")
-        });
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
@@ -399,15 +375,11 @@ fn type106_entity_table_boundary_uses_interpretation_width() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-                ctx,
-            )
-            .expect("test-only trailing pointer analysis")
-        });
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -441,15 +413,11 @@ fn type106_form_interpretation_mismatch_does_not_enable_generic_recovery() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         0
@@ -479,15 +447,11 @@ fn type106_form63_rejects_nonplanar_interpretation_for_boundary_recovery() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         0
@@ -531,15 +495,11 @@ fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-                ctx,
-            )
-            .expect("test-only trailing pointer analysis")
-        });
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -571,15 +531,11 @@ fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         2
@@ -623,15 +579,21 @@ fn decode_uses_type116_boundary_without_assigning_malformed_groups() {
         .iter()
         .find(|record| record.id() == "iges:entity:directory#1")
         .unwrap();
-    assert!(source.fields()["association_links"]
+    assert!(source.fields().unwrap()["association_links"]
         .as_array()
         .unwrap()
         .is_empty());
-    assert!(source.fields()["property_links"]
+    assert!(source.fields().unwrap()["property_links"]
         .as_array()
         .unwrap()
         .is_empty());
-    assert_eq!(source.fields()["parameters"].as_array().unwrap().len(), 7);
+    assert_eq!(
+        source.fields().unwrap()["parameters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        7
+    );
 }
 
 #[test]
@@ -669,7 +631,9 @@ fn decode_uses_type116_entity_boundary_for_explicit_and_omitted_display_pointer(
             .find(|record| record.id() == "iges:entity:directory#3")
             .unwrap();
         assert_eq!(
-            source.fields()["association_links"].as_array().unwrap(),
+            source.fields().unwrap()["association_links"]
+                .as_array()
+                .unwrap(),
             &[serde_json::json!("iges:entity:directory#1")]
         );
     }
@@ -723,7 +687,9 @@ fn decode_uses_type102_entity_boundary_for_form7_association() {
         .find(|record| record.id() == "iges:entity:directory#7")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }
@@ -762,7 +728,9 @@ fn decode_uses_type106_entity_boundary_for_form7_association() {
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }
@@ -801,7 +769,9 @@ fn decode_uses_type123_entity_boundary_for_form7_association() {
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }
@@ -847,7 +817,9 @@ fn decode_uses_type110_entity_boundary_for_form7_association() {
         .find(|record| record.id() == "iges:entity:directory#5")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#3")]
     );
 }
@@ -902,24 +874,26 @@ fn decode_uses_type402_entity_boundary_for_group_forms() {
             .find(|record| record.id() == "iges:entity:directory#1")
             .unwrap();
         assert_eq!(
-            source.fields()["association_links"].as_array().unwrap(),
+            source.fields().unwrap()["association_links"]
+                .as_array()
+                .unwrap(),
             &[serde_json::json!("iges:entity:directory#7")]
         );
         let group = native.arenas()["groups"]
             .iter()
-            .find(|record| record.fields()["source_entity"] == "iges:entity:directory#1")
+            .find(|record| record.fields().unwrap()["source_entity"] == "iges:entity:directory#1")
             .unwrap();
-        assert_eq!(group.fields()["declared_member_count"], 2);
+        assert_eq!(group.fields().unwrap()["declared_member_count"], 2);
         assert_eq!(
-            group.fields()["members"].as_array().unwrap(),
+            group.fields().unwrap()["members"].as_array().unwrap(),
             &[
                 serde_json::json!("iges:entity:directory#3"),
                 serde_json::json!("iges:entity:directory#5"),
             ]
         );
-        assert_eq!(group.fields()["ordered"], matches!(form, 14 | 15));
+        assert_eq!(group.fields().unwrap()["ordered"], matches!(form, 14 | 15));
         assert_eq!(
-            group.fields()["back_pointers_required"],
+            group.fields().unwrap()["back_pointers_required"],
             matches!(form, 1 | 14)
         );
     }
@@ -958,7 +932,9 @@ fn decode_uses_type126_entity_boundary_for_form7_association() {
             .find(|record| record.id() == "iges:entity:directory#3")
             .unwrap();
         assert_eq!(
-            source.fields()["association_links"].as_array().unwrap(),
+            source.fields().unwrap()["association_links"]
+                .as_array()
+                .unwrap(),
             &[serde_json::json!("iges:entity:directory#1")],
             "Form {form}"
         );
@@ -1002,7 +978,9 @@ fn decode_uses_type112_entity_boundary_for_form7_association() {
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }

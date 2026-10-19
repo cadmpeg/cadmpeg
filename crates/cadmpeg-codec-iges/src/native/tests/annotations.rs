@@ -38,9 +38,15 @@ fn decode_general_note_defaulted_final_string_claims_no_trailing_property_group(
     let entity = &native.arenas()["entities"][0];
     let annotation = &native.arenas()["annotations"][0];
 
-    assert!(entity.fields()["property_links"][0].is_null());
-    assert_eq!(annotation.fields()["declared_string_count"], 2);
-    assert_eq!(annotation.fields()["strings"].as_array().unwrap().len(), 2);
+    assert!(entity.fields().unwrap()["property_links"][0].is_null());
+    assert_eq!(annotation.fields().unwrap()["declared_string_count"], 2);
+    assert_eq!(
+        annotation.fields().unwrap()["strings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
         0
@@ -60,7 +66,7 @@ fn decode_new_general_note_reads_a_final_string_present_in_part() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
-    let fields = annotation.fields();
+    let fields = annotation.fields().unwrap();
     let strings = fields["strings"].as_array().unwrap();
 
     assert_eq!(fields["declared_string_count"], 2);
@@ -201,8 +207,9 @@ fn decode_v5_general_note_one_blank_string_as_null() {
     let v4 = IgesCodec
         .decode(&mut Cursor::new(file(global_v4)), &DecodeOptions::default())
         .unwrap();
-    let v4_text = &v4.ir().native.namespace("iges").unwrap().arenas()["annotations"][0].fields()
-        ["strings"][0]["text"];
+    let v4_text = &v4.ir().native.namespace("iges").unwrap().arenas()["annotations"][0]
+        .fields()
+        .unwrap()["strings"][0]["text"];
     assert_eq!(
         u64::from(crate::test_support::native_bytes(v4_text)[0]),
         u64::from(b' ')
@@ -211,8 +218,9 @@ fn decode_v5_general_note_one_blank_string_as_null() {
     let v5 = IgesCodec
         .decode(&mut Cursor::new(file(global_v5)), &DecodeOptions::default())
         .unwrap();
-    let v5_text = &v5.ir().native.namespace("iges").unwrap().arenas()["annotations"][0].fields()
-        ["strings"][0];
+    let v5_text = &v5.ir().native.namespace("iges").unwrap().arenas()["annotations"][0]
+        .fields()
+        .unwrap()["strings"][0];
     assert_eq!(v5_text["declared_character_count"], 1);
     assert!(v5_text["text"].is_null());
 }
@@ -225,8 +233,14 @@ fn decode_general_note_preserves_non_simple_form() {
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
 
-    assert_eq!(annotation.fields()["form"], 7);
-    assert_eq!(annotation.fields()["strings"].as_array().unwrap().len(), 2);
+    assert_eq!(annotation.fields().unwrap()["form"], 7);
+    assert_eq!(
+        annotation.fields().unwrap()["strings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -258,9 +272,12 @@ fn decode_general_note_accepts_each_standard_form_at_its_minimum_count() {
             .unwrap();
         let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
 
-        assert_eq!(annotation.fields()["form"], form);
+        assert_eq!(annotation.fields().unwrap()["form"], form);
         assert_eq!(
-            annotation.fields()["strings"].as_array().unwrap().len(),
+            annotation.fields().unwrap()["strings"]
+                .as_array()
+                .unwrap()
+                .len(),
             count
         );
         assert!(
@@ -281,8 +298,14 @@ fn decode_general_note_keeps_primary_projection_when_trailing_groups_are_invalid
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
 
-    assert_eq!(annotation.fields()["form"], 7);
-    assert_eq!(annotation.fields()["strings"].as_array().unwrap().len(), 1);
+    assert_eq!(annotation.fields().unwrap()["form"], 7);
+    assert_eq!(
+        annotation.fields().unwrap()["strings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -297,7 +320,7 @@ fn decode_general_note_defaulted_final_string_keeps_every_declared_string() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
-    let fields = annotation.fields();
+    let fields = annotation.fields().unwrap();
     let strings = fields["strings"].as_array().unwrap();
 
     assert_eq!(fields["declared_string_count"], 2);
@@ -322,7 +345,7 @@ fn decode_new_general_note_defaulted_final_string_agrees_with_the_neutral_projec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
-    let fields = annotation.fields();
+    let fields = annotation.fields().unwrap();
     let strings = fields["strings"].as_array().unwrap();
 
     assert_eq!(fields["declared_string_count"], 2);
@@ -350,7 +373,7 @@ fn decode_general_note_surplus_tokens_read_the_declared_strings_and_refuse_the_s
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
-    let fields = annotation.fields();
+    let fields = annotation.fields().unwrap();
     let strings = fields["strings"].as_array().unwrap();
 
     assert_eq!(fields["declared_string_count"], declared);
@@ -377,20 +400,24 @@ fn decode_general_note_surplus_tokens_read_the_declared_strings_and_refuse_the_s
 fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_loss() {
     let bytes = note_file(213, new_general_note_parameters(2, &["TOL!"], 0));
 
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
+        let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(bytes.clone()),
                 &DecodeOptions {
-                    container_only,
+                    depth,
                     ..DecodeOptions::default()
                 },
             )
             .unwrap();
         let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
 
-        assert_eq!(annotation.fields()["declared_string_count"], 2);
-        assert!(annotation.fields()["strings"]
+        assert_eq!(annotation.fields().unwrap()["declared_string_count"], 2);
+        assert!(annotation.fields().unwrap()["strings"]
             .as_array()
             .unwrap()
             .is_empty());
@@ -454,7 +481,7 @@ fn decode_new_general_note_resolves_only_the_text_font_pointer_that_names_a_type
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
     let annotation = &native.arenas()["annotations"][0];
-    let fields = annotation.fields();
+    let fields = annotation.fields().unwrap();
     let strings = fields["strings"].as_array().unwrap();
 
     assert_eq!(strings.len(), fonts.len());
@@ -470,7 +497,7 @@ fn decode_new_general_note_resolves_only_the_text_font_pointer_that_names_a_type
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#3")
         .unwrap();
-    let note_fields = note.fields();
+    let note_fields = note.fields().unwrap();
     let pointers = note_fields["references"]
         .as_array()
         .unwrap()

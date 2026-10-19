@@ -25,7 +25,6 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     let axis = NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         axis.clone(),
         axis,
         NurbsSurfaceLanes::new(
@@ -37,7 +36,6 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -56,14 +54,12 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
             let knots = [0.0, 0.0, 1.0, 1.0];
             let weights = [weight; 2];
             let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 knots.to_vec(),
                 poles.to_vec(),
                 Some(weights.to_vec()),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap();
             assert_eq!(
                 crate::eval::decode::nurbs_curve_point_at(
@@ -124,7 +120,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
                 SurfaceParameterAxis::U,
                 0.5,
             )
-            .expect("resource allocation did not fail")
+            .expect("build the NURBS surface isocurve")
             .unwrap();
             assert_eq!(
                 curve.control_points(),
@@ -144,7 +140,7 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
         SurfaceParameterAxis::U,
         0.5,
     )
-    .expect("resource allocation did not fail")
+    .expect("build the NURBS surface isocurve")
     .unwrap();
     assert_eq!(
         curve.control_points(),
@@ -158,7 +154,7 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
         SurfaceParameterAxis::U,
         0.5,
     )
-    .expect("resource allocation did not fail")
+    .expect("build the NURBS surface isocurve")
     .unwrap();
     for point in curve.control_points() {
         assert!((point.x / 1.0e-308 - 1.0).abs() <= 8.0 * f64::EPSILON);
@@ -171,14 +167,12 @@ fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
     let tiny = 1.0e-310;
     let parameter = tiny * 0.5;
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, tiny, tiny],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let point = crate::eval::decode::nurbs_curve_point_at(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -217,14 +211,12 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
         crate::geometry::PlacedCurve::try_new(
             Box::new(SolvedCurveGeometry::Nurbs(
                 crate::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 2.0, 3.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             transform,
@@ -452,7 +444,6 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     let axis = NurbsSurfaceAxis::new(1, vec![1e308, 1e308, 1.1e308, 1.1e308], false);
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         axis.clone(),
         axis,
         NurbsSurfaceLanes::new(
@@ -464,7 +455,6 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let target = Point3::new(0.5, 0.5, 0.);
     let uv = crate::eval::nurbs_surface_closest_parameter_with_budget(
@@ -474,7 +464,7 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
         None,
         &cadmpeg_core::decode::WorkBudget::new(1_000_000),
     )
-    .expect("resource allocation did not fail")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
     let point = crate::eval::decode::nurbs_surface_point(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -529,9 +519,7 @@ fn audit_rolling_ball_jet(
                     site,
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     )
 }
@@ -597,9 +585,7 @@ fn rolling_ball_jet_over_wide_knot_interval_keeps_finite_interior_point() {
                     site,
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
     assert_eq!(
@@ -633,14 +619,12 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
     let width = 1e-310;
     let line = SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, width, width],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(width, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     );
     assert_eq!(
@@ -666,7 +650,6 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
     let square = width * width;
     let quadratic = SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, width, width, width],
             vec![
@@ -677,7 +660,6 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     );
     let second = super::super::curve_second_derivative_solved(
@@ -701,14 +683,12 @@ fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
     let pole = f64::from_bits(1);
     let curve = SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, width, width],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(pole, 0.0, 0.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     );
     let parameter = width / 2.0;
@@ -734,50 +714,17 @@ fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
 }
 
 #[test]
-fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
-    use crate::eval::{nurbs_pcurve_uv, EvaluationFailure};
+fn raw_pcurve_evaluation_reads_a_curved_quadratic_without_nesting() {
+    use crate::eval::nurbs_pcurve_uv;
     use crate::math::Point2;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
     let points = [
         Point2::new(0.0, 0.0),
         Point2::new(1.0, 2.0),
         Point2::new(2.0, 0.0),
     ];
-    let mut heap_knots = vec![0.0; 17];
-    heap_knots.extend([1.0; 17]);
-    let heap_points = [Point2::new(0.0, 0.0); 17];
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => unreachable!(),
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let EvaluationFailure::ResourceLimit(original) =
-            nurbs_pcurve_uv(&ctx, 16, &heap_knots, &heap_points, None, 0.5).unwrap_err()
-        else {
-            panic!("raw pcurve must refuse");
-        };
-        assert_eq!(original.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
-    }
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 4096;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 128;
-    policy.limits.max_work_units = 4096;
     policy.limits.max_recursion_depth = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -795,30 +742,5 @@ fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
         differential.acceleration.unwrap().get(),
         Point2::new(0.0, -8.0)
     );
-    drop(
-        ctx.reserve_scoped_limit(4096, "raw pcurve scratch released")
-            .unwrap(),
-    );
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn raw_pcurve_evaluation_preserves_a_fused_refusal_before_invalid_input() {
-    use crate::eval::{nurbs_pcurve_uv, EvaluationFailure};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original raw pcurve refusal")
-        .unwrap_err();
-    assert!(
-        matches!(nurbs_pcurve_uv(&ctx, 0, &[], &[], None, f64::NAN), Err(EvaluationFailure::ResourceLimit(limit)) if limit == original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
 }

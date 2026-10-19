@@ -2,9 +2,9 @@
 use super::{
     bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
-    pcurve_geometry, referenced_pcurve_ids, select_exact_curve_representation,
-    select_pcurve_representation, source_topology_indices, unique_fallback_polygon_representation,
-    IndexedPolygon, OccurrenceKey, SourceOccurrenceKey, Tables,
+    pcurve_geometry, select_exact_curve_representation, select_pcurve_representation,
+    source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, OccurrenceKey,
+    SourceOccurrenceKey, Tables,
 };
 use crate::brep::{
     surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation,
@@ -12,102 +12,17 @@ use crate::brep::{
 };
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId, PcurveId};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{Coedge, PcurveUse, Sense};
+use cadmpeg_ir::topology::{Coedge, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
-
-pub(super) fn assert_codec_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_collection_items = 0;
-    for _ in 0..4096 {
-        let error = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &options)
-            .expect_err("collection admission must refuse");
-        let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
-            panic!("expected {operation} collection refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        let threshold = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("finite test budget");
-        if limit.operation == operation {
-            options.policy.limits.max_collection_items = threshold - 1;
-            let final_error = FcstdCodec
-                .decode(&mut Cursor::new(bytes), &options)
-                .expect_err("one item below the site must refuse");
-            assert!(matches!(final_error,
-                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(ref refusal))
-                    if refusal.operation == operation));
-            return;
-        }
-        options.policy.limits.max_collection_items = threshold;
-    }
-    panic!("{operation} was not reached");
-}
-
-pub(super) fn assert_codec_retained_refusal(bytes: &[u8], operation: &str) {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 0;
-    for _ in 0..4096 {
-        let error = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &options)
-            .expect_err("retained admission must refuse");
-        let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
-            panic!("expected {operation} retained refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        let threshold = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("finite test budget");
-        if limit.operation == operation {
-            options.policy.limits.max_retained_bytes = threshold - 1;
-            let final_error = FcstdCodec
-                .decode(&mut Cursor::new(bytes), &options)
-                .expect_err("one byte below the site must refuse");
-            assert!(matches!(final_error,
-                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(ref refusal))
-                    if refusal.operation == operation));
-            return;
-        }
-        options.policy.limits.max_retained_bytes = threshold;
-    }
-    panic!("{operation} was not reached");
-}
-
-pub(super) fn triangulated_face_archive() -> Vec<u8> {
-    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
-    let brep = b"CASCADE Topology V3, (c) Open Cascade
-Locations 1
-1 1 0 0 10 0 1 0 0 0 0 1 0
-Curve2ds 0
-Curves 0
-Polygon3D 0
-PolygonOnTriangulations 1
-2 1 2 p 0.01 1 0 1
-Surfaces 0
-Triangulations 1
-3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3
-TShapes 7
-Ve 0.001 0 0 0 0 0 1001000 *
-Ve 0.001 1 0 0 0 0 1001000 *
-Ed 0.001 1 1 0 6 1 1 0 0 1001000 +7 0 -6 0 *
-Wi 1001000 +5 0 *
-Fa 0 0.001 0 1 2 1 1001000 +4 0 *
-Sh 1001000 +3 0 *
-So 1001000 +2 0 *
-+1 0 *";
-    archive_entries(&[("Document.xml", document), ("Shape.brp", brep)])
-}
 
 fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
     values.map(|value| FiniteReal::new(value).expect("finite test endpoint"))
@@ -127,11 +42,7 @@ fn test_indexed_polygon(
     parameters: Option<Vec<FiniteReal>>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<IndexedPolygon, CodecError> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within the input limit");
-    IndexedPolygon::try_new(&ctx, nodes, parameters, deflection)
+    IndexedPolygon::try_new(nodes, parameters, deflection)
 }
 
 fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
@@ -164,26 +75,6 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
 }
 
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
-
-#[test]
-fn indexed_polygon_vertex_capacity_refuses_on_collection_limit() {
-    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within the input limit");
-    assert!(matches!(
-        IndexedPolygon::try_new(
-            &ctx,
-            vec![node],
-            Some(vec![FiniteReal::ZERO]),
-            cadmpeg_ir::scalar::NonNegativeReal::ZERO,
-        ),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD indexed polygon vertices"
-    ));
-}
 
 #[test]
 fn indexed_polygon_pairs_checked_samples() {
@@ -320,11 +211,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         roots: &roots,
     };
 
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let indices = source_topology_indices(&ctx, tables).expect("valid locations");
+    let indices = source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -340,11 +227,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
 }
 
 #[test]
-fn source_topology_walks_release_temporary_stack_bytes() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 4096;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+fn repeated_source_roots_index_one_vertex_occurrence() {
     let tshapes = crate::brep::TextTShapes::from(vec![TextTShape {
         geometry: geometry_for_kind(TextShapeKind::Vertex),
         flags: [false; 7],
@@ -368,8 +251,7 @@ fn source_topology_walks_release_temporary_stack_bytes() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = source_topology_indices(&ctx, tables)
-        .expect("dropped traversal stacks do not consume retained storage");
+    let indices = source_topology_indices(tables).expect("source topology indices");
     assert_eq!(indices.len(), 1);
     assert_eq!(
         indices.get(&(
@@ -378,87 +260,6 @@ fn source_topology_walks_release_temporary_stack_bytes() {
         )),
         Some(&1)
     );
-}
-
-#[test]
-fn source_topology_stack_refuses_at_caller_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let tshapes = crate::brep::TextTShapes::from(vec![TextTShape {
-        geometry: geometry_for_kind(TextShapeKind::Edge),
-        flags: [false; 7],
-        children: Vec::new(),
-    }]);
-    let roots = [TextShapeUse {
-        shape: 1,
-        orientation: TextOrientation::Forward,
-        location: 0.into(),
-    }];
-    let tables = Tables {
-        locations: &[],
-        curve2ds: &[],
-        curves: &[],
-        surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
-        tshapes: &tshapes,
-        triangulations: &[],
-        roots: &roots,
-    };
-    assert!(matches!(source_topology_indices(&ctx, tables),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD source topology stack"));
-}
-
-#[test]
-fn radial_edge_index_refuses_at_caller_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let id = CoedgeId::mint("fcstd:test:coedge#radial").expect("identity grammar");
-    let mut coedges = vec![Coedge {
-        id: id.clone(),
-        owner_loop: LoopId::mint("fcstd:test:loop#radial").expect("identity grammar"),
-        edge: EdgeId::mint("fcstd:test:edge#radial").expect("identity grammar"),
-        radial_next: id,
-        sense: Sense::Forward,
-        use_curve: None,
-        pcurves: Vec::new(),
-    }];
-    assert!(matches!(close_radial_rings(&ctx, &mut coedges),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD radial edge index"));
-}
-
-#[test]
-fn referenced_pcurves_refuse_at_caller_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let id = CoedgeId::mint("fcstd:test:coedge#pcurve").expect("identity grammar");
-    let coedges = [Coedge {
-        id: id.clone(),
-        owner_loop: LoopId::mint("fcstd:test:loop#pcurve").expect("identity grammar"),
-        edge: EdgeId::mint("fcstd:test:edge#pcurve").expect("identity grammar"),
-        radial_next: id,
-        sense: Sense::Forward,
-        use_curve: None,
-        pcurves: vec![PcurveUse {
-            pcurve: PcurveId::mint("fcstd:test:pcurve#1").expect("identity grammar"),
-            isoparametric: None,
-            parameter_range: None,
-        }],
-    }];
-    assert!(matches!(referenced_pcurve_ids(&ctx, &coedges),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD referenced pcurves"));
 }
 
 #[test]
@@ -502,11 +303,7 @@ fn source_indices_follow_depth_first_topology_order() {
         triangulations: &[],
         roots: &roots,
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let indices = source_topology_indices(&ctx, tables).expect("valid locations");
+    let indices = source_topology_indices(tables).expect("valid locations");
     let index =
         |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Transform::identity())));
 
@@ -558,11 +355,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         roots: &roots,
     };
 
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let indices = source_topology_indices(&ctx, tables).expect("valid locations");
+    let indices = source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -922,11 +715,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
             }
         })
         .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    close_radial_rings(&ctx, &mut coedges).expect("radial map fits policy");
+    close_radial_rings(&mut coedges);
     assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
 
     let mut four = (0..4)
@@ -949,7 +738,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .iter()
         .map(|coedge| coedge.radial_next.clone())
         .collect::<Vec<_>>();
-    close_radial_rings(&ctx, &mut four).expect("radial map fits policy");
+    close_radial_rings(&mut four);
     assert_eq!(
         four.iter()
             .map(|coedge| &coedge.radial_next)
@@ -967,7 +756,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         use_curve: None,
         pcurves: Vec::new(),
     }];
-    close_radial_rings(&ctx, &mut singleton).expect("radial map fits policy");
+    close_radial_rings(&mut singleton);
     assert_eq!(singleton[0].radial_next, id);
 }
 
@@ -1047,7 +836,6 @@ fn collapsed_pcurve_ranges_are_unbounded() {
 fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![2.0, 2.0, 4.0, 4.0],
             vec![
@@ -1057,7 +845,6 @@ fn adjacent_pcurve_domain_rounding_is_canonicalized() {
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
 
@@ -1099,60 +886,88 @@ fn face_connectivity_partitions_transitively_without_reordering() {
         .is_empty());
 }
 
-#[test]
-fn face_connectivity_reports_collection_limit() {
-    let sets = [HashSet::from(["edge-a".to_owned()])];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    let error = connected_components(&ctx, &sets)
-        .expect_err("one assignment slot exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "freecad connected-component assignment"));
+/// The pairwise search `connected_components` replaced, kept as an oracle.
+fn pairwise_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
+    let mut assigned = vec![false; connectivity.len()];
+    let mut components = Vec::new();
+    for seed in 0..connectivity.len() {
+        if assigned[seed] {
+            continue;
+        }
+        assigned[seed] = true;
+        let mut component = Vec::new();
+        let mut stack = vec![seed];
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            for candidate in 0..connectivity.len() {
+                if !assigned[candidate]
+                    && !connectivity[current].is_disjoint(&connectivity[candidate])
+                {
+                    assigned[candidate] = true;
+                    stack.push(candidate);
+                }
+            }
+        }
+        component.sort_unstable();
+        components.push(component);
+    }
+    components
 }
 
 #[test]
-fn face_connectivity_stack_refuses_on_collection_limit() {
-    let sets = [HashSet::new()];
+fn face_connectivity_matches_the_pairwise_partition() {
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
+    let policy = DecodePolicy::default();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert!(
-        matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "FreeCAD connected-component stack")
-    );
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = |bound: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        usize::try_from(state % bound).expect("bounded test value")
+    };
+    for (faces, key_pool) in [(1, 1), (8, 4), (40, 30), (200, 150), (200, 400), (300, 60)] {
+        let sets = (0..faces)
+            .map(|_| {
+                (0..next(4))
+                    .map(|_| format!("edge:{}", next(key_pool)))
+                    .collect::<HashSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            connected_components(&ctx, &sets).expect("connected-component allocation"),
+            pairwise_components(&sets),
+            "{faces} faces over {key_pool} keys"
+        );
+    }
 }
 
 #[test]
-fn face_connectivity_members_refuse_on_collection_limit() {
-    let sets = [HashSet::new()];
+fn mesh_scale_face_connectivity_is_linear() {
+    // Two interleaved strips: face `i` shares an edge with face `i + 2`, and
+    // every fourth face also touches one shared hub vertex of its strip. The
+    // pairwise search needs about 2^33 set probes for this shell.
+    const FACES: usize = 1 << 17;
+    let sets = (0..FACES)
+        .map(|face| {
+            let mut keys = HashSet::from([format!("edge:{face}"), format!("edge:{}", face + 2)]);
+            if face % 4 < 2 {
+                keys.insert(format!("vertex:hub-{}", face % 2));
+            }
+            keys
+        })
+        .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 2;
+    let policy = DecodePolicy::default();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert!(
-        matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "FreeCAD connected-component members")
-    );
-}
-
-#[test]
-fn face_connectivity_components_refuse_on_collection_limit() {
-    let sets = [HashSet::new()];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert!(
-        matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "FreeCAD connected components")
+    assert_eq!(
+        connected_components(&ctx, &sets).expect("connected-component allocation"),
+        vec![
+            (0..FACES).step_by(2).collect::<Vec<_>>(),
+            (1..FACES).step_by(2).collect::<Vec<_>>(),
+        ]
     );
 }
 
@@ -1409,8 +1224,8 @@ Co 1001000 +2 0 *
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let report =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(
         report
             .findings
@@ -1476,8 +1291,8 @@ So 1001000 +2 0 *
         Some([0.0, 1.0])
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(
         validation.findings.iter().all(|finding| {
             finding.severity < cadmpeg_ir::report::Severity::Error
@@ -1529,7 +1344,7 @@ Co 1001000 +2 0 *
     assert_ne!(first.pcurves, second.pcurves);
     assert!(!first.pcurves.is_empty() && !second.pcurves.is_empty());
     let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .into_iter()
         .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
@@ -1817,8 +1632,8 @@ Co 1001000 +2 1 +2 3 *
         .expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
-    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let report =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(
         report.findings.iter().all(|finding| finding.severity
             < cadmpeg_ir::report::Severity::Error
@@ -1946,19 +1761,12 @@ fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
     use cadmpeg_ir::math::Point2;
     for domain in [[0.0, SMALL_PCURVE_DOMAIN], [1.0e8, 1.0e8 + 0.01]] {
         let nurbs = PcurveNurbs::new(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![domain[0], domain[0], domain[1], domain[1]],
-            PcurveNurbsPoles::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                None,
-            )
-            .expect("fixture pcurve construction admission")
-            .unwrap(),
+            PcurveNurbsPoles::from_lanes(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], None)
+                .unwrap(),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap();
         let geometry = PcurveGeometry::Nurbs { nurbs };
         assert_eq!(

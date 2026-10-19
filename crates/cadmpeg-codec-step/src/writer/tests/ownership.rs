@@ -144,9 +144,7 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
         ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
         SurfaceGeometry,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
     let nurbs = NurbsSurface::from_lanes(
-        &ctx,
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 5.0, 5.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 5.0, 5.0], false),
         NurbsSurfaceLanes::new(
@@ -158,7 +156,6 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
         ),
         false,
     )
-    .unwrap()
     .unwrap();
     let mut ir = CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#active").unwrap();
@@ -169,7 +166,6 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
     });
     ir.model
         .add_procedural_surface(
-            &ctx,
             &id,
             ProceduralSurface::new(
                 "test:model:procedural_surface#active".try_into().unwrap(),
@@ -182,7 +178,6 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
                 None,
             ),
         )
-        .unwrap()
         .unwrap();
     let mut bytes = Vec::new();
     write_step(

@@ -177,16 +177,10 @@ fn extended_geometry_locus_construction_line_uses_direct_point_object_ids() {
     let second = entity("second", 200, 14, SketchInputKind::Point, Some([1.0, 0.0]));
     let markers = [&curve, &first, &second];
     assert_eq!(
-        super::roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        super::roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -701,16 +695,10 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
     let end = entity("end", 2, Some(9), Some([1.0, 0.0]), SketchInputKind::Point);
     let markers = [&curve, &start, &end];
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &extended_code_one_104,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&extended_code_one_104, &curve, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         vec!["start", "end"]
     );
     let normalized_payload = extended(valid_compact_96);
@@ -760,8 +748,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
             entity("end", 2, Some(9), Some([1.0, 0.0])),
         ],
     };
-    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane)
-        .unwrap();
+    normalize_indexed_curve_entities(&mut lane);
     assert_eq!(lane.sketch_entities[1].kind(), SketchInputKind::Point);
     assert_eq!(lane.sketch_entities[2].kind(), SketchInputKind::Point);
     assert_eq!(
@@ -873,16 +860,10 @@ fn legacy_compact_96_profile_line_falls_back_to_one_based_complete_roster() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[0],
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &entities[0], &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         vec!["point-14", "point-2"]
     );
 }
@@ -983,8 +964,7 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
             ),
         ],
     };
-    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane)
-        .unwrap();
+    normalize_indexed_curve_entities(&mut lane);
     assert_eq!(lane.sketch_entities[1].kind(), SketchInputKind::Point);
     assert_eq!(lane.sketch_entities[2].kind(), SketchInputKind::Point);
 
@@ -1175,14 +1155,8 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     let crate::resolved_features::endpoints::CurrentWideArc(endpoints, center) =
-        current_wide_arc_direct_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[0],
-            &markers,
-        )
-        .unwrap()
-        .expect("direct endpoint IDs");
+        current_wide_arc_direct_markers(&payload, &entities[0], &markers)
+            .expect("direct endpoint IDs");
     assert_eq!(
         endpoints
             .iter()
@@ -1192,13 +1166,11 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
     );
     assert_eq!(
         coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
             &payload,
             &entities[0],
             &markers,
-            [endpoints[0], endpoints[1]],
-        )
-        .unwrap(),
+            [endpoints[0], endpoints[1]]
+        ),
         Some(center)
     );
     let unrelated = (100u32..1100)
@@ -1218,18 +1190,10 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
         .copied()
         .chain(unrelated.iter())
         .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 20_000;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let crate::resolved_features::endpoints::CurrentWideArc(endpoints, center) =
-        current_wide_arc_direct_markers(&ctx, &payload, &entities[0], &expanded)
-            .unwrap()
-            .unwrap();
+        current_wide_arc_direct_markers(&payload, &entities[0], &expanded).unwrap();
     assert_eq!(endpoints.map(SketchInputEntity::id), ["start", "end"]);
     assert_eq!(center, [0.0, 0.0]);
-    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]
@@ -1350,13 +1314,7 @@ fn extended_marker104_arc_prefers_point_roster_endpoints() {
 
     assert!(indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
-    .unwrap();
+    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
     assert_eq!(
         endpoints
             .iter()
@@ -1409,54 +1367,27 @@ fn extended_geometry_104_arc_uses_zero_based_roster_and_center_index() {
     assert!(indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["start", "end"]
     );
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&start, &end]
-        )
-        .unwrap(),
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
         Some([0.0, 0.0])
     );
 
     payload[72..76].copy_from_slice(&(-1i32).to_le_bytes());
     assert!(indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&start, &end]
-        )
-        .unwrap(),
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
         Some([0.0, 0.0])
     );
 
     payload[76..78].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&start, &end]
-        )
-        .unwrap(),
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
         None
     );
 }
@@ -1509,14 +1440,7 @@ fn extended_compact_104_arc_uses_geometry_roster_for_center_index() {
 
     assert!(indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&start, &end]
-        )
-        .unwrap(),
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
         Some([0.0, 0.0])
     );
 }
@@ -1581,27 +1505,14 @@ fn extended_terminal_102_profile_arc_uses_object_center_fallback() {
     assert!(indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["end", "start"]
     );
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&end, &start]
-        )
-        .unwrap(),
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&end, &start]),
         Some([2.0, 0.0])
     );
 
@@ -1657,14 +1568,7 @@ fn coordinate_roster_arc_center_requires_matching_indexed_endpoints() {
     let markers = [&curve, &relation, &start, &end, &center, &distractor];
 
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&start, &end]
-        )
-        .unwrap(),
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
         None
     );
 }
@@ -1716,26 +1620,14 @@ fn extended_geometry_116_arc_uses_relation_tail_and_center_index() {
     assert!(indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&start, &end]
-        )
-        .unwrap(),
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
         Some([0.0, 0.0])
     );
 
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
-    let (circle_center, radius) = equal_index_coordinate_roster_full_circle(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
-    .unwrap()
-    .expect("116-byte equal-index circle");
+    let (circle_center, radius) =
+        equal_index_coordinate_roster_full_circle(&payload, &curve, &markers)
+            .expect("116-byte equal-index circle");
     assert_eq!(circle_center, [9.0, 9.0]);
     assert!((radius - 145.0_f64.sqrt()).abs() < 1.0e-12);
 }
@@ -1786,13 +1678,7 @@ fn extended_geometry_terminal_circle_uses_dimension_tail() {
     let markers = [&circle, &witness, &center, &radial];
 
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &circle,
-            &markers
-        )
-        .unwrap(),
+        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
         Some(([0.0, 0.0], 1.0))
     );
 }
@@ -1890,14 +1776,7 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
     ];
     let markers = entities.iter().collect::<Vec<_>>();
 
-    let endpoints = legacy_compact_direct_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        0,
-        &entities[0],
-        &markers,
-    )
-    .unwrap();
+    let endpoints = legacy_compact_direct_endpoint_markers(&payload, 0, &entities[0], &markers);
     assert_eq!(
         endpoints
             .iter()
@@ -1906,16 +1785,10 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
         ["start", "end"]
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[0],
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|endpoint| endpoint.id())
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &entities[0], &markers)
+            .iter()
+            .map(|endpoint| endpoint.id())
+            .collect::<Vec<_>>(),
         ["start", "end"]
     );
 
@@ -1929,27 +1802,14 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
     payload[96..100].copy_from_slice(&3u32.to_le_bytes());
     payload[100..104].copy_from_slice(&2u32.to_le_bytes());
     payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let endpoints = legacy_marker104_arc_endpoints(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &entities[0],
-        &markers,
-    )
-    .unwrap()
-    .expect("endpoints");
+    let endpoints =
+        legacy_marker104_arc_endpoints(&payload, &entities[0], &markers).expect("endpoints");
     assert_eq!(
         endpoints.map(crate::records::SketchInputEntity::id),
         ["start", "end"]
     );
     assert_eq!(
-        super::legacy_marker104_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[0],
-            &markers,
-            endpoints,
-        )
-        .unwrap(),
+        super::legacy_marker104_arc_center(&payload, &entities[0], &markers, endpoints),
         Some([0.0, 1.0])
     );
 }

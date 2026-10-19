@@ -19,7 +19,6 @@ fn numerical_0922_inverse_keeps_both_branches() {
 
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let n = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., 0.5 * d, d, d],
             vec![
@@ -30,7 +29,6 @@ fn numerical_0922_inverse_keeps_both_branches() {
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid folded degree-one curve");
         let g = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n.clone()));
         let result = degree_one_nurbs_point_parameter(
@@ -41,7 +39,7 @@ fn numerical_0922_inverse_keeps_both_branches() {
             [0., d],
             POINT_FIT_TOLERANCE,
         )
-        .expect("evaluation resources");
+        .expect("compute the degree one NURBS point parameter");
         println!("Creo folded segment domain {d:e}: {result:?}");
         assert_eq!(result, None);
     }
@@ -50,24 +48,16 @@ fn numerical_0922_inverse_keeps_both_branches() {
 fn numerical_0922_finite_knot_domain_reverses() {
     for d in [[0., 1.], [1e308, 1.1e308]] {
         let mut c = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![d[0], d[0], d[1], d[1]],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid translated degree-one curve");
         let range =
             d.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite domain"));
-        let result = c
-            .reverse_parameterization_in_range(
-                &cadmpeg_test_support::service_decode_context(),
-                range[0],
-                range[1],
-            )
-            .expect("range reversal admission");
+        let result = c.reverse_parameterization_in_range(range[0], range[1]);
         println!("Creo reverse finite line domain{d:?}: {result:?}");
         assert_eq!(result, Some(()));
         assert_eq!(c.knots().as_slice(), &[d[0], d[0], d[1], d[1]]);
@@ -89,14 +79,12 @@ fn numerical_audit_full_edge_survives_small_knot_domain() {
     for d in [1., 1e-14] {
         let c = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0., 0., d, d],
                 vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid degree-one carrier"),
         ));
         assert_eq!(
@@ -105,7 +93,7 @@ fn numerical_audit_full_edge_survives_small_knot_domain() {
                 &c,
                 [[0., 0., 0.], [1., 0., 0.]]
             )
-            .expect("evaluation resources"),
+            .expect("find the nonperiodic NURBS edge parameter range"),
             Some([0., d])
         );
     }

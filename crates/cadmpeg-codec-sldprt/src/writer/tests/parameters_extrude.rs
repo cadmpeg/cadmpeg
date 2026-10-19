@@ -953,13 +953,9 @@ fn semantic_writer_round_trips_feature_output_scope() {
         vec![decoded.ir().model.bodies[0].id.clone()]
     );
     let output = decoded.ir().model.bodies[1].id.clone();
-    decoded.ir_mut().model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![output],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-    );
+    decoded.ir_mut().model.features[0]
+        .evaluation
+        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(vec![output]).unwrap());
 
     let mut encoded = Vec::new();
     crate::test_support::serialize_history_after_refusal(
@@ -1041,7 +1037,8 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::NewBody,
             ..
-        }) if ( ((value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == 4.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+        }) if ( ((value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == 4.0)
+        && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
@@ -1574,12 +1571,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             .collect::<Vec<_>>();
         samples[1].parameter = 0.4;
         samples[1].radius = Length::new(5.0).unwrap();
-        *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(
-            samples,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("radius construction admission")
-        .unwrap();
+        *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 

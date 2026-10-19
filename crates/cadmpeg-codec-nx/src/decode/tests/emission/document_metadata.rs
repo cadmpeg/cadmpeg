@@ -54,7 +54,7 @@ fn decode_projects_part_attributes_to_document_attributes() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -111,7 +111,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         .decode(
             &mut Cursor::new(container_only_file),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

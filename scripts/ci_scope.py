@@ -20,8 +20,8 @@ import tomllib
 PYTHON_ONLY = {
     'check-codec-facade.py', 'check-deny-census.py', 'check-dialect-support.py',
     'check-dialects.py', 'check-doc-anchors.py', 'check-fuzz-seeds.py',
-    'check-golden-coverage-floors.py', 'check-source-policy.py',
-    'census-panic-calls.py', 'dialect_support_data.py',
+    'check-golden-coverage-floors.py', 'check-resource-caps.py',
+    'check-source-policy.py', 'census-panic-calls.py', 'dialect_support_data.py',
     'render-format-support.py',
 }
 PYTHON_ONLY |= {'test_' + name.replace('-', '_') for name in PYTHON_ONLY}

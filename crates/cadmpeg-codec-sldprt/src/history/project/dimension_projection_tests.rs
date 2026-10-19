@@ -54,11 +54,7 @@ fn simple_hole_uses_its_profile_dimension_roles() {
         features: vec![hole, position, profile],
     };
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
         projected[0].evaluation.definition()
     else {
@@ -81,11 +77,7 @@ fn simple_hole_uses_its_profile_dimension_roles() {
         cadmpeg_core::nonblank_literal!("another length"),
         "2".into(),
     );
-    let ambiguous = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        &[ambiguous],
-    )
-    .unwrap();
+    let ambiguous = project_features(&[ambiguous]).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
         ambiguous[0].evaluation.definition()
     else {
@@ -138,12 +130,10 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
         features: vec![hole, position, profile],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: None,
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -194,12 +184,10 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
         features: vec![hole, profile],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),
@@ -209,7 +197,10 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
                     drill_point_angle,
                 },
                 ..
-            }, Some(actual_diameter),) if ((drill_point_angle.get() - 118.0_f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 4.2 && actual_length.get() == 10.0)));
+            }, Some(actual_diameter),)
+                if ((drill_point_angle.get() - 118.0_f64.to_radians()).abs() < 1.0e-12)
+                    && actual_diameter.get() == 4.2
+                    && actual_length.get() == 10.0)));
 }
 
 #[test]
@@ -254,8 +245,7 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
         features: vec![revolve],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -283,8 +273,7 @@ fn localized_cut_extrusion_uses_its_native_class_operation() {
         features: vec![cut],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -313,8 +302,7 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
         features: vec![revolve],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -353,8 +341,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         features: vec![chamfer],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
@@ -380,7 +367,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         .content
         .push(FeatureContent::Dimension("localized distance".into()));
     assert!(matches!(
-        project_chamfer(&cadmpeg_test_support::service_decode_context(), &distance).unwrap(),
+        project_chamfer(&distance),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
@@ -401,7 +388,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         "localized second distance".into(),
     ));
     assert!(matches!(
-        project_chamfer(&cadmpeg_test_support::service_decode_context(), &distance).unwrap(),
+        project_chamfer(&distance),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
@@ -435,8 +422,7 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         features: vec![thread],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert_eq!(
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -465,8 +451,7 @@ fn cosmetic_thread_without_blind_length_is_through() {
         features: vec![thread],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert_eq!(
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -498,8 +483,7 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
             features: vec![thread],
         };
 
-        let projected =
-            project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+        let projected = project_features(&[history]).unwrap();
         assert_eq!(
             *projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -532,8 +516,7 @@ fn cosmetic_thread_requires_one_named_diameter() {
         features: vec![thread],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::CosmeticThread { diameter, .. }) =
         projected[0].evaluation.definition()
     else {
@@ -602,7 +585,6 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
         });
 
     crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut history),
         &[lane],
     )

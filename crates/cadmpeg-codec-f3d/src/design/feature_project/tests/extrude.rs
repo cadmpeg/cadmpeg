@@ -4,7 +4,7 @@ use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::face_resolve::resolved_body_recipe_shape;
 use crate::design::feature_project::project_extrude;
-use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
+use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::bind_extrude_profile_selections;
 use crate::design::test_support::parameter_owner_frame;
 use crate::design::test_support::parameter_record;
@@ -31,7 +31,6 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
-use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
@@ -308,7 +307,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed blind Extrude");
         assert!(matches!(
             &blind,
@@ -345,7 +344,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed sheet Extrude");
         assert!(matches!(
             sheet,
@@ -388,7 +387,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed symmetric Extrude");
         assert!(matches!(
             symmetric,
@@ -417,7 +416,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed through-all Extrude");
         assert!(matches!(
             through_all,
@@ -445,7 +444,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed symmetric through-all Extrude");
         assert!(matches!(
             symmetric_through_all,
@@ -496,7 +495,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(blind),
             native_ref: Some(scope.id.clone()),
         };
-        let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+        let profile_work = ProfileGeometryWork::new();
         bind_extrude_profile_selections(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
@@ -522,7 +521,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 scope_histories: &std::collections::HashMap::new(),
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
-                arrangement_budget: &arrangement_budget,
+                profile_work: &profile_work,
                 ctx: decode_ctx,
             },
         )
@@ -545,7 +544,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_direction_reversed(&mut scope, false);
@@ -560,7 +559,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         let side_two_taper = parameter("Side2TaperAngle", "deg", -0.3);
@@ -574,7 +573,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         let invalid_taper = parameter("TaperAngle", "native-unit", 0.2);
@@ -588,7 +587,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         let mut owned_along = along.clone();
@@ -597,7 +596,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         owned_along
             .try_set_source(
                 crate::records::parameters::DesignParameterSource::new(
-                    owned_along.source_kind().to_owned(),
+                    owned_along.source_kind_str().to_owned(),
                     Some(44),
                     owned_along.family_discriminator(),
                 )
@@ -630,22 +629,23 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             })
             .unwrap();
         let scopes = vec![sketch_scope, scope.clone()];
-        let (mut features, _) = crate::test_support::with_decode_context(|ctx| {
-            let scopes = &scopes;
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: std::slice::from_ref(&owned_along),
-                    owners: std::slice::from_ref(&owner),
-                    scopes,
-                    placements: std::slice::from_ref(&placement),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+        let crate::design::feature_project::ProjectedParameterDesign { mut features, .. } =
+            crate::test_support::with_decode_context(|ctx| {
+                let scopes = &scopes;
+                let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: std::slice::from_ref(&owned_along),
+                        owners: std::slice::from_ref(&owner),
+                        scopes,
+                        placements: std::slice::from_ref(&placement),
+                        timelines: &timelines,
+                        ..Default::default()
+                    },
+                )
+                .expect("test projection has a synthetic exact timeline")
+            });
         let sketches = [cadmpeg_ir::sketches::Sketch {
             id: neutral_sketch_id(&placement),
             name: None,
@@ -660,16 +660,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             profiles: Default::default(),
             native_ref: Some(placement.id.clone()),
         }];
-        crate::test_support::with_decode_context(|decode_ctx| {
+        {
             crate::design::feature_project::bind_sketch_feature_geometry(
-                decode_ctx,
                 &mut features,
                 &scopes,
                 std::slice::from_ref(&placement),
                 &sketches,
                 &[],
             )
-        })
+        }
         .unwrap();
         let sketch_feature = features
             .iter()
@@ -694,7 +693,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             [sketch_feature.id.clone()]
         );
 
-        let (mut spatial_features, _) = crate::test_support::with_decode_context(|ctx| {
+        let crate::design::feature_project::ProjectedParameterDesign {
+            features: mut spatial_features,
+            ..
+        } = crate::test_support::with_decode_context(|ctx| {
             let scopes = &scopes;
             let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
             crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -726,23 +728,19 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     .unwrap(),
                     reversed: false,
                 }],
-                &cadmpeg_test_support::service_decode_context(),
-                "spatial profile uniqueness",
             )
-            .expect("fixture collection admission")
-            .unwrap()],
+            .expect("fixture collection admission")],
             native_ref: Some(placement.id.clone()),
         };
-        crate::test_support::with_decode_context(|decode_ctx| {
+        {
             crate::design::feature_project::bind_sketch_feature_geometry(
-                decode_ctx,
                 &mut spatial_features,
                 &scopes,
                 std::slice::from_ref(&placement),
                 &[],
                 std::slice::from_ref(&spatial_sketch),
             )
-        })
+        }
         .unwrap();
         let spatial_feature = spatial_features
             .iter()
@@ -777,7 +775,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             [spatial_feature.id.clone()]
         );
 
-        let (mut open_spatial_features, _) = crate::test_support::with_decode_context(|ctx| {
+        let crate::design::feature_project::ProjectedParameterDesign {
+            features: mut open_spatial_features,
+            ..
+        } = crate::test_support::with_decode_context(|ctx| {
             let scopes = &scopes;
             let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
             crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -801,16 +802,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             profiles: Vec::new(),
             native_ref: Some(placement.id.clone()),
         };
-        crate::test_support::with_decode_context(|decode_ctx| {
+        {
             crate::design::feature_project::bind_sketch_feature_geometry(
-                decode_ctx,
                 &mut open_spatial_features,
                 &scopes,
                 std::slice::from_ref(&placement),
                 &[],
                 std::slice::from_ref(&open_spatial_sketch),
             )
-        })
+        }
         .unwrap();
         let open_spatial_extrude = open_spatial_features
             .iter()
@@ -897,7 +897,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed target-body Extrude");
         assert!(matches!(
             target_body,
@@ -1014,7 +1014,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&target_shape_operand),
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed target-shape Extrude");
         assert!(matches!(
             unresolved_target_shape,
@@ -1049,7 +1049,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&target_shape_operand),
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("resolved target-shape Extrude");
         let feature = crate::ids::neutral_feature_id(&scope);
         let feature_key = feature.key();
@@ -1109,7 +1109,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         second_target_operand.resolved_body_face_slots = vec![30, 31];
         let operands = [target_shape_operand.clone(), second_target_operand.clone()];
         assert!(matches!(
-            crate::test_support::with_decode_context(|decode_ctx| resolved_body_recipe_shape(decode_ctx, &scope, &multi_target_group, &operands)).unwrap(),
+            resolved_body_recipe_shape(&scope, &multi_target_group, &operands),
             Some(FaceSelection::Historical { faces, .. })
                 if faces.as_slice() == [
                     crate::ids::history_input_face_id(&prefix, 12),
@@ -1120,16 +1120,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 ]
         ));
         second_target_operand.resolved_body_state_id = Some(8);
-        assert!(
-            crate::test_support::with_decode_context(|decode_ctx| resolved_body_recipe_shape(
-                decode_ctx,
-                &scope,
-                &multi_target_group,
-                &[target_shape_operand.clone(), second_target_operand]
-            ))
-            .unwrap()
-            .is_none()
-        );
+        assert!(resolved_body_recipe_shape(
+            &scope,
+            &multi_target_group,
+            &[target_shape_operand.clone(), second_target_operand]
+        )
+        .is_none());
 
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
         set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
@@ -1162,7 +1158,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed multi-profile Extrude");
         assert!(matches!(
             multiple_profiles,
@@ -1183,7 +1179,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
@@ -1212,7 +1208,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     &[],
                 )
             })
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .expect("direct sketch profile with a scoped selection group");
         assert!(matches!(
             direct_profile_with_selection_group,
@@ -1231,6 +1227,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 )),
                 taper_angle: None,
+                against_distance: None,
+                side_two_taper_angle: None,
             });
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
@@ -1253,7 +1251,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed hybrid fixed-distance Extrude");
         assert!(matches!(
             hybrid,
@@ -1281,7 +1279,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed hybrid fixed-distance Extrude");
         assert!(matches!(
             reversed_hybrid,
@@ -1332,7 +1330,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed Extrude with a native profile");
         assert!(matches!(
             reversed_native_profile,
@@ -1381,7 +1379,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
 
@@ -1396,7 +1394,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_start(&mut scope, DesignExtrudeStart::OffsetProfilePlane);
@@ -1411,7 +1409,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed offset-profile-plane Extrude");
         assert!(matches!(
             offset_start,
@@ -1436,7 +1434,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
@@ -1451,7 +1449,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed two-sided Extrude");
         assert!(matches!(
             two_sided,
@@ -1485,7 +1483,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_direction_reversed(&mut scope, false);
@@ -1503,7 +1501,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed Extrude");
         assert!(matches!(
             reversed,
@@ -1542,7 +1540,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed to-face Extrude");
         assert!(matches!(
             to_face,
@@ -1584,7 +1582,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("class-330 face-target Extrude admits omitted zero offset");
         assert!(matches!(
             omitted_zero_offset,
@@ -1613,7 +1611,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
 
@@ -1643,7 +1641,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed two-sided face-target Extrude");
         assert!(matches!(
             two_sided_to_faces,
@@ -1692,7 +1690,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed two-sided face-target Extrude");
         assert!(matches!(
             reversed_two_sided_to_faces,
@@ -1716,7 +1714,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed mixed two-sided Extrude");
         assert!(matches!(
             mixed_two_sided,
@@ -1767,7 +1765,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed selected-face start Extrude");
         assert!(matches!(
             from_face,
@@ -1798,7 +1796,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed selected-face-start two-sided Extrude");
         assert!(matches!(
             from_face_two_sided,
@@ -1873,22 +1871,10 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: vec![
                 LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(
-                        spatial_sketch.clone(),
-                        vec![2],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .expect("profile membership admission")
-                    .unwrap(),
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![2]).unwrap(),
                 ),
                 LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(
-                        spatial_sketch.clone(),
-                        vec![5],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .expect("profile membership admission")
-                    .unwrap(),
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![5]).unwrap(),
                 ),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Sketch(
@@ -1906,16 +1892,15 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     let expected_dependencies = [spatial_feature.id.clone(), planar_feature.id.clone()];
     let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
 
-    crate::test_support::with_decode_context(|decode_ctx| {
+    {
         crate::design::feature_project::bind_sketch_feature_geometry(
-            decode_ctx,
             &mut features,
             &[],
             &[],
             &[],
             &[],
         )
-    })
+    }
     .unwrap();
 
     assert_eq!(

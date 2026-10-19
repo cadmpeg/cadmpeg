@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit IGES B-rep topology projection.
 
+use super::composite::CompositeIndex;
 use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
@@ -88,6 +89,7 @@ struct BodyDefinition<'a> {
 }
 
 struct SurfaceSupport<'a> {
+    sequence: u32,
     id: &'a SurfaceId,
     geometry: &'a cadmpeg_ir::geometry::SurfaceGeometry,
     factor: f64,
@@ -120,6 +122,52 @@ fn compose_sense(left: Sense, right: Sense) -> Sense {
     }
 }
 
+fn first_coedge_positions(coedges: &[Coedge]) -> BTreeMap<CoedgeId, usize> {
+    let mut positions = BTreeMap::new();
+    for (position, coedge) in coedges.iter().enumerate() {
+        positions.entry(coedge.id.clone()).or_insert(position);
+    }
+    positions
+}
+
+fn closed_shell_radial_is_inconsistent(
+    coedges: &[Coedge],
+    positions: &BTreeMap<CoedgeId, usize>,
+    radial: &BTreeMap<(u32, u32, usize), Vec<CoedgeId>>,
+) -> bool {
+    radial.values().any(|ring| {
+        if ring.len() != 2 {
+            return true;
+        }
+        let mut senses = ring.iter().filter_map(|id| {
+            positions
+                .get(id)
+                .and_then(|position| coedges.get(*position))
+                .map(|coedge| coedge.sense)
+        });
+        match (senses.next(), senses.next()) {
+            (Some(first), Some(second)) => first == second,
+            _ => true,
+        }
+    })
+}
+
+fn assign_radial_next(
+    coedges: &mut [Coedge],
+    positions: &BTreeMap<CoedgeId, usize>,
+    radial: &BTreeMap<(u32, u32, usize), Vec<CoedgeId>>,
+) {
+    for ring in radial.values() {
+        for (index, id) in ring.iter().enumerate() {
+            if let Some(&position) = positions.get(id) {
+                if let Some(coedge) = coedges.get_mut(position) {
+                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
+                }
+            }
+        }
+    }
+}
+
 fn list_index(record: &ParameterRecord, index: usize) -> Option<usize> {
     record
         .integer(index)
@@ -138,49 +186,26 @@ fn topology_vertex(
 ) -> Result<Option<VertexId>, CodecError> {
     let (list, index) = vertex_key;
     if let Some(existing) = vertex_ids.get(&(list, index)) {
-        return Ok(Some(
-            existing.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-        ));
+        return Ok(Some(existing.clone()));
     }
     let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
         return Ok(None);
     };
-    ctx.reserve_vec(
-        &mut candidate.model_mut().points,
-        1,
-        "iges B-rep topology points",
-    )?;
-    ctx.reserve_vec(
-        &mut candidate.model_mut().vertices,
-        1,
-        "iges B-rep topology vertices",
-    )?;
-    ctx.admit_btree_entry(
-        vertex_ids,
-        &(list, index),
-        "iges B-rep topology vertex index",
-    )?;
-    let point_id = crate::ids::point_admitted(&stem.child(list).slot(index + 1), ctx)?;
-    let point = Point::new(
-        point_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-        position,
-        None,
-    );
-    sequences.record_point(&point_id, stem, ctx)?;
-    let vertex_id = crate::ids::vertex_admitted(&stem.child(list).slot(index + 1), ctx)?;
+
+    let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
+    let point = Point::new(point_id.clone(), position, None);
+    sequences.record_point(&point_id, stem);
+    let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
     ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
     ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().vertices.push(Vertex {
-        id: vertex_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+        id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
     });
     Ok(Some(
-        vertex_ids
-            .entry((list, index))
-            .or_insert(vertex_id)
-            .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+        vertex_ids.entry((list, index)).or_insert(vertex_id).clone(),
     ))
 }
 
@@ -250,7 +275,7 @@ fn project_pcurve_uses(
     id_stem: &crate::ids::Stem,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PcurveUse>, PcurveProjectionError> {
-    let mut projected = ctx.collection_vec(resolved.len(), "iges B-rep projected pcurve uses")?;
+    let mut projected = Vec::new();
     for (index, ((isoparametric, _), (geometry, range))) in uses.iter().zip(resolved).enumerate() {
         let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
             PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
@@ -262,15 +287,11 @@ fn project_pcurve_uses(
                 })
             })
             .transpose()?;
-        ctx.reserve_vec(
-            &mut candidate.model_mut().pcurves,
-            1,
-            "iges B-rep pcurve slots",
-        )?;
-        let id = crate::ids::pcurve_admitted(&id_stem.slot(index), ctx)?;
+
+        let id = crate::ids::pcurve(&id_stem.slot(index));
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
-            id: id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+            id: id.clone(),
             geometry,
             metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
         });
@@ -293,11 +314,45 @@ fn surface_point_or_refusal(
 // projection needs exactly what was just computed, from the same unmutated
 // `ir` with the same arguments, so returning it keeps each pcurve resolved
 // once instead of twice. The per-use interleave in the loop body is
-// load-bearing — `pcurve_geometry` can fuse the decode budget, so a later
-// use's geometry must not be resolved once an earlier use's evaluation has
-// already failed.
+// load-bearing — `pcurve_geometry` can refuse a decode session limit, which
+// fuses the session, so a later use's geometry must not be resolved once an
+// earlier use's evaluation has already failed.
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
+
+/// A pcurve resolved on its support, with its end points mapped onto it.
+#[derive(Clone)]
+struct ResolvedPcurve {
+    geometry: PcurveGeometry,
+    range: [f64; 2],
+    start: Point3,
+    end: Point3,
+}
+
+/// Pcurves one body resolved, keyed by (pcurve sequence, support surface
+/// sequence).
+///
+/// While one body projects, the source model is not mutated and the length
+/// factor and global resolution are fixed, so a resolution depends only on
+/// the key, and a pcurve that many uses share pays its [`MAX_BEZIER_BLENDS`]
+/// elevation and its end-point evaluation at most twice. A key first records
+/// that it was resolved and keeps the result from its second resolution on,
+/// so a pcurve with one use is not retained. Only resolved pcurves are kept:
+/// one without a carrier or finite end points abandons the body, so that
+/// answer is never asked for twice.
+///
+/// [`MAX_BEZIER_BLENDS`]: super::nurbs_controls::MAX_BEZIER_BLENDS
+type BodyPcurves = BTreeMap<(u32, u32), Option<ResolvedPcurve>>;
+
+/// Per-body curve lookups for pcurve resolution.
+///
+/// The edge arena grows as each body commits, so both indexes are rebuilt
+/// for the body on first pcurve use. `model` borrows the document; it must
+/// be dropped before the body commits.
+struct BodyPcurveIndexes<'a> {
+    model: Option<cadmpeg_ir::index::ModelIndex<'a>>,
+    composite: Option<CompositeIndex>,
+}
 
 #[derive(Clone, Copy)]
 struct PcurveEndpointCheck {
@@ -306,13 +361,79 @@ struct PcurveEndpointCheck {
     tolerance: f64,
 }
 
+fn resolve_pcurve(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    sequence: u32,
+    support: &SurfaceSupport<'_>,
+    tolerance: f64,
+    ctx: &DecodeContext<'_>,
+    composite_index: Option<&CompositeIndex>,
+) -> Result<Option<ResolvedPcurve>, super::composite::CompositeCurveError> {
+    let Some((geometry, range)) = pcurve_geometry(
+        index,
+        sequence,
+        &super::trimming::PcurveSupport {
+            surface_id: support.id,
+            geometry: support.geometry,
+            factor: support.factor,
+        },
+        Some(tolerance),
+        ctx,
+        composite_index,
+    )?
+    else {
+        return Ok(None);
+    };
+    let (Some(start), Some(end)) = (
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
+        )?)
+        .map_err(CodecError::from)?
+        .map(|uv| {
+            surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index,
+                support.id,
+                uv.u,
+                uv.v,
+            ))
+        })
+        .transpose()?
+        .flatten(),
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
+        )?)
+        .map_err(CodecError::from)?
+        .map(|uv| {
+            surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index,
+                support.id,
+                uv.u,
+                uv.v,
+            ))
+        })
+        .transpose()?
+        .flatten(),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(ResolvedPcurve {
+        geometry,
+        range,
+        start: start.get(),
+        end: end.get(),
+    }))
+}
+
 fn resolve_pcurve_uses<'a>(
     source: &'a CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
     ctx: &'a DecodeContext<'_>,
-    model_index: &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
+    indexes: &mut BodyPcurveIndexes<'a>,
+    body_pcurves: &mut BodyPcurves,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
@@ -322,66 +443,40 @@ fn resolve_pcurve_uses<'a>(
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
-    if model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source, ctx)?);
+    if indexes.model.is_none() {
+        indexes.model = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source));
     }
-    let Some(index) = model_index.as_ref() else {
+    if indexes.composite.is_none() {
+        indexes.composite = Some(CompositeIndex::from_ir(source));
+    }
+    let Some(index) = indexes.model.as_ref() else {
         return Ok(None);
     };
-    let mut resolved = ctx.collection_vec(uses.len(), "iges B-rep resolved pcurves")?;
-    let mut mapped = ctx.collection_vec(uses.len(), "iges B-rep mapped pcurves")?;
+    let mut resolved = Vec::new();
+    let mut mapped = Vec::new();
     for (_, sequence) in uses {
-        let Some((geometry, range)) = pcurve_geometry(
-            index,
-            *sequence,
-            &super::trimming::PcurveSupport {
-                surface_id: support.id,
-                geometry: support.geometry,
-                factor: support.factor,
-            },
-            Some(tolerance),
-            ctx,
-            None,
-        )?
-        else {
-            return Ok(None);
-        };
-        let (Some(start), Some(end)) = (
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
-            )?)
-            .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        let key = (*sequence, support.sequence);
+        let pcurve = match body_pcurves.get(&key) {
+            Some(Some(pcurve)) => pcurve.clone(),
+            seen => {
+                let repeated = seen.is_some();
+                let Some(pcurve) = resolve_pcurve(
                     index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
-            .transpose()?
-            .flatten(),
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
-            )?)
-            .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
-            .transpose()?
-            .flatten(),
-        ) else {
-            return Ok(None);
+                    *sequence,
+                    support,
+                    tolerance,
+                    ctx,
+                    indexes.composite.as_ref(),
+                )?
+                else {
+                    return Ok(None);
+                };
+                body_pcurves.insert(key, repeated.then(|| pcurve.clone()));
+                pcurve
+            }
         };
-        resolved.push((geometry, range));
-        mapped.push((start.get(), end.get()));
+        resolved.push((pcurve.geometry, pcurve.range));
+        mapped.push((pcurve.start, pcurve.end));
     }
     Ok(
         (cadmpeg_ir::math::Point3::distance(mapped[0].0, expected_start) <= tolerance
@@ -404,21 +499,11 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges brep parameter index",
-        )?;
+        records.insert(record.directory_sequence, record);
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges brep directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -435,32 +520,29 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
-            )?;
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         if entry.transform != 0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "vertex lists cannot carry a transformation"),
-            )?;
+                format_args!("vertex lists cannot carry a transformation"),
+            );
             continue;
         }
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "vertex-list count is not positive"),
-            )?;
+                format_args!("vertex-list count is not positive"),
+            );
             continue;
         };
-        let mut points = ctx.collection_vec(count, "iges B-rep vertex-list points")?;
+        let mut points = Vec::new();
         for index in 0..count {
             let start = 2 + index * 3;
             let values = [
@@ -480,19 +562,13 @@ pub(super) fn project(
         }
         if points.len() != count {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "vertex-list coordinates are truncated or non-finite"),
-            )?;
+                format_args!("vertex-list coordinates are truncated or non-finite"),
+            );
             continue;
         }
-        ctx.insert_btree_map(
-            &mut vertex_lists,
-            entry.sequence,
-            points,
-            "iges B-rep vertex-list nodes",
-        )?;
+        vertex_lists.insert(entry.sequence, points);
     }
 
     for entry in directory
@@ -501,32 +577,29 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "edge lists cannot carry a transformation"),
-            )?;
+                format_args!("edge lists cannot carry a transformation"),
+            );
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
-            )?;
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "edge-list count is not positive"),
-            )?;
+                format_args!("edge-list count is not positive"),
+            );
             continue;
         };
-        let mut edges = ctx.collection_vec(count, "iges B-rep edge-list edges")?;
+        let mut edges = Vec::new();
         for item in 0..count {
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
@@ -561,19 +634,13 @@ pub(super) fn project(
         }
         if edges.len() != count {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "edge-list tuple is invalid or names a missing vertex"),
-            )?;
+                format_args!("edge-list tuple is invalid or names a missing vertex"),
+            );
             continue;
         }
-        ctx.insert_btree_map(
-            &mut edge_lists,
-            entry.sequence,
-            edges,
-            "iges B-rep edge-list nodes",
-        )?;
+        edge_lists.insert(entry.sequence, edges);
     }
 
     for entry in directory
@@ -582,33 +649,30 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "loops cannot carry a transformation"),
-            )?;
+                format_args!("loops cannot carry a transformation"),
+            );
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
-            )?;
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "loop edge-use count is not positive"),
-            )?;
+                format_args!("loop edge-use count is not positive"),
+            );
             continue;
         };
         let mut index = 2;
-        let mut uses = ctx.collection_vec(count, "iges B-rep loop uses")?;
+        let mut uses = Vec::new();
         for _ in 0..count {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
@@ -626,7 +690,7 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
-            let mut pcurves = ctx.collection_vec(pcurve_count, "iges B-rep use pcurves")?;
+            let mut pcurves = Vec::new();
             for pcurve_index in 0..pcurve_count {
                 let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
                     Some(1) => true,
@@ -700,14 +764,13 @@ pub(super) fn project(
         }
         if uses.len() != count {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "loop edge-use tuple is invalid"),
-            )?;
+                format_args!("loop edge-use tuple is invalid"),
+            );
             continue;
         }
-        ctx.insert_btree_map(&mut loops, entry.sequence, uses, "iges B-rep loop nodes")?;
+        loops.insert(entry.sequence, uses);
     }
 
     for entry in directory
@@ -716,38 +779,34 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "faces cannot carry a transformation"),
-            )?;
+                format_args!("faces cannot carry a transformation"),
+            );
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
-            )?;
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let Some(surface) = pointer(record, 1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "face surface pointer is invalid"),
-            )?;
+                format_args!("face surface pointer is invalid"),
+            );
             continue;
         };
         let Some(count) = record.count(2).filter(|count| *count > 0) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "face loop count is not positive"),
-            )?;
+                format_args!("face loop count is not positive"),
+            );
             continue;
         };
         let has_outer_loop = match record.integer(3) {
@@ -755,24 +814,22 @@ pub(super) fn project(
             Some(0) => false,
             _ => {
                 super::push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
-                    format_args!("{}", "face outer-loop flag is not logical"),
-                )?;
+                    format_args!("face outer-loop flag is not logical"),
+                );
                 continue;
             }
         };
         let Some(first) = pointer(record, 4) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "face loop pointer is invalid"),
-            )?;
+                format_args!("face loop pointer is invalid"),
+            );
             continue;
         };
-        let mut rest = ctx.collection_vec(count - 1, "iges B-rep face loop pointers")?;
+        let mut rest = Vec::new();
         let mut valid_pointers = true;
         for index in 1..count {
             let Some(sequence) = pointer(record, 4 + index) else {
@@ -783,11 +840,10 @@ pub(super) fn project(
         }
         if !valid_pointers {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "face loop pointer is invalid"),
-            )?;
+                format_args!("face loop pointer is invalid"),
+            );
             continue;
         }
         let face_loops = if has_outer_loop {
@@ -802,23 +858,16 @@ pub(super) fn project(
             .iter()
             .any(|sequence| !loops.contains_key(&sequence))
         {
-            super::push_geometry_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "face loop is missing"),
-            )?;
+            super::push_geometry_loss(&mut losses, entry, format_args!("face loop is missing"));
             continue;
         }
-        ctx.insert_btree_map(
-            &mut faces,
+        faces.insert(
             entry.sequence,
             FaceDefinition {
                 surface,
                 loops: face_loops,
             },
-            "iges B-rep face nodes",
-        )?;
+        );
     }
 
     let mut shell_definitions = BTreeMap::new();
@@ -828,32 +877,29 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "shells cannot carry a transformation"),
-            )?;
+                format_args!("shells cannot carry a transformation"),
+            );
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
-            )?;
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "shell face count is not positive"),
-            )?;
+                format_args!("shell face count is not positive"),
+            );
             continue;
         };
-        let mut face_uses = ctx.collection_vec(count, "iges B-rep shell face uses")?;
+        let mut face_uses = Vec::new();
         for index in 0..count {
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
@@ -875,22 +921,19 @@ pub(super) fn project(
         }
         if face_uses.len() != count {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "shell face-use tuple is invalid"),
-            )?;
+                format_args!("shell face-use tuple is invalid"),
+            );
             continue;
         }
-        ctx.insert_btree_map(
-            &mut shell_definitions,
+        shell_definitions.insert(
             entry.sequence,
             ShellDefinition {
                 form: entry.form,
                 faces: face_uses,
             },
-            "iges B-rep shell nodes",
-        )?;
+        );
     }
 
     let mut body_definitions = Vec::new();
@@ -899,9 +942,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 514 && entry.form == 2)
     {
         if shell_definitions.contains_key(&entry.sequence) {
-            let mut shells = ctx.collection_vec(1, "iges B-rep sheet shell uses")?;
-            shells.push((entry.sequence, Sense::Forward));
-            ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
+            let shells = vec![(entry.sequence, Sense::Forward)];
+
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
@@ -918,20 +960,18 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
-            )?;
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let Some(outer) = pointer(record, 1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "solid outer-shell pointer is invalid"),
-            )?;
+                format_args!("solid outer-shell pointer is invalid"),
+            );
             continue;
         };
         let outer_sense = match record.integer(2) {
@@ -939,28 +979,22 @@ pub(super) fn project(
             Some(0) => Sense::Reversed,
             _ => {
                 super::push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
-                    format_args!("{}", "solid outer-shell orientation is not logical"),
-                )?;
+                    format_args!("solid outer-shell orientation is not logical"),
+                );
                 continue;
             }
         };
         let Some(void_count) = record.count(3) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "solid void-shell count is invalid"),
-            )?;
+                format_args!("solid void-shell count is invalid"),
+            );
             continue;
         };
-        let shell_count = void_count.checked_add(1).ok_or_else(|| {
-            cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1)
-        })?;
-        let mut shell_uses = ctx.collection_vec(shell_count, "iges B-rep solid shell uses")?;
-        shell_uses.push((outer, outer_sense));
+        let mut shell_uses = vec![(outer, outer_sense)];
         let mut valid = true;
         for index in 0..void_count {
             let Some(shell) = pointer(record, 4 + index * 2) else {
@@ -985,19 +1019,14 @@ pub(super) fn project(
             })
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "solid shell-use tuple is invalid or not closed"),
-            )?;
+                format_args!("solid shell-use tuple is invalid or not closed"),
+            );
             continue;
         }
         for (sequence, _) in &shell_uses {
-            ctx.insert_btree_set(
-                &mut referenced_closed_shells,
-                *sequence,
-                "iges B-rep referenced closed shells",
-            )?;
+            referenced_closed_shells.insert(*sequence);
         }
         let transform = match resolve_transform(
             entry.transform,
@@ -1011,11 +1040,11 @@ pub(super) fn project(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
-        ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
+
         body_definitions.push(BodyDefinition {
             entry,
             kind: BodyKind::Solid,
@@ -1031,9 +1060,8 @@ pub(super) fn project(
         if shell_definitions.contains_key(&entry.sequence)
             && !referenced_closed_shells.contains(&entry.sequence)
         {
-            let mut shells = ctx.collection_vec(1, "iges B-rep sheet shell uses")?;
-            shells.push((entry.sequence, Sense::Forward));
-            ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
+            let shells = vec![(entry.sequence, Sense::Forward)];
+
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
@@ -1055,28 +1083,14 @@ pub(super) fn project(
     if !body_definitions.is_empty() {
         for (position, surface) in ir.model.surfaces.iter().enumerate() {
             if !surface_positions.contains_key(surface.id.as_str()) {
-                let key = ctx.format_retained(
-                    format_args!("{}", surface.id),
-                    "iges B-rep surface index keys",
-                )?;
-                ctx.insert_btree_map(
-                    &mut surface_positions,
-                    key,
-                    position,
-                    "iges B-rep surface index nodes",
-                )?;
+                let key = format!("{}", surface.id);
+                surface_positions.insert(key, position);
             }
         }
         for (position, curve) in ir.model.curves.iter().enumerate() {
             if !curve_positions.contains_key(curve.id.as_str()) {
-                let key = ctx
-                    .format_retained(format_args!("{}", curve.id), "iges B-rep curve index keys")?;
-                ctx.insert_btree_map(
-                    &mut curve_positions,
-                    key,
-                    position,
-                    "iges B-rep curve index nodes",
-                )?;
+                let key = format!("{}", curve.id);
+                curve_positions.insert(key, position);
             }
         }
     }
@@ -1087,7 +1101,11 @@ pub(super) fn project(
     for definition in body_definitions {
         let ir = commit_session.document();
         let entry = definition.entry;
-        let mut model_index = None;
+        let mut pcurve_indexes = BodyPcurveIndexes {
+            model: None,
+            composite: None,
+        };
+        let mut body_pcurves = BodyPcurves::new();
         // The edge arena does grow — every committed body appends to it —
         // so this index lives for one body and is built on first use, where
         // it replaces a full-arena scan per distinct edge. Its `&str` keys
@@ -1096,14 +1114,13 @@ pub(super) fn project(
         let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let body_id = crate::ids::body_admitted(&stem, ctx)?;
-        sequences.record_body(&body_id, entry.sequence, &stem, ctx)?;
-        let region_id = crate::ids::region_admitted(&stem, ctx)?;
+        let body_id = crate::ids::body(&stem);
+        sequences.record_body(&body_id, entry.sequence, &stem);
+        let region_id = crate::ids::region(&stem);
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
-        let mut region_shells =
-            ctx.collection_vec(definition.shells.len(), "iges B-rep region shell ids")?;
+        let mut region_shells = Vec::new();
         let mut consumed = BTreeSet::new();
         let mut valid = true;
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
@@ -1113,16 +1130,13 @@ pub(super) fn project(
             } else {
                 std::borrow::Cow::Owned(stem.child(shell_sequence))
             };
-            let shell_id = crate::ids::shell_admitted(&shell_stem, ctx)?;
-            let mut shell_faces =
-                ctx.collection_vec(shell_definition.faces.len(), "iges B-rep shell face ids")?;
+            let shell_id = crate::ids::shell(&shell_stem);
+            let mut shell_faces = Vec::new();
             for &(face_sequence, native_face_sense) in &shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
-                let surface_id = crate::ids::surface_admitted(
-                    &crate::ids::Stem::directory(face_definition.surface),
-                    ctx,
-                )?;
+                let surface_id =
+                    crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
@@ -1131,41 +1145,25 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let face_id = crate::ids::face_admitted(&shell_stem.child(face_sequence), ctx)?;
-                sequences.record_face(&face_id, face_sequence, ctx)?;
-                let loop_id_for =
-                    |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
+                let face_id = crate::ids::face(&shell_stem.child(face_sequence));
+                sequences.record_face(&face_id, face_sequence);
+                let loop_id_for = |sequence| crate::ids::r#loop(&shell_stem.child(sequence));
                 for loop_sequence in face_definition.loops.iter() {
                     let uses = &loops[&loop_sequence];
-                    let loop_id = loop_id_for(loop_sequence)?;
-                    let edge_use_count = uses
-                        .iter()
-                        .filter(|use_| matches!(use_, LoopUse::Edge { .. }))
-                        .count();
-                    let mut edge_use_indices =
-                        ctx.collection_vec(edge_use_count, "iges B-rep edge-use positions")?;
-                    let mut coedge_ids =
-                        ctx.collection_vec(edge_use_count, "iges B-rep coedge ids")?;
+                    let loop_id = loop_id_for(loop_sequence);
+                    let mut edge_use_indices = Vec::new();
+                    let mut coedge_ids = Vec::new();
                     let mut coedge_by_use = BTreeMap::new();
                     for (index, use_) in uses.iter().enumerate() {
                         if matches!(use_, LoopUse::Edge { .. }) {
                             edge_use_indices.push(index);
-                            let coedge_id = crate::ids::coedge_admitted(
-                                &shell_stem.child(loop_sequence).slot(index),
-                                ctx,
-                            )?;
-                            ctx.insert_btree_map(
-                                &mut coedge_by_use,
-                                index,
-                                coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                                "iges B-rep coedge use nodes",
-                            )?;
+                            let coedge_id =
+                                crate::ids::coedge(&shell_stem.child(loop_sequence).slot(index));
+                            coedge_by_use.insert(index, coedge_id.clone());
                             coedge_ids.push(coedge_id);
                         }
                     }
-                    let vertex_use_count = uses.len() - edge_use_count;
-                    let mut loop_vertex_uses =
-                        ctx.collection_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
+                    let mut loop_vertex_uses = Vec::new();
                     for (use_index, use_) in uses.iter().enumerate() {
                         let LoopUse::Edge {
                             edge_list,
@@ -1202,15 +1200,13 @@ pub(super) fn project(
                                     coedge_by_use.get(&prior)
                                 })
                             }
-                            .map(|id| {
-                                id.try_clone_for_decode(ctx, "iges loop predecessor identity")
-                            })
-                            .transpose()?;
+                            .cloned();
                             let expected = vertex_lists[vertex_list][*vertex_index];
                             let Some(resolved) = (match resolve_pcurve_uses(
                                 ir,
                                 pcurves,
                                 &SurfaceSupport {
+                                    sequence: face_definition.surface,
                                     id: &surface_id,
                                     geometry: support_geometry,
                                     factor,
@@ -1221,32 +1217,30 @@ pub(super) fn project(
                                     tolerance,
                                 },
                                 ctx,
-                                &mut model_index,
+                                &mut pcurve_indexes,
+                                &mut body_pcurves,
                             ) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
                                     let error = error.non_resource()?;
                                     super::push_geometry_loss(
-                                        ctx,
                                         &mut losses,
                                         entry,
                                         format_args!(
                                             "a loop vertex-use pcurve states no carrier: {error}"
                                         ),
-                                    )?;
+                                    );
                                     valid = false;
                                     break;
                                 }
                             }) else {
                                 super::push_geometry_loss(
-                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!(
-                                        "{}",
                                         "loop vertex-use pcurves disagree with the pole vertex"
                                     ),
-                                )?;
+                                );
                                 valid = false;
                                 break;
                             };
@@ -1261,11 +1255,10 @@ pub(super) fn project(
                                 Ok(projected) => projected,
                                 Err(PcurveProjectionError::Invalid(error)) => {
                                     super::push_geometry_loss(
-                                        ctx,
                                         &mut losses,
                                         entry,
                                         format_args!("{error}"),
-                                    )?;
+                                    );
                                     valid = false;
                                     break;
                                 }
@@ -1294,14 +1287,12 @@ pub(super) fn project(
                         }
                         if !placed {
                             super::push_geometry_loss(
-                                ctx,
                                 &mut losses,
                                 entry,
                                 format_args!(
-                                    "{}",
                                     "an edge vertex position states a non-finite coordinate"
                                 ),
-                            )?;
+                            );
                             valid = false;
                             break;
                         }
@@ -1319,6 +1310,7 @@ pub(super) fn project(
                             ir,
                             pcurves,
                             &SurfaceSupport {
+                                sequence: face_definition.surface,
                                 id: &surface_id,
                                 geometry: support_geometry,
                                 factor,
@@ -1329,57 +1321,45 @@ pub(super) fn project(
                                 tolerance,
                             },
                             ctx,
-                            &mut model_index,
+                            &mut pcurve_indexes,
+                            &mut body_pcurves,
                         ) {
                             Ok(resolved) => resolved,
                             Err(error) => {
                                 let error = error.non_resource()?;
                                 super::push_geometry_loss(
-                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!(
                                         "a loop edge-use pcurve states no carrier: {error}"
                                     ),
-                                )?;
+                                );
                                 valid = false;
                                 break;
                             }
                         }) else {
                             super::push_geometry_loss(
-                                ctx,
                                 &mut losses,
                                 entry,
                                 format_args!(
-                                    "{}",
                                     "loop edge-use pcurves disagree with the edge vertices"
                                 ),
-                            )?;
+                            );
                             valid = false;
                             break;
                         };
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
-                            id.try_clone_for_decode(ctx, "iges B-rep identity copy")?
+                            id.clone()
                         } else {
-                            let curve_id = crate::ids::curve_admitted(
-                                &crate::ids::Stem::directory(edge_definition.curve),
-                                ctx,
-                            )?;
+                            let curve_id = crate::ids::curve(&crate::ids::Stem::directory(
+                                edge_definition.curve,
+                            ));
                             if edges_by_curve.is_none() {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
                                     if let Some(curve) = edge.curve() {
-                                        ctx.admit_btree_entry(
-                                            &positions,
-                                            &curve.as_str(),
-                                            "iges B-rep source edge index nodes",
-                                        )?;
                                         let indexed = positions.entry(curve.as_str()).or_default();
-                                        ctx.reserve_vec(
-                                            indexed,
-                                            1,
-                                            "iges B-rep source edge positions",
-                                        )?;
+
                                         indexed.push(position);
                                     }
                                 }
@@ -1399,14 +1379,12 @@ pub(super) fn project(
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
                                 super::push_geometry_loss(
-                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!(
-                                        "{}",
                                         "edge curve endpoints disagree with the vertex-list points"
                                     ),
-                                )?;
+                                );
                                 valid = false;
                                 break;
                             };
@@ -1421,12 +1399,12 @@ pub(super) fn project(
                             ) {
                                 Ok(source_edge) => source_edge,
                                 Err(SourceEdgeSelectionError::NoMatch) => {
-                                    super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
+                                    super::push_geometry_loss(&mut losses, entry, format_args!("edge curve endpoints disagree with the vertex-list points"));
                                     valid = false;
                                     break;
                                 }
                                 Err(SourceEdgeSelectionError::Ambiguous) => {
-                                    super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "edge curve maps to multiple ambiguous edge occurrences"))?;
+                                    super::push_geometry_loss(&mut losses, entry, format_args!("edge curve maps to multiple ambiguous edge occurrences"));
                                     valid = false;
                                     break;
                                 }
@@ -1434,10 +1412,7 @@ pub(super) fn project(
                                     return Err(limit.into());
                                 }
                             };
-                            let id = crate::ids::edge_admitted(
-                                &stem.child(edge_key.0).slot(edge_key.1 + 1),
-                                ctx,
-                            )?;
+                            let id = crate::ids::edge(&stem.child(edge_key.0).slot(edge_key.1 + 1));
                             let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 source_edge
@@ -1447,38 +1422,28 @@ pub(super) fn project(
                                 Ok(carrier) => carrier,
                                 Err(error) => {
                                     super::push_geometry_loss(
-                                        ctx,
                                         &mut losses,
                                         entry,
                                         format_args!("{error}"),
-                                    )?;
+                                    );
                                     valid = false;
                                     break;
                                 }
                             };
-                            ctx.reserve_vec(
-                                &mut candidate.model_mut().edges,
-                                1,
-                                "iges B-rep topology edges",
-                            )?;
+
                             ctx.charge_entities(1, "iges_geometry_brep")?;
                             candidate.model_mut().edges.push(Edge {
-                                id: id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                                id: id.clone(),
                                 carrier,
                                 start: vertex_ids
                                     [&(edge_definition.start_list, edge_definition.start_index)]
-                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                                    .clone(),
                                 end: vertex_ids
                                     [&(edge_definition.end_list, edge_definition.end_index)]
-                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                                    .clone(),
                                 tolerance: None,
                             });
-                            ctx.insert_btree_map(
-                                &mut edge_ids,
-                                edge_key,
-                                id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                                "iges B-rep topology edge index",
-                            )?;
+                            edge_ids.insert(edge_key, id.clone());
                             id
                         };
                         let projected = match project_pcurve_uses(
@@ -1492,11 +1457,10 @@ pub(super) fn project(
                             Ok(projected) => projected,
                             Err(PcurveProjectionError::Invalid(error)) => {
                                 super::push_geometry_loss(
-                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!("{error}"),
-                                )?;
+                                );
                                 valid = false;
                                 break;
                             }
@@ -1509,30 +1473,19 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let coedge_id = coedge_ids[coedge_position]
-                            .try_clone_for_decode(ctx, "iges B-rep identity copy")?;
+                        let coedge_id = coedge_ids[coedge_position].clone();
                         let radial_key = (shell_sequence, edge_key.0, edge_key.1);
-                        ctx.admit_btree_entry(
-                            &radial,
-                            &radial_key,
-                            "iges B-rep radial index nodes",
-                        )?;
+
                         let ring = radial.entry(radial_key).or_default();
-                        ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids")?;
-                        ring.push(coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?);
-                        ctx.reserve_vec(
-                            &mut candidate.model_mut().coedges,
-                            1,
-                            "iges B-rep topology coedges",
-                        )?;
+
+                        ring.push(coedge_id.clone());
+
                         ctx.charge_entities(1, "iges_geometry_brep")?;
                         candidate.model_mut().coedges.push(Coedge {
-                            id: coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                            owner_loop: loop_id
-                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                            id: coedge_id.clone(),
+                            owner_loop: loop_id.clone(),
                             edge: edge_id,
-                            radial_next: coedge_id
-                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                            radial_next: coedge_id.clone(),
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
@@ -1544,110 +1497,82 @@ pub(super) fn project(
                     let boundary = if coedge_ids.is_empty() {
                         let mut uses = loop_vertex_uses.into_iter();
                         let Some((vertex, None, pcurves)) = uses.next() else {
-                            super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
+                            super::push_geometry_loss(&mut losses, entry, format_args!("vertex-only loop does not contain exactly one unanchored vertex"));
                             valid = false;
                             break;
                         };
                         if uses.next().is_some() {
-                            super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
+                            super::push_geometry_loss(&mut losses, entry, format_args!("vertex-only loop does not contain exactly one unanchored vertex"));
                             valid = false;
                             break;
                         }
                         LoopBoundary::Vertex { vertex, pcurves }
                     } else {
-                        let Some(vertex_uses) = ctx.collect_options(
-                            loop_vertex_uses
-                                .into_iter()
-                                .map(|(vertex, after, pcurves)| {
-                                    let after = after?;
-                                    coedge_ids.contains(&after).then_some(AnchoredVertexUse {
-                                        vertex,
-                                        after,
-                                        pcurves,
-                                    })
-                                }),
-                            "iges B-rep anchored vertex uses",
-                        )?
+                        let Some(vertex_uses) = loop_vertex_uses
+                            .into_iter()
+                            .map(|(vertex, after, pcurves)| {
+                                let after = after?;
+                                coedge_ids.contains(&after).then_some(AnchoredVertexUse {
+                                    vertex,
+                                    after,
+                                    pcurves,
+                                })
+                            })
+                            .collect::<Option<Vec<_>>>()
                         else {
                             super::push_geometry_loss(
-                                ctx,
                                 &mut losses,
                                 entry,
-                                format_args!("{}", "edge loop contains an unanchored vertex use"),
-                            )?;
+                                format_args!("edge loop contains an unanchored vertex use"),
+                            );
                             valid = false;
                             break;
                         };
-                        let Ok(ring) =
-                            cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, vertex_uses)
-                                .map_err(cadmpeg_core::CodecError::from)?
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
                         else {
                             super::push_geometry_loss(
-                                ctx,
                                 &mut losses,
                                 entry,
-                                format_args!("{}", "edge loop has no coedges"),
-                            )?;
+                                format_args!("edge loop has no coedges"),
+                            );
                             valid = false;
                             break;
                         };
                         LoopBoundary::Ring(ring)
                     };
-                    ctx.reserve_vec(
-                        &mut candidate.model_mut().loops,
-                        1,
-                        "iges B-rep topology loops",
-                    )?;
+
                     ctx.charge_entities(1, "iges_geometry_brep")?;
                     candidate.model_mut().loops.push(Loop {
-                        id: loop_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                        face: face_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                        id: loop_id.clone(),
+                        face: face_id.clone(),
                         boundary,
                     });
-                    ctx.insert_btree_set(
-                        &mut consumed,
-                        loop_sequence,
-                        "iges B-rep consumed loop nodes",
-                    )?;
+                    consumed.insert(loop_sequence);
                 }
                 if !valid {
                     break;
                 }
                 let face_loops = match &face_definition.loops {
                     FaceLoopPointers::OuterFirst { outer, inner } => {
-                        let mut inner_ids =
-                            ctx.collection_vec(inner.len(), "iges B-rep face inner loop ids")?;
+                        let mut inner_ids = Vec::new();
                         for sequence in inner.iter().copied() {
-                            inner_ids.push(loop_id_for(sequence)?);
+                            inner_ids.push(loop_id_for(sequence));
                         }
-                        cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer)?, inner_ids)
+                        cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer), inner_ids)
                     }
                     FaceLoopPointers::Unclassified { first, rest } => {
-                        let count = rest.len().checked_add(1).ok_or_else(|| {
-                            cadmpeg_core::decode::refuse_local_limit(
-                                "iges B-rep face unspecified loop ids",
-                                u64::MAX,
-                                1,
-                            )
-                        })?;
-                        let mut loop_ids =
-                            ctx.collection_vec(count, "iges B-rep face unspecified loop ids")?;
-                        loop_ids.push(loop_id_for(*first)?);
+                        let mut loop_ids = vec![loop_id_for(*first)];
                         for sequence in rest.iter().copied() {
-                            loop_ids.push(loop_id_for(sequence)?);
+                            loop_ids.push(loop_id_for(sequence));
                         }
                         cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids)
                     }
                 };
-                ctx.reserve_vec(
-                    &mut candidate.model_mut().faces,
-                    1,
-                    "iges B-rep topology faces",
-                )?;
+
                 ctx.charge_entities(1, "iges_geometry_brep")?;
                 candidate.model_mut().faces.push(Face {
-                    id: face_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                    shell: shell_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                    id: face_id.clone(),
+                    shell: shell_id.clone(),
                     surface: surface_id,
                     sense: face_sense,
                     loops: face_loops,
@@ -1656,25 +1581,17 @@ pub(super) fn project(
                     tolerance: None,
                 });
                 shell_faces.push(face_id);
-                ctx.insert_btree_set(
-                    &mut consumed,
-                    face_sequence,
-                    "iges B-rep consumed face nodes",
-                )?;
+                consumed.insert(face_sequence);
             }
             if !valid {
                 break;
             }
-            ctx.reserve_vec(
-                &mut candidate.model_mut().shells,
-                1,
-                "iges B-rep topology shells",
-            )?;
+
             ctx.charge_entities(1, "iges_geometry_brep")?;
             candidate.model_mut().shells.push(
                 match Shell::new(
-                    shell_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                    region_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                    shell_id.clone(),
+                    region_id.clone(),
                     shell_faces,
                     Vec::new(),
                     Vec::new(),
@@ -1687,82 +1604,47 @@ pub(super) fn project(
                 },
             );
             region_shells.push(shell_id);
-            ctx.insert_btree_set(
-                &mut consumed,
-                shell_sequence,
-                "iges B-rep consumed shell nodes",
-            )?;
+            consumed.insert(shell_sequence);
         }
         if !valid {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "shell topology references missing geometry"),
-            )?;
+                format_args!("shell topology references missing geometry"),
+            );
             continue;
         }
+        let coedge_positions = first_coedge_positions(&candidate.model().coedges);
         if definition.closed
-            && radial.values().any(|ring| {
-                if ring.len() != 2 {
-                    return true;
-                }
-                let mut senses = ring.iter().filter_map(|id| {
-                    candidate
-                        .model()
-                        .coedges
-                        .iter()
-                        .find(|coedge| coedge.id == *id)
-                        .map(|coedge| coedge.sense)
-                });
-                match (senses.next(), senses.next()) {
-                    (Some(first), Some(second)) => first == second,
-                    _ => true,
-                }
-            })
+            && closed_shell_radial_is_inconsistent(
+                &candidate.model().coedges,
+                &coedge_positions,
+                &radial,
+            )
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "closed shell does not use every edge exactly twice with opposite senses"
                 ),
-            )?;
+            );
             continue;
         }
-        for ring in radial.values() {
-            for (index, id) in ring.iter().enumerate() {
-                if let Some(coedge) = candidate
-                    .model_mut()
-                    .coedges
-                    .iter_mut()
-                    .find(|coedge| coedge.id == *id)
-                {
-                    coedge.radial_next = ring[(index + 1) % ring.len()]
-                        .try_clone_for_decode(ctx, "iges B-rep identity copy")?;
-                }
-            }
-        }
-        ctx.reserve_vec(
-            &mut candidate.model_mut().regions,
-            1,
-            "iges B-rep topology regions",
-        )?;
+        assign_radial_next(
+            candidate.model_mut().coedges.as_mut_slice(),
+            &coedge_positions,
+            &radial,
+        );
+
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
-            id: region_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-            body: body_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+            id: region_id.clone(),
+            body: body_id.clone(),
             shells: region_shells,
         });
-        let mut body_regions = ctx.collection_vec(1, "iges B-rep body region ids")?;
-        body_regions.push(region_id);
-        ctx.reserve_vec(
-            &mut candidate.model_mut().bodies,
-            1,
-            "iges B-rep topology bodies",
-        )?;
+        let body_regions = vec![region_id];
+
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
@@ -1773,28 +1655,23 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model_mut().finalize(ctx)?;
-        drop(model_index);
+        candidate.model_mut().finalize();
+        drop(pcurve_indexes);
         if commit_session.commit_model(candidate)?.is_err() {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "shell candidate failed neutral validation"),
-            )?;
+                format_args!("shell candidate failed neutral validation"),
+            );
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges brep decoded sequences")?;
+        decoded.insert(entry.sequence);
         for sequence in consumed
             .into_iter()
             .chain(edge_ids.keys().map(|key| key.0))
             .chain(vertex_ids.keys().map(|key| key.0))
         {
-            ctx.insert_btree_set(
-                &mut decoded,
-                sequence,
-                "iges B-rep decoded topology sequences",
-            )?;
+            decoded.insert(sequence);
         }
     }
 

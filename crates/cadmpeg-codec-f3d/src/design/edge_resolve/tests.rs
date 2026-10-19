@@ -27,27 +27,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
-use cadmpeg_core::decode::DecodeArena;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::decode::DecodePolicy;
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::ids::EdgeId;
-
-mod boundary_candidate_allocation;
-mod context_only_allocation;
-mod contextual_deleted_allocation;
-mod edge_flange_allocation;
-mod fixed_fillet_allocation;
-mod hem_allocation;
-mod main_group_allocation;
-mod partial_historical_allocation;
-mod partition_allocation;
-mod radius_allocation;
-mod reference_assignment_allocation;
-mod surface_patch_allocation;
-mod transition_recipe_allocation;
-mod treatment_allocation;
-mod unique_assignment_allocation;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
     serde_json::from_value(serde_json::json!({
@@ -85,35 +65,23 @@ fn identity_radius_candidates_require_member_local_evidence() {
     let mut first = identity(10, &[(17, 3.0), (18, 5.0)]);
     let mut second = identity(11, &[(19, 3.0), (20, 5.0)]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            radius_edge_identity_group_candidates(&[&first], 3.0, decode_ctx)
-        })
-        .unwrap(),
+        radius_edge_identity_group_candidates(&[&first], 3.0),
         Some(vec![17])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            radius_edge_identity_group_candidates(&[&first, &second], 3.0, decode_ctx)
-        })
-        .unwrap(),
+        radius_edge_identity_group_candidates(&[&first, &second], 3.0),
         None
     );
     let copied = identity(11, &[(17, 3.0), (18, 5.0)]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            radius_edge_identity_group_candidates(&[&first, &copied], 3.0, decode_ctx)
-        })
-        .unwrap(),
+        radius_edge_identity_group_candidates(&[&first, &copied], 3.0),
         None
     );
 
     first.resolved_edge_slot = Some(17);
     second.resolved_edge_slots = vec![19, 20];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            radius_edge_identity_group_candidates(&[&first, &second], 3.0, decode_ctx)
-        })
-        .unwrap(),
+        radius_edge_identity_group_candidates(&[&first, &second], 3.0),
         Some(vec![17, 19, 20])
     );
 }
@@ -456,9 +424,7 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
 
 #[test]
 fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repeats() {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology, AsmHistory,
-    };
+    use crate::history_records::{AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology};
     use crate::records::feature::work_geometry::{
         DesignEdgeTreatmentVertexOperand, DesignVertexRecipe,
     };
@@ -525,22 +491,24 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         )
         .unwrap(),
     };
-    let state = AsmDeltaState {
-        id: "f3d:test:state#7".into(),
-        parent: "f3d:test:history".into(),
-        byte_offset: 0,
-        state_id: 7,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 7,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
+    let state = (
+        AsmDeltaState {
+            id: "f3d:test:state#7".into(),
+            parent: "f3d:test:history".into(),
+            byte_offset: 0,
+            state_id: 7,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 7,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(AsmHistoricalTopology {
             edges: vec![17],
             vertices: vec![3, 4, 5],
             edge_vertices: vec![AsmHistoricalEdge {
@@ -550,15 +518,15 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             }],
             ..AsmHistoricalTopology::default()
         }),
-        transition: None,
-    };
-    let history = AsmHistory {
-        id: "f3d:test:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state],
-    };
+        Vec::new(),
+    );
+    let history = crate::test_support::history::history(
+        "f3d:test:history".into(),
+        0,
+        None,
+        false,
+        vec![state],
+    );
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
     let corners = [corner(10, 0, 3), corner(12, 2, 4)];
@@ -627,11 +595,7 @@ fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
     second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[18])];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&first, &second],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&first, &second]),
         SurfacePatchRecipeEdges::Resolved(vec![
             EdgeId::mint("f3d:test:edge#17").expect("identity grammar"),
             EdgeId::mint("f3d:test:edge#18").expect("identity grammar")
@@ -650,35 +614,19 @@ fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
     repeated.recipe_references = vec![recipe_reference(&[17])];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&ambiguous],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&ambiguous]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&contradictory],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&contradictory]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&absent, &contradictory],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&absent, &contradictory]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&repeated, &repeated],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&repeated, &repeated]),
         SurfacePatchRecipeEdges::Inconclusive
     );
 }
@@ -921,10 +869,11 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
 fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
     let first = recipe_edge_operand(10, &[17], &[17]);
     let second = recipe_edge_operand(11, &[], &[]);
-    assert!(!crate::test_support::with_decode_context(|decode_ctx| {
-        transition_chain_is_supported_by_recipe(&[17, 18], 2, &[&first, &second], decode_ctx)
-    })
-    .unwrap());
+    assert!(!transition_chain_is_supported_by_recipe(
+        &[17, 18],
+        2,
+        &[&first, &second]
+    ));
 
     let context = |changed_reference_edge_slots| {
         serde_json::from_value(serde_json::json!({
@@ -948,16 +897,18 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
         std::num::NonZeroU32::new(1).expect("nonzero reference ordinal")
     ]);
     second.recipe_reference_contexts = vec![context(vec![17, 18])];
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        transition_chain_is_supported_by_recipe(&[17, 18], 2, &[&first, &second], decode_ctx)
-    })
-    .unwrap());
+    assert!(transition_chain_is_supported_by_recipe(
+        &[17, 18],
+        2,
+        &[&first, &second]
+    ));
 
     let first = recipe_edge_operand(10, &[17, 18], &[17]);
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        transition_chain_is_supported_by_recipe(&[17, 18], 2, &[&first, &second], decode_ctx)
-    })
-    .unwrap());
+    assert!(transition_chain_is_supported_by_recipe(
+        &[17, 18],
+        2,
+        &[&first, &second]
+    ));
 }
 
 #[test]
@@ -1231,61 +1182,45 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
 fn hem_transition_edge_is_the_unique_non_support_boundary() {
     let support = [[167], [106], [110]];
     assert_eq!(
-        crate::test_support::with_decode_context(
-            |decode_ctx| unique_hem_transition_edge_candidate(
-                &[63, 106, 110, 167],
-                [
-                    &[][..],
-                    support[0].as_slice(),
-                    support[1].as_slice(),
-                    support[2].as_slice()
-                ],
-                decode_ctx
-            )
-        )
-        .unwrap(),
+        unique_hem_transition_edge_candidate(
+            &[63, 106, 110, 167],
+            [
+                &[][..],
+                support[0].as_slice(),
+                support[1].as_slice(),
+                support[2].as_slice()
+            ]
+        ),
         Some(63)
     );
     assert_eq!(
-        crate::test_support::with_decode_context(
-            |decode_ctx| unique_hem_transition_edge_candidate(
-                &[63, 106, 110, 167],
-                [
-                    &[][..],
-                    &[63][..],
-                    support[1].as_slice(),
-                    support[0].as_slice()
-                ],
-                decode_ctx
-            )
-        )
-        .unwrap(),
+        unique_hem_transition_edge_candidate(
+            &[63, 106, 110, 167],
+            [
+                &[][..],
+                &[63][..],
+                support[1].as_slice(),
+                support[0].as_slice()
+            ]
+        ),
         Some(110)
     );
     assert_eq!(
-        crate::test_support::with_decode_context(
-            |decode_ctx| unique_hem_transition_edge_candidate(
-                &[63, 106, 110, 167],
-                [
-                    support[0].as_slice(),
-                    support[1].as_slice(),
-                    support[2].as_slice()
-                ],
-                decode_ctx
-            )
-        )
-        .unwrap(),
+        unique_hem_transition_edge_candidate(
+            &[63, 106, 110, 167],
+            [
+                support[0].as_slice(),
+                support[1].as_slice(),
+                support[2].as_slice()
+            ]
+        ),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(
-            |decode_ctx| unique_hem_transition_edge_candidate(
-                &[63, 106, 110, 167],
-                [&[][..], &[106, 111][..], support[1].as_slice()],
-                decode_ctx
-            )
-        )
-        .unwrap(),
+        unique_hem_transition_edge_candidate(
+            &[63, 106, 110, 167],
+            [&[][..], &[106, 111][..], support[1].as_slice()]
+        ),
         None
     );
 }
@@ -1297,21 +1232,19 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
 
     let state =
         FeatureInputTopologyId::mint("f3d:history-input:state#feature").expect("identity grammar");
-    let selection = crate::test_support::with_decode_context(|decode_ctx| {
-        partial_historical_edge_selection(
-            [
-                ("operand-a", Some(17)),
-                ("operand-b", None),
-                ("operand-c", Some(17)),
-            ],
-            41,
-            cadmpeg_ir::identity_key!("feature").as_str(),
-            state.clone(),
-            "group",
-            decode_ctx,
-        )
-    })
-    .unwrap()
+    let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#feature")
+        .expect("identity grammar");
+    let selection = partial_historical_edge_selection(
+        [
+            ("operand-a", Some(17)),
+            ("operand-b", None),
+            ("operand-c", Some(17)),
+        ],
+        41,
+        &feature,
+        state.clone(),
+        "group",
+    )
     .expect("mixed proof state");
     assert_eq!(
         selection,
@@ -1323,35 +1256,26 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             ],
             vec!["operand-b".into()],
             "group".into(),
-            &cadmpeg_test_support::service_decode_context()
         )
-        .expect("selection storage is admitted")
         .unwrap()
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        partial_historical_edge_selection(
-            [("operand-a", Some(17)), ("operand-b", Some(18))],
-            41,
-            cadmpeg_ir::identity_key!("feature").as_str(),
-            FeatureInputTopologyId::mint("test:model:feature-input#state")
-                .expect("identity grammar"),
-            "group",
-            decode_ctx,
-        )
-    })
-    .unwrap()
+    assert!(partial_historical_edge_selection(
+        [("operand-a", Some(17)), ("operand-b", Some(18))],
+        41,
+        &feature,
+        FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
+        "group",
+    )
     .is_none());
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| partial_historical_edge_selection(
+        partial_historical_edge_selection(
             [("operand-a", None), ("operand-b", None)],
             41,
-            cadmpeg_ir::identity_key!("feature").as_str(),
+            &feature,
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
-            "group",
-            decode_ctx
-        ))
-        .unwrap(),
+            "group"
+        ),
         None
     );
 }
@@ -1371,95 +1295,64 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
     let context = [selector(&[])];
     let last = [selector(&[18, 19, 17])];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::changed_boundary_count_edge_group_candidates(
-                [first.as_slice(), context.as_slice(), last.as_slice()],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::changed_boundary_count_edge_group_candidates([
+            first.as_slice(),
+            context.as_slice(),
+            last.as_slice()
+        ],),
         Some(vec![17, 18, 19])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::changed_boundary_count_edge_group_candidates(
-                [first.as_slice(), last.as_slice()],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::changed_boundary_count_edge_group_candidates([
+            first.as_slice(),
+            last.as_slice()
+        ],),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::changed_boundary_count_edge_group_candidates(
-                [first.as_slice(), context.as_slice(), &[]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::changed_boundary_count_edge_group_candidates([
+            first.as_slice(),
+            context.as_slice(),
+            &[]
+        ]),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::common_deleted_edge_group_candidates(
-                [
-                    (true, &[19, 17, 18, 17][..]),
-                    (true, &[18, 19, 17][..]),
-                    (true, &[17, 18, 19][..]),
-                ],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::common_deleted_edge_group_candidates([
+            (true, &[19, 17, 18, 17][..]),
+            (true, &[18, 19, 17][..]),
+            (true, &[17, 18, 19][..]),
+        ]),
         Some(vec![17, 18, 19])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::common_deleted_edge_group_candidates(
-                [
-                    (true, &[17, 18, 19][..]),
-                    (true, &[17, 18][..]),
-                    (true, &[17, 18, 19][..]),
-                ],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::common_deleted_edge_group_candidates([
+            (true, &[17, 18, 19][..]),
+            (true, &[17, 18][..]),
+            (true, &[17, 18, 19][..]),
+        ]),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::common_deleted_edge_group_candidates(
-                [(true, &[17, 18, 19][..]), (true, &[17, 18, 19][..])],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::common_deleted_edge_group_candidates([
+            (true, &[17, 18, 19][..]),
+            (true, &[17, 18, 19][..]),
+        ]),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::common_deleted_edge_group_candidates(
-                [
-                    (true, &[17, 18][..]),
-                    (false, &[][..]),
-                    (true, &[18, 17][..]),
-                ],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::common_deleted_edge_group_candidates([
+            (true, &[17, 18][..]),
+            (false, &[][..]),
+            (true, &[18, 17][..]),
+        ]),
         Some(vec![17, 18])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::common_deleted_edge_group_candidates(
-                std::iter::empty::<(bool, &[i64])>(),
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::common_deleted_edge_group_candidates(std::iter::empty::<(
+            bool,
+            &[i64],
+        )>()),
         None
     );
     let deleted = vec![17, 18, 19, 20];
@@ -1473,47 +1366,23 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
         vec![member(12, None), member(13, None)],
     ];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::partition_unique_incomplete_edge_group(
-                1, &groups, decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &groups),
         Some(vec![18, 20])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::partition_unique_incomplete_edge_group(
-                0, &groups, decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(0, &groups),
         None
     );
     let mut two_incomplete = groups.clone();
     two_incomplete[0][0].resolved_edge = None;
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::partition_unique_incomplete_edge_group(
-                1,
-                &two_incomplete,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &two_incomplete),
         None
     );
     let mut duplicate_identity = groups;
     duplicate_identity[1][0].identity = 11;
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::partition_unique_incomplete_edge_group(
-                1,
-                &duplicate_identity,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &duplicate_identity,),
         None
     );
 }
@@ -1551,32 +1420,20 @@ fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
     let third = operand(12, &[19, 20]);
     let fourth = operand(13, &[19, 20]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            deleted_boundary_edge_group_candidates(&[&first, &second, &third, &fourth], decode_ctx)
-        })
-        .unwrap(),
+        deleted_boundary_edge_group_candidates(&[&first, &second, &third, &fourth]),
         Some(vec![17, 18, 19, 20])
     );
 
     let too_many_edges = operand(11, &[17, 18, 19]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            deleted_boundary_edge_group_candidates(&[&first, &too_many_edges], decode_ctx)
-        })
-        .unwrap(),
+        deleted_boundary_edge_group_candidates(&[&first, &too_many_edges]),
         None
     );
 
     let mut unreferenced = operand(12, &[19, 20]);
     unreferenced.recipe_reference_contexts = vec![context(&[21])];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            deleted_boundary_edge_group_candidates(
-                &[&first, &second, &unreferenced, &fourth],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        deleted_boundary_edge_group_candidates(&[&first, &second, &unreferenced, &fourth]),
         None
     );
 }
@@ -1670,29 +1527,20 @@ fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
     operand.preceding_boundary_edge_slots = vec![17, 18];
     operand.result_boundary_edge_slots = vec![19, 20];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            result_boundary_reference_edge_group_candidates(&[&operand], decode_ctx)
-        })
-        .unwrap(),
+        result_boundary_reference_edge_group_candidates(&[&operand]),
         Some(vec![19])
     );
 
     operand.recipe_reference_contexts[1] = context(&[20]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            result_boundary_reference_edge_group_candidates(&[&operand], decode_ctx)
-        })
-        .unwrap(),
+        result_boundary_reference_edge_group_candidates(&[&operand]),
         None
     );
 
     operand.recipe_reference_contexts[1] = context(&[19]);
     operand.preceding_boundary_edge_slots.push(19);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            result_boundary_reference_edge_group_candidates(&[&operand], decode_ctx)
-        })
-        .unwrap(),
+        result_boundary_reference_edge_group_candidates(&[&operand]),
         None
     );
 }
@@ -1700,38 +1548,23 @@ fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
 #[test]
 fn edge_group_ignores_members_without_changed_edge_candidates() {
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::context_only_edge_group_candidates(
-                [
-                    (None, &[][..]),
-                    (Some(17), &[17, 18][..]),
-                    (Some(17), &[17][..]),
-                    (None, &[][..]),
-                ],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::context_only_edge_group_candidates([
+            (None, &[][..]),
+            (Some(17), &[17, 18][..]),
+            (Some(17), &[17][..]),
+            (None, &[][..]),
+        ]),
         Some(vec![17])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::context_only_edge_group_candidates(
-                [(Some(17), &[17][..]), (None, &[18][..])],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::context_only_edge_group_candidates([
+            (Some(17), &[17][..]),
+            (None, &[18][..]),
+        ]),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::context_only_edge_group_candidates(
-                [(None, &[][..])],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::context_only_edge_group_candidates([(None, &[][..])]),
         None
     );
 }
@@ -1739,47 +1572,22 @@ fn edge_group_ignores_members_without_changed_edge_candidates() {
 #[test]
 fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_group_assignment_candidates(
-                &[],
-                [&[17, 18][..], &[18, 19][..], &[20][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::edge_group_assignment_candidates(
+            &[],
+            [&[17, 18][..], &[18, 19][..], &[20][..]]
+        ),
         Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![18]))
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_group_assignment_candidates(
-                &[],
-                [&[][..], &[18][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[][..], &[18][..]]),
         Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Context)
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_group_assignment_candidates(
-                &[],
-                [&[17][..], &[18][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..], &[18][..]]),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_group_assignment_candidates(
-                &[],
-                [&[17][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..]]),
         Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Context)
     );
     assert_eq!(
@@ -1831,7 +1639,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(
+            crate::design::edge_resolve::unique_edge_assignment(
                 &[
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![17, 18]),
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
@@ -1845,7 +1653,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(
+            crate::design::edge_resolve::unique_edge_assignment(
                 &[
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
@@ -1892,7 +1700,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
 }
 
 #[test]
-fn edge_assignment_refuses_collection_limit() {
+fn edge_assignment_pairs_single_candidates() {
     let candidates = [vec![17], vec![18]];
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
@@ -1901,23 +1709,10 @@ fn edge_assignment_refuses_collection_limit() {
         .unwrap(),
         Some(vec![17, 18])
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 9;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::design::edge_resolve::unique_bipartite_assignment(&candidates, &ctx)
-        .expect_err("two assignment slots exceed nine admitted collection items");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d edge assignment"
-                && limit.used == 8
-                && limit.additional == 2
-    ));
 }
 
-mod assignment_limits;
+mod assignment_recursion;
+mod group_candidates;
 
 #[test]
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {

@@ -10,7 +10,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -55,157 +54,6 @@ use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
-fn native_load_charges_non_sketch_arena_before_typed_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let board = crate::history_records::AsmBulletinBoard {
-        id: "f3d:native:bulletin#1".into(),
-        parent: "f3d:native:state#1".into(),
-        byte_offset: 0,
-        owner_ref: 0,
-        number: 0,
-        changes: Vec::new(),
-    };
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    namespace
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "asm_bulletin_boards",
-            &[board],
-        )
-        .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::native::F3dNative::load_charged(&ctx, &namespace).unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "load typed native record"
-    ));
-}
-
-#[test]
-fn native_owner_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(&ctx, ["first", "second"].into_iter()).unwrap_err();
-    assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3D native owners"
-    ));
-}
-
-#[test]
-fn native_owner_index_refuses_retained_key_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain F3D native owner id",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::owner_indices(&ctx, ["key"].into_iter())
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(&ctx, ["key"].into_iter()).unwrap_err();
-    assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D native owner id"
-    ));
-}
-
-#[test]
-fn native_owner_groups_refuse_outer_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::group_by_owner(
-        &ctx,
-        Vec::<(&str, &str)>::new(),
-        &std::collections::HashMap::new(),
-        2,
-        |record| record.0,
-        |record| record.1,
-    )
-    .unwrap_err();
-    assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "group F3D native owners"
-    ));
-}
-
-#[test]
-fn native_owner_groups_refuse_child_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let owners = std::collections::HashMap::from([("owner".to_owned(), 0)]);
-    let error = super::group_by_owner(
-        &ctx,
-        vec![("first", "owner"), ("second", "owner")],
-        &owners,
-        1,
-        |record| record.0,
-        |record| record.1,
-    )
-    .unwrap_err();
-    assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "attach F3D native owner child"
-    ));
-}
-
-#[test]
-fn native_missing_owner_text_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::group_by_owner(
-        &ctx,
-        vec![("child", "missing")],
-        &std::collections::HashMap::new(),
-        0,
-        |record| record.0,
-        |record| record.1,
-    )
-    .unwrap_err();
-    assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "report F3D native missing owner"
-    ));
-}
-
-#[test]
 fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
     use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
     use crate::records::dimensions::DesignDimensionLocusPair;
@@ -221,43 +69,26 @@ fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
         ..super::F3dNative::default()
     };
     let name = "design_dimension_null_locus_pairs";
-    let prefix_names = super::F3D_FAMILIES
-        .iter()
-        .take_while(|row| row.arena != name)
-        .map(|row| row.arena.len())
-        .sum::<usize>();
-    let mut retained_limit = u64::try_from(prefix_names + name.len() + record_bytes - 1).unwrap();
-    let mut reached_serialization = false;
+    // The stored text is the record's only retained charge.
+    let retained_limit = u64::try_from(record_bytes - 1).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained_limit;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    for _ in 0..4096 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = retained_limit;
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        namespace.arenas_mut().clear();
-        OWNED_WIRE_CONVERSIONS.with(|count| count.set(0));
-        let error = native.store(&limited, &mut namespace).unwrap_err();
-        assert_eq!(OWNED_WIRE_CONVERSIONS.with(std::cell::Cell::get), 0);
-        assert!(namespace.arenas().values().all(Vec::is_empty));
-        let cadmpeg_core::CodecError::ResourceLimit(first) = cadmpeg_core::CodecError::from(error)
-        else {
-            panic!("native storage refusal");
-        };
-        assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(first.limit, retained_limit);
-        assert_eq!(limited.resource_refusal(), Some(first));
-        if first.operation == "serialize native record" {
-            reached_serialization = true;
-            break;
-        }
-        let next = first.used.checked_add(first.additional).unwrap();
-        assert!(next > retained_limit);
-        retained_limit = next;
-    }
-    assert!(
-        reached_serialization,
-        "serialization admission must refuse before an owned wire conversion"
-    );
+    OWNED_WIRE_CONVERSIONS.with(|count| count.set(0));
+    let error = native.store(&limited, &mut namespace).unwrap_err();
+    assert_eq!(OWNED_WIRE_CONVERSIONS.with(std::cell::Cell::get), 0);
+    assert!(namespace.arenas().values().all(Vec::is_empty));
+    let cadmpeg_core::CodecError::ResourceLimit(first) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native storage refusal");
+    };
+    assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(first.limit, retained_limit);
+    assert_eq!(first.operation, "serialize native record");
+    assert_eq!(limited.resource_refusal(), Some(first));
+    namespace.arenas_mut().clear();
     native
         .store(
             &cadmpeg_test_support::service_decode_context(),
@@ -304,7 +135,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 76);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 78);
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -390,7 +221,7 @@ fn diff_reports_design_material_assignment_changes() {
         .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];
-    let mut assignment_fields = assignment.fields().clone();
+    let mut assignment_fields = assignment.fields().unwrap().clone();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
     *assignment = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
@@ -682,22 +513,18 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         panic!("embedded use curve must be NURBS")
     };
     nurbs
-        .try_map_control_points(
-            |index, point| {
-                let mut point = point.get();
-                if index == 0 {
-                    point.x += 1.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 0 {
+                point.x += 1.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
+        .expect("pole edit admission");
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut preserved)
@@ -781,11 +608,7 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(
-        cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &smbh)
-            .expect("history scan")
-            .is_none()
-    );
+    assert!(cadmpeg_asm::asm_header::solved_record_limit(&smbh).is_none());
 
     let decoded = F3dCodec
         .decode(

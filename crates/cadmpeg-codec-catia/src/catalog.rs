@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C02` UTF-8 string catalogs.
 
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 use crate::wire::tokens::compact_atom;
 
@@ -31,16 +30,31 @@ pub(crate) struct CatalogEntry {
     pub(crate) value: String,
 }
 
+/// Entry bytes a catalog scan may walk per input byte, across every candidate.
+///
+/// Catalogs in a real image do not overlap, so the scan walks each entry byte
+/// about once. Candidates that overlap an accepted catalog or fail late walk
+/// the same bytes again; a candidate that would pass the allowance is skipped.
+pub(crate) const MAX_CATALOG_WALK_BYTES_PER_INPUT_BYTE: usize = 4;
+
+/// The catalogs of one image and the candidates the walk allowance skipped.
+#[derive(Debug, Default)]
+pub(crate) struct CatalogScan {
+    /// Exact catalogs in source order.
+    pub(crate) catalogs: Vec<Catalog>,
+    /// `7C02` candidates skipped at `MAX_CATALOG_WALK_BYTES_PER_INPUT_BYTE`.
+    pub(crate) bounded_candidates: usize,
+}
+
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
-pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Catalog>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "catia_catalog_scan",
-    )?;
-    let mut catalogs = Vec::<Catalog>::new();
+pub(crate) fn parse(bytes: &[u8]) -> CatalogScan {
+    let mut scan = CatalogScan::default();
+    let mut walk_allowance = bytes
+        .len()
+        .checked_mul(MAX_CATALOG_WALK_BYTES_PER_INPUT_BYTE)
+        .unwrap_or(bytes.len());
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {
-        ctx.charge_work(1, "catia_catalog_candidate")?;
         let Some(marker_tail) = pos.checked_add(1) else {
             continue;
         };
@@ -55,87 +69,121 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Catalog
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let Some(catalog) = parse_candidate(ctx, bytes, pos)? else {
-            continue;
+        let catalog = match parse_candidate(bytes, pos, &mut walk_allowance) {
+            Candidate::Catalog(catalog) => catalog,
+            Candidate::Rejected => continue,
+            Candidate::Bounded => {
+                scan.bounded_candidates += 1;
+                continue;
+            }
         };
         if let Some(catalog_end) = catalog.pos.checked_add(catalog.total_len) {
             enclosing_end = enclosing_end.max(catalog_end);
         }
-        ctx.push_vec(&mut catalogs, catalog, "catia_catalogs")?;
+        scan.catalogs.push(catalog);
     }
-    Ok(catalogs)
+    scan
 }
 
-fn parse_candidate(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    pos: usize,
-) -> Result<Option<Catalog>, CodecError> {
-    (|| -> Option<Result<Catalog, CodecError>> {
-        macro_rules! admitted {
-            ($result:expr) => {
-                match $result {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error)),
-                }
-            };
-        }
-        let total_len = usize::try_from(View::u32_le_at(bytes, pos + 2)?).ok()?;
-        let end = pos.checked_add(total_len)?;
-        if total_len < 8 || end > bytes.len() {
-            return None;
-        }
-        let work = admitted!(cadmpeg_core::decode::u64_from_index(total_len)
-            .checked_mul(2)
-            .ok_or_else(|| ctx.refuse_codec_limit("catia_catalog_candidate", u64::MAX, u64::MAX)));
-        admitted!(ctx.charge_work(work, "catia_catalog_candidate"));
-        let (declared_count, mut at) = compact_atom(bytes, pos + 6)?;
-        let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
-        if entry_count > end.checked_sub(at)? {
-            return None;
-        }
-        let mut entries = Vec::new();
-        admitted!(ctx.reserve_vec(&mut entries, entry_count, "catia_catalog_entries"));
-        for ordinal in 0..entry_count {
-            let (value_len, header_len) = match *bytes.get(at)? {
-                0 => (
-                    usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?,
-                    5usize,
-                ),
-                len => (usize::from(len).checked_sub(1)?, 1usize),
-            };
-            let value_start = at.checked_add(header_len)?;
-            let next = value_start.checked_add(value_len)?;
-            if next > end {
-                return None;
-            }
-            let raw = &bytes[value_start..next];
-            let value = admitted!(
-                ctx.copy_retained_text(std::str::from_utf8(raw).ok()?, "catia_catalog_entry_value")
-            );
-            entries.push(CatalogEntry {
-                ordinal: u32::try_from(ordinal).ok()?,
-                pos: at,
-                value,
-            });
-            at = next;
-        }
-        if at != end
-            || entries
-                .iter()
-                .take(PREFIX.len())
-                .map(|entry| entry.value.as_str())
-                .ne(PREFIX)
+enum Candidate {
+    Catalog(Catalog),
+    Rejected,
+    /// The candidate's entries pass the remaining walk allowance.
+    Bounded,
+}
+
+/// Parse one `7C02` candidate, charging its walked entry bytes to `allowance`.
+///
+/// The prefix entries are compared as they are read, and entry text is copied
+/// only once the whole frame is exact.
+fn parse_candidate(bytes: &[u8], pos: usize, allowance: &mut usize) -> Candidate {
+    let Some(frame) = candidate_frame(bytes, pos) else {
+        return Candidate::Rejected;
+    };
+    let CandidateFrame {
+        total_len,
+        end,
+        entry_count,
+        mut at,
+    } = frame;
+    let mut entries = Vec::new();
+    for ordinal in 0..entry_count {
+        let Some((value_len, header_len)) = entry_header(bytes, at) else {
+            return Candidate::Rejected;
+        };
+        let Some(next) = at
+            .checked_add(header_len)
+            .and_then(|value_start| value_start.checked_add(value_len))
+            .filter(|next| *next <= end)
+        else {
+            return Candidate::Rejected;
+        };
+        let Some(remaining) = allowance.checked_sub(next - at) else {
+            return Candidate::Bounded;
+        };
+        *allowance = remaining;
+        let raw = &bytes[at + header_len..next];
+        if PREFIX
+            .get(ordinal)
+            .is_some_and(|prefix| raw != prefix.as_bytes())
         {
-            return None;
+            return Candidate::Rejected;
         }
-        Some(Ok(Catalog {
-            pos,
-            total_len,
-            entries,
-        }))
-    })()
-    .transpose()
+        let (Ok(value), Ok(ordinal)) = (std::str::from_utf8(raw), u32::try_from(ordinal)) else {
+            return Candidate::Rejected;
+        };
+        entries.push((ordinal, at, value));
+        at = next;
+    }
+    if at != end || entries.len() < PREFIX.len() {
+        return Candidate::Rejected;
+    }
+    Candidate::Catalog(Catalog {
+        pos,
+        total_len,
+        entries: entries
+            .into_iter()
+            .map(|(ordinal, pos, value)| CatalogEntry {
+                ordinal,
+                pos,
+                value: value.to_owned(),
+            })
+            .collect(),
+    })
+}
+
+struct CandidateFrame {
+    total_len: usize,
+    end: usize,
+    entry_count: usize,
+    at: usize,
+}
+
+fn candidate_frame(bytes: &[u8], pos: usize) -> Option<CandidateFrame> {
+    let total_len = usize::try_from(View::u32_le_at(bytes, pos + 2)?).ok()?;
+    let end = pos.checked_add(total_len)?;
+    if total_len < 8 || end > bytes.len() {
+        return None;
+    }
+    let (declared_count, at) = compact_atom(bytes, pos + 6)?;
+    let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
+    if entry_count > end.checked_sub(at)? {
+        return None;
+    }
+    Some(CandidateFrame {
+        total_len,
+        end,
+        entry_count,
+        at,
+    })
+}
+
+/// Value length and header length of the inclusive-length entry at `at`.
+fn entry_header(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
+    match *bytes.get(at)? {
+        0 => Some((usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?, 5)),
+        len => Some((usize::from(len).checked_sub(1)?, 1)),
+    }
 }
 
 #[cfg(test)]

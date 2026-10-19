@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sampled curves and polygonal surfaces with checked sample layouts.
 
-mod admission;
-use admission::{SampledAdmission, StandardAdmission};
-
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -46,19 +41,19 @@ fn admit_chordal_deflection(
         .ok_or_else(|| geometry_layout_error("chordal_deflection must be finite and non-negative"))
 }
 
+fn layout_error(message: &'static str) -> GeometryLayoutError {
+    GeometryLayoutError::Layout(message.into())
+}
+
 /// Admit polygonal-surface vertices whose every coordinate is finite.
-fn admit_finite_vertices<A: SampledAdmission>(
-    admission: &A,
-    vertices: Vec<Point3>,
-) -> Result<Vec<FinitePoint3>, A::Error> {
-    admission.collect(
-        vertices,
-        "IR polygonal admitted vertices",
-        |point| match FinitePoint3::new(point) {
+fn admit_finite_vertices(vertices: Vec<Point3>) -> Result<Vec<FinitePoint3>, GeometryLayoutError> {
+    vertices
+        .into_iter()
+        .map(|point| match FinitePoint3::new(point) {
             Some(point) => Ok(point),
-            None => Err(admission.layout("vertices must be finite")?),
-        },
-    )
+            None => Err(layout_error("vertices must be finite")),
+        })
+        .collect::<Result<Vec<_>, _>>()
 }
 
 /// Source-native polygonal surface with an explicit chordal error bound.
@@ -83,33 +78,15 @@ impl PolygonalSurface {
         &self.triangles
     }
 
-    /// Copy both sampled lanes through the decode collection budget.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
-            vertices: super::copy_decode_slice(&self.vertices, ctx, operation)?,
-            triangles: super::copy_decode_slice(&self.triangles, ctx, operation)?,
-            chordal_deflection: self.chordal_deflection,
-        })
-    }
-
     /// Build a polygonal surface whose triangle indices address `vertices`.
     pub fn new(
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         chordal_deflection: f64,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
-        admission::finish(Self::build(
-            ctx,
-            vertices,
-            triangles,
-            |vertices| admit_finite_vertices(ctx, vertices),
-            || NonNegativeReal::new(chordal_deflection),
-        ))
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build(vertices, triangles, admit_finite_vertices, || {
+            NonNegativeReal::new(chordal_deflection)
+        })
     }
 
     /// Build from admitted source deflection and placement scale.
@@ -118,15 +95,10 @@ impl PolygonalSurface {
         triangles: Vec<[u32; 3]>,
         chordal_deflection: NonNegativeReal,
         scale: PositiveReal,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
-        admission::finish(Self::build(
-            ctx,
-            vertices,
-            triangles,
-            |vertices| admit_finite_vertices(ctx, vertices),
-            || chordal_deflection.scaled(scale),
-        ))
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build(vertices, triangles, admit_finite_vertices, || {
+            chordal_deflection.scaled(scale)
+        })
     }
 
     /// Build from admitted vertices, source deflection and placement scale.
@@ -136,24 +108,22 @@ impl PolygonalSurface {
         triangles: Vec<[u32; 3]>,
         chordal_deflection: NonNegativeReal,
         scale: PositiveReal,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
-        admission::finish(Self::build(ctx, vertices, triangles, Ok, || {
-            chordal_deflection.scaled(scale)
-        }))
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build(vertices, triangles, Ok, || chordal_deflection.scaled(scale))
     }
 
-    fn build<A: SampledAdmission, P>(
-        admission: &A,
+    fn build<P>(
         vertices: Vec<P>,
         triangles: Vec<[u32; 3]>,
-        convert: impl FnOnce(Vec<P>) -> Result<Vec<FinitePoint3>, A::Error>,
+        convert: impl FnOnce(Vec<P>) -> Result<Vec<FinitePoint3>, GeometryLayoutError>,
         deflection: impl FnOnce() -> Option<NonNegativeReal>,
-    ) -> Result<Self, A::Error> {
-        Self::check_layout(admission, vertices.len(), &triangles)?;
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::check_layout(vertices.len(), &triangles)?;
         let vertices = convert(vertices)?;
         let Some(chordal_deflection) = deflection() else {
-            return Err(admission.layout("chordal_deflection must be finite and non-negative")?);
+            return Err(layout_error(
+                "chordal_deflection must be finite and non-negative",
+            ));
         };
         Ok(Self {
             vertices,
@@ -162,22 +132,25 @@ impl PolygonalSurface {
         })
     }
 
-    fn check_layout<A: SampledAdmission>(
-        admission: &A,
+    fn check_layout(
         vertex_count: usize,
         triangles: &[[u32; 3]],
-    ) -> Result<(), A::Error> {
+    ) -> Result<(), GeometryLayoutError> {
         if vertex_count < 3 {
-            return Err(admission.layout("polygonal surface must contain at least three vertices")?);
+            return Err(layout_error(
+                "polygonal surface must contain at least three vertices",
+            ));
         }
         if triangles.is_empty() {
-            return Err(admission.layout("polygonal surface must contain at least one triangle")?);
+            return Err(layout_error(
+                "polygonal surface must contain at least one triangle",
+            ));
         }
         for index in triangles.iter().flatten() {
-            admission.work(1, "IR polygonal triangle index")?;
             if usize::try_from(*index).map_or(true, |index| index >= vertex_count) {
-                return Err(admission
-                    .layout("polygonal surface contains an out-of-range triangle index")?);
+                return Err(layout_error(
+                    "polygonal surface contains an out-of-range triangle index",
+                ));
             }
         }
         Ok(())
@@ -194,7 +167,7 @@ impl PolygonalSurface {
     ) -> Result<(), GeometryLayoutError> {
         let mut candidate: Vec<Point3> = self.vertices.iter().map(|point| point.get()).collect();
         edit(&mut candidate)?;
-        self.vertices = admit_finite_vertices(&StandardAdmission, candidate)?;
+        self.vertices = admit_finite_vertices(candidate)?;
         Ok(())
     }
 
@@ -228,13 +201,9 @@ impl<'de> Deserialize<'de> for PolygonalSurface {
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        Self::build(
-            &StandardAdmission,
-            wire.vertices,
-            wire.triangles,
-            |vertices| admit_finite_vertices(&StandardAdmission, vertices),
-            || NonNegativeReal::new(wire.chordal_deflection),
-        )
+        Self::build(wire.vertices, wire.triangles, admit_finite_vertices, || {
+            NonNegativeReal::new(wire.chordal_deflection)
+        })
         .map_err(serde::de::Error::custom)
     }
 }
@@ -316,7 +285,7 @@ impl TryFrom<PolylineCurveWire> for PolylineCurve {
     type Error = GeometryLayoutError;
 
     fn try_from(wire: PolylineCurveWire) -> Result<Self, Self::Error> {
-        Self::build(&StandardAdmission, wire.samples, || {
+        Self::build(wire.samples, || {
             NonNegativeReal::new(wire.chordal_deflection)
         })
     }
@@ -385,31 +354,26 @@ impl PolylineSamples {
 }
 
 impl PolylineSamples<FiniteReal, FinitePoint3> {
-    fn has_strictly_monotonic_parameters<A: SampledAdmission>(
-        &self,
-        admission: &A,
-    ) -> Result<bool, A::Error> {
+    fn has_strictly_monotonic_parameters(&self) -> bool {
         let Self::Parameterized { vertices } = self else {
-            return Ok(true);
+            return true;
         };
         let mut increasing = true;
         for pair in vertices.windows(2) {
-            admission.work(1, "IR polyline increasing parameter comparison")?;
             if pair[0].parameter >= pair[1].parameter {
                 increasing = false;
                 break;
             }
         }
         if increasing {
-            return Ok(true);
+            return true;
         }
         for pair in vertices.windows(2) {
-            admission.work(1, "IR polyline decreasing parameter comparison")?;
             if pair[0].parameter <= pair[1].parameter {
-                return Ok(false);
+                return false;
             }
         }
-        Ok(true)
+        true
     }
 
     /// Edit admitted points transactionally. The edit supplies an admitted
@@ -417,14 +381,13 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
     pub fn edit_admitted_points<E>(
         &mut self,
         mut edit: impl FnMut(FinitePoint3) -> Result<FinitePoint3, E>,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), E>, CodecError> {
+    ) -> Result<(), E> {
         match self {
-            Self::Unparameterized { points } => edit_sample_rows(ctx, points, |point| {
+            Self::Unparameterized { points } => edit_sample_rows(points, |point| {
                 *point = edit(*point)?;
                 Ok(())
             }),
-            Self::Parameterized { vertices } => edit_sample_rows(ctx, vertices, |vertex| {
+            Self::Parameterized { vertices } => edit_sample_rows(vertices, |vertex| {
                 vertex.point = edit(vertex.point)?;
                 Ok(())
             }),
@@ -449,72 +412,38 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 fn edit_sample_rows<T: Copy, E>(
-    ctx: &DecodeContext<'_>,
     rows: &mut [T],
     mut edit: impl FnMut(&mut T) -> Result<(), E>,
-) -> Result<Result<(), E>, CodecError> {
-    let (copy, _storage) = ctx.copy_temporary_slice(rows, "IR sampled edit candidate")?;
-    let mut candidate = copy;
+) -> Result<(), E> {
+    let mut candidate = rows.to_vec();
     for row in &mut candidate {
-        ctx.charge_work(1, "IR sampled edit callback")?;
-        if let Err(error) = edit(row) {
-            return Ok(Err(error));
-        }
+        edit(row)?;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(rows.len()),
-        "IR sampled edit copy back",
-    )?;
+
     rows.copy_from_slice(&candidate);
-    Ok(Ok(()))
+    Ok(())
 }
 
 impl PolylineCurve {
-    /// Copy the sample lane through the decode collection budget.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        let samples = match &self.samples {
-            PolylineSamples::Unparameterized { points } => PolylineSamples::Unparameterized {
-                points: super::copy_decode_slice(points, ctx, operation)?
-                    .try_into()
-                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
-            },
-            PolylineSamples::Parameterized { vertices } => PolylineSamples::Parameterized {
-                vertices: super::copy_decode_slice(vertices, ctx, operation)?
-                    .try_into()
-                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
-            },
-        };
-        Ok(Self {
-            samples,
-            chordal_deflection: self.chordal_deflection,
-        })
-    }
-
     /// Build from admitted sample scalars and points, checking only the
     /// sample count, computed deviation, and parameter order.
     pub fn from_checked_samples(
         samples: PolylineSamples<FiniteReal, FinitePoint3>,
         chordal_deflection: f64,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
-        admission::finish(Self::build_checked_samples(ctx, samples, || {
-            NonNegativeReal::new(chordal_deflection)
-        }))
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build_checked_samples(samples, || NonNegativeReal::new(chordal_deflection))
     }
 
-    fn build_checked_samples<A: SampledAdmission>(
-        admission: &A,
+    fn build_checked_samples(
         samples: PolylineSamples<FiniteReal, FinitePoint3>,
         deflection: impl FnOnce() -> Option<NonNegativeReal>,
-    ) -> Result<Self, A::Error> {
-        Self::require_sample_count(admission, samples.count())?;
-        let chordal_deflection = Self::admit_deflection(admission, deflection())?;
-        if !samples.has_strictly_monotonic_parameters(admission)? {
-            return Err(admission.layout("parameters must be finite and strictly monotonic")?);
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::require_sample_count(samples.count())?;
+        let chordal_deflection = Self::admit_deflection(deflection())?;
+        if !samples.has_strictly_monotonic_parameters() {
+            return Err(layout_error(
+                "parameters must be finite and strictly monotonic",
+            ));
         }
         Ok(Self {
             samples,
@@ -529,11 +458,8 @@ impl PolylineCurve {
     pub fn new(
         samples: PolylineSamples,
         chordal_deflection: f64,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
-        admission::finish(Self::build(ctx, samples, || {
-            NonNegativeReal::new(chordal_deflection)
-        }))
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build(samples, || NonNegativeReal::new(chordal_deflection))
     }
 
     /// Build from admitted source deflection and placement scale.
@@ -541,109 +467,104 @@ impl PolylineCurve {
         samples: PolylineSamples<FiniteReal, FinitePoint3>,
         chordal_deflection: NonNegativeReal,
         scale: PositiveReal,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
-        admission::finish(Self::build_checked_samples(ctx, samples, || {
-            chordal_deflection.scaled(scale)
-        }))
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build_checked_samples(samples, || chordal_deflection.scaled(scale))
     }
 
-    fn build<A: SampledAdmission>(
-        admission: &A,
+    fn build(
         samples: PolylineSamples,
         deflection: impl FnOnce() -> Option<NonNegativeReal>,
-    ) -> Result<Self, A::Error> {
-        Self::admit_sample_points(admission, &samples)?;
-        let chordal_deflection = Self::admit_deflection(admission, deflection())?;
-        let samples = Self::admit_sample_parameters(admission, samples)?;
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::admit_sample_points(&samples)?;
+        let chordal_deflection = Self::admit_deflection(deflection())?;
+        let samples = Self::admit_sample_parameters(samples)?;
         Ok(Self {
             samples,
             chordal_deflection,
         })
     }
 
-    fn require_sample_count<A: SampledAdmission>(
-        admission: &A,
-        count: usize,
-    ) -> Result<(), A::Error> {
+    fn require_sample_count(count: usize) -> Result<(), GeometryLayoutError> {
         if count < 2 {
-            return Err(admission.layout("polyline must contain at least two points")?);
+            return Err(layout_error("polyline must contain at least two points"));
         }
         Ok(())
     }
 
-    fn admit_deflection<A: SampledAdmission>(
-        admission: &A,
+    fn admit_deflection(
         value: Option<NonNegativeReal>,
-    ) -> Result<NonNegativeReal, A::Error> {
+    ) -> Result<NonNegativeReal, GeometryLayoutError> {
         match value {
             Some(value) => Ok(value),
-            None => Err(admission.layout("chordal_deflection must be finite and non-negative")?),
+            None => Err(layout_error(
+                "chordal_deflection must be finite and non-negative",
+            )),
         }
     }
 
     /// Check point finiteness before deflection and parameter admission.
-    fn admit_sample_points<A: SampledAdmission>(
-        admission: &A,
-        samples: &PolylineSamples,
-    ) -> Result<(), A::Error> {
-        Self::require_sample_count(admission, samples.count())?;
+    fn admit_sample_points(samples: &PolylineSamples) -> Result<(), GeometryLayoutError> {
+        Self::require_sample_count(samples.count())?;
         for index in 0..samples.count() {
-            admission.work(1, "IR polyline point finiteness")?;
             let point = match samples {
                 PolylineSamples::Unparameterized { points } => points[index],
                 PolylineSamples::Parameterized { vertices } => vertices[index].point,
             };
             if !point.is_finite() {
-                return Err(admission.layout("points must be finite")?);
+                return Err(layout_error("points must be finite"));
             }
         }
         Ok(())
     }
 
     /// Convert final sample rows once after all source points pass admission.
-    fn admit_sample_parameters<A: SampledAdmission>(
-        admission: &A,
+    fn admit_sample_parameters(
         samples: PolylineSamples,
-    ) -> Result<PolylineSamples<FiniteReal, FinitePoint3>, A::Error> {
-        fn members<A: SampledAdmission, T>(
-            admission: &A,
+    ) -> Result<PolylineSamples<FiniteReal, FinitePoint3>, GeometryLayoutError> {
+        fn members<T>(
             values: Vec<T>,
-        ) -> Result<crate::features::NonEmptyMembers<T>, A::Error> {
+        ) -> Result<crate::features::NonEmptyMembers<T>, GeometryLayoutError> {
             match values.try_into() {
                 Ok(values) => Ok(values),
-                Err(_) => Err(admission.layout("polyline must contain at least two points")?),
+                Err(_) => Err(layout_error("polyline must contain at least two points")),
             }
         }
         let point = |point| match FinitePoint3::new(point) {
             Some(point) => Ok(point),
-            None => Err(admission.layout("points must be finite")?),
+            None => Err(layout_error("points must be finite")),
         };
         let samples = match samples {
             PolylineSamples::Unparameterized { points } => PolylineSamples::Unparameterized {
                 points: members(
-                    admission,
-                    admission.collect(points, "IR polyline admitted samples", point)?,
+                    points
+                        .into_iter()
+                        .map(point)
+                        .collect::<Result<Vec<_>, _>>()?,
                 )?,
             },
             PolylineSamples::Parameterized { vertices } => PolylineSamples::Parameterized {
                 vertices: members(
-                    admission,
-                    admission.collect(vertices, "IR polyline admitted samples", |vertex| {
-                        let Some(parameter) = FiniteReal::new(vertex.parameter) else {
-                            return Err(admission
-                                .layout("parameters must be finite and strictly monotonic")?);
-                        };
-                        Ok(PolylineVertex {
-                            parameter,
-                            point: point(vertex.point)?,
+                    vertices
+                        .into_iter()
+                        .map(|vertex| {
+                            let Some(parameter) = FiniteReal::new(vertex.parameter) else {
+                                return Err(layout_error(
+                                    "parameters must be finite and strictly monotonic",
+                                ));
+                            };
+                            Ok(PolylineVertex {
+                                parameter,
+                                point: point(vertex.point)?,
+                            })
                         })
-                    })?,
+                        .collect::<Result<Vec<_>, _>>()?,
                 )?,
             },
         };
-        if !samples.has_strictly_monotonic_parameters(admission)? {
-            return Err(admission.layout("parameters must be finite and strictly monotonic")?);
+        if !samples.has_strictly_monotonic_parameters() {
+            return Err(layout_error(
+                "parameters must be finite and strictly monotonic",
+            ));
         }
         Ok(samples)
     }
@@ -695,8 +616,8 @@ impl PolylineCurve {
     ) -> Result<(), GeometryLayoutError> {
         let mut candidate = self.samples.to_raw();
         edit(&mut candidate)?;
-        Self::admit_sample_points(&StandardAdmission, &candidate)?;
-        self.samples = Self::admit_sample_parameters(&StandardAdmission, candidate)?;
+        Self::admit_sample_points(&candidate)?;
+        self.samples = Self::admit_sample_parameters(candidate)?;
         Ok(())
     }
 
@@ -717,77 +638,48 @@ impl PolylineCurve {
 }
 
 fn scale_admitted_points<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     points: impl Iterator<Item = &'a mut FinitePoint3>,
     scale: PositiveReal,
     message: &'static str,
-) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+) -> Result<(), GeometryLayoutError> {
     for point in points {
-        ctx.charge_work(1, "IR sampled unit scaling work")?;
-        let Some(scaled) = point.scaled(scale) else {
-            return Ok(Err(GeometryLayoutError::Layout(
-                ctx.copy_retained_text(message, "IR sampled refusal text")?,
-            )));
-        };
-        *point = scaled;
+        *point = point
+            .scaled(scale)
+            .ok_or_else(|| GeometryLayoutError::Layout(message.to_owned()))?;
     }
-    Ok(Ok(()))
+    Ok(())
 }
 
 fn scale_admitted_deflection(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     deflection: &mut NonNegativeReal,
     scale: PositiveReal,
-) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
-    let Some(scaled) = deflection.scaled(scale) else {
-        return Ok(Err(GeometryLayoutError::Layout(ctx.copy_retained_text(
-            "chordal_deflection must be finite and non-negative",
-            "IR sampled refusal text",
-        )?)));
-    };
-    *deflection = scaled;
-    Ok(Ok(()))
+) -> Result<(), GeometryLayoutError> {
+    *deflection = deflection.scaled(scale).ok_or_else(|| {
+        GeometryLayoutError::Layout("chordal_deflection must be finite and non-negative".to_owned())
+    })?;
+    Ok(())
 }
 
 impl PolygonalSurface {
-    pub(crate) fn scale_points(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
-        if let Err(error) = scale_admitted_points(
-            ctx,
-            self.vertices.iter_mut(),
-            scale,
-            "vertices must be finite",
-        )? {
-            return Ok(Err(error));
-        }
-        scale_admitted_deflection(ctx, &mut self.chordal_deflection, scale)
+    pub(crate) fn scale_points(&mut self, scale: PositiveReal) -> Result<(), GeometryLayoutError> {
+        scale_admitted_points(self.vertices.iter_mut(), scale, "vertices must be finite")?;
+        scale_admitted_deflection(&mut self.chordal_deflection, scale)
     }
 }
 
 impl PolylineCurve {
-    pub(crate) fn scale_points(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
-        let result = match &mut self.samples {
+    pub(crate) fn scale_points(&mut self, scale: PositiveReal) -> Result<(), GeometryLayoutError> {
+        match &mut self.samples {
             PolylineSamples::Unparameterized { points } => {
-                scale_admitted_points(ctx, points.iter_mut(), scale, "points must be finite")
+                scale_admitted_points(points.iter_mut(), scale, "points must be finite")
             }
             PolylineSamples::Parameterized { vertices } => scale_admitted_points(
-                ctx,
                 vertices.iter_mut().map(|vertex| &mut vertex.point),
                 scale,
                 "points must be finite",
             ),
         }?;
-        if let Err(error) = result {
-            return Ok(Err(error));
-        }
-        scale_admitted_deflection(ctx, &mut self.chordal_deflection, scale)
+        scale_admitted_deflection(&mut self.chordal_deflection, scale)
     }
 }
 

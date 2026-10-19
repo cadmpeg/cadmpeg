@@ -6,7 +6,6 @@ use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
 mod recovery;
-mod resource_limits;
 mod support;
 mod transforms;
 mod units;
@@ -21,7 +20,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
 
-use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::test_support::test_dump::{
     anonymous_chunk, circle_payload, class_userdata, class_userdata_v2_with_direct_payload,
     class_userdata_with_anonymous_payload, class_userdata_with_payload, definition_record,
@@ -111,7 +110,6 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let mut warnings = Diagnostics::new();
     let (_, payload) = anonymous(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V5,
@@ -123,39 +121,6 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     assert_eq!(payload.remaining(), 0);
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("instance test CRC mismatch"));
-}
-
-#[test]
-fn anonymous_instance_crc_diagnostic_refuses_collection_limit() {
-    let body = [1_i32.to_le_bytes(), 0_i32.to_le_bytes()].concat();
-    let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
-    bytes.extend_from_slice(
-        &i64::try_from(body.len() + 4)
-            .expect("bounded body")
-            .to_le_bytes(),
-    );
-    bytes.extend_from_slice(&body);
-    bytes.extend_from_slice(&crc32fast::hash(&body).to_le_bytes());
-    let crc = bytes.len() - 1;
-    bytes[crc] ^= 1;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-    let refused = anonymous(
-        &ctx,
-        &bytes,
-        &mut reader,
-        ArchiveVersion::V5,
-        "instance test",
-        &mut Diagnostics::new(),
-    )
-    .expect_err("checksum diagnostic exceeds zero collection items");
-    assert!(
-        matches!(refused, FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
-    );
 }
 
 #[test]
@@ -463,9 +428,12 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .namespace("rhino")
         .expect("Rhino native namespace")
         .arenas()["external_references"][0];
-    assert_eq!(external.fields()["full_path"], "/full/source.3dm");
-    assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
-    assert_eq!(external.fields()["relative_path_preferred"], true);
+    assert_eq!(external.fields().unwrap()["full_path"], "/full/source.3dm");
+    assert_eq!(
+        external.fields().unwrap()["relative_path"],
+        "relative/source.3dm"
+    );
+    assert_eq!(external.fields().unwrap()["relative_path_preferred"], true);
     assert!(result.source_fidelity().retained_records().is_empty());
 
     let full_carrier = class_userdata(
@@ -654,7 +622,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .namespace("rhino")
         .expect("Rhino native namespace")
         .arenas()["external_references"][0];
-    assert_eq!(future_external.fields()["relative_path"], "");
+    assert_eq!(future_external.fields().unwrap()["relative_path"], "");
     let future_retained = future_result
         .source_fidelity()
         .retained_records()
@@ -821,11 +789,8 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
             && !diagnostic.diagnostic.message.contains("unsupported class")
     }));
     let container_only = crate::decode::seal_for_test(
-        crate::container::container_only_result(
-            &cadmpeg_test_support::service_decode_context(),
-            &scan,
-        )
-        .expect("container-only source metadata admitted"),
+        crate::container::container_only_result(&scan)
+            .expect("container-only source metadata admitted"),
         true,
     );
     assert!(container_only.report().losses.iter().any(|loss| {
@@ -970,11 +935,11 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     assert_eq!(native.arenas()["product_definitions"].len(), 1);
     assert_eq!(native.arenas()["product_occurrences"].len(), 2);
     assert_eq!(
-        native.arenas()["product_occurrences"][0].fields()["definition_uuid"],
+        native.arenas()["product_occurrences"][0].fields().unwrap()["definition_uuid"],
         Uuid::from_wire(definition_id).to_string()
     );
     assert_eq!(
-        native.arenas()["product_occurrences"][0].fields()["transform_units"],
+        native.arenas()["product_occurrences"][0].fields().unwrap()["transform_units"],
         "millimeter"
     );
     assert!(result.report().losses.iter().any(|loss| loss.code
@@ -982,7 +947,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
         && loss.message.contains("decoded 3/3 Rhino object records")));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1029,7 +994,7 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
     assert_eq!(curve.control_points()[1].x, 12.0);
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1128,7 +1093,7 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     )));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1218,7 +1183,7 @@ pub(crate) fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments(
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1289,7 +1254,7 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1368,7 +1333,7 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1409,13 +1374,13 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
         .any(|loss| loss.message.contains("exact solved carrier retained")));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
 
 #[test]
-fn branching_instance_member_limit_propagates_resource_refusal() {
+fn branching_instance_member_limit_retains_the_wide_reference() {
     let archive = ArchiveVersion::V5;
     let first_member_id = [0x31; 16];
     let second_member_id = [0x32; 16];
@@ -1467,13 +1432,21 @@ fn branching_instance_member_limit_propagates_resource_refusal() {
         let mut context =
             crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.set_expansion_limits([16, 1, 128]);
-        let error = context
+        context
             .decode_geometry()
-            .expect_err("wide reference exceeds one member");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance member limit" && refusal.limit == 1 && refusal.additional == 1)
+            .expect("the wide reference exceeding one member is retained");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert_eq!(
+            result.ir().model.points.len(),
+            1,
+            "{:?}",
+            result.ir().model.points
         );
+        assert!(result.report().losses.iter().any(|loss| loss
+            .message
+            .contains("instance member budget exceeded (MAX_INSTANCE_MEMBERS)")));
     });
 }
 
@@ -1631,7 +1604,7 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     }));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1691,7 +1664,7 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
 }
 
 #[test]
-fn instance_reference_limit_propagates_resource_refusal() {
+fn instance_reference_limit_retains_the_reference() {
     let archive = ArchiveVersion::V5;
     let reference = object_record_with_payload(
         archive,
@@ -1703,16 +1676,146 @@ fn instance_reference_limit_propagates_resource_refusal() {
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
         context.set_expansion_limits([0, 16, 128]);
-        let error = context.decode_geometry().expect_err("zero reference limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance reference limit" && refusal.limit == 0 && refusal.additional == 1)
-        );
+        context
+            .decode_geometry()
+            .expect("a zero reference limit retains the reference");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert!(result.ir().model.bodies.is_empty());
+        assert!(result.report().losses.iter().any(|loss| loss
+            .message
+            .contains("instance reference budget exceeded (MAX_INSTANCE_REFERENCES)")));
     });
 }
 
 #[test]
-fn instance_local_depth_limit_propagates_resource_refusal() {
+fn instance_copy_element_limit_retains_references_and_stays_exhausted() {
+    let archive = ArchiveVersion::V5;
+    let small_definition = [0x43; 16];
+    let large_definition = [0x44; 16];
+    let small_member_id = [0x33; 16];
+    let large_member_ids: Vec<[u8; 16]> = (0..64_u8)
+        .map(|index| [index, 0x34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x34])
+        .collect();
+    let point =
+        |x| object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([x, 0.0, 0.0]));
+    let reference = |definition, x| {
+        object_record_with_payload(
+            archive,
+            0x1000,
+            INSTANCE_REFERENCE_CLASS,
+            &instance_reference_payload(definition, transform(1.0, [x, 0.0, 0.0])),
+        )
+    };
+    let mut objects = vec![
+        reference(small_definition, 10.0),
+        reference(large_definition, 20.0),
+        reference(small_definition, 30.0),
+        point(1.0),
+    ];
+    let mut identities = vec![[0x53; 16], [0x54; 16], [0x55; 16], small_member_id];
+    for &id in &large_member_ids {
+        objects.push(point(2.0));
+        identities.push(id);
+    }
+    let mut scan = scan_with_objects(&objects);
+    set_test_units(&mut scan, 1.0);
+    for (source_order, id) in identities.into_iter().enumerate() {
+        set_identity(
+            &mut scan,
+            source_order,
+            id,
+            &format!("copy-{source_order}"),
+            None,
+            true,
+        );
+    }
+    install_definitions(
+        &mut scan,
+        vec![
+            static_definition(small_definition, &[small_member_id]),
+            static_definition(large_definition, &large_member_ids),
+        ],
+    );
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        // Two small copies fit; the large definition does not. A restored
+        // count would let the second small reference expand.
+        context.set_copy_element_limit(100);
+        context
+            .decode_geometry()
+            .expect("references over the copy element limit are retained");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        let points = &result.ir().model.points;
+        assert_eq!(points.len(), 1, "{points:?}");
+        assert_eq!(points[0].position().get(), Point3::new(11.0, 0.0, 0.0));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.message.contains("2 decode warnings")
+                && loss.message.contains("MAX_INSTANCE_COPY_ELEMENTS")
+        }));
+    });
+}
+
+#[test]
+fn nested_instance_copy_limit_stops_exponential_expansion() {
+    // Definition `level` holds two references to definition `level + 1`; the
+    // last holds one point, so the top reference would make 2^16 copies.
+    const LEVELS: u8 = 16;
+    let archive = ArchiveVersion::V5;
+    let point_id = [0xf0; 16];
+    let reference = |definition| {
+        object_record_with_payload(
+            archive,
+            0x1000,
+            INSTANCE_REFERENCE_CLASS,
+            &instance_reference_payload(definition, transform(1.0, [1.0, 0.0, 0.0])),
+        )
+    };
+    let mut objects = vec![
+        object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([0.0; 3])),
+        reference([1; 16]),
+    ];
+    let mut identities = vec![point_id, [0x7f; 16]];
+    let mut definitions = Vec::new();
+    for level in 1..=LEVELS {
+        let child = [level + 1; 16];
+        let pair = [[0x80 | level; 16], [0xc0 | level; 16]];
+        for id in pair {
+            objects.push(reference(child));
+            identities.push(id);
+        }
+        definitions.push(static_definition([level; 16], &pair));
+    }
+    definitions.push(static_definition([LEVELS + 1; 16], &[point_id]));
+    let mut scan = scan_with_objects(&objects);
+    set_test_units(&mut scan, 1.0);
+    for (source_order, id) in identities.into_iter().enumerate() {
+        set_identity(&mut scan, source_order, id, "nested", None, true);
+    }
+    install_definitions(&mut scan, definitions);
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        context.set_copy_element_limit(1 << 12);
+        context
+            .decode_geometry()
+            .expect("the exponential reference is retained at the copy limit");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert!(result.ir().model.points.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("MAX_INSTANCE_COPY_ELEMENTS")));
+    });
+}
+
+#[test]
+fn instance_local_depth_limit_retains_the_reference() {
     let archive = ArchiveVersion::V5;
     let definitions: Vec<_> = (1u8..=65)
         .map(|index| {
@@ -1749,12 +1852,16 @@ fn instance_local_depth_limit_propagates_resource_refusal() {
     install_definitions(&mut scan, definitions);
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
-        let error = context
+        context
             .decode_geometry()
-            .expect_err("65 reference levels exceed the local slice");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance depth limit" && refusal.limit == 64 && refusal.additional == 1)
-        );
+            .expect("65 reference levels exceeding the local cap are retained");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("instance nesting exceeds 64 levels")));
     });
 }

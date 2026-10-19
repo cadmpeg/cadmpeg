@@ -140,7 +140,7 @@ pub(in crate::writer) fn patch_framed_geometry(
 ) -> Result<(), CodecError> {
     let asm_edits = AsmEditSet::from_framed(
         records.to_vec(),
-        cadmpeg_asm::asm_header::parse(&cadmpeg_test_support::service_decode_context(), bytes)?
+        cadmpeg_asm::asm_header::parse(bytes)
             .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
                 header.width
             }),
@@ -398,14 +398,7 @@ fn patch_asm_geometry(
             }
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
-                let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-                let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    &[],
-                    &writer_arena,
-                    &writer_policy,
-                )?;
-                native_curve.reverse_parameterization(&writer_ctx)?;
+                native_curve.reverse_parameterization();
                 asm_edits.patch_nurbs_curve(
                     bytes,
                     record,

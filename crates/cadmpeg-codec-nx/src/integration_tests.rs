@@ -56,6 +56,7 @@ use cadmpeg_ir::geometry::{
 
 use super::NxCodec;
 
+mod attachment_containment;
 mod dialect;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
@@ -68,7 +69,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("nx").is_some());
 }
@@ -94,94 +95,10 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
 }
 
 #[test]
-fn inspect_summary_refuses_entry_slots_at_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = one_preview_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("one summary entry exceeds zero collection items");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx summary entries"
-            ));
-        },
-    );
-}
-
-#[test]
-fn inspect_summary_refuses_attribute_node_at_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = one_preview_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 1;
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("one attribute exceeds the summary entry item");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx summary attributes"
-            ));
-        },
-    );
-}
-
-// Two ordered attributes share one backing node: eleven lane pairs plus metadata and padding.
-fn two_summary_attribute_nodes() -> usize {
-    22 * std::mem::size_of::<String>()
-        + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>())
-}
-
-#[test]
-fn inspect_summary_refuses_attribute_text_at_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = one_preview_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    cadmpeg_core::ContainerEntry,
-                >());
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("the first attribute key and value need retained bytes");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "nx summary attribute text"
-            ));
-        },
-    );
-}
-
-#[test]
-fn inspect_summary_preserves_preview_attributes_under_service_profile() {
+fn inspect_summary_preserves_preview_attributes() {
     let mut scan = one_preview_summary_scan();
     scan.streams[0].file_offset = 123_456_789;
-    let summary =
-        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("preview summary fits the service profile");
+    let summary = crate::inspect::summarize(&scan).expect("summarize the inspection");
     assert_eq!(summary.entries[0].name, "parasolid#0");
     assert_eq!(
         summary.entries[0].attributes,
@@ -189,73 +106,6 @@ fn inspect_summary_preserves_preview_attributes_under_service_profile() {
             ("file_offset".to_string(), "123456789".to_string()),
             ("kind".to_string(), "preview".to_string()),
         ])
-    );
-}
-
-#[test]
-fn inspect_summary_refuses_stream_name_at_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = one_preview_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            // One entry, one node and 23 attribute text bytes precede this copy.
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes(),
-            ) + 23;
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("the two attributes use the available retained bytes");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "nx summary stream name"
-            ));
-        },
-    );
-}
-
-#[test]
-fn inspect_summary_refuses_directory_name_at_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let mut scan = one_preview_summary_scan();
-    scan.streams.clear();
-    scan.container.entries.push(crate::container::DirEntry {
-        name: "/Root/test".to_string(),
-        region: crate::container::Region::Header,
-        body: crate::container::DirEntryBody::Directory,
-    });
-    let preceding = "region".len()
-        + crate::container::Region::Header.label().len()
-        + "kind".len()
-        + "directory".len();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            // One entry, one node and the directory attribute text precede its name.
-            policy.limits.max_retained_bytes = u64::try_from(
-                preceding
-                    + std::mem::size_of::<cadmpeg_core::ContainerEntry>()
-                    + two_summary_attribute_nodes(),
-            )
-            .expect("small fixture");
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("the directory attributes use the available retained bytes");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "nx summary directory name"
-            ));
-        },
     );
 }
 
@@ -268,137 +118,9 @@ fn invalid_legacy_storage_summary_scan() -> crate::decode::Scan<'static> {
 }
 
 #[test]
-fn scan_notes_refuse_first_note_slot_at_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = one_preview_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = crate::scan_notes::summarize(ctx, &scan)
-                .err()
-                .expect("the first note needs one collection item");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx scan notes"
-            ));
-        },
-    );
-}
-
-#[test]
-fn scan_notes_refuse_text_at_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = one_preview_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
-        },
-        |ctx| {
-            let error = crate::scan_notes::summarize(ctx, &scan)
-                .err()
-                .expect("the first note needs retained text bytes");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "nx scan note text"
-            ));
-        },
-    );
-}
-
-#[test]
-fn inspect_summary_refuses_combined_storage_note_slot_at_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = invalid_legacy_storage_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 6;
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("entry, attributes, storage and two scan notes use six slots");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx combined inspection notes"
-            ));
-        },
-    );
-}
-
-#[test]
-fn inspect_summary_refuses_storage_note_slot_at_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = invalid_legacy_storage_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 3;
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("the entry and attributes use three slots");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx summary storage notes"
-            ));
-        },
-    );
-}
-
-#[test]
-fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let scan = invalid_legacy_storage_summary_scan();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            // One entry, one node and 23 attribute text bytes precede this copy.
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes(),
-            ) + 23;
-        },
-        |ctx| {
-            let error = crate::inspect::summarize(ctx, &scan)
-                .expect_err("the two attributes use the available retained bytes");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "nx summary storage note"
-            ));
-        },
-    );
-}
-
-#[test]
 fn inspect_summary_preserves_invalid_legacy_storage_note() {
     let scan = invalid_legacy_storage_summary_scan();
-    let summary =
-        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("storage fallback fits the service profile");
+    let summary = crate::inspect::summarize(&scan).expect("summarize the inspection");
     assert!(summary.notes.iter().any(|note| {
         note == "parasolid#0: verbatim container entry stores fewer bytes than it expands to: 2/3"
     }));

@@ -420,7 +420,11 @@ mod tests {
     }
     #[test]
     fn construction_rejects_out_of_range_lane_counts() {
-        let original = serde_json::json!({"id":"c", "operation_label":"o", "branch":"b", "body_object_index":0, "profile_references":[""], "profile_data_blocks":[""], "atom_data_blocks":[""], "first_data_blocks":[""], "second_data_blocks":[""]});
+        let original = serde_json::json!({
+            "id": "c", "operation_label": "o", "branch": "b", "body_object_index": 0,
+            "profile_references": [""], "profile_data_blocks": [""], "atom_data_blocks": [""],
+            "first_data_blocks": [""], "second_data_blocks": [""]
+        });
         for field in [
             "atom_data_blocks",
             "first_data_blocks",

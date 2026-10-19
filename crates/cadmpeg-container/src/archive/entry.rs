@@ -5,18 +5,16 @@ use super::{
     signature_at, u16_at, u32_at, u64_at, Admission, Declaration, EntryRecord, ZipCompression,
 };
 use crate::layout::{central_header, local_header};
-use cadmpeg_core::decode::{ByteRange, DecodeContext};
+use cadmpeg_core::decode::ByteRange;
 use cadmpeg_core::CodecError;
 
 pub(super) fn read(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     central: u64,
     name: String,
     archive_offset: u64,
     directory_start: u64,
 ) -> Result<Admission<(EntryRecord, u64)>, CodecError> {
-    ctx.charge_work(1, "ZIP entry central declaration")?;
     let flags = u16_at(
         bytes,
         central + cadmpeg_core::decode::u64_from_index(central_header::FLAGS),
@@ -62,7 +60,6 @@ pub(super) fn read(
         let mut extra = name_end;
         let mut found = false;
         while extra < extra_end {
-            ctx.charge_work(1, "ZIP64 central extra fields")?;
             let tag = u16_at(bytes, extra)?;
             let end = extra + 4 + u64::from(u16_at(bytes, extra + 2)?);
             if end > extra_end {
@@ -172,26 +169,16 @@ fn local_data_start(
     Ok(data)
 }
 
-pub(super) fn frame_unreadable_members(
-    ctx: &DecodeContext<'_>,
-    entries: &mut [EntryRecord],
-    directory: u64,
-) -> Result<(), CodecError> {
+pub(super) fn frame_unreadable_members(entries: &mut [EntryRecord], directory: u64) {
     if entries.iter().all(|entry| entry.data_start.is_some()) {
-        return Ok(());
+        return;
     }
-    let mut order = ctx.collection_vec(entries.len(), "ZIP member frame order")?;
-    order.extend(0..entries.len());
-    ctx.stable_sort_by(
-        &mut order,
-        |left, right| {
-            entries[*left]
-                .header_start
-                .cmp(&entries[*right].header_start)
-        },
-        |_| 0,
-        "ZIP member frame order",
-    )?;
+    let mut order: Vec<usize> = (0..entries.len()).collect();
+    order.sort_by(|left, right| {
+        entries[*left]
+            .header_start
+            .cmp(&entries[*right].header_start)
+    });
     for (position, index) in order.iter().copied().enumerate() {
         if entries[index].data_start.is_none() {
             let end = order
@@ -203,5 +190,4 @@ pub(super) fn frame_unreadable_members(
             });
         }
     }
-    Ok(())
 }

@@ -17,70 +17,6 @@ use crate::test_support::test_owned::{
 use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
-#[test]
-fn directory_quarantine_identity_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let record = super::QuarantinedDirectoryRecord {
-        sequence: 3,
-        source_offset: 160,
-        bytes: Vec::new(),
-        defect: super::DirectoryDefect::UnpairedCard,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        record.identity(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges directory quarantine identity"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        record.identity(&ctx).unwrap(),
-        "iges:quarantine:directory#3"
-    );
-}
-
-#[test]
-fn directory_quarantine_loss_refuses_message_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let record = super::QuarantinedDirectoryRecord {
-        sequence: 3,
-        source_offset: 160,
-        bytes: Vec::new(),
-        defect: super::DirectoryDefect::FieldNotAnInteger("level"),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        record.loss_note(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges directory quarantine loss message"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let loss = record.loss_note(&ctx).unwrap();
-    assert_eq!(
-        loss.provenance.unwrap().tag.as_deref(),
-        Some("directory_entry:D3")
-    );
-    assert!(loss
-        .message
-        .contains("the level field is not a decimal integer"));
-}
-
 /// Zero-based index of the Parameter Data pointer in the first Directory card.
 const PARAMETER_FIELD: usize = 1;
 
@@ -164,7 +100,7 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     let quarantined = &native.arenas()["quarantined_directory_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:directory#3");
-    let fields = quarantined[0].fields();
+    let fields = quarantined[0].fields().unwrap();
     assert_eq!(fields["section"], "directory-entry");
     assert_eq!(fields["sequence"], 3);
     assert_eq!(fields["source_offset"], first_card);
@@ -219,7 +155,7 @@ fn every_directory_defect_key_names_its_own_failure() {
         let native = result.ir().native.namespace("iges").unwrap();
         let quarantined = &native.arenas()["quarantined_directory_records"];
         assert_eq!(quarantined.len(), 1, "{defect}");
-        assert_eq!(quarantined[0].fields()["defect"], defect);
+        assert_eq!(quarantined[0].fields().unwrap()["defect"], defect);
         assert_eq!(
             code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
             1,
@@ -242,7 +178,7 @@ fn v4_blank_no_default_directory_fields_quarantine_the_record() {
         let quarantined = &native.arenas()["quarantined_directory_records"];
         assert_eq!(quarantined.len(), 1, "card {card_index}, field {field}");
         assert_eq!(
-            quarantined[0].fields()["defect"],
+            quarantined[0].fields().unwrap()["defect"],
             "field-blank-not-allowed",
             "card {card_index}, field {field}"
         );
@@ -272,7 +208,7 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:directory#5");
-    let fields = quarantined[0].fields();
+    let fields = quarantined[0].fields().unwrap();
     assert_eq!(fields["cards"], 1);
     assert_eq!(fields["defect"], "unpaired-card");
     assert_eq!(
@@ -345,7 +281,7 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         .decode(
             &mut Cursor::new(bytes.clone()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -378,4 +314,23 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         ),
         other => panic!("expected a strict refusal, got {other:?}"),
     }
+}
+
+#[test]
+fn directory_quarantine_record_names_its_identity_and_defect() {
+    let record = super::QuarantinedDirectoryRecord {
+        sequence: 3,
+        source_offset: 160,
+        bytes: Vec::new(),
+        defect: super::DirectoryDefect::FieldNotAnInteger("level"),
+    };
+    assert_eq!(record.identity(), "iges:quarantine:directory#3");
+    let loss = record.loss_note();
+    assert_eq!(
+        loss.provenance.unwrap().tag.as_deref(),
+        Some("directory_entry:D3")
+    );
+    assert!(loss
+        .message
+        .contains("the level field is not a decimal integer"));
 }

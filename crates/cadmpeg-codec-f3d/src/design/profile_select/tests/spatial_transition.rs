@@ -7,64 +7,15 @@ use crate::design::profile_select::{
 };
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
-    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory,
+    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
 };
 use crate::ids::neutral_spatial_sketch_curve_id;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityUse, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition, SpatialSketchProfile,
 };
-
-#[test]
-fn spatial_profile_polygon_points_refuse_collection_limit() {
-    let sketch_id =
-        cadmpeg_ir::sketches::SpatialSketchId::mint("synthetic:test:id#spatial-polygon-allocation")
-            .unwrap();
-    let entities = [
-        spatial_line(
-            &sketch_id,
-            100,
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-        ),
-        spatial_line(
-            &sketch_id,
-            101,
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(0.0, 2.0, 0.0),
-        ),
-        spatial_line(
-            &sketch_id,
-            102,
-            Point3::new(0.0, 2.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-        ),
-    ];
-    let sketch = SpatialSketch {
-        id: sketch_id.clone(),
-        name: None,
-        configuration: None,
-        visible: None,
-        profiles: vec![spatial_profile(&sketch_id, &[100, 101, 102])],
-        native_ref: None,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        spatial_polyline_profile_containing_points(
-            &sketch, &entities, &[Point3::new(0.5, 0.5, 0.0)], 0.01, &ctx),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d spatial profile polygon point"
-    ));
-}
 
 #[test]
 fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
@@ -167,62 +118,46 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
         .collect(),
         ..Default::default()
     };
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("history:state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 0,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history:state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 0,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
             state(1, AsmHistoricalTopology::default(), None),
-            state(
-                2,
-                topology,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: crate::history_records::AsmHistoricalEntityDelta::default(),
-                    topology: AsmHistoricalTopologyDelta {
-                        faces: crate::history_records::AsmHistoricalEntityDelta {
-                            inserted: vec![1],
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                }),
-            ),
+            state(2, topology, Some(1)),
         ],
-    };
+    );
+    assert_eq!(history.check_transitions(), Ok(()));
+    assert!(history
+        .states()
+        .iter()
+        .all(|state| history.topology(state).is_some()));
 
     assert_eq!(
-        crate::test_support::with_decode_context(
-            |decode_ctx| transition_spatial_profile_selection(
-                &sketch,
-                &entities,
-                &[history],
-                2,
-                1,
-                1.0e-6,
-                decode_ctx
-            )
-        )
-        .unwrap(),
+        transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6).unwrap(),
         None
     );
 }
@@ -280,11 +215,8 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
                     entity: arc_id,
                     reversed: false,
                 }],
-                &cadmpeg_test_support::service_decode_context(),
-                "spatial profile uniqueness",
             )
-            .expect("fixture collection admission")
-            .unwrap(),
+            .expect("fixture collection admission"),
         ],
         native_ref: None,
     };
@@ -295,12 +227,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
     ];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            spatial_polyline_profile_containing_points(
-                &sketch, &entities, &points, 1.0e-6, decode_ctx,
-            )
-        })
-        .unwrap(),
+        spatial_polyline_profile_containing_points(&sketch, &entities, &points, 1.0e-6),
         None
     );
     let polyline_only = SpatialSketch {
@@ -308,16 +235,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
         ..sketch
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            spatial_polyline_profile_containing_points(
-                &polyline_only,
-                &entities,
-                &points,
-                1.0e-6,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        spatial_polyline_profile_containing_points(&polyline_only, &entities, &points, 1.0e-6),
         Some(0)
     );
 }

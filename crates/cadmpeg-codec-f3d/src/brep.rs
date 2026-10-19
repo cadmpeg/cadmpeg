@@ -11,7 +11,7 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_asm::brep::{decode_with_header, decode_with_purpose, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::sab::Record;
-use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
@@ -20,46 +20,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod graph_ops;
 
-fn merge_brep_counts(
-    ctx: &DecodeContext<'_>,
-    target: &mut BTreeMap<String, usize>,
-    source: BTreeMap<String, usize>,
-) -> Result<(), CodecError> {
+fn merge_brep_counts(target: &mut BTreeMap<String, usize>, source: BTreeMap<String, usize>) {
     for (kind, count) in source {
-        ctx.admit_btree_entry(target, &kind, "merge F3D BREP statistic kinds")?;
         *target.entry(kind).or_default() += count;
     }
-    Ok(())
-}
-
-fn copy_attribute_target(
-    ctx: &DecodeContext<'_>,
-    target: &AttributeTarget,
-) -> Result<AttributeTarget, CodecError> {
-    Ok(match target {
-        AttributeTarget::Document => AttributeTarget::Document,
-        AttributeTarget::Body(id) => {
-            AttributeTarget::Body(id.try_clone_for_decode(ctx, "copy F3D BREP attribute target")?)
-        }
-        AttributeTarget::Face(id) => {
-            AttributeTarget::Face(id.try_clone_for_decode(ctx, "copy F3D BREP attribute target")?)
-        }
-        AttributeTarget::Shell(id) => {
-            AttributeTarget::Shell(id.try_clone_for_decode(ctx, "copy F3D BREP attribute target")?)
-        }
-        AttributeTarget::Loop(id) => {
-            AttributeTarget::Loop(id.try_clone_for_decode(ctx, "copy F3D BREP attribute target")?)
-        }
-        AttributeTarget::Coedge(id) => {
-            AttributeTarget::Coedge(id.try_clone_for_decode(ctx, "copy F3D BREP attribute target")?)
-        }
-        AttributeTarget::Edge(id) => {
-            AttributeTarget::Edge(id.try_clone_for_decode(ctx, "copy F3D BREP attribute target")?)
-        }
-        AttributeTarget::Vertex(id) => {
-            AttributeTarget::Vertex(id.try_clone_for_decode(ctx, "copy F3D BREP attribute target")?)
-        }
-    })
 }
 
 /// The ASM B-rep graph plus links derived from Fusion attribute records.
@@ -82,39 +46,23 @@ pub(crate) struct Brep {
 
 impl Brep {
     /// Wrap a decoded ASM graph and derive the Fusion attribute links.
-    fn from_asm(ctx: &DecodeContext<'_>, asm: AsmBrep) -> Result<Self, CodecError> {
+    fn from_asm(asm: AsmBrep) -> Result<Self, CodecError> {
         let mut sketch_curve_links = Vec::new();
         let mut persistent_design_links = Vec::new();
         let mut persistent_subentity_tags = Vec::new();
         let mut creation_timestamps = Vec::new();
         for attribute in &asm.attributes {
-            if let Some(link) = sketch_curve_link(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut sketch_curve_links,
-                    link,
-                    "collect F3D sketch curve links",
-                )?;
+            if let Some(link) = sketch_curve_link(attribute) {
+                sketch_curve_links.push(link);
             }
-            for link in self::persistent_design_links(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut persistent_design_links,
-                    link,
-                    "collect F3D persistent design links",
-                )?;
+            for link in self::persistent_design_links(attribute)? {
+                persistent_design_links.push(link);
             }
-            for tag in self::persistent_subentity_tags(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut persistent_subentity_tags,
-                    tag,
-                    "collect F3D persistent subentity tags",
-                )?;
+            for tag in self::persistent_subentity_tags(attribute)? {
+                persistent_subentity_tags.push(tag);
             }
-            if let Some(timestamp) = creation_timestamp(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut creation_timestamps,
-                    timestamp,
-                    "collect F3D creation timestamps",
-                )?;
+            if let Some(timestamp) = creation_timestamp(attribute) {
+                creation_timestamps.push(timestamp);
             }
         }
         Ok(Self {
@@ -127,10 +75,7 @@ impl Brep {
     }
 
     /// Map solved bodies to the selector used by this blob's Design body map.
-    pub(crate) fn body_selectors(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<HashMap<BodyId, u64>, CodecError> {
+    pub(crate) fn body_selectors(&self) -> HashMap<BodyId, u64> {
         let ordinal_mode = self
             .asm
             .body_native_keys
@@ -146,14 +91,9 @@ impl Brep {
             let Some(selector) = selector else {
                 continue;
             };
-            let id = body
-                .body
-                .try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
-
-            ctx.reserve_map(&mut selectors, 1, "index F3D BREP body selectors")?;
-            selectors.insert(id, selector);
+            selectors.insert(body.body.clone(), selector);
         }
-        Ok(selectors)
+        selectors
     }
 
     /// Resolve the Design selectors present for this blob. An exact native
@@ -161,20 +101,15 @@ impl Brep {
     /// selects the body with the same zero-based ordinal.
     pub(crate) fn body_selectors_for(
         &self,
-        ctx: &DecodeContext<'_>,
         selectors: &HashSet<u64>,
     ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
         let mut resolved = HashMap::new();
         for selector in selectors {
-            let Some(body) =
-                resolve_body_selector(ctx, self.asm.body_native_keys.iter(), *selector)?
+            let Some(body) = resolve_body_selector(self.asm.body_native_keys.iter(), *selector)?
             else {
                 continue;
             };
-            let id = (body).try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
-
-            ctx.reserve_map(&mut resolved, 1, "index F3D selected BREP bodies")?;
-            if let Some(previous) = resolved.insert(id, *selector) {
+            if let Some(previous) = resolved.insert(body.clone(), *selector) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "F3D body {} is selected by both {previous} and {selector}",
                     body.as_str()
@@ -185,15 +120,11 @@ impl Brep {
     }
 
     /// Append a disjoint, already-qualified BREP graph.
-    pub(crate) fn append(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        other: Self,
-    ) -> Result<(), CodecError> {
+    pub(crate) fn append(&mut self, other: Self) {
         let mut asm = other.asm;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
-                $(ctx.append_vec(&mut self.asm.$field, &mut asm.$field, concat!("merge F3D BREP ", stringify!($field)))?;)+
+                $(self.asm.$field.append(&mut asm.$field);)+
             };
         }
         append_vecs!(
@@ -233,7 +164,7 @@ impl Brep {
         self.asm.stats.partial_procedural_supports += asm.stats.partial_procedural_supports;
         macro_rules! merge_count_maps {
             ($($field:ident),+ $(,)?) => {
-                $(merge_brep_counts(ctx, &mut self.asm.stats.$field, std::mem::take(&mut asm.stats.$field))?;)+
+                $(merge_brep_counts(&mut self.asm.stats.$field, std::mem::take(&mut asm.stats.$field));)+
             };
         }
         merge_count_maps!(
@@ -246,7 +177,7 @@ impl Brep {
         let mut other = Self { asm, ..other };
         macro_rules! append_derived {
             ($($field:ident),+ $(,)?) => {
-                $(ctx.append_vec(&mut self.$field, &mut other.$field, concat!("merge F3D BREP ", stringify!($field)))?;)+
+                $(self.$field.append(&mut other.$field);)+
             };
         }
         append_derived!(
@@ -255,7 +186,6 @@ impl Brep {
             persistent_subentity_tags,
             creation_timestamps,
         );
-        Ok(())
     }
 }
 
@@ -270,10 +200,14 @@ pub(crate) fn decode(
     stream: &str,
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    Brep::from_asm(
+    Brep::from_asm(decode_with_purpose(
         ctx,
-        decode_with_purpose(ctx, records, bytes, stream, format, DecodePurpose::Model)?,
-    )
+        records,
+        bytes,
+        stream,
+        format,
+        DecodePurpose::Model,
+    )?)
 }
 
 /// Decode a parsed text stream ([`cadmpeg_asm::sat`]) into the IR B-rep graph.
@@ -289,18 +223,15 @@ pub(crate) fn decode_text(
     entry: &str,
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    Brep::from_asm(
+    Brep::from_asm(decode_with_header(
         ctx,
-        decode_with_header(
-            ctx,
-            &stream.records,
-            bytes,
-            Some(&stream.header.as_kernel_header(ctx)?),
-            entry,
-            format,
-            DecodePurpose::Model,
-        )?,
-    )
+        &stream.records,
+        bytes,
+        Some(&stream.header.as_kernel_header()),
+        entry,
+        format,
+        DecodePurpose::Model,
+    )?)
 }
 
 /// Decode only the topology and analytic measurements used to bind ASM
@@ -312,29 +243,40 @@ pub(crate) fn decode_history_topology(
     bytes: &[u8],
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    Brep::from_asm(
+    Brep::from_asm(decode_with_purpose(
         ctx,
-        decode_with_purpose(
-            ctx,
-            records,
-            bytes,
-            "history",
-            format,
-            DecodePurpose::History,
-        )?,
-    )
+        records,
+        bytes,
+        "history",
+        format,
+        DecodePurpose::History,
+    )?)
+}
+
+/// Decode a History subset against the complete state's subtype table.
+pub(crate) fn decode_history_with_subtypes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    subtypes: &cadmpeg_asm::nurbs::toks::SubtypeTable,
+) -> Result<Brep, CodecError> {
+    Brep::from_asm(cadmpeg_asm::brep::decode_history_with_subtypes(
+        ctx,
+        records,
+        bytes,
+        crate::ids::ID_FORMAT,
+        subtypes,
+    )?)
 }
 
 /// Resolve one Design body selector within one BREP blob. Exact native keys
 /// take precedence; an absent key falls back to the zero-based body ordinal.
 pub(crate) fn resolve_body_selector<'a>(
-    ctx: &DecodeContext<'_>,
     body_keys: impl Iterator<Item = &'a BodyNativeKey> + Clone,
     selector: u64,
 ) -> Result<Option<&'a BodyId>, cadmpeg_core::CodecError> {
     let mut direct = None;
     for body in body_keys.clone() {
-        ctx.charge_work(1, "match F3D native body selector")?;
         if body.asm_body_key == Some(selector) {
             if direct.is_some() {
                 return Err(CodecError::malformed(format_args!(
@@ -352,7 +294,6 @@ pub(crate) fn resolve_body_selector<'a>(
     };
     let mut matched = None;
     for body in body_keys {
-        ctx.charge_work(1, "match F3D ordinal body selector")?;
         if body.body_ordinal == ordinal {
             if matched.is_some() {
                 return Err(CodecError::malformed(format_args!(
@@ -439,54 +380,32 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
 }
 
 /// Locate a Fusion family marker under the caller's scan and comparison allowance.
-fn attribute_family(
-    ctx: &DecodeContext<'_>,
-    attribute: &SourceAttribute,
-    family: &str,
-) -> Result<Option<usize>, CodecError> {
+fn attribute_family(attribute: &SourceAttribute, family: &str) -> Option<usize> {
     for (index, value) in attribute.values.iter().enumerate() {
-        ctx.charge_work(1, "scan Fusion attribute family")?;
         if let AttributeValue::String(name) = value {
-            let work = cadmpeg_core::decode::u64_from_index(name.len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(family.len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("compare Fusion attribute family", 0, u64::MAX)
-                })?;
-            ctx.charge_work(work, "compare Fusion attribute family")?;
             if name == family {
-                return Ok(Some(index));
+                return Some(index);
             }
         }
     }
-    Ok(None)
+    None
 }
 
-fn sketch_curve_link(
-    ctx: &DecodeContext<'_>,
-    attribute: &SourceAttribute,
-) -> Result<Option<SketchCurveLink>, CodecError> {
-    let Some(family) = attribute_family(ctx, attribute, "sketch_attrib_def")? else {
-        return Ok(None);
-    };
-    let Some(payload) = sketch_link_payload(&attribute.values[family + 1..]) else {
-        return Ok(None);
-    };
-    Ok(Some(SketchCurveLink {
-        id: ctx.format_retained(
-            format_args!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
-            "retain F3D sketch curve link ID",
-        )?,
-        target: copy_attribute_target(ctx, &attribute.target)?,
+fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
+    let family = attribute_family(attribute, "sketch_attrib_def")?;
+    let payload = sketch_link_payload(&attribute.values[family + 1..])?;
+    Some(SketchCurveLink {
+        id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
+        target: attribute.target.clone(),
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
         sense: crate::records::sketch_links::SketchLinkSense::try_from(payload.sense).ok(),
         role: payload.role,
         closure: payload.closure,
-    }))
+    })
 }
 
 fn persistent_design_links(
-    ctx: &DecodeContext<'_>,
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentDesignLink>, CodecError> {
     let AttributeTarget::Body(_) = &attribute.target else {
@@ -496,7 +415,7 @@ fn persistent_design_links(
         version,
         group_count,
         rest,
-    }) = generic_tag_payload(ctx, attribute)?
+    }) = generic_tag_payload(attribute)
     else {
         return Ok(Vec::new());
     };
@@ -516,7 +435,7 @@ fn persistent_design_links(
             }
             _ => return Ok(Vec::new()),
         };
-        let design_id_text = ctx.copy_retained_text(design_id, "copy F3D persistent design ID")?;
+        let design_id_text = design_id.to_owned();
         let Ok(design_id) =
             crate::records::sketch_links::DesignPersistentIdText::try_from(design_id_text)
         else {
@@ -529,25 +448,21 @@ fn persistent_design_links(
             CodecError::Malformed("F3D persistent design link ordinal overflows".into())
         })?;
         let link = PersistentDesignLink {
-            id: ctx.format_retained(
-                format_args!(
-                    "f3d:design:persistent-design-link#{}:{ordinal}",
-                    attribute_key(attribute)
-                ),
-                "retain F3D persistent design link ID",
-            )?,
-            target: copy_attribute_target(ctx, &attribute.target)?,
+            id: format!(
+                "f3d:design:persistent-design-link#{}:{ordinal}",
+                attribute_key(attribute)
+            ),
+            target: attribute.target.clone(),
             design_id,
             design_reference,
             ordinal,
         };
-        ctx.push_vec(&mut links, link, "collect F3D attribute design links")?;
+        links.push(link);
     }
     Ok(links)
 }
 
 fn persistent_subentity_tags(
-    ctx: &DecodeContext<'_>,
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentSubentityTag>, CodecError> {
     if !matches!(
@@ -560,7 +475,7 @@ fn persistent_subentity_tags(
         version,
         group_count,
         rest,
-    }) = generic_tag_payload(ctx, attribute)?
+    }) = generic_tag_payload(attribute)
     else {
         return Ok(Vec::new());
     };
@@ -580,9 +495,7 @@ fn persistent_subentity_tags(
         else {
             return Ok(Vec::new());
         };
-        let Some(token) = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(token, "copy F3D persistent subentity token")?,
-        ) else {
+        let Some(token) = cadmpeg_core::text::NonBlankString::new(token.to_owned()) else {
             return Ok(Vec::new());
         };
         if *reference_count < 0 {
@@ -603,11 +516,7 @@ fn persistent_subentity_tags(
             let AttributeValue::Integer(value) = value else {
                 return Ok(Vec::new());
             };
-            ctx.push_vec(
-                &mut design_references,
-                *value,
-                "collect F3D subentity references",
-            )?;
+            design_references.push(*value);
         }
         if matches!(version, GenericTagVersion::V3) {
             if !matches!(rest.get(reference_end), Some(AttributeValue::Integer(0))) {
@@ -621,20 +530,17 @@ fn persistent_subentity_tags(
             CodecError::Malformed("F3D persistent subentity ordinal overflows".into())
         })?;
         let group = PersistentSubentityTag {
-            id: ctx.format_retained(
-                format_args!(
-                    "f3d:design:persistent-subentity-tag#{}:{ordinal}",
-                    attribute_key(attribute)
-                ),
-                "retain F3D persistent subentity tag ID",
-            )?,
-            target: copy_attribute_target(ctx, &attribute.target)?,
+            id: format!(
+                "f3d:design:persistent-subentity-tag#{}:{ordinal}",
+                attribute_key(attribute)
+            ),
+            target: attribute.target.clone(),
             selector: *selector,
             token,
             design_references,
             ordinal,
         };
-        ctx.push_vec(&mut groups, group, "collect F3D subentity tag groups")?;
+        groups.push(group);
     }
     if position != rest.len() {
         return Ok(Vec::new());
@@ -660,71 +566,49 @@ struct GenericTagPayload<'a> {
 /// The two leading integers are an equal envelope version. Versions two and
 /// three select distinct, bounded group envelopes; a mixed or unsupported
 /// pair is not a generic-tag envelope.
-fn generic_tag_payload<'a>(
-    ctx: &DecodeContext<'_>,
-    attribute: &'a SourceAttribute,
-) -> Result<Option<GenericTagPayload<'a>>, CodecError> {
-    let Some(family) = attribute_family(ctx, attribute, "generic_tag_attrib_def")? else {
-        return Ok(None);
-    };
-    let Some(values) = attribute.values.get(family + 1..) else {
-        return Ok(None);
-    };
+fn generic_tag_payload(attribute: &SourceAttribute) -> Option<GenericTagPayload<'_>> {
+    let family = attribute_family(attribute, "generic_tag_attrib_def")?;
+    let values = attribute.values.get(family + 1..)?;
     let [AttributeValue::Integer(left_version), AttributeValue::Integer(right_version), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
         values
     else {
-        return Ok(None);
+        return None;
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(marker.len()),
-        "compare Fusion generic-tag marker",
-    )?;
+
     if left_version != right_version || marker != "generic_tag_attrib_def " || *group_count < 0 {
-        return Ok(None);
+        return None;
     }
     let version = match *left_version {
         2 => GenericTagVersion::V2,
         3 => GenericTagVersion::V3,
-        _ => return Ok(None),
+        _ => return None,
     };
     let Ok(group_count) = usize::try_from(*group_count) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(GenericTagPayload {
+    Some(GenericTagPayload {
         version,
         group_count,
         rest,
-    }))
+    })
 }
 
-fn creation_timestamp(
-    ctx: &DecodeContext<'_>,
-    attribute: &SourceAttribute,
-) -> Result<Option<CreationTimestamp>, CodecError> {
-    let Some(family) = attribute_family(ctx, attribute, "Timestamp_attrib_def")? else {
-        return Ok(None);
-    };
-    let Some(marker) = attribute.values.get(family + 1) else {
-        return Ok(None);
-    };
+fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
+    let family = attribute_family(attribute, "Timestamp_attrib_def")?;
+    let marker = attribute.values.get(family + 1)?;
     if !matches!(marker, AttributeValue::Integer(1)) {
-        return Ok(None);
+        return None;
     }
     let Some(AttributeValue::Float(unix_microseconds)) = attribute.values.get(family + 2) else {
-        return Ok(None);
+        return None;
     };
-    let Some(record_index) = attribute_key(attribute).parse().ok() else {
-        return Ok(None);
-    };
-    Ok(Some(CreationTimestamp {
-        id: ctx.format_retained(
-            format_args!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
-            "retain F3D creation timestamp ID",
-        )?,
-        target: copy_attribute_target(ctx, &attribute.target)?,
+    let record_index = attribute_key(attribute).parse().ok()?;
+    Some(CreationTimestamp {
+        id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
+        target: attribute.target.clone(),
         record_index,
         unix_microseconds: *unix_microseconds,
-    }))
+    })
 }
 
 #[cfg(test)]

@@ -28,10 +28,17 @@ pub(crate) fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
 pub(crate) fn decode_inline_result(
     records: &str,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, DecodeFailure> {
+    decode_inline_with_options(records, &DecodeOptions::default())
+}
+
+pub(crate) fn decode_inline_with_options(
+    records: &str,
+    options: &DecodeOptions,
+) -> Result<cadmpeg_ir::codec::DecodeResult, DecodeFailure> {
     let source = format!(
         "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'2;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n{records}\nENDSEC;\nEND-ISO-10303-21;\n"
     );
-    StepCodec::default().decode(&mut Cursor::new(source), &DecodeOptions::default())
+    StepCodec::default().decode(&mut Cursor::new(source), options)
 }
 
 pub(crate) fn equivalent_seam_source() -> String {

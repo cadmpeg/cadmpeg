@@ -46,7 +46,6 @@ fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
     .collect::<Vec<_>>();
     points[1].x += distortion;
     NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0., 0., 0., 1., 1., 2., 2., 3., 3., 4., 4., 4.],
         points,
@@ -63,34 +62,17 @@ fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 #[test]
 fn numerical_followup_circle_recognition_preserves_relative_shape() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
     for radius in [1e-200, 1e-8, 1.0, 1e150] {
-        assert!(rational_four_arc_circle(&resource_ctx, &circle(radius, 0., 0.)).is_some());
-        assert!(
-            rational_four_arc_circle(&resource_ctx, &circle(radius, 0., 0.004 * radius)).is_none()
-        );
+        assert!(rational_four_arc_circle(&circle(radius, 0., 0.)).is_some());
+        assert!(rational_four_arc_circle(&circle(radius, 0., 0.004 * radius)).is_none());
     }
 }
 #[test]
 fn numerical_followup_rolling_ball_requires_tangent_supports() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
     for radius in [1e-8, 1.0] {
         let axis = Vector3::new(0., 0., 1.);
         let reference = Vector3::new(1., 0., 0.);
@@ -110,7 +92,6 @@ fn numerical_followup_rolling_ball_requires_tangent_supports() {
                 ))),
             ];
             let result = analytic_rolling_ball_surface(
-                &resource_ctx,
                 &supports,
                 None,
                 &circle(3. * radius, radius, 0.),
@@ -128,16 +109,8 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
     use cadmpeg_ir::math::Point2;
     let points = vec![Point2::new(0., 0.), Point2::new(1., 0.)];
     for d in [1., 1e-16] {
-        let c = PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0., 0., d, d],
-            points.clone(),
-            None,
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .unwrap();
+        let c =
+            PcurveNurbs::from_lanes(1, vec![0., 0., d, d], points.clone(), None, false).unwrap();
         let edge = Record {
             index: 1,
             name: "edge".into(),
@@ -162,16 +135,7 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
             Some(vec![[0., d]])
         );
     }
-    let c = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![-1., 0., 1., 2.],
-        points,
-        None,
-        false,
-    )
-    .expect("fixture pcurve construction admission")
-    .unwrap();
+    let c = PcurveNurbs::from_lanes(1, vec![-1., 0., 1., 2.], points, None, false).unwrap();
     assert_eq!(
         super::super::pcurve_ranges_on_domain(&c, None),
         Some(vec![[0., 1.]])

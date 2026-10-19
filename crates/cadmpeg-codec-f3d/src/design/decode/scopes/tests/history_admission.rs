@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::parameter_scope::admit_history_bound_scope_variants;
-use crate::history_records::{
-    AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory,
-};
+use crate::history_records::AsmHistory;
+use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::feature::scope::DesignParameterScope;
 
 fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
@@ -15,41 +13,46 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
     run(&ctx)
 }
 
-fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState {
-    AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
-            previous_state_id: Some(previous_state_id),
-            records: AsmHistoricalEntityDelta::default(),
-            topology: AsmHistoricalTopologyDelta::default(),
-        }),
-    }
+fn history_state(
+    state_id: i64,
+    previous_state_id: Option<i64>,
+) -> crate::test_support::history::State {
+    (
+        AsmDeltaState {
+            id: format!("history:state#{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: previous_state_id,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(AsmHistoricalTopology::default()),
+        Vec::new(),
+    )
 }
 
-fn history(states: Vec<AsmDeltaState>) -> AsmHistory {
-    AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states,
-    }
+fn history(states: Vec<crate::test_support::history::State>) -> AsmHistory {
+    crate::test_support::history::history("history".into(), 0, None, false, states)
+}
+
+fn unbound_history_state(
+    state_id: i64,
+    previous_state_id: Option<i64>,
+) -> crate::test_support::history::State {
+    let (state, _, versions) = history_state(state_id, previous_state_id);
+    (state, None, versions)
+}
+
+fn unbound_history(states: Vec<crate::test_support::history::State>) -> AsmHistory {
+    crate::test_support::history::history("history".into(), 0, None, true, states)
 }
 
 fn scope(
@@ -80,175 +83,25 @@ fn scope(
 }
 
 #[test]
-fn history_bound_scope_admission_reports_collection_limit() {
-    let mut scopes = vec![scope(42, 100, 7, 6)];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    let error = admit_history_bound_scope_variants(&ctx, &mut scopes, &[])
-        .expect_err("one scope exceeds the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "f3d scope admission")
-    );
-}
-
-#[test]
-fn history_bound_scope_admission_refuses_group_and_output_limits() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    for (cap, operation) in [
-        (1, "f3d scope admission groups"),
-        (2, "f3d scope admission group indices"),
-        (3, "f3d scope admission retained output"),
-    ] {
-        let mut scopes = vec![scope(42, 100, 7, 6)];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ));
-        assert_eq!(scopes.len(), 1);
-    }
-}
-
-#[test]
-fn equivalent_scope_variant_refuses_work_and_materialization_limits() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    for (work_cap, materialized_cap, dimension, operation) in [
-        (
-            Some(0),
-            None,
-            ResourceDimension::WorkUnits,
-            "f3d scope variant comparison",
-        ),
-        (
-            None,
-            Some(0),
-            ResourceDimension::MaterializedBytes,
-            "f3d scope variant JSON",
-        ),
-    ] {
-        let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        if let Some(cap) = work_cap {
-            policy.limits.max_work_units = cap;
-        }
-        if let Some(cap) = materialized_cap {
-            policy.limits.max_materialized_bytes = cap;
-        }
-        let refusal_cap =
-            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-                let mut scopes = scopes.clone();
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                        policy.limits.max_recursion_depth = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                        .unwrap();
-                admit_history_bound_scope_variants(&ctx, &mut scopes, &[])
-            }) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                error => panic!("unexpected refusal: {error:?}"),
-            };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                policy.limits.max_recursion_depth = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation
-        ));
-        assert_eq!(scopes.len(), 2);
-    }
-}
-
-#[test]
-fn equivalent_scope_json_refuses_nested_collection_depth_and_text_limits() {
+fn equivalent_scope_json_refuses_nested_depth_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    for (dimension, operation) in [
-        (
-            ResourceDimension::CollectionItems,
-            "f3d configuration JSON object entry",
-        ),
-        (
-            ResourceDimension::RecursionDepth,
-            "f3d configuration JSON depth",
-        ),
-        (
-            ResourceDimension::MaterializedBytes,
-            "f3d configuration JSON key",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-            let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
-            let mut policy = DecodePolicy::default();
-            match dimension {
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-            let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
-            if result.is_err() {
-                assert_eq!(scopes.len(), 2);
-            }
-            result
-        });
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.dimension == dimension && failure.operation == operation));
-    }
+    let dimension = ResourceDimension::RecursionDepth;
+    let operation = "f3d configuration JSON depth";
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
+        if result.is_err() {
+            assert_eq!(scopes.len(), 2);
+        }
+        result
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation));
 }
 
 #[test]
@@ -271,8 +124,10 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
     let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
     scopes[1].feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let histories = [history(vec![
-        history_state(7, Some(6)),
         history_state(9, Some(8)),
+        history_state(8, Some(7)),
+        history_state(7, Some(6)),
+        history_state(6, None),
     ])];
 
     assert!(
@@ -407,4 +262,103 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     assert!(
         with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[])).is_err()
     );
+}
+
+#[test]
+fn duplicate_scope_selection_follows_header_link_when_transition_disagrees() {
+    let mut bound = history(vec![
+        history_state(10, Some(6)),
+        history_state(6, Some(4)),
+        history_state(4, None),
+    ]);
+    bound.states_mut()[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .previous_state_id = Some(4);
+    let histories = [bound];
+    let mut omitted_predecessor = scope(43, 300, 10, 6);
+    omitted_predecessor
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.previous_history_state_id_offset = None;
+        })
+        .unwrap();
+    let mut scopes = vec![
+        scope(42, 100, 10, 6),
+        scope(42, 200, 12, 11),
+        omitted_predecessor,
+        scope(43, 400, 12, 11),
+    ];
+    for index in [1, 3] {
+        scopes[index].feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+    }
+
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
+        .expect("unique header-linked envelopes");
+
+    assert_eq!(scopes.len(), 2);
+    assert_eq!(scopes[0].record_index, 42);
+    assert_eq!(scopes[0].byte_offset(), 100);
+    assert_eq!(scopes[1].record_index, 43);
+    assert_eq!(scopes[1].byte_offset(), 300);
+}
+
+#[test]
+fn duplicate_scope_selection_is_equal_with_and_without_history_binding() {
+    let bound = history(vec![
+        history_state(10, Some(6)),
+        history_state(6, Some(4)),
+        history_state(4, Some(2)),
+        history_state(2, None),
+    ]);
+    let unbound = unbound_history(vec![
+        unbound_history_state(10, Some(6)),
+        unbound_history_state(6, Some(4)),
+        unbound_history_state(4, Some(2)),
+        unbound_history_state(2, None),
+    ]);
+    assert!(bound
+        .states()
+        .iter()
+        .all(|state| state.transition.is_some()));
+    assert!(unbound
+        .states()
+        .iter()
+        .all(|state| state.transition.is_none()));
+    let mut omitted_predecessor = scope(44, 500, 6, 4);
+    omitted_predecessor
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.previous_history_state_id_offset = None;
+        })
+        .unwrap();
+    let mut scopes = vec![
+        scope(42, 100, 10, 6),
+        scope(42, 200, 12, 11),
+        scope(43, 300, 10, 4),
+        scope(43, 400, 12, 11),
+        omitted_predecessor,
+        scope(44, 600, 12, 11),
+    ];
+    for index in [1, 3, 5] {
+        scopes[index].feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+    }
+    let expected_ids = [0, 2, 4].map(|index| scopes[index].id.clone());
+    let mut bound_scopes = scopes.clone();
+    let mut unbound_scopes = scopes;
+
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut bound_scopes, &[bound]))
+        .expect("bound history envelopes");
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut unbound_scopes, &[unbound]))
+        .expect("unbound history envelopes");
+
+    let retained_ids = |scopes: &[DesignParameterScope]| {
+        scopes
+            .iter()
+            .map(|scope| scope.id.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(retained_ids(&bound_scopes), retained_ids(&unbound_scopes));
+    assert_eq!(retained_ids(&bound_scopes), expected_ids);
 }

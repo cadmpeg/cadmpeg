@@ -54,6 +54,108 @@ class TempSourceCase(unittest.TestCase):
         return [item for item in policy.check_source() if item.rule == rule]
 
 
+class ForeignNativeNamespaceTests(TempSourceCase):
+    def codec(self, name: str = "step", format_id: str = "step") -> str:
+        root = f"crates/cadmpeg-codec-{name}/src"
+        self.write(f"{root}/dialect/registry_ids.rs",
+                   f'pub(crate) const FORMAT: &str = "{format_id}";\n')
+        return root
+
+    def test_own_literal_passes(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", '''
+fn f() {
+    ir.native.namespace("step");
+    ir.native.namespace_mut("step");
+    ir.native.namespace(/* key */ r#"step"# /* own */);
+}
+''')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_foreign_literal_and_nonliteral_arguments_fail(self) -> None:
+        root = self.codec()
+        for argument in ('"iges"', 'r#"iges"#', 'format', 'FORMAT',
+                         'crate::dialect::FORMAT', '"step".to_owned()', 'choose("step")'):
+            for method in ("namespace", "namespace_mut"):
+                with self.subTest(argument=argument, method=method):
+                    self.write(f"{root}/writer.rs",
+                               f'fn f() {{\n    ir.native.{method}({argument});\n}}\n')
+                    findings = self.findings("foreign_native_namespace")
+                    self.assertEqual(len(findings), 1)
+                    self.assertEqual(findings[0].line, 2)
+                    self.assertEqual(findings[0].path, f"{root}/writer.rs")
+                    self.assertEqual(findings[0].message,
+                                     "Codec crates read only their own native namespace; "
+                                     "the convert gate assumes it (ExportPlan::carried_errors).")
+
+    def test_native_map_own_literal_methods_pass(self) -> None:
+        root = self.codec()
+        for method in ("get", "get_mut", "remove", "insert", "entry", "contains_key"):
+            with self.subTest(method=method):
+                extra = ", value" if method == "insert" else ""
+                self.write(f"{root}/writer.rs",
+                           f'fn f() {{ ir.native.0.{method}("step"{extra}); }}\n')
+                self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_native_map_other_access_fails(self) -> None:
+        root = self.codec()
+        for access in ('ir.native.0.iter()', 'ir.native.0.values()', 'ir.native.0.keys()',
+                       '&ir.native.0', 'ir.native.0', 'ir.native.0.get("iges")',
+                       'ir.native.0.get_mut(format)', 'ir.native.0["step"]',
+                       'ir.native.0.clear()', 'ir.native.0.get("step".to_owned())'):
+            with self.subTest(access=access):
+                self.write(f"{root}/writer.rs", f'fn f() {{ consume({access}); }}\n')
+                self.assertEqual(len(self.findings("foreign_native_namespace")), 1)
+
+    def test_masks_tests_comments_and_literals(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", '''
+// ir.native.namespace("iges");
+const EXAMPLE: &str = r#"ir.native.namespace("iges")"#;
+#[cfg(test)]
+mod tests {
+    fn f() { ir.native.namespace("iges"); consume(&ir.native.0); }
+}
+''')
+        self.write(f"{root}/writer/tests.rs", 'fn f() { ir.native.namespace("iges"); }\n')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_freecad_uses_fcstd_from_registry(self) -> None:
+        root = self.codec("freecad", "fcstd")
+        self.write(f"{root}/writer.rs", 'fn f() { ir.native.namespace("fcstd"); }\n')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+        self.write(f"{root}/writer.rs", 'fn f() { ir.native.namespace("freecad"); }\n')
+        self.assertEqual(len(self.findings("foreign_native_namespace")), 1)
+
+    def test_whitespace_and_multiline_calls(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", '''
+fn f() {
+    ir . native . 0
+        . get_mut ( /* key */ "step" );
+    ir.native
+        . namespace_mut (
+            "iges",
+        );
+}
+''')
+        self.assertEqual([item.line for item in self.findings("foreign_native_namespace")], [6])
+
+    def test_unrelated_namespace_access_is_outside_the_rule(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", 'fn f() { resolution.namespace(); }\n')
+        self.write("crates/cadmpeg-ir/src/native.rs",
+                   'fn f() { ir.native.namespace("iges"); consume(&ir.native.0); }\n')
+        self.write("crates/cadmpeg-codec-step/examples/demo.rs",
+                   'fn f() { ir.native.namespace("iges"); }\n')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_missing_format_declaration_does_not_admit_access(self) -> None:
+        self.write("crates/cadmpeg-codec-step/src/writer.rs",
+                   'fn f() { ir.native.namespace("step"); }\n')
+        self.assertEqual(len(self.findings("foreign_native_namespace")), 1)
+
+
 class AnalysisCacheTests(unittest.TestCase):
     def test_session_reuses_analysis_and_releases_it(self):
         source = 'fn f() { /* comment */ }'
@@ -374,12 +476,12 @@ class PatternFilters(unittest.TestCase):
             ("unchecked_vec_repeat", 3),
         ])
 
-    def test_existing_collection_lengths_are_admitted_repeat_sizes(self) -> None:
-        self.assertIsNotNone(policy.ADMITTED_LEN_REPEAT.fullmatch("records.len()"))
+    def test_existing_collection_lengths_are_accepted_repeat_sizes(self) -> None:
+        self.assertIsNotNone(policy.EXISTING_LEN_REPEAT.fullmatch("records.len()"))
         self.assertIsNotNone(
-            policy.ADMITTED_LEN_REPEAT.fullmatch("self.records.len() + 1")
+            policy.EXISTING_LEN_REPEAT.fullmatch("self.records.len() + 1")
         )
-        self.assertIsNone(policy.ADMITTED_LEN_REPEAT.fullmatch("parsed_count"))
+        self.assertIsNone(policy.EXISTING_LEN_REPEAT.fullmatch("parsed_count"))
 
     def test_from_endian_counts_non_codec_crates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -404,6 +506,32 @@ class PatternFilters(unittest.TestCase):
             finally:
                 policy.ROOT = old_root
 
+
+
+class CheckoutLocationTests(unittest.TestCase):
+    """The directories that hold the checkout do not classify its files."""
+
+    def check_under(self, parent: str) -> list[policy.Finding]:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name) / parent / "cadmpeg"
+        for relative in ("crates/demo/src/lib.rs", "crates/demo/fuzz_targets/target.rs"):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fn f(n: usize) { let _v = vec![0_u8; n]; }\n", encoding="utf-8")
+        with patch.object(policy, "ROOT", root):
+            findings = [item for item in policy.check_source() if item.rule == "unchecked_vec_repeat"]
+            self.assertFalse(policy.is_production_rs(root / "crates/demo/fuzz_targets/target.rs"))
+            self.assertTrue(policy.is_production_rs(root / "crates/demo/src/lib.rs"))
+        return findings
+
+    def test_checkout_under_src_scans_only_crate_sources(self) -> None:
+        findings = self.check_under("src")
+        self.assertEqual([item.path for item in findings], ["crates/demo/src/lib.rs"])
+
+    def test_checkout_under_tests_still_scans_crate_sources(self) -> None:
+        findings = self.check_under("tests")
+        self.assertEqual([item.path for item in findings], ["crates/demo/src/lib.rs"])
 
 
 class PlacementRules(TempSourceCase):
@@ -877,175 +1005,6 @@ class DiscardedValues(TempSourceCase):
         self.assertEqual(self.findings("discarded_value"), [])
 
 
-class HandChargedCollectionInserts(TempSourceCase):
-    RULE = "hand_charged_collection_insert"
-
-    def lines(self, body: str, path: str = "crates/demo/src/lib.rs") -> list[int]:
-        self.write(path, body)
-        return [f.line for f in self.findings(self.RULE)]
-
-    def test_charge_then_set_insert_is_rejected(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, set: &mut BTreeSet<u32>, x: u32) {
-    if !set.contains(&x) {
-        ctx.charge_collection_items(1, "op")?;
-        set.insert(x);
-    }
-}
-"""
-        self.assertEqual(self.lines(body), [3])
-        self.assertIn("insert_btree_set", self.findings(self.RULE)[0].message)
-        self.assertIn("admit_btree_entry", self.findings(self.RULE)[0].message)
-
-    def test_charge_then_map_insert_is_rejected(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, k: u32) {
-    let mut map: HashMap<u32, u32> = HashMap::new();
-    self.ctx.charge_collection_items(u64_from_index(1), "op")?;
-    map.insert(k, 1);
-}
-"""
-        self.assertEqual(self.lines(body), [3])
-
-    def test_charge_then_map_entry_is_rejected(self) -> None:
-        body = """fn f(budget: &mut Budget, map: &mut BTreeMap<u32, Vec<u32>>, k: u32) {
-    budget.charge_collection_items(1, "op")?;
-    map.entry(k).or_default().push(1);
-}
-"""
-        self.assertEqual(self.lines(body), [2])
-
-    def test_nx_charge_for_appended_vector_member_is_accepted(self) -> None:
-        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, Vec<&Record>>, key: String, record: &Record) {
-    if !groups.contains_key(&key) {
-        ctx.charge_collection_items(1, "groups")?;
-        reservation.grow(64)?;
-    }
-    ctx.charge_collection_items(1, "reference")?;
-    reservation.grow(8)?;
-    let references = groups.entry(key).or_default();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(references, 1, "reference")?;
-    references.push(record);
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_step_charge_for_new_inner_set_member_is_accepted(self) -> None:
-        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, BTreeSet<String>>, id: String, member: String) {
-    ctx.admit_btree_entry(groups, &id, "groups")?;
-    ctx.charge_collection_items(1, "members")?;
-    groups.insert(id, BTreeSet::from([member]));
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_inner_set_without_outer_admission_is_rejected(self) -> None:
-        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, BTreeSet<String>>, id: String, member: String) {
-    ctx.charge_collection_items(1, "members")?;
-    groups.insert(id, BTreeSet::from([member]));
-}
-"""
-        self.assertEqual(self.lines(body), [2])
-
-    def test_other_dimensions_and_key_copies_may_intervene(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
-    ctx.charge_collection_items(1, "op")?;
-    ctx.charge_retained(4, "op")?;
-    ctx.charge_work(1, "op")?;
-    let key = x;
-    set.insert(key);
-}
-"""
-        self.assertEqual(self.lines(body), [2])
-
-    def test_block_end_and_control_flow_stop_the_search(self) -> None:
-        for between in ("return Ok(());", "continue;", "break;"):
-            body = f"""fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {{
-    ctx.charge_collection_items(1, "op")?;
-    {between}
-    set.insert(x);
-}}
-"""
-            self.assertEqual(self.lines(body), [], between)
-        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
-    if x > 0 {
-        ctx.charge_collection_items(1, "op")?;
-    }
-    set.insert(x);
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_vacant_entry_and_non_set_receivers_are_accepted(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, draft: &mut ModelDraft, m: &mut Other, x: u32) {
-    match map.entry(x) {
-        Entry::Vacant(slot) => {
-            ctx.charge_collection_items(1, "op")?;
-            slot.insert(x);
-        }
-    }
-    ctx.charge_collection_items(1, "op")?;
-    draft.insert(x)?;
-    ctx.charge_collection_items(1, "op")?;
-    m.members.insert(x);
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_core_operations_are_accepted(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, k: u32) {
-    ctx.insert_btree_set(&mut a, k, "op")?;
-    ctx.insert_btree_map(&mut b, k, 1, "op")?;
-    ctx.admit_btree_entry(&mut b, k, "op")?;
-    ctx.insert_hash_set(&mut c, k, "op")?;
-    ctx.insert_hash_map(&mut d, k, 1, "op")?;
-    ctx.admit_hash_map_entry(&mut d, k, "op")?;
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_vec_insert_after_a_charge_is_accepted(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, v: &mut Vec<u32>, i: usize, x: u32) {
-    ctx.charge_collection_items(1, "op")?;
-    v.insert(i, x);
-}
-fn g(ctx: &mut DecodeContext, x: u32) {
-    let mut v = Vec::new();
-    ctx.charge_collection_items(1, "op")?;
-    v.insert(0, x);
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_multi_item_charge_is_accepted(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, n: u64, x: u32) {
-    ctx.charge_collection_items(n, "op")?;
-    set.insert(x);
-    ctx.charge_collection_items(2, "op")?;
-    set.insert(x);
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_cfg_test_module_is_not_production(self) -> None:
-        body = """#[cfg(test)]
-mod tests {
-    fn t(ctx: &mut DecodeContext, set: &mut HashSet<u32>) {
-        ctx.charge_collection_items(1, "op").unwrap();
-        set.insert(1);
-    }
-}
-"""
-        self.assertEqual(self.lines(body), [])
-
-    def test_core_implementation_files_are_excluded(self) -> None:
-        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
-    ctx.charge_collection_items(1, "op")?;
-    set.insert(x);
-}
-"""
-        for name in ("collect.rs", "context.rs"):
-            self.assertEqual(self.lines(body, f"crates/cadmpeg-core/src/decode/{name}"), [])
-
-
 class ScriptTestCollection(TempSourceCase):
     GUARD = 'if __name__ == "__main__":\n    unittest.main()\n'
     CASE = (
@@ -1103,136 +1062,6 @@ class AuthoringPaths(TempSourceCase):
             "# see https://example.invalid/home/user/page\n",
         )
         self.assertEqual(self.findings("authoring_path"), [])
-
-
-class DecodeSorts(TempSourceCase):
-    def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
-        for method in sorted(policy.SLICE_SORT_METHODS):
-            with self.subTest(method=method):
-                self.write("crates/demo/src/lib.rs",
-                           f"fn read(budget: &DecodeContext<'_>) {{\n    values.{method}(compare);\n}}\n")
-                findings = self.findings("uncharged_decode_sort")
-                self.assertEqual([(item.path, item.line) for item in findings],
-                                 [("crates/demo/src/lib.rs", 2)])
-                self.assertIn("ctx.stable_sort_by", findings[0].message)
-                self.assertIn("ctx.sort_unstable_by", findings[0].message)
-
-    def test_context_local_and_self_field_are_rejected(self) -> None:
-        self.write("crates/demo/src/lib.rs", """
-struct Reader<'a> { ctx: &'a cadmpeg_core::decode::DecodeContext<'a> }
-impl Reader<'_> {
-    fn read(&self) { self.ctx.charge_work(1, "read")?; values.sort(); }
-}
-fn local() {
-    let allowance: &DecodeContext<'_> = context;
-    values.sort_unstable();
-}
-""")
-        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4, 8])
-
-    def test_field_declared_in_another_module_is_rejected(self) -> None:
-        self.write("crates/demo/src/types.rs", "struct Reader<'a> { budget: &'a DecodeContext<'a> }")
-        self.write("crates/demo/src/read.rs", "impl Reader<'_> { fn read(&self) { self.budget; values.sort(); } }")
-        self.assertEqual(len(self.findings("uncharged_decode_sort")), 1)
-
-    def test_each_slice_sort_without_context_is_accepted(self) -> None:
-        self.write("crates/demo/src/lib.rs", "fn write() {\n" + "\n".join(
-            f"    values.{method}(compare);" for method in sorted(policy.SLICE_SORT_METHODS)
-        ) + "\n}\n")
-        self.assertEqual(self.findings("uncharged_decode_sort"), [])
-
-    def test_decode_crate_sort_without_context_is_rejected(self) -> None:
-        for crate in ("cadmpeg-codec-demo", "cadmpeg-container", "cadmpeg-asm", "cadmpeg-parasolid", "cadmpeg-protein"):
-            with self.subTest(crate=crate):
-                self.write(f"crates/{crate}/src/geometry.rs", "fn knots(values: &mut [f64]) {\n    values.sort_by(f64::total_cmp);\n}\n")
-                findings = [item for item in self.findings("uncharged_decode_sort") if item.path.startswith(f"crates/{crate}/")]
-                self.assertEqual([(item.path, item.line) for item in findings], [(f"crates/{crate}/src/geometry.rs", 2)])
-                self.assertIn("pass the decode context", findings[0].message)
-
-    def test_array_return_type_keeps_the_function_body(self) -> None:
-        self.write("crates/demo/src/lib.rs",
-                   "fn read(ctx: &DecodeContext<'_>) -> Result<Vec<[usize; 2]>, CodecError> {\n    values.sort();\n}\n")
-        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [2])
-
-    def test_decode_crate_encoders_without_context_are_accepted(self) -> None:
-        for path in ("src/writer.rs", "src/writer_patch.rs", "src/writer/generate/attributes.rs",
-                     "src/history/encode/solid.rs", "src/history/write/features.rs",
-                     "src/resolved_features/write_generate.rs", "src/zip_write.rs", "src/export.rs",
-                     "src/bin/profile.rs"):
-            self.write(f"crates/cadmpeg-codec-demo/{path}", "fn order() { values.sort(); }")
-        self.assertEqual(self.findings("uncharged_decode_sort"), [])
-
-    def test_ir_decode_paths_without_context_are_rejected(self) -> None:
-        for path in ("document.rs", "hash.rs", "eval.rs", "eval/sweep_law.rs", "codec.rs", "native/mod.rs",
-                     "math/planar.rs", "validate/topology.rs"):
-            with self.subTest(path=path):
-                self.write(f"crates/cadmpeg-ir/src/{path}", "fn order() { values.sort(); }")
-                findings = [item for item in self.findings("uncharged_decode_sort")
-                            if item.path == f"crates/cadmpeg-ir/src/{path}"]
-                self.assertEqual(len(findings), 1)
-        self.write("crates/cadmpeg-ir/src/report.rs", "fn order() { values.sort(); }")
-        self.assertFalse(any(item.path.endswith("/report.rs")
-                             for item in self.findings("uncharged_decode_sort")))
-
-    def test_known_context_field_on_any_receiver_is_accepted(self) -> None:
-        self.write("crates/demo/src/types.rs", """
-struct Borrowed<'a> { decode: &'a DecodeContext<'a> }
-struct Owned<'a> { decode: cadmpeg_core::decode::DecodeContext<'a> }
-struct Other { decode: Vec<u32> }
-""")
-        self.write("crates/demo/src/read.rs", """
-fn read(ctx: &Borrowed<'_>, owned: Owned<'_>, other: &Other) {
-    ctx.decode.sort_unstable_by(values, compare, key_bytes, "sort")?;
-    owned.decode.sort_unstable_by(values, compare, key_bytes, "sort")?;
-    other.decode.sort_unstable_by(compare);
-    values.sort();
-}
-""")
-        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [5, 6])
-
-    def test_decode_crate_encoder_with_context_is_rejected(self) -> None:
-        self.write("crates/cadmpeg-codec-demo/src/writer.rs",
-                   "fn reread(ctx: &DecodeContext<'_>) {\n    values.sort();\n}\n")
-        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [2])
-
-    def test_core_sort_implementations_are_accepted(self) -> None:
-        for path in sorted(policy.DECODE_SORT_EXEMPT_FILES):
-            self.write(path, "fn sort(ctx: &DecodeContext<'_>) { values.sort_unstable_by(compare); }")
-        self.assertEqual(self.findings("uncharged_decode_sort"), [])
-
-    def test_cfg_test_sorts_and_non_code_are_accepted(self) -> None:
-        self.write("crates/demo/src/lib.rs", """
-#[cfg(test)]
-mod tests { fn read(ctx: &DecodeContext<'_>) { values.sort(); } }
-#[cfg(test)]
-fn read(ctx: &DecodeContext<'_>) { values.sort_unstable(); }
-fn production(ctx: &DecodeContext<'_>) {
-    // values.sort();
-    let text = "values.sort_unstable();";
-    ctx.stable_sort_by(values, compare, key_bytes, "values")?;
-    ctx.sort_unstable_by(values, compare, key_bytes, "values")?;
-}
-""")
-        # The admitted unstable operation has the same method name as a slice call.
-        self.assertEqual(self.findings("uncharged_decode_sort"), [])
-
-    def test_function_boundaries_do_not_leak_context(self) -> None:
-        self.write("crates/demo/src/lib.rs", """
-fn read(ctx: &DecodeContext<'_>) {
-    fn write() { values.sort(); }
-    values.sort();
-}
-fn write() { values.sort_unstable(); }
-""")
-        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4])
-
-    def test_closures_keep_context_and_generics_keep_function_scope(self) -> None:
-        self.write("crates/demo/src/lib.rs", """
-fn read<T: Copy>(ctx: &DecodeContext<'_>) {
-    records.map(|values| values.sort_unstable());
-}
-""")
-        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [3])
 
 
 class SourcePolicyCommand(TempSourceCase):
@@ -1423,6 +1252,25 @@ fn resource(limit: ResourceLimit) -> Evaluation { Evaluation { resource: Some(li
                 self.assertEqual(self.scan(body, declarations=declarations), [])
         self.assertEqual(len(self.scan("let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { let saved = Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }", declarations=declarations)), 1)
 
+    def test_evaluation_refusal_accepts_carriers_of_an_evaluation_refusal(self) -> None:
+        declarations = """
+struct Evaluation { refusal: Option<EvaluationRefusal> }
+impl Evaluation {
+    fn refused(refusal: impl Into<EvaluationRefusal>) -> Self {
+        let refusal = refusal.into();
+        Self { refusal: Some(refusal) }
+    }
+}
+fn dropped(refusal: impl Into<EvaluationRefusal>) -> Evaluation { Evaluation { refusal: None } }
+"""
+        for body in [
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(Evaluation::refused(limit)), _ => None }",
+            "let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { return Some(Evaluation::refused(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(self.scan(body, declarations=declarations), [])
+        self.assertEqual(len(self.scan("match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(dropped(limit)), _ => None }", declarations=declarations)), 1)
+
     def test_evaluation_refusal_respects_binding_scope_and_shadowing(self) -> None:
         self.assertEqual(len(self.scan("let value = cadmpeg_ir::eval::curve_point(0.); { let value = other(); value.ok(); } value.ok();")), 1)
         self.assertEqual(self.scan("{ let value = cadmpeg_ir::eval::curve_point(0.); } let value = other(); value.ok();"), [])
@@ -1447,6 +1295,16 @@ class SaturatingArithmetic(TempSourceCase):
 }
 """)
         self.assertEqual([f.line for f in self.findings("saturating_arithmetic")], [2, 3, 4, 5])
+
+    def test_saturating_path_values_require_checked_branches(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    sizes.fold(0usize, usize::saturating_add);
+    sizes.fold(0_u64, core::primitive::u64::saturating_mul);
+    usize::saturating_sub(count, 1);
+    sizes.try_fold(0usize, usize::checked_add);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("saturating_arithmetic")], [2, 3, 4])
 
     def test_checked_arithmetic_and_test_code_are_exempt(self) -> None:
         self.write("crates/demo/src/lib.rs", """fn f() {

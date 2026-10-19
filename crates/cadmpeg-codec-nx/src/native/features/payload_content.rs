@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use serde::{
     ser::{SerializeSeq, SerializeStruct},
@@ -51,30 +51,17 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
 
 impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
     pub(super) fn from_source(
-        ctx: &DecodeContext<'_>,
         ids: impl IntoIterator<Item = String>,
         blocks: &BTreeMap<String, (&[u8], u64)>,
     ) -> Result<Option<Self>, CodecError> {
         let mut hash = Sha256::new();
         let mut rows = Vec::new();
-
-        let mut byte_len = 0u64;
         for id in ids {
             let Some((bytes, source_offset)) = blocks.get(&id).copied() else {
                 return Ok(None);
             };
             let length = u64_from_index(bytes.len());
-            byte_len = byte_len
-                .checked_add(length)
-                .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
-            ctx.charge_work(
-                length
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1))?,
-                "hash NX feature payload bytes",
-            )?;
 
-            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
             hash.update(bytes);
             rows.push(FeaturePayloadBlock {
                 id,
@@ -86,11 +73,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             return Ok(None);
         };
 
-        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
-            ctx,
-            hash.finalize().into(),
-            "retain NX feature payload digest",
-        )?;
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes(hash.finalize().into());
         let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
         Ok(Some(content))
     }

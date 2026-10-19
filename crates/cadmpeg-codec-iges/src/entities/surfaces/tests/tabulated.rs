@@ -45,8 +45,8 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         Ok(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -198,8 +198,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             parameter,
         )
         .expect("hyperbola directrix evaluates");
-        let index =
-            cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
         let surface_point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
@@ -222,7 +221,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             result.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -311,8 +310,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             parameter,
         )
         .expect("placed hyperbola directrix evaluates");
-        let index =
-            cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
         let surface_point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
@@ -335,7 +333,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             result.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -431,7 +429,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             result.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }

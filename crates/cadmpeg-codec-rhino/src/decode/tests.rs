@@ -2,15 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_link_to_record, append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join,
-    coedge_sense, commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
-    hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
-    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    snapshot_instance_links, snapshot_instance_statuses, stage_brep, stage_curve_tree,
-    stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
-    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, GeometryOutcome,
-    ReferenceFailure, ReportBuckets,
+    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
+    edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
+    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
+    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
+    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -30,7 +27,7 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
-use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
+use cadmpeg_ir::unknown::NativeUnknownRecord;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod candidate_annotations;
@@ -39,14 +36,12 @@ mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
     NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![start, start, end, end],
         vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
         rational.then(|| vec![2.0, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid test line")
 }
 
@@ -55,51 +50,6 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
         crate::loss::Diagnostics::new(),
     )
-}
-
-fn one_child_compound() -> crate::curves::DecodedCurve {
-    crate::curves::DecodedCurve::Compound {
-        children: vec![(
-            finite_parameter(0.0),
-            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-        )],
-        end_parameter: finite_parameter(1.0),
-        warnings: Diagnostics::new(),
-    }
-}
-
-fn with_collection_limit<R>(
-    limit: u64,
-    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
-) -> R {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    f(&ctx)
-}
-
-fn with_transaction_limits<R>(
-    scan: &crate::container::Scan<'_>,
-    collection_limit: u64,
-    retained_limit: Option<u64>,
-    materialized_limit: Option<u64>,
-    f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
-) -> R {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    if let Some(retained_limit) = retained_limit {
-        policy.limits.max_retained_bytes = retained_limit;
-    }
-    if let Some(limit) = materialized_limit {
-        policy.limits.max_materialized_bytes = limit;
-    }
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-            .expect("test scan fits the root limit");
-    f(crate::mesh::MeshExpand::new(&ctx, root))
 }
 
 fn with_entity_limit<R>(
@@ -177,7 +127,35 @@ fn mesh_commit_propagates_entity_limit() {
 }
 
 #[test]
-fn point_cloud_vertices_refuse_collection_limit() {
+fn transaction_source_record_bytes_refuse_retained_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let length = scan.objects[0].range().len();
+    assert!(length > 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(length - 1);
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+            .expect("test scan fits the root limit");
+    let error = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))
+        .err()
+        .expect("source record bytes exceed the retained limit");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino source record bytes"
+        ),
+        "unexpected transaction refusal: {error}"
+    );
+    assert!(with_expand(&scan, |expand| DecodeContext::new(
+        &scan, expand
+    )
+    .is_ok()));
+}
+
+#[test]
+fn point_cloud_commits_one_vertex() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     let cloud = || {
         crate::curves::DecodedGeometry::PointCloud(crate::curves::PointCloud {
@@ -189,29 +167,7 @@ fn point_cloud_vertices_refuse_collection_limit() {
             warnings: Diagnostics::new(),
         })
     };
-    let refusal = with_transaction_limits(&scan, 4, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .commit_geometry(0, cloud())
-            .expect_err("point-cloud vertex exceeds four collection items")
-    });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino point-cloud vertices"
-    ));
-    let refusal = with_transaction_limits(&scan, 5, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .commit_geometry(0, cloud())
-            .expect_err("unknown-record link exceeds five collection items")
-    });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino unknown record links"
-    ));
-    with_transaction_limits(&scan, 6, None, None, |expand| {
+    crate::decode::with_expand_bytes(scan.data, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         assert!(context
             .commit_geometry(0, cloud())
@@ -254,103 +210,6 @@ fn candidate_validation_propagates_entity_limit() {
         ),
         "{refusal:?}"
     );
-}
-
-fn assert_transaction_refusal(
-    scan: &crate::container::Scan<'_>,
-    collection_limit: u64,
-    retained_limit: Option<u64>,
-    operation: &str,
-) {
-    let error = with_transaction_limits(scan, collection_limit, retained_limit, None, |expand| {
-        DecodeContext::new(scan, expand)
-            .err()
-            .expect("transaction exceeds the configured resource limit")
-    });
-    assert!(
-        matches!(
-            &error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == operation
-        ),
-        "unexpected transaction refusal: {error}"
-    );
-}
-
-#[test]
-fn transaction_object_candidate_keys_refuse_collection_limit() {
-    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    assert!(scan.objects[0].identity().is_some());
-    assert_transaction_refusal(&scan, 0, None, "Rhino object candidate keys");
-}
-
-#[test]
-fn transaction_object_candidate_positions_refuse_collection_limit() {
-    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    assert_transaction_refusal(&scan, 1, None, "Rhino object candidate positions");
-}
-
-#[test]
-fn transaction_definition_candidate_keys_refuse_collection_limit() {
-    let archive = ArchiveVersion::V5;
-    let payload =
-        crate::test_support::test_dump::v5_definition_payload(archive, 7, [0x10; 16], &[], false);
-    let record = crate::test_support::test_dump::definition_record(archive, &payload);
-    let scan = crate::container::scan_owned(
-        crate::test_support::test_dump::document_with_definitions("50", archive, &[record], &[]),
-    )
-    .expect("one definition scan");
-    assert_eq!(scan.definitions.definitions().len(), 1);
-    assert_transaction_refusal(&scan, 0, None, "Rhino definition candidate keys");
-}
-
-fn one_degraded_object_scan() -> crate::container::Scan<'static> {
-    let mut scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    let range = scan.objects[0].range();
-    scan.objects[0] = ObjectRecord::Degraded {
-        range,
-        warning: "degraded test object".to_string(),
-    };
-    scan
-}
-
-#[test]
-fn transaction_unknown_records_refuse_collection_limit() {
-    let scan = one_degraded_object_scan();
-    assert_transaction_refusal(&scan, 0, None, "Rhino object unknown records");
-}
-
-#[test]
-fn transaction_statuses_refuse_collection_limit() {
-    let scan = one_degraded_object_scan();
-    assert_transaction_refusal(&scan, 1, None, "Rhino object statuses");
-}
-
-#[test]
-fn transaction_opaque_records_refuse_collection_limit() {
-    let mut scan = scan_with_objects(&[]);
-    scan.opaque_records.push(crate::container::OpaqueRecord {
-        table_typecode: 0x1000_0013,
-        record: crate::container::Record::short(0x2000_8070, 0..1, 0),
-    });
-    assert_transaction_refusal(&scan, 0, None, "Rhino opaque source records");
-}
-
-#[test]
-fn transaction_source_record_bytes_refuse_retained_limit() {
-    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    let length = scan.objects[0].range().len();
-    assert!(length > 0);
-    assert_transaction_refusal(
-        &scan,
-        100,
-        // Unknown record slots are scoped; only the source bytes consume retained storage.
-        Some(cadmpeg_core::decode::u64_from_index(length - 1)),
-        "Rhino source record bytes",
-    );
-    assert!(with_expand(&scan, |expand| DecodeContext::new(
-        &scan, expand
-    )
-    .is_ok()));
 }
 
 /// Brep staging judges values the model already holds, so a refusal there names
@@ -540,12 +399,7 @@ fn instance_plane_transform_keeps_component_division() {
         [0.0, 0.0, 4.0, 6.0],
     ])
     .expect("finite affine transform");
-    transform_surface(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut surface,
-        transform,
-    )
-    .expect("transformed plane");
+    transform_surface(&mut surface, transform).expect("transformed plane");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
         panic!("plane remains solved");
     };
@@ -1031,26 +885,6 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
 }
 
 #[test]
-fn c2_joined_segments_refuse_collection_limit() {
-    let compound = crate::curves::DecodedCurve::Compound {
-        children: vec![(
-            finite_parameter(0.0),
-            decoded_nurbs(line_nurbs(0.0, 1.0, true)),
-        )],
-        end_parameter: finite_parameter(1.0),
-        warnings: Diagnostics::new(),
-    };
-    let error = with_collection_limit(0, |ctx| c2_curve_to_nurbs_join(ctx, compound, 0))
-        .err()
-        .expect("one C2 segment exceeds zero collection items");
-    assert!(matches!(
-        error,
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal.operation == "Rhino C2 joined segments"
-    ));
-}
-
-#[test]
 fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
     let nested = crate::curves::DecodedCurve::Compound {
         children: vec![
@@ -1080,7 +914,6 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
 #[test]
 fn unequal_degree_c2_polycurve_elevates_lower_degree() {
     let quadratic = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1091,7 +924,6 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         Some(vec![1.0, 0.5, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid quadratic");
     let compound = crate::curves::DecodedCurve::Compound {
         children: vec![
@@ -1119,30 +951,14 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
 
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
-    let start = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        knots.clone(),
-        points.to_vec(),
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("valid cap start");
+    let start = NurbsCurve::from_lanes(1, knots.clone(), points.to_vec(), None, false)
+        .expect("valid cap start");
     let end_points = points
         .iter()
         .map(|point| Point3::new(point.x, point.y, point.z + 5.0))
         .collect::<Vec<_>>();
-    let end = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        knots.clone(),
-        end_points,
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("valid cap end");
+    let end =
+        NurbsCurve::from_lanes(1, knots.clone(), end_points, None, false).expect("valid cap end");
     let pcurve_points = points
         .iter()
         .map(|point| Point2::new(point.x, point.y))
@@ -1161,7 +977,6 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
         start_pcurve: pcurve.clone(),
         end_pcurve: pcurve,
         lateral: crate::surfaces::extrusion_nurbs(
-            &cadmpeg_test_support::service_decode_context(),
             &start,
             &end,
             cadmpeg_ir::units::FiniteVector::new([0.0, 5.0]).expect("finite path domain"),
@@ -1169,6 +984,41 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
             0,
         )
         .expect("valid cap lateral"),
+    }
+}
+
+#[test]
+fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
+    for (knots, weights, expected) in [
+        (Vec::new(), None, "pcurve knot count 0"),
+        (vec![0.0, 0.0], None, "knots"),
+        (
+            vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+            Some(vec![0.0; 5]),
+            "weight 0 at index 0",
+        ),
+    ] {
+        let mut extrusion = cap_extrusion([true, false]);
+        extrusion.boundaries[0].start_pcurve.knots = knots;
+        extrusion.boundaries[0].start_pcurve.weights = weights;
+        let boundaries = vec![CommittedExtrusionBoundary {
+            boundary: &extrusion.boundaries[0],
+            directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
+        }];
+        let error = stage_extrusion_caps(
+            &mut CadIr::empty(),
+            &mut cadmpeg_ir::Annotations::default(),
+            "caps",
+            &test_association(),
+            &extrusion,
+            &boundaries,
+        )
+        .expect_err("invalid cap pcurve");
+        assert!(
+            error.to_string().starts_with("extrusion cap staging: "),
+            "{error}"
+        );
+        assert!(error.to_string().contains(expected), "{error}");
     }
 }
 
@@ -1241,23 +1091,6 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
 }
 
 #[test]
-fn committed_extrusion_boundaries_refuse_collection_limit() {
-    let object = object_record(ArchiveVersion::V5, 8, [0; 16]);
-    let scan = scan_with_objects(&[object]);
-    let error = with_transaction_limits(&scan, 5, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .commit_extrusion(0, cap_extrusion([false, false]))
-            .expect_err("two extrusion boundaries exceed remaining collection item")
-    });
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino committed extrusion boundaries"
-    ));
-}
-
-#[test]
 fn candidate_rejections_distinguish_admission_from_validation() {
     let scan = scan_with_objects(&[]);
     with_expand(&scan, |expand| {
@@ -1316,20 +1149,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     .unwrap()],
                 );
                 {
-                    let arena = cadmpeg_core::decode::DecodeArena::new();
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                        &[],
-                        &arena,
-                        &cadmpeg_core::decode::DecodePolicy::service(),
-                    )
-                    .unwrap();
-                    set_exactness(
-                        &ctx,
-                        annotations,
-                        "rhino:test:asset#rejected",
-                        Exactness::Derived,
-                    )
-                    .unwrap();
+                    set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
                 }
                 if admission_failure {
                     return Err::<(), String>("source admission refusal".into());
@@ -1400,8 +1220,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             )
         };
         context.ir_mut().model.points.push(point("z"));
-        let checkpoint =
-            ModelCheckpoint::capture(&context.session.document().model, expand.ctx()).unwrap();
+        let checkpoint = ModelCheckpoint::capture(&context.session.document().model);
         context
             .validate_candidate(|candidate, _| {
                 candidate.model.points.push(point("a"));
@@ -1413,15 +1232,14 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 .document()
                 .model
                 .points
-                .get(checkpoint.0.arena_len::<Point>()..)
+                .get(checkpoint.arena_len::<Point>()..)
                 .unwrap()[0]
                 .id
                 .as_str(),
             "rhino:test:point#a"
         );
         checkpoint
-            .0
-            .discard_appended(&mut context.ir_mut().model, expand.ctx())
+            .discard_appended(&mut context.ir_mut().model)
             .unwrap();
         assert_eq!(context.session.document().model.points.len(), 1);
         assert_eq!(
@@ -1429,70 +1247,6 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             "rhino:test:point#z"
         );
     });
-}
-
-#[test]
-fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
-    for (knots, weights, expected) in [
-        (Vec::new(), None, "pcurve knot count 0"),
-        (vec![0.0, 0.0], None, "knots"),
-        (
-            vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
-            Some(vec![0.0; 5]),
-            "weight 0 at index 0",
-        ),
-    ] {
-        let mut extrusion = cap_extrusion([true, false]);
-        extrusion.boundaries[0].start_pcurve.knots = knots;
-        extrusion.boundaries[0].start_pcurve.weights = weights;
-        let boundaries = vec![CommittedExtrusionBoundary {
-            boundary: &extrusion.boundaries[0],
-            directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
-        }];
-        let error = with_collection_limit(u64::MAX, |ctx| {
-            stage_extrusion_caps(
-                ctx,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::Annotations::default(),
-                "caps",
-                &test_association(),
-                &extrusion,
-                &boundaries,
-            )
-            .expect_err("invalid cap pcurve")
-        });
-        assert!(
-            error.to_string().starts_with("extrusion cap staging: "),
-            "{error}"
-        );
-        assert!(error.to_string().contains(expected), "{error}");
-    }
-}
-
-#[test]
-fn extrusion_cap_loop_ids_refuse_collection_limit() {
-    let extrusion = cap_extrusion([true, false]);
-    let boundaries = [CommittedExtrusionBoundary {
-        boundary: &extrusion.boundaries[0],
-        directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
-    }];
-    let error = with_collection_limit(0, |ctx| {
-        stage_extrusion_caps(
-            ctx,
-            &mut CadIr::empty(),
-            &mut cadmpeg_ir::Annotations::default(),
-            "caps",
-            &test_association(),
-            &extrusion,
-            &boundaries,
-        )
-        .expect_err("cap loop ID exceeds collection limit")
-    });
-    assert!(matches!(
-        error,
-        super::CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal.operation == "Rhino extrusion cap loop IDs"
-    ));
 }
 
 #[test]
@@ -1523,18 +1277,15 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                 }
             })
             .collect::<Vec<_>>();
-        with_collection_limit(u64::MAX, |ctx| {
-            assert!(stage_extrusion_caps(
-                ctx,
-                &mut ir,
-                &mut cadmpeg_ir::Annotations::default(),
-                "caps",
-                &association,
-                &extrusion,
-                &boundaries,
-            )
-            .is_ok());
-        });
+        assert!(stage_extrusion_caps(
+            &mut ir,
+            &mut cadmpeg_ir::Annotations::default(),
+            "caps",
+            &association,
+            &extrusion,
+            &boundaries,
+        )
+        .is_ok());
         assert_eq!(ir.model.faces.len(), expected_faces);
         assert_eq!(ir.model.regions.len(), expected_faces);
         assert_eq!(ir.model.shells.len(), expected_faces);
@@ -1546,7 +1297,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
         }
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .error_count(),
             0
         );
@@ -1568,7 +1319,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
     assert!(cadmpeg_ir::admit(
         &cadmpeg_test_support::service_decode_context(),
@@ -1576,7 +1327,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
 
     assert!(!cadmpeg_ir::admit_with_annotations(
@@ -1586,7 +1337,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
     assert!(!cadmpeg_ir::admit(
         &cadmpeg_test_support::service_decode_context(),
@@ -1594,7 +1345,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
 }
 
@@ -1621,15 +1372,15 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             crate::settings::UnitBinding::Unavailable
         );
         assert_eq!(context.archive(), archive);
-        assert!(context
+        context
             .append_link(0, "rhino:curve#2")
-            .expect("admitted link"));
-        assert!(context
+            .expect("admitted link");
+        context
             .append_link(0, "rhino:curve#1")
-            .expect("admitted link"));
-        assert!(context
+            .expect("admitted link");
+        context
             .append_link(0, "rhino:curve#2")
-            .expect("admitted link"));
+            .expect("admitted link");
         assert_eq!(
             context.unknown(0).expect("required invariant").links(),
             vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
@@ -1639,7 +1390,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .expect("required invariant")
             .id()
             .to_string();
-        assert!(context
+        context
             .append_links(
                 0,
                 &[
@@ -1649,7 +1400,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
                     "rhino:curve#0".to_string(),
                 ],
             )
-            .expect("admitted links"));
+            .expect("admitted links");
         assert_eq!(
             context.unknown(0).expect("required invariant").links(),
             [
@@ -1683,51 +1434,122 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             1
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert_eq!(validation.error_count(), 0);
     });
 }
 
 #[test]
-fn unknown_record_link_insertion_refuses_collection_limit() {
-    let refusal = with_collection_limit(0, |ctx| {
-        let mut record = UnknownRecord::unavailable(
-            UnknownId::mint("rhino:object:unknown#0").expect("valid identity"),
-            0,
-            0,
-            "",
-            Vec::new(),
-        );
-        append_link_to_record(
-            ctx,
-            "rhino:object:unknown#0",
-            record.links_mut(),
-            "rhino:curve#1",
-        )
-        .expect_err("one link exceeds the collection limit")
+fn expansion_undo_restores_touched_links_and_statuses_exactly() {
+    let archive = ArchiveVersion::V5;
+    let objects = [
+        object_record(archive, 1, [0; 16]),
+        object_record(archive, 1, [0; 16]),
+        object_record(archive, 1, [0; 16]),
+    ];
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &objects),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("required invariant");
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
+        context
+            .append_links(0, &["rhino:curve#5", "rhino:curve#1"])
+            .expect("admitted links");
+        assert!(context.mark_decoded(2));
+        let links = |context: &DecodeContext<'_>| {
+            (0..3)
+                .map(|order| {
+                    context
+                        .unknown(order)
+                        .expect("required invariant")
+                        .links()
+                        .to_vec()
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = links(&context);
+
+        context.expansion_undo = Some(super::ExpansionUndo::default());
+        context
+            .append_links(
+                0,
+                &[
+                    "rhino:curve#9",
+                    "rhino:curve#1",
+                    "rhino:curve#3",
+                    "rhino:curve#3",
+                ],
+            )
+            .expect("admitted links");
+        context
+            .append_link(1, "rhino:curve#0")
+            .expect("admitted link");
+        assert!(context.mark_decoded(1));
+        assert!(!context.mark_failed(2));
+        assert_ne!(links(&context), before);
+        let undo = context.expansion_undo.take().expect("active undo log");
+        assert_eq!(undo.links.len(), 3);
+        context.undo_expansion(undo).expect("undo expansion");
+
+        assert_eq!(links(&context), before);
+        assert!(context.mark_failed(1));
+        assert!(!context.mark_decoded(2));
     });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino unknown record links"
-    ));
 }
 
 #[test]
-fn unknown_record_link_copy_refuses_retained_limit() {
+fn appending_a_descending_link_batch_merges_once() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let incoming = (0..1_usize << 16)
+        .rev()
+        .map(|index| format!("rhino:curve#{index:08}"))
+        .collect::<Vec<_>>();
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
+        context.append_links(0, &incoming).expect("admitted links");
+        context.append_links(0, &incoming).expect("admitted links");
+        let links = context.unknown(0).expect("required invariant").links();
+        assert_eq!(links.len(), incoming.len());
+        assert!(links.iter().rev().eq(incoming.iter()));
+    });
+}
+
+#[test]
+fn source_record_links_refuse_retained_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let length = scan.objects[0].range().len();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    let refusal = ctx
-        .copy_retained_text("curve", "Rhino unknown record link copy")
-        .expect_err("five retained bytes exceed the limit");
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino unknown record link copy"
-    ));
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(length + 16);
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+            .expect("test scan fits the root limit");
+    let mut context = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))
+        .expect("source record bytes fit the retained limit");
+    context
+        .append_link(0, "rhino:curve#1")
+        .expect("a short link fits the retained limit");
+    let error = context
+        .append_link(0, "rhino:curve#with-a-long-identity")
+        .expect_err("the link copy exceeds the retained limit");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino source record link"
+        ),
+        "unexpected refusal: {error}"
+    );
+    assert_eq!(
+        context.unknown(0).expect("required invariant").links(),
+        ["rhino:curve#1"]
+    );
 }
 
 #[test]
@@ -1972,7 +1794,3 @@ fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 mod brep;
-
-mod instance_snapshots;
-
-mod resource_limits;

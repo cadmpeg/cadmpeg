@@ -6,14 +6,14 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_inventor::InventorCodec;
-use cadmpeg_core::decode::{DecodePolicy, InspectOptions};
+use cadmpeg_core::decode::{DecodeDepth, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let codec = InventorCodec;
     let options = DecodeOptions {
-        container_only: false,
+        depth: DecodeDepth::Full,
         policy: DecodePolicy::service(),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();

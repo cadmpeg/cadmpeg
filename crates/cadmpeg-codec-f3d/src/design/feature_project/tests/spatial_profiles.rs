@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::feature_project::closed_spatial_sketch_profiles;
-use cadmpeg_core::decode::ResourceDimension;
+use crate::design::feature_project::{closed_spatial_sketch_profiles, SPATIAL_PROFILE_SEARCH_WORK};
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -46,92 +46,32 @@ fn fixture() -> (SpatialSketchId, Vec<SpatialSketchEntity>) {
 
 #[test]
 fn spatial_profile_closed_loop_and_circle_keep_order() {
-    let (sketch, entities) = fixture();
+    let (_, entities) = fixture();
+    let entities: Vec<_> = entities.iter().collect();
     let profiles = crate::test_support::with_decode_context(|decode_ctx| {
-        closed_spatial_sketch_profiles(decode_ctx, &sketch, &entities, EPS_PROFILE_CLOSE)
+        closed_spatial_sketch_profiles(
+            decode_ctx,
+            &entities,
+            EPS_PROFILE_CLOSE,
+            &WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK),
+        )
     })
-    .unwrap();
+    .unwrap()
+    .expect("the search stays within its cap");
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].boundary().len(), 1);
     assert_eq!(profiles[1].boundary().len(), 3);
 }
 
-fn assert_limit(operation: &'static str, dimension: ResourceDimension) {
-    let (sketch, entities) = fixture();
-    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
-        closed_spatial_sketch_profiles(ctx, &sketch, &entities, EPS_PROFILE_CLOSE)
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.operation == operation && failure.dimension == dimension)
-    );
-}
-
 #[test]
-fn spatial_profile_circle_id_refuses_retained_limit() {
-    assert_limit(
-        "f3d spatial profile circle id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn spatial_profile_boundary_id_refuses_retained_limit() {
-    assert_limit(
-        "f3d spatial profile boundary id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn spatial_profile_edge_refuses_collection_limit() {
-    assert_limit(
-        "f3d spatial profile edge",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn spatial_profile_unused_edge_refuses_collection_limit() {
-    assert_limit(
-        "f3d spatial profile unused edge",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn spatial_profile_use_refuses_collection_limit() {
-    assert_limit(
-        "f3d spatial profile use",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn spatial_profile_candidate_scan_refuses_work_limit() {
-    assert_limit(
-        "f3d spatial profile candidate scan",
-        ResourceDimension::WorkUnits,
-    );
-}
-
-#[test]
-fn spatial_profile_boundary_use_refuses_collection_limit() {
-    assert_limit(
-        "f3d spatial profile boundary use",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn spatial_profile_output_refuses_collection_limit() {
-    assert_limit("f3d spatial profile", ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn spatial_profile_uniqueness_refuses_collection_limit() {
-    assert_limit(
-        "f3d spatial profile boundary uniqueness",
-        ResourceDimension::CollectionItems,
-    );
+fn spatial_profile_search_skips_the_sketch_when_its_cap_runs_out() {
+    let (_, entities) = fixture();
+    let entities: Vec<_> = entities.iter().collect();
+    let budget = WorkBudget::new(1);
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_spatial_sketch_profiles(decode_ctx, &entities, EPS_PROFILE_CLOSE, &budget)
+    })
+    .unwrap();
+    assert_eq!(profiles, None);
+    assert!(budget.exhausted());
 }

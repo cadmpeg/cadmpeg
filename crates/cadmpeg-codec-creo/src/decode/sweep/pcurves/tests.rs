@@ -3,8 +3,7 @@
 use super::{
     add_extrusion_pcurve, nurbs_sense_sample, revolution_boundary_pcurve, PcurveAdmission,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
@@ -14,7 +13,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 
 #[test]
-fn extrusion_pcurve_identity_copy_refuses_below_retained_limit() {
+fn extrusion_pcurve_returns_its_identity() {
     let id = PcurveId::mint("creo:feature:extrusion#7:pcurve:cap").expect("identity grammar");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -28,29 +27,6 @@ fn extrusion_pcurve_identity_copy_refuses_below_retained_limit() {
         LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).expect("line"),
     );
     let source = crate::decode::source_carriers::SourceUnitCarriers::default();
-    // Admit preceding annotation backing nodes before refusing the identity copy.
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "creo extrusion pcurve identity copy",
-        |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            add_extrusion_pcurve(
-                &ctx,
-                &mut CadIr::empty(),
-                &mut AnnotationBuilder::new(),
-                PcurveAdmission::Pending(&source, &surface),
-                id.clone(),
-                0,
-                geometry.clone(),
-            )
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo extrusion pcurve identity copy"));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -63,7 +39,7 @@ fn extrusion_pcurve_identity_copy_refuses_below_retained_limit() {
         0,
         geometry,
     )
-    .expect("service pcurve");
+    .expect("add the extrusion pcurve");
     assert_eq!(result, id);
 }
 
@@ -94,17 +70,14 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
             .expect("valid direction fixture"),
         reference: None,
     };
-    let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-        revolution_boundary_pcurve(
-            ctx,
-            &surface,
-            [-3.0, 0.0, 0.0],
-            &axis,
-            &"revolution boundary fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("resource admission")
+    let pcurve = revolution_boundary_pcurve(
+        &surface,
+        [-3.0, 0.0, 0.0],
+        &axis,
+        &"revolution boundary fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("compute the revolution boundary pcurve")
     .expect("spindle boundary");
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let uv = cadmpeg_ir::eval::decode::pcurve_uv(

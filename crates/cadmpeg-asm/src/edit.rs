@@ -155,12 +155,12 @@ impl AsmEditSet {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::desktop(),
         )?;
-        let header = asm_header::parse(&ctx, bytes)?
+        let header = asm_header::parse(bytes)
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let start = asm_header::record_stream_start_with_header(bytes, &header)
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-        let limit = asm_header::solved_record_limit_with_header(&ctx, bytes, &header)?
-            .unwrap_or(bytes.len());
+        let limit =
+            asm_header::solved_record_limit_with_header(bytes, &header).unwrap_or(bytes.len());
         let ref_width = header.width;
         let records =
             sab::frame(&ctx, bytes, start, limit, ref_width, None).map_err(|failure| {
@@ -2325,14 +2325,12 @@ mod tests {
         let records =
             crate::test_support::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
         let geometry = PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap();
         let base = super::InlinePcurveEdit::IntcurveCache {
             native_geometry: &geometry,
