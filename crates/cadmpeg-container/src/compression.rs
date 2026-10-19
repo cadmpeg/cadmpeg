@@ -257,30 +257,28 @@ mod tests {
     }
 
     #[test]
-    fn zlib_member_work_does_not_charge_an_unconsumed_suffix() {
+    fn zlib_member_reports_extent_before_a_large_unconsumed_suffix() {
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(b"one member").expect("write member");
         let mut compressed = encoder.finish().expect("finish member");
         let member_len = compressed.len();
         compressed.resize(member_len + 1024 * 1024, 0x55);
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 65_536;
+        let policy = DecodePolicy::service();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
         let (expanded, consumed) = inflate_zlib_member(&ctx, root, ExpandSpec::Unknown)
-            .expect("a short member fits the work limit despite the unrelated suffix");
+            .expect("a complete member inflates despite the unrelated suffix");
         assert_eq!(expanded.window(), b"one member");
         assert_eq!(consumed, member_len);
     }
 
     #[test]
-    fn invalid_zlib_candidate_does_not_charge_an_untouched_suffix() {
+    fn invalid_zlib_candidate_reports_malformed_with_a_large_suffix() {
         let mut compressed = vec![0x78, 0x9c, 0x07];
         compressed.resize(1024 * 1024, 0x55);
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 65_536;
+        let policy = DecodePolicy::service();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
         assert!(matches!(

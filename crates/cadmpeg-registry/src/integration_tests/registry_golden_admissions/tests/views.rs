@@ -79,7 +79,7 @@ fn source_and_decode_report_layer_sets_must_match() {
         "report": report_view(&nx, &[kernel_loss("nx")])
     });
     decode["report"]["identity"]["dialects"]["extra"][0]["admission"] = json!("admitted");
-    let violation = validate(&registry).expect_err("the two decode identities differ");
+    let violation = validate(&decode, &registry).expect_err("the two decode identities differ");
     assert_eq!(violation.pointer, "/report/identity/dialects");
     assert_eq!(
         violation.reason,

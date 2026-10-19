@@ -93,8 +93,7 @@ fn source_view(layers: &DialectLayers) -> Value {
 }
 
 fn validate(value: &Value, registry: &RegistryRows) -> Result<usize, AdmissionViolation> {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    validate_snapshot(value, Path::new("test.json"), registry, &ctx)
+    validate_snapshot(value, Path::new("test.json"), registry)
 }
 
 fn assert_rejected(value: &Value, registry: &RegistryRows, expected: &str) {

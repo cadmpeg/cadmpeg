@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{
     Admission, DialectLayers, DialectMatch, FormatIdentity, LayerInstance,
 };
@@ -72,9 +71,8 @@ fn compiled_read_admissions_match_registry_policy() {
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
         let value: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let count = validate_snapshot(&value, &path, &registry, &ctx)
-            .unwrap_or_else(|error| panic!("{error}"));
+        let count =
+            validate_snapshot(&value, &path, &registry).unwrap_or_else(|error| panic!("{error}"));
         layer_set_count = layer_set_count
             .checked_add(count)
             .expect("golden layer-set count fits usize");
@@ -96,12 +94,11 @@ fn validate_snapshot(
     value: &serde_json::Value,
     snapshot: &Path,
     registry: &RegistryRows,
-    ctx: &DecodeContext<'_>,
 ) -> Result<usize, AdmissionViolation> {
     let occurrences = collect_layer_sets(value, snapshot)?;
     check_matching_view_identities(value, snapshot, "")?;
     for occurrence in &occurrences {
-        check_layer_set(registry, ctx, occurrence)?;
+        check_layer_set(registry, occurrence)?;
     }
     check_kernel_loss_counts(value, snapshot, "")?;
     Ok(occurrences.len())
@@ -368,7 +365,6 @@ fn check_identity_pair(
 
 fn check_layer_set(
     registry: &RegistryRows,
-    ctx: &DecodeContext<'_>,
     occurrence: &LayerOccurrence,
 ) -> Result<(), AdmissionViolation> {
     let primary = occurrence.layers.primary();
@@ -393,13 +389,8 @@ fn check_layer_set(
         );
         let read = registered_read(registry, layer, &occurrence.snapshot, &layer_pointer)?;
         if layer.format() == "parasolid" {
-            let expected = classify_parasolid_layer(
-                ctx,
-                primary,
-                layer,
-                &occurrence.snapshot,
-                &layer_pointer,
-            )?;
+            let expected =
+                classify_parasolid_layer(primary, layer, &occurrence.snapshot, &layer_pointer)?;
             if layer.dialect() != expected.dialect() || layer.admission() != expected.admission() {
                 return Err(AdmissionViolation::new(
                     &occurrence.snapshot,
@@ -447,7 +438,6 @@ fn registered_read(
 }
 
 fn classify_parasolid_layer(
-    ctx: &DecodeContext<'_>,
     primary: &DialectMatch,
     layer: &DialectMatch,
     snapshot: &Path,
@@ -493,19 +483,11 @@ fn classify_parasolid_layer(
         )
     })?;
     let classified = cadmpeg_parasolid::classify_layer(
-        ctx,
         schema,
         Carrier::new(carrier.clone()),
         LayerInstance::Sole,
         verified,
-    )
-    .map_err(|error| {
-        AdmissionViolation::new(
-            snapshot,
-            pointer,
-            format!("{} could not be classified: {error}", layer.dialect()),
-        )
-    })?;
+    );
     Ok(classified.into_matched())
 }
 
