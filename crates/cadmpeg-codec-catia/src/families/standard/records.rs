@@ -1129,9 +1129,9 @@ mod tests {
 
     #[test]
     fn surface_prefix_and_vertex_roster_parse_one_entry_each() {
-        let mut prefix = vec![0; crate::layout::analytic_surface_plane::LEN];
+        let mut prefix = vec![0; crate::layout::analytic_surface_cylinder::LEN];
         prefix[..9].copy_from_slice(&[0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33, 0]);
-        prefix[crate::layout::analytic_surface_plane::SIGN] = 1;
+        prefix[crate::layout::analytic_surface_cylinder::SIGN] = 1;
         assert_eq!(super::surface_prefixes(&prefix).len(), 1);
         let roster = [0x54, 1, 0, 0, 0, 0, 0];
         assert_eq!(super::standard_vertex_roster(&roster, 1), Some(vec![1]));
