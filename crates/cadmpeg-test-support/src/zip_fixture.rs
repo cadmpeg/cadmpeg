@@ -226,7 +226,7 @@ pub const ZSTD_GOLDEN_LARGE_FRAME: &[u8] = include_bytes!("../fixtures/zstd-gold
 pub fn zstd_golden_large_plaintext() -> Vec<u8> {
     let mut out = Vec::with_capacity(200_000);
     for line in 0_u32..200_000 / 40 {
-        let salt = line.wrapping_mul(2_654_435_761) & 0xffff;
+        let salt = (u64::from(line) * 2_654_435_761) & 0xffff;
         out.extend_from_slice(
             format!("cadmpeg large fixture line {line:06} {salt:05x}\n").as_bytes(),
         );
@@ -296,8 +296,8 @@ pub fn crc32(bytes: &[u8]) -> u32 {
     for byte in bytes {
         crc ^= u32::from(*byte);
         for _ in 0..8 {
-            let mask = 0_u32.wrapping_sub(crc & 1);
-            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+            let polynomial = if crc & 1 == 0 { 0 } else { 0xEDB8_8320 };
+            crc = (crc >> 1) ^ polynomial;
         }
     }
     !crc
