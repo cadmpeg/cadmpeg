@@ -250,8 +250,15 @@ struct WrittenSurface {
     reversed_chart: bool,
 }
 
-/// Pcurve, surface and face of one coedge's parameter-space use of its edge.
-type PcurveUse<'a> = (&'a str, &'a str, &'a str);
+mod pcurves;
+
+/// One coedge's parameter-space use, including its own parameter interval.
+#[derive(Clone, Copy)]
+struct PcurveUse<'a> {
+    use_: &'a cadmpeg_ir::topology::PcurveUse,
+    surface: &'a str,
+    face: &'a str,
+}
 
 pub(crate) struct Builder<'a> {
     ir: &'a CadIr,
@@ -371,17 +378,20 @@ impl<'a> Builder<'a> {
                     })
                 })
                 .collect();
-        let mut edge_coedges = HashMap::<&str, Vec<(&str, &str, &str)>>::new();
+        let mut edge_coedges = HashMap::<&str, Vec<PcurveUse<'_>>>::new();
         for coedge in &ir.model.coedges {
             let Some((surface, face)) = coedge_faces.get(coedge.id.as_str()) else {
                 continue;
             };
             for pcurve in &coedge.pcurves {
-                edge_coedges.entry(coedge.edge.as_str()).or_default().push((
-                    pcurve.pcurve.as_str(),
-                    *surface,
-                    *face,
-                ));
+                edge_coedges
+                    .entry(coedge.edge.as_str())
+                    .or_default()
+                    .push(PcurveUse {
+                        use_: pcurve,
+                        surface,
+                        face,
+                    });
             }
         }
         Ok(Builder {
@@ -2414,12 +2424,11 @@ impl<'a> Builder<'a> {
                     self.coedge_edge_occurrences
                         .insert(coedge.id.as_str(), occurrence);
                     if let Some((surface, face)) = self.coedge_faces.get(coedge.id.as_str()) {
-                        pcurves.extend(
-                            coedge
-                                .pcurves
-                                .iter()
-                                .map(|pcurve| (pcurve.pcurve.as_str(), *surface, *face)),
-                        );
+                        pcurves.extend(coedge.pcurves.iter().map(|pcurve| PcurveUse {
+                            use_: pcurve,
+                            surface,
+                            face,
+                        }));
                     }
                 }
                 self.edge_occurrence_pcurves
@@ -2880,8 +2889,11 @@ impl<'a> Builder<'a> {
             return None;
         };
         let mut pcurve_refs = Vec::new();
-        for (pcurve_id, surface_id, face_id) in associated {
-            if let Some(pcurve) = self.emit_pcurve(pcurve_id, surface_id) {
+        for use_ in associated {
+            let pcurve_id = use_.use_.pcurve.as_str();
+            let surface_id = use_.surface;
+            let face_id = use_.face;
+            if let Some(pcurve) = self.emit_pcurve(use_, edge) {
                 pcurve_refs.push(pcurve);
             } else if self.surface_chart_reversed(surface_id) {
                 self.loss(
@@ -2910,14 +2922,23 @@ impl<'a> Builder<'a> {
         )
     }
 
-    fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
+    fn emit_pcurve(&mut self, use_: PcurveUse<'a>, edge: &Edge) -> Option<Ref> {
+        let pcurve_id = use_.use_.pcurve.as_str();
+        let surface_id = use_.surface;
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
+        let carrier = self.curves.get(edge.curve()?.as_str()).copied()?;
+        let aligned = pcurves::align_periodic_spline(
+            &pcurve.geometry,
+            use_.use_.parameter_range,
+            edge,
+            &carrier.geometry,
+        );
         let surface = self.emit_surface(surface_id)?;
         let reversed_cone = self.surface_chart_reversed(surface_id);
         let curve = if reversed_cone {
-            geometry::pcurve_on_reversed_cone(&mut self.emitter, &pcurve.geometry)?
+            geometry::pcurve_on_reversed_cone(&mut self.emitter, &aligned)?
         } else {
-            geometry::pcurve(&mut self.emitter, &pcurve.geometry)?
+            geometry::pcurve(&mut self.emitter, &aligned)?
         };
         let context = if let Some(context) = self.pcurve_context {
             context
