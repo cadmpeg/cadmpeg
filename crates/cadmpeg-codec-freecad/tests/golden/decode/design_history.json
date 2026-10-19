@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "37",
+    "decode_depth": "full",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -4142,7 +4143,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:12",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4155,7 +4156,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:13",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:14",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4168,7 +4169,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:16",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:15",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4181,7 +4182,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:15",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:17",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4194,7 +4195,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:20",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:21",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4207,7 +4208,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:20",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:22",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4220,7 +4221,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:25",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:26",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4233,7 +4234,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:25",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:27%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4246,7 +4247,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:3",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4259,7 +4260,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:20",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:31%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:30",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4272,7 +4273,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:30",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:32%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:25",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4285,7 +4286,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:34",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:35%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:34",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4298,7 +4299,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:30",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:38",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:15",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4311,7 +4312,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:43",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:44",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:34",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4324,7 +4325,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:43",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:45%40f9909aad000b01a7",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:43",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4337,7 +4338,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:5",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4350,7 +4351,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:6",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:7",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4363,7 +4364,7 @@
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:6",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:8%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4376,7 +4377,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:10",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:11",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4389,7 +4390,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4402,7 +4403,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4415,7 +4416,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:10",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:15",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4428,7 +4429,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4441,7 +4442,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4454,7 +4455,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:19",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:20",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:10",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4467,7 +4468,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:19",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:21",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4480,7 +4481,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:24",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4493,7 +4494,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:19",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:27%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4506,7 +4507,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:3",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4519,7 +4520,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:29",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:30%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:29",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4532,7 +4533,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:33",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4545,7 +4546,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:39",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:29",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4558,7 +4559,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:40%40f9909aad000b01a7",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4571,7 +4572,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:4",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:5",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4584,7 +4585,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:6",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4597,7 +4598,7 @@
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:7%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4610,7 +4611,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4623,7 +4624,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4636,7 +4637,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:14",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4649,7 +4650,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4662,7 +4663,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4675,7 +4676,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4688,7 +4689,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4701,7 +4702,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4714,7 +4715,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:4",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4727,7 +4728,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4740,7 +4741,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4753,7 +4754,7 @@
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:9",
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4766,7 +4767,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4779,7 +4780,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4792,7 +4793,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4805,7 +4806,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4818,7 +4819,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4831,7 +4832,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4844,7 +4845,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4857,7 +4858,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4870,7 +4871,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4883,7 +4884,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4896,7 +4897,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4909,7 +4910,7 @@
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9",
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4922,7 +4923,7 @@
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:2",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:3",
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4935,7 +4936,7 @@
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:4",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:5",
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4948,7 +4949,7 @@
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:6",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:7",
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4961,7 +4962,7 @@
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:1",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:8",
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4974,7 +4975,7 @@
           "end": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:2",
           "start": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -4987,7 +4988,7 @@
           "end": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5000,7 +5001,7 @@
           "end": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%40f9909aad000b01a7",
           "start": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5013,7 +5014,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5026,7 +5027,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5039,7 +5040,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:14",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5052,7 +5053,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5065,7 +5066,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5078,7 +5079,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5091,7 +5092,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5104,7 +5105,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5117,7 +5118,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:23%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5130,7 +5131,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:29",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5143,7 +5144,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:30%40f9909aad000b01a7",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5156,7 +5157,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:4",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5169,7 +5170,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5182,7 +5183,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5195,7 +5196,7 @@
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:9",
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -5208,7 +5209,7 @@
           "end": "fcstd:model:vertex#PocketSketch:Shape:PocketSketch.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#PocketSketch:Shape:PocketSketch.Shape.brp:2%4076889a8b8100da92",
           "start": "fcstd:model:vertex#PocketSketch:Shape:PocketSketch.Shape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         }
       ],
       "faces": [
@@ -5223,7 +5224,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:19",
@@ -5236,7 +5237,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:24",
@@ -5249,7 +5250,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:29",
@@ -5262,7 +5263,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:5",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:37",
@@ -5276,7 +5277,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:6%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:40",
@@ -5289,7 +5290,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:42",
@@ -5302,7 +5303,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:47",
@@ -5315,7 +5316,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611",
@@ -5328,7 +5329,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:9%40a5307fcccbc44611",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:18",
@@ -5341,7 +5342,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:23",
@@ -5366,7 +5367,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:5",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:32",
@@ -5380,7 +5381,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:3%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:35",
@@ -5393,7 +5394,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:37",
@@ -5406,7 +5407,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:42",
@@ -5419,7 +5420,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611",
@@ -5432,7 +5433,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:8%40a5307fcccbc44611",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Fillet:Shape:Fillet.Shape.brp:9",
@@ -5445,7 +5446,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:12",
@@ -5458,7 +5459,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:17",
@@ -5471,7 +5472,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:20",
@@ -5484,7 +5485,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22",
@@ -5497,7 +5498,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:5",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92",
@@ -5510,7 +5511,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7",
@@ -5523,7 +5524,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:23",
           "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:12",
@@ -5536,7 +5537,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:17",
@@ -5549,7 +5550,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:20",
@@ -5562,7 +5563,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22",
@@ -5575,7 +5576,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92",
@@ -5588,7 +5589,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7",
@@ -5601,7 +5602,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23",
           "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:5",
@@ -5614,7 +5615,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:AddSubShape:Pocket.AddSubShape.brp:8",
           "surface": "fcstd:model:surface#Pocket:AddSubShape:Pocket.AddSubShape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:7",
@@ -5627,7 +5628,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:AddSubShape:Pocket.AddSubShape.brp:8",
           "surface": "fcstd:model:surface#Pocket:AddSubShape:Pocket.AddSubShape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611",
@@ -5640,7 +5641,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:AddSubShape:Pocket.AddSubShape.brp:8",
           "surface": "fcstd:model:surface#Pocket:AddSubShape:Pocket.AddSubShape.brp:2%40a5307fcccbc44611",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:12",
@@ -5653,7 +5654,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:17",
@@ -5666,7 +5667,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:20",
@@ -5679,7 +5680,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:25",
@@ -5693,7 +5694,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:4%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:27",
@@ -5706,7 +5707,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:32",
@@ -5719,7 +5720,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:5",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611",
@@ -5732,7 +5733,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:7%40a5307fcccbc44611",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Pocket:Shape:Pocket.Shape.brp:7",
@@ -5745,7 +5746,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Pocket:Shape:Pocket.Shape.brp:35",
           "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         }
       ],
       "features": [
@@ -10060,287 +10061,287 @@
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:11",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:13",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:15",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:15",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:20",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:20",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:25",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:25",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:30",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:30",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:34",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:34",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:43",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:43",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:6",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:1",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:10",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:10",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:12",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:14",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:19",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:19",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:29",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:29",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:4",
           "point": "fcstd:model:point#Fillet:Shape:Fillet.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
           "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:1",
           "point": "fcstd:model:point#PadSketch:Shape:PadSketch.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:2",
           "point": "fcstd:model:point#PadSketch:Shape:PadSketch.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:4",
           "point": "fcstd:model:point#PadSketch:Shape:PadSketch.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:6",
           "point": "fcstd:model:point#PadSketch:Shape:PadSketch.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
           "point": "fcstd:model:point#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
           "point": "fcstd:model:point#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:13",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:22",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:8",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
           "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#PocketSketch:Shape:PocketSketch.Shape.brp:1%4076889a8b8100da92",
           "point": "fcstd:model:point#PocketSketch:Shape:PocketSketch.Shape.brp:1%4076889a8b8100da92",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         }
       ],
       "view_presentations": []
@@ -11311,12 +11312,11 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-06
+      "linear": 1e-6
     },
     "units": {
       "length": "millimeter"
-    },
-    "decode_depth": "full"
+    }
   },
   "report": {
     "identity": {

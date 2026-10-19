@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "37",
+    "decode_depth": "full",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -160,7 +161,7 @@
                     "length": 7,
                     "offset": 1,
                     "raw": "8d071bd2656f6c",
-                    "value": 4.407630756705222e-05
+                    "value": 0.00004407630756705222
                   }
                 ]
               },
@@ -239,7 +240,7 @@
                     "length": 7,
                     "offset": 68,
                     "raw": "8d06dc208a4ddb",
-                    "value": 4.360174469913124e-05
+                    "value": 0.00004360174469913124
                   }
                 ]
               },
@@ -283,7 +284,7 @@
                 "length": 7,
                 "offset": 1,
                 "raw": "8d071bd2656f6c",
-                "value": 4.407630756705222e-05
+                "value": 0.00004407630756705222
               },
               {
                 "length": 3,
@@ -337,7 +338,7 @@
                 "length": 7,
                 "offset": 68,
                 "raw": "8d06dc208a4ddb",
-                "value": 4.360174469913124e-05
+                "value": 0.00004360174469913124
               },
               {
                 "length": 8,
@@ -461,12 +462,11 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-06
+      "linear": 1e-6
     },
     "units": {
       "length": "millimeter"
-    },
-    "decode_depth": "full"
+    }
   },
   "report": {
     "coverage": {

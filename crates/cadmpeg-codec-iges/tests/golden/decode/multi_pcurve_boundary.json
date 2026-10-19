@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "37",
+    "decode_depth": "full",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -1728,8 +1729,7 @@
     },
     "units": {
       "length": "millimeter"
-    },
-    "decode_depth": "full"
+    }
   },
   "report": {
     "identity": {

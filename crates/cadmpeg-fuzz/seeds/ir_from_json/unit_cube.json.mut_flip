@@ -1,5 +1,6 @@
 {
   "ir_version": "6",
+  "decode_depth": "full",
   "units": {
     "length": "millimeter"
   },
@@ -414,8 +415,8 @@
         "start": "synthetic:cube:vertex#1",
         "end": "synthetic:cube:vertex#2"
       },
-      {
-     ß  "id": "synthetic:cube:edge#10",
+ß     {
+        "id": "synthetic:cube:edge#10",
         "carrier": {
           "curve": "synthetic:cube:curve#10",
           "param_range": [

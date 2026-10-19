@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "37",
+    "decode_depth": "full",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -864,7 +865,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:13",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -877,7 +878,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:15",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -890,7 +891,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:17",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -903,7 +904,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:18",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -916,7 +917,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:21",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -929,7 +930,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:22",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -942,7 +943,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:25",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -955,7 +956,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:26",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -968,7 +969,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:3",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -981,7 +982,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:5",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -994,7 +995,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:7",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "carrier": {
@@ -1007,7 +1008,7 @@
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:8",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         }
       ],
       "faces": [
@@ -1022,7 +1023,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:20",
@@ -1035,7 +1036,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:24",
@@ -1048,7 +1049,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:28",
@@ -1061,7 +1062,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:30",
@@ -1074,7 +1075,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:5",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:32",
@@ -1087,7 +1088,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:3",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         }
       ],
       "features": [
@@ -2226,42 +2227,42 @@
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:1",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:11",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:12",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:14",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:16",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:2",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:4",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:6",
-          "tolerance": 1e-07
+          "tolerance": 1e-7
         }
       ],
       "view_presentations": []
@@ -2440,12 +2441,11 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-06
+      "linear": 1e-6
     },
     "units": {
       "length": "millimeter"
-    },
-    "decode_depth": "full"
+    }
   },
   "report": {
     "identity": {

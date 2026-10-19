@@ -685,6 +685,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     let canonical = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
+        (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
         (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
         (Some(serde_json::Value::String("35".into())), "Some(\"35\")"),
         (Some(serde_json::Value::String("34".into())), "Some(\"34\")"),
