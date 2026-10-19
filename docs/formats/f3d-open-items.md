@@ -20,15 +20,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
-### DR-09A. Sheet-metal `Hem` fixed-section semantics
+### DR-09A. Sheet-metal settings compatibility and override encoding
 
-**Question.** What independent native settings do the four retained fixed-section fields and the indexed settings record carry?
+**Question.** What is the Hem Tangent bend-position code, what do the compatibility values `1` and `4` encode, what does the version-3 rule-reference suffix encode, and how do the settings mask bits, optional slots, and override bundle tails map to independent rule controls?
 
-**Known.** `f3d.md` §3.1 "A `Hem` scope names one parameter" gives the owner layouts, the header shift, the parameter source kinds, and the four retained fields. The owner layout separates rolled and teardrop inputs from the gap-and-length inputs. The executed transition separates the gap-and-length forms through its two coaxial bend carriers and supplies the signed direction from the preceding source plane; the settled invariants are in `f3d.md`.
+**Known.** `f3d.md` §3.1 "The common Hem controls start" defines Adjacent code `3`, Flip `0`/`1`, the two null legacy references, and the form-specific owner layouts. "The common sheet-metal settings carrier" defines the versioned optional-reference runs, typed rule and presentation links, feature owner, paired header, and context. Mask `4` with slot 1 reaches BendRadius; mask `240` with slot 2 reaches BendWidth, BendDepth, and BendRemnant. The version-3 rule-reference suffix is `00 00` or `01 00 00`; its byte form remains native. Those joins do not assign each mask bit a meaning or define the suffix control, remaining slots, and bundle tails.
 
-The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` are not the form, direction, or bend-position selectors. The gap-and-length, radius-and-angle, and gap-length-radius frames have distinct fixed-section lengths and rule-radius offsets.
-
-**Need.** A source-preserving writer needs the independent settings carried by those fields and the indexed settings record.
+**Need.** A controlled Tangent Hem and one-control-at-a-time rule overrides must separate the bend-position code, compatibility lanes, individual mask bits, and optional slots. Paired controls must distinguish the two version-3 rule-reference suffix forms. A complete bundle grammar must account for each byte after the verified owner prefixes before a writer generates those bundles.
 
 ### DR-12. Placement `refType` values
 
@@ -38,21 +36,13 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored.
 
-### DR-13. Other `WorkPoint` `refType` values
+### DR-14. `SurfacePatch` boundary-side ordinal mapping
 
-**Question.** What construction does each `refType` value other than `5`, `7`, `8`, `10`, `14`, and `20` select?
+**Question.** Which `PatchFlip` ordinal selects each continuity-direction Boolean and incident face?
 
-**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, the counted input-reference run, and the construction rules, input arities, and carrier envelopes for values `5`, `7`, `8`, `10`, `14`, and `20`. Value `20` uses the finite evaluated `PathDistance` scalar as a normalized path fraction. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point. The decoder retains every other `refType`, the serialized input count, and every input reference without assigning a rule-specific meaning.
+**Known.** `f3d.md` §3.1 assigns `PatchFlip` to the per-boundary u32 at `R + 26` and defines `PatchScale` as the continuity weight. Raw side ordinals `0` and `2` remain distinct. The version-7 scope's whole-surface normal Flip is independent of this ordinal.
 
-**Need.** A writer must emit the `refType` that matches every other input form it writes, and a neutral model that edits such an input must know which rule re-solves the point.
-
-### DR-14. `SurfacePatch` boundary-side and scale values
-
-**Question.** Which field holds the boundary side of a `SurfacePatch` component? What does `PatchScale` hold?
-
-**Known.** `f3d.md` §3.1 defines the boundary-settings member order, offsets, and types. `PatchContinuity` values `0`, `1`, and `2` select positional, tangent, and curvature continuity per boundary component.
-
-**Need.** We must assign the boundary-side selector and the physical quantity represented by `PatchScale`. The mapping must distinguish opposite boundary sides and unequal continuity weights without deriving either value from the generated surface.
+**Need.** One supported edge with two distinct incident faces must be authored with each continuity-direction Boolean while continuity, edge order, and weight remain fixed. The saved ordinals and the API's first co-edge face must identify the side mapping.
 
 ### DR-19. Construction-group fields
 

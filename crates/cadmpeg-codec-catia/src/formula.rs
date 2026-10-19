@@ -15,6 +15,8 @@ use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use crate::legacy_entity::LegacyEvaluatedValueNames;
 use crate::native::{CatiaLegacyTextField, CatiaNative};
 
+mod parameter_names;
+
 const FORMULA_INTEGER_LOWER: f64 = -9_223_372_036_854_775_808.0;
 const FORMULA_OUTPUT_EXPRESSION_OPERATION: &str = "retain CATIA formula output expression";
 const FORMULA_INTEGER_UPPER: f64 = 9_223_372_036_854_775_808.0;
@@ -557,6 +559,7 @@ pub(crate) fn transfer_parameters(
     for candidate in parameters {
         ir.model.parameters.push(candidate.parameter);
     }
+    parameter_names::normalize(&mut ir.model.parameters)?;
     let typed_parameter_count = transferred
         .checked_sub(legacy_transfer.parameters)
         .ok_or_else(|| {

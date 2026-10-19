@@ -1891,6 +1891,32 @@ fn project_work_point_construction(
             })
     };
 
+    let vertex = |input: &DesignWorkPointInput| -> Option<VertexSelection> {
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
+            return None;
+        };
+        if recipe.record_index() != input.record_index() {
+            return None;
+        }
+        let vertex = match recipe.resolution {
+            None => VertexSelection::native(recipe.recipe_id.clone())
+                .unwrap_or(VertexSelection::Unresolved),
+            Some(resolution) => {
+                let state_id = resolution.state_id;
+                let vertex_slot = resolution.vertex_slot();
+                let feature_id = crate::ids::neutral_feature_id(scope);
+                let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
+                VertexSelection::historical(
+                    crate::ids::feature_input_topology_id(&feature_id, state_id),
+                    crate::ids::history_input_vertex_id(&prefix, vertex_slot),
+                    recipe.recipe_id.clone(),
+                )
+                .unwrap_or(VertexSelection::Unresolved)
+            }
+        };
+        Some(vertex)
+    };
+
     Some(match construction.rule.form() {
         DesignWorkPointRuleForm::CircleCenter { input } => {
             DatumPointConstruction::CircleCenter { edge: edge(input)? }
@@ -1905,27 +1931,19 @@ fn project_work_point_construction(
                 planes: Box::new([plane(&inputs[0])?, plane(&inputs[1])?, plane(&inputs[2])?]),
             }
         }
-        DesignWorkPointRuleForm::Vertex { input } => {
-            let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
+        DesignWorkPointRuleForm::Vertex { input } => DatumPointConstruction::Vertex {
+            vertex: vertex(input)?,
+        },
+        DesignWorkPointRuleForm::Native {
+            reference_type: 1,
+            inputs,
+        } => {
+            let [input] = inputs.as_slice() else {
                 return None;
             };
-            let vertex = match recipe.resolution {
-                None => VertexSelection::native(recipe.recipe_id.clone())
-                    .unwrap_or(VertexSelection::Unresolved),
-                Some(resolution) => {
-                    let state_id = resolution.state_id;
-                    let vertex_slot = resolution.vertex_slot();
-                    let feature_id = crate::ids::neutral_feature_id(scope);
-                    let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
-                    VertexSelection::historical(
-                        crate::ids::feature_input_topology_id(&feature_id, state_id),
-                        crate::ids::history_input_vertex_id(&prefix, vertex_slot),
-                        recipe.recipe_id.clone(),
-                    )
-                    .unwrap_or(VertexSelection::Unresolved)
-                }
-            };
-            DatumPointConstruction::Vertex { vertex }
+            DatumPointConstruction::Vertex {
+                vertex: vertex(input)?,
+            }
         }
         DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => {
             DatumPointConstruction::EdgePlaneIntersection {
@@ -3914,9 +3932,8 @@ fn project_edge_flange(
 /// Project a sheet-metal `Hem` scope onto its neutral operation.
 ///
 /// The owner layout distinguishes the rolled and teardrop forms from the
-/// shared gap-and-length layout. Fold direction is recovered from the signed
-/// placement of the inserted bend carriers against the preceding source face;
-/// an incomplete transition keeps it unresolved.
+/// shared gap-and-length layout. The native Flip control supplies fold direction;
+/// inserted coaxial bend carriers distinguish Flat from Open gap-and-length forms.
 fn project_hem(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
@@ -4062,12 +4079,10 @@ fn project_hem(
         ),
         None => None,
     };
-    let semantics = edge_slot
-        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
-    let form = match (
-        form,
-        semantics.and_then(|semantics| semantics.gap_length_form),
-    ) {
+    let gap_length_form = edge_slot.and_then(|edge_slot| {
+        crate::history::hem_gap_length_form_for_scope(scope, edge_slot, histories)
+    });
+    let form = match (form, gap_length_form) {
         (
             SheetMetalHemForm::GapLength { gap: _, length },
             Some(crate::history::HemGapLengthForm::Flat),
@@ -4078,13 +4093,16 @@ fn project_hem(
         ) => SheetMetalHemForm::Open { gap, length },
         (form, _) => form,
     };
-    let direction = semantics
-        .and_then(|semantics| semantics.direction)
-        .unwrap_or(SheetMetalHemDirection::Unresolved);
+    let direction = if operation.flipped {
+        SheetMetalHemDirection::Reverse
+    } else {
+        SheetMetalHemDirection::Forward
+    };
 
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalHem {
             edges,
+            bend_position: operation.bend_position,
             form,
             direction,
             bend_radius: or_none!(cadmpeg_ir::scalar::PositiveLength::new(
@@ -6628,36 +6646,44 @@ fn project_fixed_pipe(
     )))
 }
 
-fn surface_patch_boundary_continuity(
-    continuity: crate::records::feature::surface_ops::DesignPatchContinuity,
-) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
-    use cadmpeg_ir::features::SurfaceContinuity;
-
-    match continuity {
-        crate::records::feature::surface_ops::DesignPatchContinuity::Connected => {
-            Some(SurfaceContinuity::Contact)
-        }
-        crate::records::feature::surface_ops::DesignPatchContinuity::Tangent => {
-            Some(SurfaceContinuity::Tangent)
-        }
-        crate::records::feature::surface_ops::DesignPatchContinuity::Curvature => {
-            Some(SurfaceContinuity::Curvature)
-        }
-        crate::records::feature::surface_ops::DesignPatchContinuity::Unknown(_) => None,
-    }
-}
-
-/// Map every known boundary-settings continuity in source order.
+/// Project each boundary condition and its resolved continuity weight.
 ///
-/// A missing or unknown component condition makes the complete per-boundary
-/// vector unavailable. The caller can still retain the native scope.
-fn surface_patch_boundary_continuities(
+/// An unknown continuity or unsupported active weight leaves the complete
+/// condition vector unresolved; native settings retain their source values.
+fn surface_patch_boundary_conditions(
     scope: &DesignParameterScope,
-) -> Vec<cadmpeg_ir::features::SurfaceContinuity> {
+) -> Vec<cadmpeg_ir::features::FilledSurfaceBoundaryCondition> {
+    use crate::records::feature::surface_ops::DesignPatchContinuity;
+    use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
+
+    const DEFAULT_WEIGHT: f64 = 0.5;
+    const DEFAULT_WEIGHT_SENTINEL: f64 = -1.0;
+
     let mut conditions = Vec::new();
     for boundary in scope.surface_patch_boundaries() {
-        let Some(condition) = surface_patch_boundary_continuity(boundary.continuity) else {
-            return Vec::new();
+        let condition = match boundary.continuity {
+            DesignPatchContinuity::Connected => FilledSurfaceBoundaryCondition::Contact {},
+            DesignPatchContinuity::Tangent | DesignPatchContinuity::Curvature => {
+                let raw = boundary.scale.get();
+                let effective = if raw == DEFAULT_WEIGHT_SENTINEL {
+                    DEFAULT_WEIGHT
+                } else {
+                    raw
+                };
+                let Some(weight) = cadmpeg_ir::scalar::PositiveReal::new(effective) else {
+                    return Vec::new();
+                };
+                if boundary.continuity == DesignPatchContinuity::Tangent {
+                    FilledSurfaceBoundaryCondition::Tangent {
+                        weight: Some(weight),
+                    }
+                } else {
+                    FilledSurfaceBoundaryCondition::Curvature {
+                        weight: Some(weight),
+                    }
+                }
+            }
+            DesignPatchContinuity::Unknown(_) => return Vec::new(),
         };
         conditions.push(condition);
     }
@@ -6865,7 +6891,7 @@ fn project_surface_patch(
             boundary: SurfaceBoundary::Path(boundary),
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: cadmpeg_ir::features::NonEmptyMembers::try_from(
-                surface_patch_boundary_continuities(scope),
+                surface_patch_boundary_conditions(scope),
             )
             .map_or_else(
                 |_| cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),

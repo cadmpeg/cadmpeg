@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-module projection and completeness unit tests.
+
 #![allow(clippy::unwrap_used)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -660,6 +661,7 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
         definition(serde_json::json!({
             "definition": "sheet_metal_hem",
             "edges": edges,
+            "bend_position": "adjacent",
             "form": {"kind": "flat", "value": {"length": 10.0}},
             "direction": "forward",
             "bend_radius": 2.5

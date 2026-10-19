@@ -6,11 +6,10 @@
 //! [`ParsedStreams`] holds both and shares one parse only when the views are
 //! identical.
 
+use cadmpeg_core::CodecError;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
-
-use cadmpeg_core::CodecError;
 
 use crate::decode::Scan;
 use crate::deltas::census::Census;
@@ -85,28 +84,30 @@ fn prepare_topology_streams<'a>(
     Ok(semantic)
 }
 
-/// Map each partition stream ordinal to the delta stream ordinals that pair with it,
-/// restricting the delta candidates to those the segment stream links mark as `deltas`
-/// when any links are present.
 pub(super) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
-    // The first stream at each file offset answers a wrapper lookup.
-    let mut streams_by_offset = BTreeMap::new();
-    for (ordinal, stream) in scan.streams.iter().enumerate() {
-        streams_by_offset
-            .entry(stream.file_offset)
-            .or_insert((ordinal, stream));
-    }
-    let mut has_links = false;
+    let wrapper_count = scan.container.segment_stream_wrappers().count();
     let mut linked_deltas = BTreeSet::new();
     for wrapper in scan.container.segment_stream_wrappers() {
-        if let Some(&(ordinal, stream)) = streams_by_offset.get(&wrapper.zlib_offset) {
-            has_links = true;
+        let mut matched = None;
+        for (ordinal, stream) in scan.streams.iter().enumerate() {
+            if stream.file_offset == wrapper.zlib_offset
+                && stream.consumed
+                    == cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len)
+            {
+                matched = Some((ordinal, stream));
+                break;
+            }
+        }
+        if let Some((ordinal, stream)) = matched {
             if stream.kind() == crate::parasolid::StreamKind::Deltas {
                 linked_deltas.insert(ordinal);
             }
         }
     }
-    pair_stream_indices(&scan.streams, has_links.then_some(&linked_deltas))
+    pair_stream_indices(
+        &scan.streams,
+        (wrapper_count != 0).then_some(&linked_deltas),
+    )
 }
 
 /// Pair each eligible delta stream with the nearest preceding partition stream of the
@@ -176,7 +177,7 @@ impl StreamView {
     /// semantic view whenever the semantic bytes equal the raw bytes.
     fn parse_uniform(
         bytes: &[u8],
-        point_layout: crate::intersection::ChartPointLayout,
+        point_layout: Option<crate::intersection::ChartPointLayout>,
     ) -> Result<Self, CodecError> {
         let graph = Rc::new(Graph::parse(bytes));
         Ok(StreamView {
@@ -184,7 +185,10 @@ impl StreamView {
             blend_surfaces: graph.blend_surfaces(),
             trimmed_curves: graph.trimmed_curves(),
             surface_curves: graph.surface_curves(),
-            intersections: intersection::scan_with_graph(bytes, &graph, point_layout)?,
+            intersections: match point_layout {
+                Some(layout) => intersection::scan_with_graph(bytes, &graph, layout)?,
+                None => CurveScan::default(),
+            },
             graph,
         })
     }
@@ -198,7 +202,7 @@ impl StreamView {
         semantic_bytes: &[u8],
         scan: &Scan,
         paired_deltas: Option<&Vec<usize>>,
-        point_layout: crate::intersection::ChartPointLayout,
+        point_layout: Option<crate::intersection::ChartPointLayout>,
     ) -> Result<(Self, Rc<Graph>), CodecError> {
         let semantic_graph = if semantic_bytes == topology_bytes {
             None
@@ -220,8 +224,10 @@ impl StreamView {
                 &replacement_streams,
                 scan_graph,
             )?
+        } else if let Some(layout) = point_layout {
+            intersection::scan_with_graph(semantic_bytes, scan_graph, layout)?
         } else {
-            intersection::scan_with_graph(semantic_bytes, scan_graph, point_layout)?
+            CurveScan::default()
         };
         Ok((
             StreamView {
@@ -443,6 +449,40 @@ mod tests {
             stream(crate::parasolid::ParasolidSubtype::Partition, 0),
             stream(crate::parasolid::ParasolidSubtype::Deltas, 1),
         ]
+    }
+
+    #[test]
+    fn wrapper_start_with_a_different_extent_cannot_pair_a_delta() {
+        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            crate::test_support::test_om::segment_stream_payload(),
+        )]);
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |ctx| {
+                let mut scan =
+                    crate::decode::scan(ctx, cadmpeg_core::decode::View::over_retained(&file))
+                        .unwrap();
+                let delta = scan
+                    .streams
+                    .iter()
+                    .position(|stream| stream.kind() == crate::parasolid::StreamKind::Deltas)
+                    .expect("indexed Deltas fixture");
+                let mut primary = scan.streams[delta].clone();
+                if let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &mut primary.body {
+                    *subtype = crate::parasolid::ParasolidSubtype::Partition;
+                }
+                primary.file_offset = 0;
+                scan.streams.insert(0, primary);
+                assert_eq!(
+                    super::paired_delta_streams(&scan).get(&0),
+                    Some(&vec![delta + 1])
+                );
+                scan.streams[delta + 1].consumed += 1;
+                assert!(super::paired_delta_streams(&scan).is_empty());
+            },
+        );
     }
 
     #[test]

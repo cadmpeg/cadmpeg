@@ -136,13 +136,14 @@ impl LayerClassification {
     }
 }
 
-/// Embedded Parasolid schema rows this codec reads with their own declared
-/// grammar. Every other schema is recovered on the kernel's residual path.
-const VERIFIED_KERNELS: [DialectId; 3] = [
-    cadmpeg_core::dialect_id!("parasolid:sch-sw-33103"),
-    cadmpeg_core::dialect_id!("parasolid:sch-sw-32001"),
-    cadmpeg_core::dialect_id!("parasolid:format-13006"),
-];
+impl crate::SldprtCodec {
+    /// Parasolid dialect grammars this host verifies under their own identities.
+    pub const VERIFIED_PARASOLID_GRAMMARS: &'static [DialectId] = &[
+        cadmpeg_core::dialect_id!("parasolid:sch-sw-33103"),
+        cadmpeg_core::dialect_id!("parasolid:sch-sw-32001"),
+        cadmpeg_core::dialect_id!("parasolid:format-13006"),
+    ];
+}
 
 /// Classify the host document and every framed Parasolid stream it carries.
 pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<LayerClassification, CodecError> {
@@ -169,7 +170,8 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<LayerClassific
     let declaration = crate::container::declared_sw_version(scan);
     let host = SldprtDialect::from_declaration(declaration);
     let mut layers = DialectLayers::of(host.matched(declaration));
-    let extra = cadmpeg_parasolid::extra_layers(kernels, &VERIFIED_KERNELS);
+    let extra =
+        cadmpeg_parasolid::extra_layers(kernels, crate::SldprtCodec::VERIFIED_PARASOLID_GRAMMARS);
     let mut losses = Vec::new();
     for message in cadmpeg_parasolid::push_extras(&mut layers, extra) {
         losses.push(SldprtLossCode::DialectLayerCollision.note(message));

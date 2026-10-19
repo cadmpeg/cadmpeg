@@ -10,7 +10,7 @@
 //! [`CatiaLossCode::note`] is the single practical construction path for a
 //! decode-time [`LossNote`] in this crate: it fixes the loss category and
 //! severity from the code so the two cannot drift apart across sites. The
-//! caller supplies the per-instance message.
+//! caller supplies the loss message.
 //! Local codes appear on
 //! [`LossNote::code`] under the `catia` namespace.
 //!
@@ -19,6 +19,7 @@
 //! and the categories this codec spans (geometry, topology, history, attribute,
 //! container) have no honest common default.
 //!
+
 use cadmpeg_ir::report::loss::LossKind;
 
 use cadmpeg_ir::report::{
@@ -92,14 +93,10 @@ pub(crate) enum CatiaLossCode {
     TopologyStandardSearchBounded,
     /// A planar face stated too many boundary points to classify its loops.
     TopologyPlanarBoundaryBounded,
-    /// E5 reference graph is closed; orientation uses an incidence-derived gauge.
-    TopologyE5GaugeSubstituted,
     /// E5 carriers decoded, but the reference graph did not close.
     TopologyE5GraphUnclosed,
-    /// B5 reference graph is closed; face sense and body kind use a topology gauge.
+    /// Complete B5 topology transfers under an inferred face-orientation and body-kind gauge.
     TopologyB5GaugeSubstituted,
-    /// A maximal reference-closed B5 subset transferred; remaining nodes stay native.
-    TopologyB5SubsetIncomplete,
     /// Object-stream graph exceeded the bounded work slice.
     TopologyObjectStreamWorkSliceExhausted,
     /// Object-stream and NURBS carriers decoded, but the B5 graph did not close.
@@ -108,7 +105,7 @@ pub(crate) enum CatiaLossCode {
     TopologyB5PopulationBounded,
     /// Zero-entity support runs retain face-local occurrences without closed topology.
     TopologyZeroEntitySupportsRetained,
-    /// Zero-entity endpoint-pair and endpoint-locus candidates exceeded their work bound.
+    /// The local source-bound endpoint contributor search reached its comparison limit.
     TopologyZeroEntityCandidatesBounded,
     /// Zero-entity topology transferred under a derived or source-bound gauge.
     TopologyZeroEntityGaugeSubstituted,
@@ -157,10 +154,8 @@ impl CatiaLossCode {
         Self::TopologyGraphNotBuilt,
         Self::TopologyStandardSearchBounded,
         Self::TopologyPlanarBoundaryBounded,
-        Self::TopologyE5GaugeSubstituted,
         Self::TopologyE5GraphUnclosed,
         Self::TopologyB5GaugeSubstituted,
-        Self::TopologyB5SubsetIncomplete,
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
         Self::TopologyB5PopulationBounded,
@@ -183,6 +178,8 @@ impl CatiaLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::TopologyStandardSearchBounded => "topology.standard-search-bounded",
+            Self::TopologyPlanarBoundaryBounded => "topology.planar-boundary-bounded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceRouteFellThrough => "source.route-fell-through",
             Self::SourceAnnotationCollision => "source.annotation-identity-collision",
@@ -202,12 +199,8 @@ impl CatiaLossCode {
             Self::TopologyBoundaryGraphNotEmitted => "topology.boundary-graph-not-emitted",
             Self::TopologyFbbRowsWithheld => "topology.fbb-rows-withheld",
             Self::TopologyGraphNotBuilt => "topology.graph-not-built",
-            Self::TopologyStandardSearchBounded => "topology.standard-search-bounded",
-            Self::TopologyPlanarBoundaryBounded => "topology.planar-boundary-bounded",
-            Self::TopologyE5GaugeSubstituted => "topology.e5-gauge-substituted",
             Self::TopologyE5GraphUnclosed => "topology.e5-graph-unclosed",
             Self::TopologyB5GaugeSubstituted => "topology.b5-gauge-substituted",
-            Self::TopologyB5SubsetIncomplete => "topology.b5-subset-incomplete",
             Self::TopologyObjectStreamWorkSliceExhausted => {
                 "topology.object-stream-work-slice-exhausted"
             }
@@ -244,7 +237,6 @@ impl CatiaLossCode {
             | Self::TopologyFbbRowsWithheld
             | Self::TopologyGraphNotBuilt
             | Self::TopologyE5GraphUnclosed
-            | Self::TopologyB5SubsetIncomplete
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
             | Self::TopologyZeroEntityNotTransferred
@@ -273,20 +265,18 @@ impl CatiaLossCode {
             | Self::GeometryFaceLocalFreeformNotTransferred
             | Self::GeometryRevolutionProfileUnbound
             | Self::GeometryLineProfileNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::TopologyBoundaryGraphNotEmitted
+            Self::TopologyStandardSearchBounded
+            | Self::TopologyPlanarBoundaryBounded
+            | Self::TopologyBoundaryGraphNotEmitted
             | Self::TopologyFbbRowsWithheld
             | Self::TopologyGraphNotBuilt
-            | Self::TopologyStandardSearchBounded
-            | Self::TopologyPlanarBoundaryBounded
-            | Self::TopologyE5GaugeSubstituted
             | Self::TopologyE5GraphUnclosed
             | Self::TopologyB5GaugeSubstituted
-            | Self::TopologyB5SubsetIncomplete
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
             | Self::TopologyB5PopulationBounded
-            | Self::TopologyZeroEntitySupportsRetained
             | Self::TopologyZeroEntityCandidatesBounded
+            | Self::TopologyZeroEntitySupportsRetained
             | Self::TopologyZeroEntityNotTransferred
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
@@ -357,10 +347,8 @@ mod tests {
                 "topology.graph-not-built",
                 "topology.standard-search-bounded",
                 "topology.planar-boundary-bounded",
-                "topology.e5-gauge-substituted",
                 "topology.e5-graph-unclosed",
                 "topology.b5-gauge-substituted",
-                "topology.b5-subset-incomplete",
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
                 "topology.b5-population-bounded",

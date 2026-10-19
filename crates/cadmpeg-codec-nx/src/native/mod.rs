@@ -10,6 +10,7 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use crate::decode::Scan;
 
+pub(crate) mod assembly_placement;
 mod attach;
 pub(crate) mod catalogue;
 pub(crate) mod display_jt;
@@ -19,6 +20,7 @@ pub(crate) mod history;
 pub(crate) mod model;
 pub(crate) mod om;
 mod parasolid;
+pub(crate) mod rmfastload_storage;
 mod segments;
 pub(crate) mod structure;
 pub(crate) mod substrate;
@@ -35,10 +37,6 @@ pub(crate) enum TypedNative {
 
 /// Attach a pre-extracted [`crate::native::model::NativeModel`] to `ir`: annotations, namespace arenas,
 /// and semantic islands. Build the model with [`crate::native::model::NativeModel::extract`].
-///
-/// Attachment is all-or-nothing. A [`CodecError::ResourceLimit`] propagates.
-/// Any other failure leaves `ir`, `annotations`, `unknowns` and `losses` as
-/// they were and appends one `nx/native.attachment-failed` loss to `losses`.
 pub(crate) fn attach_annotations(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -61,6 +59,70 @@ pub(crate) fn attach_container_layer(
     typed_native: TypedNative,
 ) -> Result<(), CodecError> {
     attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native)
+}
+
+/// Admit construction target byte contracts and complete surface allocations.
+pub(crate) fn admit_construction_records(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+    for record in namespace
+        .arena_iter_as_for_decode::<features::operation_record::FeatureOperationRecord>(
+            ctx,
+            "feature_operation_records",
+        )
+    {
+        record?;
+    }
+    for record in namespace
+        .arena_iter_as_for_decode::<features::named_target::FeatureConstructionNamedTarget>(
+            ctx,
+            "feature_construction_named_targets",
+        )
+    {
+        record?.validate_links(namespace)?;
+    }
+    for record in namespace
+        .arena_iter_as_for_decode::<features::swp104_branch::FeatureSwp104LeadingBranch>(
+            ctx,
+            "feature_swp104_leading_branches",
+        )
+    {
+        record?;
+    }
+    for record in namespace
+        .arena_iter_as_for_decode::<features::enlarge::FeatureEnlargeConstructionEnvelope>(
+            ctx,
+            "feature_enlarge_construction_envelopes",
+        )
+    {
+        record?;
+    }
+    for record in namespace
+        .arena_iter_as_for_decode::<features::extract_face::FeatureExtractFaceConstructionEnvelope>(
+            ctx,
+            "feature_extract_face_construction_envelopes",
+        )
+    {
+        record?;
+    }
+    for record in namespace.arena_iter_as_for_decode::<features::holes::FeatureSymbolicThread>(
+        ctx,
+        "feature_symbolic_threads",
+    ) {
+        record?;
+    }
+    for arena in [
+        "feature_operation_body_writes",
+        "feature_unlabeled_operation_body_writes",
+    ] {
+        for record in
+            namespace.arena_iter_as_for_decode::<features::FeatureOperationBodyWrite>(ctx, arena)
+        {
+            record?;
+        }
+    }
+    features::surface_allocation::admit_surface_allocations(ctx, namespace)
 }
 
 /// Failure injection into [`attach_annotations`] for decode tests.

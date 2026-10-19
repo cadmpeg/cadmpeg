@@ -685,7 +685,17 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     let canonical = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
+        (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
+        (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
+        (Some(serde_json::Value::String("35".into())), "Some(\"35\")"),
+        (Some(serde_json::Value::String("34".into())), "Some(\"34\")"),
+        (Some(serde_json::Value::String("33".into())), "Some(\"33\")"),
         (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
+        (Some(serde_json::Value::String("14".into())), "Some(\"14\")"),
+        (Some(serde_json::Value::String("15".into())), "Some(\"15\")"),
+        (Some(serde_json::Value::String("16".into())), "Some(\"16\")"),
+        (Some(serde_json::Value::String("17".into())), "Some(\"17\")"),
+        (Some(serde_json::Value::String("29".into())), "Some(\"29\")"),
         (None, "None"),
         (Some(serde_json::Value::Number(1.into())), "None"),
     ] {

@@ -1,5 +1,6 @@
 {
   "ir_version": "6",
+  "decode_depth": "full",
   "units": {
     "length": "millimeter"
   },
@@ -13,8 +14,8 @@
     "shells": [],
     "faces": [],
     "loops": [],
-    "coedges": [],
-    "eÿÿÿÿ": [],
+    "cÿÿÿÿes": [],
+    "edges": [],
     "vertices": [],
     "points": [],
     "surfaces": [],

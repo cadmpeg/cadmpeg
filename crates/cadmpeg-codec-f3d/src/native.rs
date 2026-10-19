@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#![deny(clippy::disallowed_methods)]
 //! Autodesk Fusion native design and construction-history records.
+
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::HashMap;
 
@@ -153,6 +154,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_parameter_scopes",
     "design_parameters",
     "design_record_headers",
+    "design_sheet_metal_settings",
     "design_sketch_placements",
     "design_surface_trim_operations",
     "design_types",
@@ -742,6 +744,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_sheet_metal_settings",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_sheet_metal_settings)
+        },
+        len: |model| model.design_sheet_metal_settings.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_surface_trim_operations",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -1285,6 +1297,10 @@ pub(crate) struct F3dNative {
     /// Sketch and construction-operation records that scope parameters.
     #[serde(default)]
     pub(crate) design_parameter_scopes: Vec<DesignParameterScope>,
+    /// MetaStream-bounded common sheet-metal settings frames.
+    #[serde(default)]
+    pub(crate) design_sheet_metal_settings:
+        Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
     /// Exact BRep-cell carriers owned by `SurfaceTrim` operations.
     #[serde(default)]
     pub(crate) design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
@@ -1494,6 +1510,7 @@ impl F3dNative {
             design_parameter_companions: read_arena!("design_parameter_companions"),
             design_parameter_owners: read_arena!("design_parameter_owners"),
             design_parameter_scopes: read_arena!("design_parameter_scopes"),
+            design_sheet_metal_settings: read_arena!("design_sheet_metal_settings"),
             design_surface_trim_operations: read_arena!("design_surface_trim_operations"),
             design_parameters: read_arena!("design_parameters"),
             design_entity_headers: read_arena!("design_entity_headers"),

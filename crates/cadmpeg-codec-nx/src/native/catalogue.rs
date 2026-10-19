@@ -6,6 +6,9 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use cadmpeg_core::CodecError;
+
+use super::assembly_placement::AssemblyPlacement;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::native::features::object_frame::DataBlockObjectFrame;
@@ -54,19 +57,17 @@ use super::om::{
 };
 use super::parasolid::{
     ParasolidAttributeDefinition, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
-    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
-    ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasRecord,
-    ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
-    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
-    ParasolidDeltasSchemaReferencePreamble, ParasolidDeltasTaggedReferenceLane,
-    ParasolidDeltasTermUseNumericTail, ParasolidDeltasTerminalNullReferences,
-    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
-    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
-    ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
-    ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
-    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidGroupRecord,
-    ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
-    ParasolidTermUseRecord, ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
+    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasPartitionPrefix,
+    ParasolidDeltasPmarkPacket, ParasolidDeltasRecord, ParasolidDeltasReferenceMarkerPacket,
+    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan, ParasolidDeltasSchemaNode,
+    ParasolidDeltasTaggedReferenceLane, ParasolidDeltasTerminalNullReferences,
+    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse,
+    ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
+    ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord,
+    ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
+    ParasolidEntityVectorRecord, ParasolidGroupRecord, ParasolidOffsetSurfaceRecord,
+    ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord, ParasolidTermUseRecord,
+    ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
 };
 use super::segments::{
     SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow, SegmentOmLink, SegmentStreamLink,
@@ -78,6 +79,12 @@ use super::structure::{
 use super::toggle::{SavedToggleEntry, SavedToggleStream};
 
 type CatalogueRow = FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, Exactness>;
+
+impl ContainerNoted for AssemblyPlacement {
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
+    }
+}
 
 /// Serialize a record family into its arena when non-empty.
 fn emit_arena<T: Serialize>(
@@ -625,11 +632,6 @@ impl StreamNoted for ParasolidDeltasBodyRevision {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasTermUseNumericTail {
-    fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
-    }
-}
 impl StreamNoted for ParasolidDeltasTaggedReferenceLane {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
@@ -640,12 +642,12 @@ impl StreamNoted for ParasolidDeltasReferenceTypeMap {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasReferenceStatePacket {
+impl StreamNoted for ParasolidDeltasPmarkPacket {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasSchemaReferencePreamble {
+impl StreamNoted for ParasolidDeltasPartitionPrefix {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -655,21 +657,12 @@ impl StreamNoted for ParasolidDeltasReferenceMarkerPacket {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasType150StatePacket {
+impl StreamNoted for ParasolidDeltasSchemaNode {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasInlineSchemaDeclaration {
-    fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
-    }
-}
-impl StreamNoted for ParasolidDeltasInlineBodyState {
-    fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
-    }
-}
+
 impl StreamNoted for ParasolidDeltasResidualSpan {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
@@ -808,11 +801,7 @@ fn note_parasolid_parasolid_intersection_records(
             &record.id,
             &source_stream,
             record.inflated_offset,
-            Some(if record.delta_twin {
-                "INTERSECTION_DATA"
-            } else {
-                "INTERSECTION"
-            }),
+            Some("INTERSECTION"),
         );
         a.exactness(&record.id, Exactness::ByteExact);
     }
@@ -1349,19 +1338,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_term_use_numeric_tails",
-        exactness: Exactness::ByteExact,
-        phase: Phase::GroupA {
-            tag: Some("TERM_USE_TAIL"),
-            note: |m, r, tag, a| {
-                note_per_stream(&m.parasolid.deltas_term_use_numeric_tails, r, tag, a);
-            },
-        },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_term_use_numeric_tails, r, ns),
-        len: |m| m.parasolid.deltas_term_use_numeric_tails.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
         arena: "parasolid_deltas_tagged_reference_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
@@ -1388,31 +1364,25 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_reference_state_packets",
+        arena: "parasolid_deltas_pmark_packets",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
-            tag: Some("DELTAS_REFERENCE_STATE"),
-            note: |m, r, tag, a| {
-                note_per_stream(&m.parasolid.deltas_reference_state_packets, r, tag, a);
-            },
+            tag: Some("DELTAS_PMARK"),
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_pmark_packets, r, tag, a),
         },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_reference_state_packets, r, ns),
-        len: |m| m.parasolid.deltas_reference_state_packets.len(),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_pmark_packets, r, ns),
+        len: |m| m.parasolid.deltas_pmark_packets.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_schema_reference_preambles",
+        arena: "parasolid_deltas_partition_prefixes",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
-            tag: Some("DELTAS_SCHEMA_REFERENCE_PREAMBLE"),
-            note: |m, r, tag, a| {
-                note_per_stream(&m.parasolid.deltas_schema_reference_preambles, r, tag, a);
-            },
+            tag: Some("DELTAS_PARTITION_PREFIX"),
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_partition_prefixes, r, tag, a),
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.deltas_schema_reference_preambles, r, ns)
-        },
-        len: |m| m.parasolid.deltas_schema_reference_preambles.len(),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_partition_prefixes, r, ns),
+        len: |m| m.parasolid.deltas_partition_prefixes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1429,42 +1399,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_type_150_state_packets",
+        arena: "parasolid_deltas_schema_nodes",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
-            tag: Some("DELTAS_TYPE_150_STATE"),
-            note: |m, r, tag, a| {
-                note_per_stream(&m.parasolid.deltas_type_150_state_packets, r, tag, a);
-            },
+            tag: Some("DELTAS_SCHEMA_NODE"),
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_schema_nodes, r, tag, a),
         },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_type_150_state_packets, r, ns),
-        len: |m| m.parasolid.deltas_type_150_state_packets.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "parasolid_deltas_inline_schema_declarations",
-        exactness: Exactness::ByteExact,
-        phase: Phase::GroupA {
-            tag: Some("DELTAS_INLINE_SCHEMA"),
-            note: |m, r, tag, a| {
-                note_per_stream(&m.parasolid.deltas_inline_schema_declarations, r, tag, a);
-            },
-        },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.deltas_inline_schema_declarations, r, ns)
-        },
-        len: |m| m.parasolid.deltas_inline_schema_declarations.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "parasolid_deltas_inline_body_states",
-        exactness: Exactness::ByteExact,
-        phase: Phase::GroupA {
-            tag: Some("DELTAS_INLINE_BODY_STATE"),
-            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_inline_body_states, r, tag, a),
-        },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_inline_body_states, r, ns),
-        len: |m| m.parasolid.deltas_inline_body_states.len(),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_schema_nodes, r, ns),
+        len: |m| m.parasolid.deltas_schema_nodes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1964,11 +1906,25 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             },
         },
         emit: |ctx, m, r, ns| {
-            let groups =
+            let _count =
                 m.om.operation_state_groups
                     .iter()
-                    .flat_map(OmRollForwardStateTable::groups)
-                    .collect::<Vec<_>>();
+                    .try_fold(0usize, |total, table| {
+                        total.checked_add(table.groups().len())
+                    })
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "{} exceeds its local bound",
+                            "NX roll-forward catalog group count"
+                        ))
+                    })?;
+
+            let mut groups = Vec::new();
+            groups.extend(
+                m.om.operation_state_groups
+                    .iter()
+                    .flat_map(OmRollForwardStateTable::groups),
+            );
             emit_arena(ctx, &groups, r, ns)
         },
         len: |m| {
@@ -2190,21 +2146,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_common_frames, r, ns),
         len: |m| m.features.feature_operation_common_frames.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "feature_operation_terminal_discriminators",
-        exactness: Exactness::ByteExact,
-        phase: Phase::ArenaOnly,
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.features.feature_operation_terminal_discriminators,
-                r,
-                ns,
-            )
-        },
-        len: |m| m.features.feature_operation_terminal_discriminators.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -2448,6 +2389,17 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.prototypes, r, ns),
         len: |m| m.structure.prototypes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "assembly_placements",
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupB {
+            tag: Some("ASSEMBLY_PLACEMENT"),
+            note: |m, r, tag, a| note_container(&m.om.assembly_placements, r, tag, a),
+        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.assembly_placements, r, ns),
+        len: |m| m.om.assembly_placements.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -2935,6 +2887,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_fset_index_lanes",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_fset_index_lanes, r, ns),
+        len: |m| m.features.feature_fset_index_lanes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_fset_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
@@ -3011,18 +2971,28 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_pattern_construction_fixed_lanes",
+        arena: "feature_construction_named_targets",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_construction_named_targets, r, ns)
+        },
+        len: |m| m.features.feature_construction_named_targets.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_pattern_construction_binary64_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
         emit: |ctx, m, r, ns| {
             emit_arena(
                 ctx,
-                &m.features.feature_pattern_construction_fixed_lanes,
+                &m.features.feature_pattern_construction_binary64_lanes,
                 r,
                 ns,
             )
         },
-        len: |m| m.features.feature_pattern_construction_fixed_lanes.len(),
+        len: |m| m.features.feature_pattern_construction_binary64_lanes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -3139,18 +3109,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_draft_construction_fixed_lanes",
+        arena: "feature_draft_construction_binary64_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
         emit: |ctx, m, r, ns| {
             emit_arena(
                 ctx,
-                &m.features.feature_draft_construction_fixed_lanes,
+                &m.features.feature_draft_construction_binary64_lanes,
                 r,
                 ns,
             )
         },
-        len: |m| m.features.feature_draft_construction_fixed_lanes.len(),
+        len: |m| m.features.feature_draft_construction_binary64_lanes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -3214,6 +3184,36 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_enlarge_construction_envelopes",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_enlarge_construction_envelopes,
+                r,
+                ns,
+            )
+        },
+        len: |m| m.features.feature_enlarge_construction_envelopes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_extract_face_construction_envelopes",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_extract_face_construction_envelopes,
+                r,
+                ns,
+            )
+        },
+        len: |m| m.features.feature_extract_face_construction_envelopes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_surface_construction_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
@@ -3226,6 +3226,21 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             )
         },
         len: |m| m.features.feature_surface_construction_references.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_studio_post_branch_references",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_studio_post_branch_references,
+                r,
+                ns,
+            )
+        },
+        len: |m| m.features.feature_studio_post_branch_references.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -3647,6 +3662,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::ArenaOnly,
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.rmfastload_object_id_tables, r, ns),
         len: |m| m.om.rmfastload_object_id_tables.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "rmfastload_physical_storages",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.rmfastload_physical_storages, r, ns),
+        len: |m| m.om.rmfastload_physical_storages.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

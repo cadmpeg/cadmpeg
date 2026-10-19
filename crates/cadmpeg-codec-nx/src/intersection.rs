@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod blend_bound_state;
 use blend_bound_state::BlendBoundState;
 pub(crate) mod chart_samples;
+pub(crate) mod limit_state;
 pub(crate) mod support_uv_values;
 use support_uv_values::{SupportUvPacking, SupportUvValues};
 
@@ -180,8 +181,8 @@ pub(crate) struct TermUse {
     pub(crate) xmt: NonNullXmt,
     /// Endpoint form, including its required leading count.
     pub(crate) form: TermUseForm,
-    /// Endpoint position in millimetres.
-    pub(crate) point: FiniteVector<3>,
+    /// Complete count-selected point or extended hvec storage.
+    pub(crate) data: limit_state::LimitState,
     /// Serialized record framing.
     pub(crate) framing: TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -268,9 +269,8 @@ pub(crate) struct UnchartedIntersection {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
-    missing_support: usize,
-    /// Two construction forms used one stream-local XMT identity.
-    duplicate_identity: usize,
+    pub(crate) missing_support: usize,
+    pub(crate) duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub(crate) missing_chart: usize,
     /// The start term-use reference did not resolve.
@@ -317,9 +317,6 @@ impl RejectionCounts {
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CurveScan {
-    /// Constructions remaining after cross-form collision selection and before
-    /// chart enrichment. Native record extraction reuses this lane
-    /// so it does not parse the same graph a second time.
     pub(crate) source_constructions: Vec<CompositeCurve>,
     /// Structurally valid constructions with a solved chart or a typed inbound
     /// curve reference.
@@ -388,24 +385,22 @@ pub(crate) fn scan_with_graph(
 ) -> Result<CurveScan, CodecError> {
     let uv = uv_records(stream);
     let mut constructions = graph.composite_curves();
-    append_intersection_data_curves(stream, &mut constructions);
+    append_declared_composite_curves(stream, &mut constructions);
     scan_with_auxiliaries(
         AuxiliaryMaps {
             charts: &chart_records(stream, point_layout),
-            terms: &term_records(stream),
+            terms: &term_records(stream, point_layout),
             uv: &uv,
             bridges: &blend_bound_records(stream),
         },
         graph,
         constructions,
-        CrossFormCollision::Reject,
     )
 }
 
-fn append_intersection_data_curves(stream: &[u8], constructions: &mut Vec<CompositeCurve>) {
-    let twins = topology::intersection_data_curves(stream);
-
-    constructions.extend(twins);
+fn append_declared_composite_curves(stream: &[u8], constructions: &mut Vec<CompositeCurve>) {
+    let declared = topology::declared_composite_curves(stream);
+    constructions.extend(declared);
 }
 
 /// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
@@ -426,17 +421,17 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     graph: &topology::Graph,
 ) -> Result<CurveScan, CodecError> {
     let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
-    let mut terms = term_records(base_stream);
+    let mut terms = term_records(base_stream, ChartPointLayout::Xyz3);
     let mut uv = uv_records(base_stream);
     let mut bridges = blend_bound_records(base_stream);
     for replacement_stream in replacement_streams {
         charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
-        terms.extend(term_records(replacement_stream));
+        terms.extend(term_records(replacement_stream, ChartPointLayout::Ext11));
         uv.extend(uv_records(replacement_stream));
         bridges.extend(blend_bound_records(replacement_stream));
     }
     let mut constructions = graph.composite_curves();
-    append_intersection_data_curves(stream, &mut constructions);
+    append_declared_composite_curves(stream, &mut constructions);
     scan_with_auxiliaries(
         AuxiliaryMaps {
             charts: &charts,
@@ -446,14 +441,7 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         },
         graph,
         constructions,
-        CrossFormCollision::PreferDeltaTwin,
     )
-}
-
-#[derive(Clone, Copy)]
-enum CrossFormCollision {
-    Reject,
-    PreferDeltaTwin,
 }
 
 #[derive(Clone, Copy)]
@@ -468,7 +456,6 @@ fn scan_with_auxiliaries(
     maps: AuxiliaryMaps<'_>,
     graph: &topology::Graph,
     constructions: Vec<CompositeCurve>,
-    cross_form_collision: CrossFormCollision,
 ) -> Result<CurveScan, CodecError> {
     let AuxiliaryMaps {
         charts,
@@ -478,28 +465,17 @@ fn scan_with_auxiliaries(
     } = maps;
     let referenced_curves = graph.referenced_curve_xmts();
     let mut result = CurveScan::default();
-    let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
+    let mut counts = BTreeMap::<u32, usize>::new();
     for construction in &constructions {
-        let forms = forms_by_xmt.entry(construction.xmt).or_default();
-        forms.insert(construction.delta_twin);
-    }
-    let mut cross_form_xmts = BTreeSet::new();
-    for (xmt, forms) in forms_by_xmt {
-        if forms.len() > 1 {
-            cross_form_xmts.insert(xmt);
-        }
+        *counts.entry(construction.xmt).or_default() += 1;
     }
     let mut constructions = constructions;
     constructions.retain(|construction| {
-        if !cross_form_xmts.contains(&construction.xmt) {
-            return true;
-        }
-        match cross_form_collision {
-            CrossFormCollision::Reject => {
-                result.rejected.add(Rejection::DuplicateIdentity);
-                false
-            }
-            CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
+        if counts[&construction.xmt] == 1 {
+            true
+        } else {
+            result.rejected.add(Rejection::DuplicateIdentity);
+            false
         }
     });
     for construction in constructions.iter().copied() {
@@ -659,22 +635,16 @@ fn construction_supports(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Option<(NonNullXmt, Option<NonNullXmt>)> {
-    let (primary, bridge) = if construction.delta_twin {
-        (construction.references[0], construction.references[1])
-    } else {
-        // A present marker-3 values array explicitly reverses the serialized
-        // support order. Without that array, retain the type-38 references'
-        // order; no alternate order was serialized.
-        match construction.references[5]
-            .and_then(|target| uv.get(&u32::from(target)))
-            .map(SupportUvValues::packing)
-        {
-            Some(SupportUvPacking::Form3) => {
-                (construction.references[1], construction.references[0])
-            }
-            Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => {
-                (construction.references[0], construction.references[1])
-            }
+    // Both construction forms preserve the same serialized support slots.
+    // A single marker-3 lane selects original slot 1 as primary; marker 4
+    // and an absent unique values array preserve the serialized order.
+    let (primary, bridge) = match construction.references[5]
+        .and_then(|target| uv.get(&u32::from(target)))
+        .map(SupportUvValues::packing)
+    {
+        Some(SupportUvPacking::Form3) => (construction.references[1], construction.references[0]),
+        Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => {
+            (construction.references[0], construction.references[1])
         }
     };
     let primary = u32::from(primary?);
@@ -1031,37 +1001,52 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
     ))
 }
 
-fn term_records(stream: &[u8]) -> BTreeMap<u32, cadmpeg_ir::math::Point3> {
+fn term_records(
+    stream: &[u8],
+    layout: ChartPointLayout,
+) -> BTreeMap<u32, cadmpeg_ir::math::Point3> {
     let mut records = BTreeMap::new();
-    for term in term_use_records(stream) {
-        records.insert(u32::from(term.xmt), Point3::from(term.point.get()));
+    let mut duplicates = BTreeSet::new();
+
+    for term in term_use_records(stream, layout) {
+        insert_unique(
+            &mut records,
+            &mut duplicates,
+            u32::from(term.xmt),
+            Point3::from(term.data.point().get()),
+        );
     }
     records
 }
 
-/// Decode complete direct, escaped, and descriptor-inline `term_use` records.
-pub(crate) fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
-    let mut out = BTreeMap::new();
-    let mut duplicates = BTreeSet::new();
-
+/// Retain complete physical LIMIT frames, including duplicate XMT identities.
+pub(crate) fn term_use_records(stream: &[u8], layout: ChartPointLayout) -> Vec<TermUse> {
+    let mut out = Vec::new();
     for tag in find_tags(stream, [0, 41]) {
-        if let Some((term, _)) = term_use_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, u32::from(term.xmt), term);
+        if let Some((term, _)) = term_use_at(stream, tag, layout) {
+            out.push(term);
         }
     }
     for label in find_iter(stream, b"term_use") {
         let tail = label + b"term_use".len();
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
-            if let Some((term, _)) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
-                insert_unique(&mut out, &mut duplicates, u32::from(term.xmt), term);
+            if let Some((term, _)) =
+                term_at(stream, pos, TermUseFraming::DescriptorInline, pos, layout)
+            {
+                out.push(term);
             }
         }
     }
-    out.into_values().collect()
+    out.sort_by_key(|a| a.pos);
+    out
 }
 
-pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)> {
+pub(crate) fn term_use_at(
+    stream: &[u8],
+    tag: usize,
+    layout: ChartPointLayout,
+) -> Option<(TermUse, usize)> {
     (stream.get(tag..tag + 2) == Some(&[0, 41])).then_some(())?;
     for escape in [0usize, 1] {
         if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
@@ -1073,7 +1058,7 @@ pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)>
         } else {
             TermUseFraming::Escaped
         };
-        if let Some(term) = term_at(stream, base, framing, tag) {
+        if let Some(term) = term_at(stream, base, framing, tag, layout) {
             return Some(term);
         }
     }
@@ -1085,6 +1070,7 @@ fn term_at(
     base: usize,
     framing: TermUseFraming,
     pos: usize,
+    layout: ChartPointLayout,
 ) -> Option<(TermUse, usize)> {
     let count = View::over_retained(stream)
         .child(base, stream.len())?
@@ -1098,15 +1084,16 @@ fn term_at(
         (2, b"TS") => TermUseForm::Ts,
         _ => return None,
     };
+    let (data, end) = limit_state::LimitState::read(stream, payload.checked_add(2)?, form, layout)?;
     Some((
         TermUse {
             xmt,
             form,
-            point: point_m(stream, payload + 2)?,
+            data,
             framing,
             pos,
         },
-        payload.checked_add(26)?,
+        end,
     ))
 }
 

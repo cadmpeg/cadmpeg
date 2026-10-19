@@ -1385,7 +1385,7 @@ A deltas stream groups its records into change sets. Each change set carries a *
 
 Roster entries name same-site nodes by attribute and node class, mixing topology, geometry-carrier, and entity classes. Roster membership records that a node belongs to the change set; it does not determine whether the node persists in the final state — a roster names retained, rewritten, and superseded nodes alike. A rostered node with no stored record in any same-site stream has no payload; references to it resolve to nothing.
 
-A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition updates only a point coordinate; it does not replace the partition topology or carrier record. A deltas record with an absent identity fills that missing subordinate record. The change roster carries no relation to a superseded partition face.
+A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition does not replace the partition topology, point coordinate, or carrier record. A deltas record with an absent identity fills that missing subordinate record. The change roster carries no relation to a superseded partition face.
 
 Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
 and FACE nodes are combined before body membership is validated. A deltas

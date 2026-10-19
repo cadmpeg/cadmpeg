@@ -16,10 +16,14 @@ use construction_records::unique_offset_data_block_id;
 
 pub(super) mod delete;
 pub(super) mod draft;
+pub(super) mod enlarge;
+pub(super) mod extract_face;
 pub(super) mod extrude_32;
 pub(super) mod fset;
+pub(super) mod fset_indices;
 use self::fset::FeatureFsetReferenceGroup;
 pub(super) mod holes;
+pub(super) mod named_target;
 pub(super) mod pattern;
 pub(super) mod payload_name;
 pub(super) mod point_scalar_lane;
@@ -40,9 +44,10 @@ mod common_frame_wire;
 mod datum_plane_wire;
 pub(super) mod object_frame;
 pub(super) mod operation_record;
+pub(super) mod surface_allocation;
 pub(super) mod surface_branches;
 pub(super) mod swp104_branch;
-pub(super) mod terminal_discriminator;
+pub(super) mod symbolic_thread;
 pub(super) mod thru_curve_branches;
 pub(super) mod unlabeled_record;
 use crate::native::om::column_row::{
@@ -145,7 +150,7 @@ pub(super) fn feature_operation_chronological_labels(
     ordered
 }
 
-/// Exact body-write frame retained from one feature operation.
+/// A checked body-write frame or serialized ordered-list pair.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "body_write_wire::BodyWriteWire")]
 pub(super) struct FeatureOperationBodyWrite {
@@ -2206,7 +2211,7 @@ pub(super) struct FeatureSketchPayloadNamedRecord {
     payload_end_offset: u64,
 }
 
-/// Complete named two-dimensional point in a reconstructed sketch payload.
+/// Complete named two-scalar record in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct FeatureSketchPoint {
     /// Globally unique point identity.
@@ -2217,9 +2222,9 @@ pub(super) struct FeatureSketchPoint {
     pub(super) named_record: String,
     /// Exact `Point<decimal>` source name.
     pub(super) name: String,
-    /// Ordered scalar fields carrying the two coordinates.
+    /// Ordered scalar fields carrying the two native values.
     pub(super) scalar_fields: [String; 2],
-    /// Ordered native coordinate values.
+    /// Ordered native scalar values; no solved axes or unit are assigned.
     pub(super) coordinates: cadmpeg_ir::units::FiniteVector<2>,
 }
 
@@ -2368,7 +2373,7 @@ pub(super) struct FeatureSketchPrecedingNamedPointUse {
     pub(super) source_offset: u64,
 }
 
-/// Exact identity of one solved sketch point across its payload and reference lanes.
+/// Exact native binding of a named scalar group to its reference lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "FeatureSketchPointUseWire")]
 pub(super) struct FeatureSketchPointUse {
@@ -2544,7 +2549,7 @@ pub(super) struct FeatureProjectedCurveReference {
     pub(super) id: String,
     /// Owning `CPROJ` or `CPROJ_CMB` operation label.
     pub(super) operation_label: String,
-    /// Zero-based order among the field's non-repeated references.
+    /// Zero-based order among the field's serialized reference occurrences.
     pub(super) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
@@ -2615,7 +2620,7 @@ pub(super) struct FeatureSurfaceConstructionReference {
     pub(super) id: String,
     /// Owning `SKIN`, `Studio Surface`, or `THRU_CURVE` operation label.
     pub(super) operation_label: String,
-    /// Zero-based slot order in the exact common envelope.
+    /// Zero-based slot order in the owning exact reference field.
     pub(super) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
@@ -2648,20 +2653,6 @@ pub(super) struct FeatureThruCurveConstructionEnvelope {
     trailing_value: NativeBytes<[u8; 2]>,
     /// Absolute source offset of the discriminator.
     source_offset: u64,
-}
-
-/// Exact logical payload reconstructed from an ordered surface-construction graph.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct FeatureSurfaceConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub(super) id: String,
-    /// Owning `SKIN` or `Studio Surface` operation label.
-    pub(super) operation_label: String,
-    /// Ordered construction-reference records.
-    construction_references: [String; 14],
-    /// Ordered source blocks and the hash of their concatenated bytes.
-    #[serde(flatten)]
-    content: FeaturePayloadContent<[FeaturePayloadBlock; 14]>,
 }
 
 /// One printable string frame in a reconstructed surface payload.
@@ -3571,6 +3562,18 @@ fn visit_feature_history_operation_records(
 ) -> Result<(), CodecError> {
     visit_feature_history_sections(container, |section, key, entry_offset| {
         for (ordinal, record) in section.operation_records_with_label_ordinals() {
+            let record = if let Some(core) =
+                crate::om::operation_core::core_for_decode(record.payload_view(), &section.types)
+            {
+                record.bound_payload(core.byte_len()).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "{} exceeds its local bound",
+                        "NX operation core bound"
+                    ))
+                })?
+            } else {
+                record
+            };
             visit(section, key, entry_offset, ordinal, record);
         }
         Ok(())
@@ -3815,7 +3818,7 @@ pub(super) fn feature_operation_records(
     let mut failure = None;
     visit_feature_history_operation_records(
         container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
+        |section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
@@ -3867,6 +3870,16 @@ pub(super) fn feature_operation_records(
                     ),
                     stable_identity,
                     span,
+                    core: crate::om::operation_core::core_for_decode(
+                        record.payload_view(),
+                        &section.types,
+                    )
+                    .map(|core| core.retain())
+                    .transpose()?,
+                    linked_face_payload: crate::om::linked_face::payload_for_decode(
+                        record.payload_view(),
+                        &section.types,
+                    ),
                 })
             })();
             match item {
@@ -3929,21 +3942,23 @@ pub(super) fn feature_unlabeled_operation_body_writes(
     let mut writes = Vec::new();
     visit_feature_history_unlabeled_operation_records(
         container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
+        |section, section_key, entry_offset, operation_ordinal, record| {
             let decoded = crate::om::unlabeled_operation_body_write_frames(record);
-            for (ordinal, write) in decoded.into_iter().enumerate() {
-                let Some(offset) =
-                    entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
-                else {
-                    continue;
-                };
-                let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
-                    write.body_identity(),
-                    write.group_node(),
-                    write.endpoint_tag(),
-                    write.body_image(),
-                    offset,
-                ) else {
+            let _class_work = decoded
+                .len()
+                .checked_mul(crate::om::body_write::BODY_IMAGE_CLASS.len())
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "{} exceeds its local bound",
+                        "resolve NX body-write endpoint classes"
+                    ))
+                })?;
+            for (ordinal, write) in decoded
+                .into_iter()
+                .filter(|write| write.selects_body_image_class(&section.types))
+                .enumerate()
+            {
+                let Some(frame) = write.relocated(entry_offset) else {
                     continue;
                 };
                 let id = format_feature_history_id(
@@ -3990,24 +4005,31 @@ pub(super) fn feature_operation_body_writes(
     let mut failure = None;
     visit_feature_history_operation_records(
         container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
+        |section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
-            let decoded = crate::om::operation_body_write_frames(record.payload_view());
-            for (ordinal, write) in decoded.into_iter().enumerate() {
-                let Some(offset) =
-                    entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
-                else {
-                    continue;
-                };
-                let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
-                    write.body_identity(),
-                    write.group_node(),
-                    write.endpoint_tag(),
-                    write.body_image(),
-                    offset,
-                ) else {
+            let decoded = match if let Some(crate::om::operation_core::CoreView::MoveFace(core)) =
+                crate::om::operation_core::core_for_decode(record.payload_view(), &section.types)
+            {
+                core.writes(record.payload_offset())
+            } else {
+                Ok(crate::om::operation_body_write_frames(
+                    record.payload_view(),
+                ))
+            } {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            for (ordinal, write) in decoded
+                .into_iter()
+                .filter(|write| write.selects_body_image_class(&section.types))
+                .enumerate()
+            {
+                let Some(frame) = write.relocated(entry_offset) else {
                     continue;
                 };
                 let item = (|| -> Result<FeatureOperationBodyWrite, CodecError> {
@@ -4220,15 +4242,15 @@ pub(super) fn feature_operation_body_partition_uses(
     let sole_writes = sole_by_key(writes, |write| write.id.as_str());
     let sole_bindings = sole_by_key(bindings, |binding| binding.id.as_str());
     let partitions = body_history_partition_streams(bindings, streams);
-    let groups_by_partition_node = group_pairs(groups.iter().filter_map(|group| {
+    let _groups_by_partition_node = group_pairs(groups.iter().filter_map(|group| {
         Some((
             (group.origin.partition_stream_ordinal()?, group.node_id),
             group.id.as_str(),
         ))
     }));
-    let members_by_partition_node = group_pairs(group_members.iter().map(|member| {
+    let _members_by_partition_node = group_pairs(group_members.iter().map(|member| {
         (
-            (member.partition_stream_ordinal, member.group_node_id),
+            (member.primary_stream_ordinal, member.group_node_id),
             member.id.as_str(),
         )
     }));
@@ -4250,19 +4272,20 @@ pub(super) fn feature_operation_body_partition_uses(
         else {
             continue;
         };
-        let key = (partition_stream_ordinal, write.frame.group_node().value());
-        let parasolid_group_records = groups_by_partition_node
-            .get(&key)
-            .into_iter()
-            .flatten()
-            .map(|id| (*id).to_owned())
-            .collect();
-        let parasolid_group_members = members_by_partition_node
-            .get(&key)
-            .into_iter()
-            .flatten()
-            .map(|id| (*id).to_owned())
-            .collect();
+        let mut parasolid_group_records = Vec::new();
+        for group in groups.iter().filter(|group| {
+            group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
+                && group.node_id == write.frame.group_node().value()
+        }) {
+            parasolid_group_records.push(group.id.clone());
+        }
+        let mut parasolid_group_members = Vec::new();
+        for member in group_members.iter().filter(|member| {
+            member.primary_stream_ordinal == partition_stream_ordinal
+                && member.group_node_id == write.frame.group_node().value()
+        }) {
+            parasolid_group_members.push(member.id.clone());
+        }
         let item = FeatureOperationBodyPartitionUse {
             id: write
                 .id
@@ -4299,7 +4322,7 @@ pub(super) fn feature_body_write_group_partition_uses(
     let mut members_by_partition_node = BTreeMap::<(u32, u32), Vec<_>>::new();
     for member in group_members {
         members_by_partition_node
-            .entry((member.partition_stream_ordinal, member.group_node_id))
+            .entry((member.primary_stream_ordinal, member.group_node_id))
             .or_default()
             .push(member);
     }
@@ -4307,12 +4330,15 @@ pub(super) fn feature_body_write_group_partition_uses(
     for write in writes.iter().chain(unlabeled_writes) {
         let id = write.id.as_str();
         let group_node = write.frame.group_node().value();
-        let node_groups = groups_by_node
+        let _node_groups = groups_by_node
             .get(&group_node)
             .map_or(&[][..], Vec::as_slice);
         let mut partition = None;
         let mut valid = true;
-        for group in node_groups {
+        for group in groups.iter().filter(|group| {
+            group.node_id == group_node
+                && group.origin.stream_kind() != crate::parasolid::StreamKind::Plain
+        }) {
             match (partition, group.origin.partition_stream_ordinal()) {
                 (None, Some(ordinal)) => partition = Some(ordinal),
                 (Some(expected), Some(actual)) if expected == actual => {}
@@ -4329,15 +4355,17 @@ pub(super) fn feature_body_write_group_partition_uses(
             continue;
         }
         let mut parasolid_group_records = Vec::new();
-        for group in node_groups {
+        for group in groups.iter().filter(|group| {
+            group.node_id == group_node
+                && group.origin.stream_kind() != crate::parasolid::StreamKind::Plain
+        }) {
             parasolid_group_records.push(group.id.clone());
         }
         let mut parasolid_group_members = Vec::new();
-        for member in members_by_partition_node
-            .get(&(partition_stream_ordinal, group_node))
-            .into_iter()
-            .flatten()
-        {
+        for member in group_members.iter().filter(|member| {
+            member.primary_stream_ordinal == partition_stream_ordinal
+                && member.group_node_id == group_node
+        }) {
             parasolid_group_members.push(member.id.clone());
         }
         let use_record = FeatureBodyWriteGroupPartitionUse {

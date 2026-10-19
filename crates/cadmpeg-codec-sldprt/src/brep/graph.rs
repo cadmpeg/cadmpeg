@@ -1208,8 +1208,7 @@ fn append_entity_facts(target: &mut entity::Facts, mut source: entity::Facts) {
 /// Decode related partition and deltas streams as one record source.
 ///
 /// Partition records are the base set. Deltas records fill missing subordinate
-/// records and point updates, but do not replace a same-identity partition
-/// topology or carrier record. `stream` names the combined provenance source.
+/// records. `stream` names the combined provenance source.
 pub(crate) fn decode_bodies(
     ctx: &DecodeContext<'_>,
     bodies: &[(&[u8], &StreamHeader)],

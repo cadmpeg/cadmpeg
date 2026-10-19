@@ -67,6 +67,7 @@ mod pmi;
 mod resource;
 mod sketch;
 mod solve;
+mod storage_property;
 mod unique_index;
 mod value_block;
 mod variant;
@@ -101,7 +102,6 @@ pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
-
     fn detect_impl(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -115,7 +115,6 @@ impl CodecBackend for CatiaCodec {
             Ok(Confidence::No)
         }
     }
-
     fn inspect_impl(
         &self,
         ctx: &DecodeContext<'_>,

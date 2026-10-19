@@ -10,8 +10,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use std::collections::HashSet;
-
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
@@ -46,11 +44,8 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
 ///
-/// When [`DecodeOptions::depth`] is [`DecodeDepth::Container`], the result
-/// contains source metadata and container diagnostics without entity decoding.
-///
-/// [`DecodeOptions::depth`]: cadmpeg_ir::DecodeOptions::depth
-/// [`DecodeDepth::Container`]: cadmpeg_core::decode::DecodeDepth::Container
+/// When [`DecodeOptions::container_only`] is set, the result contains source
+/// metadata and container diagnostics without entity decoding.
 ///
 /// Otherwise each route in [`crate::families::ROUTES`] whose applicability
 /// predicate accepts the scanned variant is tried in table order; the first to
@@ -231,7 +226,7 @@ fn finish_decode(
     // The fall-through statements say which route refused and where the decode
     // went next.
     for statement in fell_through {
-        let message = statement.to_owned();
+        let message = (statement).to_owned();
         report
             .losses
             .push(CatiaLossCode::SourceRouteFellThrough.note(message));
@@ -245,7 +240,7 @@ fn finish_decode(
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
-    let native = CatiaNative::decode_with_record_sources(
+    let mut native = CatiaNative::decode_with_record_sources(
         ctx,
         &scan.data,
         &consolidated_record_sources,
@@ -259,29 +254,22 @@ fn finish_decode(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
     );
-    let modeling_object_records = native
+    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
+    let modeling_object_records = (native
         .object_graphs
         .iter()
         .filter(|graph| modeling_graph_scope.contains(graph.id.as_str()))
-        .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str()))
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
+        .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str())))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
-    let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
-        ctx,
+    sketch::frame::transfer(
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
-    )?;
-    let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
-        ctx,
-        &mut ir,
-        &native,
-        &design_feature_transfer,
-        &modeling_graph_scope,
-    )?;
+    );
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         ctx,
         &mut ir,
@@ -303,7 +291,6 @@ fn finish_decode(
         &mut annotations,
         &modeling_graph_scope,
     )?;
-    design_feature_transfer.assign_parameter_owners(&mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
         ctx,
         &mut ir,
@@ -540,15 +527,19 @@ fn finish_decode(
         .legacy_entity_runs
         .iter()
         .map(|run| {
-            let evaluation_keys: HashSet<(u32, u64)> =
-                crate::native::legacy_evaluation_roles(&run.role_selectors)
-                    .map(|(entity_id, value_offset, _)| (entity_id, value_offset))
-                    .collect();
+            let evaluation_name_bound = |entity_id, value_offset| {
+                run.role_selectors.iter().any(|role| {
+                    role.entity_id == entity_id
+                        && role.field_code == Some(0x17c4)
+                        && role.end_offset().and_then(|offset| offset.checked_add(6))
+                            == Some(value_offset)
+                })
+            };
             run.scalar_values
                 .iter()
                 .filter(|value| {
                     value.name.is_some()
-                        && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
+                        && evaluation_name_bound(value.entity_id, value.byte_offset)
                 })
                 .count()
                 + run
@@ -556,7 +547,7 @@ fn finish_decode(
                     .iter()
                     .filter(|value| {
                         value.name.is_some()
-                            && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
+                            && evaluation_name_bound(value.entity_id, value.byte_offset)
                     })
                     .count()
                 + run
@@ -564,7 +555,7 @@ fn finish_decode(
                     .iter()
                     .filter(|value| {
                         value.name.is_some()
-                            && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
+                            && evaluation_name_bound(value.entity_id, value.byte_offset)
                     })
                     .count()
         })
@@ -731,7 +722,14 @@ fn finish_decode(
     let mut e9_scalar_entity_value_packet_count = 0;
     for record in &native.entity_records {
         let fields = record.value_fields();
-        entity_value_field_count += fields.len();
+        entity_value_field_count = entity_value_field_count
+            .checked_add(fields.len())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "catia_entity_value_field_count"
+                ))
+            })?;
         for packet in record.value_packets(&fields) {
             match packet {
                 entity_table::EntityValuePacket::Compact { .. } => {
@@ -857,7 +855,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_expression())
-        .fold(
+        .try_fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, placeholder, parser, boolean, opened, typed), expression| {
                 let (placeholder, parser, boolean, opened) = match expression.framing {
@@ -874,16 +872,16 @@ fn finish_decode(
                         ..
                     } => (placeholder, parser, boolean, opened + 1),
                 };
-                (
+                Ok::<_, CodecError>((
                     total + 1,
                     placeholder,
                     parser,
                     boolean,
                     opened,
                     typed + usize::from(expression.signature().is_some()),
-                )
+                ))
             },
-        );
+        )?;
     let parameter_value_count = native
         .entity_records
         .iter()
@@ -1028,11 +1026,11 @@ fn finish_decode(
         .iter()
         .map(|object| object.definition_values.len())
         .sum::<usize>();
-    let owned_definition_value_ids = native
+    let owned_definition_value_ids = (native
         .design_objects
         .iter()
-        .flat_map(|object| object.definition_values.iter().map(String::as_str))
-        .collect::<std::collections::HashSet<_>>();
+        .flat_map(|object| object.definition_values.iter().map(String::as_str)))
+    .collect::<std::collections::HashSet<_>>();
     let unowned_definition_value_count = native
         .entity_records
         .iter()
@@ -1346,22 +1344,22 @@ fn finish_decode(
         .filter_map(|instance| instance.inputs.as_ref())
         .map(Vec::len)
         .sum::<usize>();
-    let distinct_relation_program_input_entity_count = native
+    let distinct_relation_program_input_entity_count = (native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.inputs.as_ref())
         .flatten()
-        .filter_map(|input| input.entity.entity())
-        .collect::<std::collections::HashSet<_>>()
-        .len();
-    let instanced_relation_expression_count = native
+        .filter_map(|input| input.entity.entity()))
+    .collect::<std::collections::HashSet<_>>()
+    .len();
+    let instanced_relation_expression_count = (native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.relation_expression.as_deref())
-        .collect::<std::collections::HashSet<_>>()
-        .len();
+        .filter_map(|instance| instance.relation_expression.as_deref()))
+    .collect::<std::collections::HashSet<_>>()
+    .len();
     let relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
@@ -1484,12 +1482,12 @@ fn finish_decode(
                 .all(|link| link.intervening_entities.is_some())
         })
         .count();
-    let schema_configuration_entities = native
+    let schema_configuration_entities = (native
         .entity_records
         .iter()
         .filter(|entity| entity.schema_configuration_record().is_some())
-        .map(|entity| entity.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
+        .map(|entity| entity.id.as_str()))
+    .collect::<std::collections::HashSet<_>>();
     let schema_configuration_row_intervening_schema_configuration_count = native
         .schema_configuration_row_chains
         .iter()
@@ -1499,22 +1497,22 @@ fn finish_decode(
         .filter_map(|reference| reference.entity())
         .filter(|entity| schema_configuration_entities.contains(entity))
         .count();
-    let formula_referenced_relation_expressions = native
+    let formula_referenced_relation_expressions = (native
         .entity_records
         .iter()
         .filter_map(|record| record.formula_relation())
-        .filter_map(|formula| formula.expression_entity.reference.entity())
-        .collect::<std::collections::HashSet<_>>();
-    let program_referenced_relation_expressions = native
+        .filter_map(|formula| formula.expression_entity.reference.entity()))
+    .collect::<std::collections::HashSet<_>>();
+    let program_referenced_relation_expressions = (native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.relation_expression.as_deref())
-        .collect::<std::collections::HashSet<_>>();
-    let referenced_relation_expressions = formula_referenced_relation_expressions
+        .filter_map(|instance| instance.relation_expression.as_deref()))
+    .collect::<std::collections::HashSet<_>>();
+    let referenced_relation_expressions = (formula_referenced_relation_expressions
         .union(&program_referenced_relation_expressions)
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
+        .copied())
+    .collect::<std::collections::HashSet<_>>();
     let formula_referenced_relation_expression_count =
         formula_referenced_relation_expressions.len();
     let program_referenced_relation_expression_count =
@@ -1734,35 +1732,35 @@ fn finish_decode(
         .iter()
         .filter(|object| object.owner_record.is_none())
         .count();
-    let object_records_by_id = native
+    let object_records_by_id = (native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record))
-        .collect::<std::collections::HashMap<_, _>>();
+        .map(|record| (record.id.as_str(), record)))
+    .collect::<std::collections::HashMap<_, _>>();
     let unassigned_owner_slot_count = object_records_by_id
         .values()
         .filter(|record| record.has_unassigned_owner())
         .count();
-    let structurally_owned_records = native
+    let structurally_owned_records = (native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
-        .flat_map(|object| object.fields.iter().map(String::as_str))
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
+        .flat_map(|object| object.fields.iter().map(String::as_str)))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
     let structurally_owned_definition_chain_value_count = native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
         .map(|object| object.definition_chain_values.len())
         .sum::<usize>();
-    let structurally_owned_definition_chain_value_ids = native
+    let structurally_owned_definition_chain_value_ids = (native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
-        .flat_map(|object| object.definition_chain_values.iter().map(String::as_str))
-        .collect::<std::collections::HashSet<_>>();
+        .flat_map(|object| object.definition_chain_values.iter().map(String::as_str)))
+    .collect::<std::collections::HashSet<_>>();
     let unowned_definition_chain_value_count = native
         .entity_records
         .iter()
@@ -1819,34 +1817,30 @@ fn finish_decode(
                 .is_some_and(|record| record.has_unassigned_owner())
         })
         .count();
-    let transferred_formula_design_records = formula_transfer
+    let transferred_formula_design_records = (formula_transfer
         .consumed_object_records
         .intersection(&structurally_owned_records)
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
-    let transferred_principal_plane_records = design_feature_transfer
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
+    let transferred_principal_plane_records = (design_feature_transfer
         .principal_plane_records
         .intersection(&structurally_owned_records)
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
-    let transferred_design_feature_records = design_feature_transfer
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
+    let transferred_design_feature_records = (design_feature_transfer
         .consumed_records()
         .filter(|record| structurally_owned_records.contains(*record))
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
-    let transferred_design_records = transferred_formula_design_records
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
+    let transferred_design_records = (transferred_formula_design_records
         .union(&transferred_design_feature_records)
-        .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
-        .chain(
-            transferred_native_sketch_constraint_records.intersection(&structurally_owned_records),
-        )
         .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
     let unresolved_object_record_count = modeling_object_records
         .difference(&transferred_design_records)
         .count();
@@ -1861,11 +1855,17 @@ fn finish_decode(
                 .any(|field| !transferred_design_records.contains(field))
         })
         .count();
-    let value_field_count = native
-        .value_blocks
-        .iter()
-        .map(|block| crate::value_block::tokenize(&block.payload).len())
-        .sum::<usize>();
+    let mut value_field_count = 0usize;
+    for block in &native.value_blocks {
+        value_field_count = value_field_count
+            .checked_add(crate::value_block::tokenize(&block.payload).len())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "catia_value_field_count"
+                ))
+            })?;
+    }
     let value_selection_count = native
         .value_blocks
         .iter()
@@ -1880,40 +1880,6 @@ fn finish_decode(
                 .id
                 .as_str()
                 .starts_with("catia:consolidated:line-profile-curve#")
-        })
-        .count();
-    let transferred_native_sketch_entity_count = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| {
-            matches!(
-                entity.geometry.definition(),
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .count();
-    let mut native_operation_feature_ids = HashSet::new();
-    for feature in ir.model.features.iter().filter(|feature| {
-        feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
-    }) {
-        if !native_operation_feature_ids.contains(&feature.id) {
-            let id = feature.id.clone();
-            native_operation_feature_ids.insert(id);
-        }
-    }
-    let transferred_native_operation_parameter_count = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            parameter
-                .owner
-                .as_ref()
-                .is_some_and(|owner| native_operation_feature_ids.contains(owner))
         })
         .count();
     for (key, count) in [
@@ -1942,13 +1908,13 @@ fn finish_decode(
             native.consolidated_class61_records.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT,
-            native.consolidated_cone_faces.len(),
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_COUNT,
+            native.consolidated_chamfers.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT,
             native
-                .consolidated_cone_faces
+                .consolidated_chamfers
                 .iter()
                 .map(|face| face.parameter_points.len())
                 .sum(),
@@ -1962,8 +1928,8 @@ fn finish_decode(
             native.consolidated_cylinders.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_GROUP_COUNT,
-            native.consolidated_groups.len(),
+            crate::coverage::DECODED_CONSOLIDATED_CLASS60_RECORD_COUNT,
+            native.consolidated_class60_records.len(),
         ),
         (
             crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT,
@@ -2055,19 +2021,19 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_DISTANCE_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
-                .map(|stride| stride.topology_refs.len())
+                .map(|stride| stride.allocations[3..].len() + 1)
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_VERTEX_OWNER_DISTANCE_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
-                .map(|stride| stride.surface_support_refs.len())
+                .map(|stride| stride.allocations[1..3].len())
                 .sum(),
         ),
         (
@@ -2197,13 +2163,13 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_BOUND_EDGE_STRIDE_RECORD_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
                 .filter_map(|run| run.face.as_ref())
                 .flat_map(|face| &face.loops)
-                .map(|loop_record| loop_record.typed_records.len())
+                .map(|loop_record| loop_record.edge_stride_records.len())
                 .sum(),
         ),
         (
@@ -2228,12 +2194,8 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
-            native.zero_entity_endpoint_pair_candidates.len(),
-        ),
-        (
-            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT,
-            native.zero_entity_endpoint_locus_candidates.len(),
+            crate::coverage::DECODED_ZERO_ENTITY_ALLOCATION_EDGE_COUNT,
+            native.zero_entity_allocation_edges.len(),
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT,
@@ -3354,26 +3316,6 @@ fn finish_decode(
             transferred_principal_plane_records.len(),
         ),
         (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_COUNT,
-            design_feature_transfer.native_operation_records.len(),
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
-            design_feature_transfer.native_operation_definition_value_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
-            design_feature_transfer.native_operation_definition_chain_value_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
-            design_feature_transfer.native_operation_range_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
-            transferred_native_operation_parameter_count,
-        ),
-        (
             crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT,
             unresolved_object_record_count,
         ),
@@ -3381,10 +3323,6 @@ fn finish_decode(
         (
             crate::coverage::TRANSFERRED_SKETCH_ENTITY_COUNT,
             ir.model.sketch_entities.len(),
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT,
-            transferred_native_sketch_entity_count,
         ),
         (
             crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT,
@@ -3410,7 +3348,7 @@ fn finish_decode(
         .map_or(0, |count| count);
     if untransferred_line_profile_count > 0 {
         report.losses.push(
-            CatiaLossCode::GeometryLineProfileNotTransferred.note(format!(
+            (CatiaLossCode::GeometryLineProfileNotTransferred).note(format!(
                 "{untransferred_line_profile_count} consolidated line-profile record(s) retain \
              exact line geometry but were not transferred by the active geometry route."
             )),
@@ -3500,12 +3438,12 @@ fn finish_decode(
             .flat_map(|face| &face.loops)
             .map(|loop_record| loop_record.support_record_ordinals.len())
             .sum::<usize>();
-        let bound_typed_loop_reference_count = native
+        let bound_edge_stride_record_count = native
             .zero_entity_support_runs
             .iter()
             .filter_map(|run| run.face.as_ref())
             .flat_map(|face| &face.loops)
-            .map(|loop_record| loop_record.typed_records.len())
+            .map(|loop_record| loop_record.edge_stride_records.len())
             .sum::<usize>();
         let vertex_owner_binding_count = native
             .zero_entity_vertex_incidences
@@ -3516,8 +3454,7 @@ fn finish_decode(
             .zero_entity_ownership_roots
             .first()
             .map_or(0, |root| root.face_slots.len());
-        report.losses.push(
-            CatiaLossCode::TopologyZeroEntitySupportsRetained.note(format!(
+        report.losses.push((CatiaLossCode::TopologyZeroEntitySupportsRetained).note(format!(
                 "{} zero-entity surface-support run(s) retain {support_count} face-local \
                  occurrence(s), including {support_pcurve_count} complete parameter-space \
                  curve(s), {support_model_curve_count} with exact model-space carriers, \
@@ -3530,166 +3467,37 @@ fn finish_decode(
                  {oriented_loop_member_count} stored member sense(s), including \
                  {oriented_model_endpoint_count} sense-oriented model-space endpoint pair(s), \
                  {bound_support_member_count} member(s) bound to face-local support records and \
-                 {bound_typed_loop_reference_count} typed reference(s) bound to global records; {} \
+                 {bound_edge_stride_record_count} backward distance(s) bound to physical-edge records; {} \
                  edge-stride allocation tuple(s) remain separate, and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
                  adjacent vertex owner; {} ownership root(s) bind {ownership_face_count} face \
-                 allocation(s) through a shell and body; {} radial occurrence endpoint-pair \
-                 candidate(s) and {} \
-                 complete endpoint-locus candidate(s) are established from matching bounded \
-                 model-space endpoint and midpoint witnesses; curve coincidence, loop-to-use, \
-                 use-to-incidence, physical \
-                 endpoint identity remain unresolved; {} oriented-use \
-                 pair(s) remain separate.",
+                 allocation(s) through a shell and body; {} physical edge(s) have complete \
+                 source edge/use/support/incidence/vertex bindings; {} oriented-use pair(s) \
+                 remain retained. Geometry transfer requires complete carriers and validated \
+                 source endpoint coordinates.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_vertex_incidences.len(),
                 native.zero_entity_ownership_roots.len(),
-                native.zero_entity_endpoint_pair_candidates.len(),
-                native.zero_entity_endpoint_locus_candidates.len(),
+                native.zero_entity_allocation_edges.len(),
                 native.zero_entity_oriented_use_pairs.len(),
-            )),
-        );
+            )));
     }
     if modeling_scope_is_unresolved {
-        report
-            .losses
-            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note(format!(
+        report.losses.push(
+            (CatiaLossCode::HistoryModelingScopeUnresolved).note(format!(
                 "CATIA outer declarations do not unambiguously select one object graph physically \
              contained by the declared CATPrtCont stream; \
              {retained_unscoped_object_graph_count} retained object graph(s) with \
              {retained_unscoped_object_record_count} field record(s) remain outside the \
              modeling scope, and feature, formula, sketch, constraint, configuration, and \
              history authorship remains unresolved."
-            )));
+            )),
+        );
     }
     if unresolved_object_record_count != 0 {
-        report
-            .losses
-            .push(CatiaLossCode::HistoryObjectRecordsUnresolved.note(format!(
-            "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), \
-             {object_record_count} object-graph field record(s), including \
-             {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, \
-             {object_record_reference_count} payload reference(s), comprising \
-             {resolved_object_record_reference_count} resolved, \
-             {null_object_record_reference_count} terminal-null, and \
-             {unresolved_object_record_reference_count} unresolved identities, \
-             {entity_value_field_count} entity-value field(s), \
-             {entity_value_schema_selection_count} entity-value schema selection(s), \
-             {numeric_entity_value_pair_count} complete numeric entity-value pair(s), \
-             {reference_signature_count} complete reference-signature packet(s) containing \
-             {reference_signature_token_count} descriptor token(s) and selecting \
-             {resolved_reference_signature_entity_count} resolved, \
-             {null_reference_signature_entity_count} terminal-null, and \
-             {unresolved_reference_signature_entity_count} unresolved entity incidences, including \
-             {classified_reference_signature_entity_count} with a resolved class, \
-             {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), \
-             {compact_entity_value_packet_count} compact value packet(s), \
-             {layout_entity_value_packet_count} layout-bearing value packet(s), \
-             {e9_scalar_entity_value_packet_count} E9 scalar packet(s), \
-             {escaped_word_entity_suffix_count} escaped-word entity suffix(es), \
-             {token_8149_entity_suffix_count} standalone 8149 suffix token(s), \
-             {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), \
-             {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), \
-             {scalar_entity_suffix_value_count} scalar entity-suffix value(s), \
-             {unset_entity_suffix_value_count} unset entity-suffix value(s), \
-             {atom_entity_suffix_value_count} atom entity-suffix value(s), \
-             {separator_entity_suffix_value_count} separator entity-suffix value(s), \
-             {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), \
-             {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), \
-             {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), \
-             {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), \
-             {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), \
-             {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema \
-             selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte \
-             prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix \
-             value(s), comprising {control_e8_entity_suffix_value_count} E8 and \
-             {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} \
-             complete relation expression(s), {relation_program_instance_count} complete compound \
-             relation-program instance(s), comprising {lead12_relation_program_instance_count} \
-             lead-12 and {lead54_relation_program_instance_count} lead-54 frames, \
-             {resolved_relation_program_instance_count} resolved and \
-             {unresolved_relation_program_instance_count} unresolved program identities, with \
-             {resolved_relation_program_repeated_reference_count} resolved and \
-             {unresolved_relation_program_repeated_reference_count} unresolved repeated-reference \
-             identities, {resolved_lead12_relation_program_context_entity_count} resolved and \
-             {unresolved_lead12_relation_program_context_entity_count} unresolved lead-12 context \
-             identities, and {resolved_lead54_relation_program_trailing_entity_count} resolved and \
-             {unresolved_lead54_relation_program_trailing_entity_count} unresolved lead-54 \
-             trailing identities; {relation_expression_instance_count} select relation-expression \
-             programs, {other_relation_program_instance_count} select other resolved entities, and \
-             those relation-expression instances select {instanced_relation_expression_count} \
-             distinct expression entity or entities and retain \
-             {relation_program_parameter_dependency_count} parameter symbol occurrence(s), \
-             comprising {resolved_relation_program_parameter_dependency_count} uniquely resolved \
-             and {unresolved_relation_program_parameter_dependency_count} unresolved, including \
-             {ambiguous_relation_program_parameter_dependency_count} with multiple candidates; \
-             {typed_relation_program_instance_count} typed program instance(s) comprise \
-             {resolved_relation_program_input_instance_count} with complete ordered inputs and \
-             {unresolved_relation_program_input_instance_count} with incomplete input binding, \
-             retaining {resolved_relation_program_input_count} resolved input occurrence(s) \
-             selecting {distinct_relation_program_input_entity_count} distinct entity identity or \
-             identities; {schema_configuration_record_count} complete schema-configuration \
-             Configuration record(s) retain {resolved_schema_configuration_reference_count} \
-             resolved, {null_schema_configuration_reference_count} terminal-null, and \
-             {unresolved_schema_configuration_reference_count} unresolved reference identities; \
-             {schema_configuration_row_link_count} complete configrow link(s) retain \
-             {resolved_schema_configuration_row_class_count} resolved and \
-             {null_schema_configuration_row_class_count} terminal-null class identities plus \
-             {resolved_schema_configuration_row_successor_count} resolved and \
-             {null_schema_configuration_row_successor_count} terminal-null successor identities, \
-             with {ordered_schema_configuration_row_link_count} row link(s) in \
-             {complete_schema_configuration_row_chain_count} complete chain(s), comprising \
-             {resolved_schema_configuration_row_chain_terminal_count} resolved, \
-             {null_schema_configuration_row_chain_terminal_count} terminal-null, and \
-             {unresolved_schema_configuration_row_chain_terminal_count} unresolved terminals; \
-             {schema_configuration_row_source_interval_chain_count} source-ordered chain(s) retain \
-             {schema_configuration_row_intervening_entity_count} entity or entities from the open \
-             intervals between rows and successors, including \
-             {schema_configuration_row_intervening_schema_configuration_count} complete \
-             schema-configuration Configuration record(s), while \
-             {unordered_schema_configuration_row_link_count} row link(s) have unresolved order; \
-             {parameter_value_count} complete named parameter value(s), {range_interval_count} \
-             complete source-schema Range interval(s), comprising {range_interval_no_slot_count} \
-             no-slot production(s), {range_interval_nominal_count} finite nominal(s), \
-             {range_interval_finite_slot_count} finite deviation slot(s), and \
-             {range_interval_unset_slot_count} unset deviation slot(s), {constraint_range_count} \
-             complete constraint-range value(s), comprising {dimension_constraint_range_count} \
-             dimension and {complex_constraint_range_count} complex-constraint range(s), with \
-             {evaluated_constraint_range_count} finite evaluation(s) and \
-             {unset_constraint_range_count} unset evaluation(s), {definition_value_count} \
-             definition-bound suffix value(s), including {owned_definition_value_count} assigned \
-             to design objects and {unowned_definition_value_count} without a resolved owner, \
-             {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising \
-             {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset \
-             value(s), with {structurally_owned_definition_chain_evaluation_count} structurally \
-             owned and {unowned_definition_chain_evaluation_count} without a resolved structural \
-             owner; {unassigned_definition_chain_value_count} chain value(s), including \
-             {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal \
-             unassigned owner slots; {formula_relation_count} complete formula relation(s), \
-             comprising {resolved_formula_output_count} resolved, {null_formula_output_count} \
-             terminal-null, and {unresolved_formula_output_count} unresolved output identities, \
-             {formula_parameter_dependency_count} formula parameter symbol occurrence(s), \
-             comprising {resolved_formula_parameter_dependency_count} uniquely resolved and \
-             {unresolved_formula_parameter_dependency_count} unresolved, including \
-             {ambiguous_formula_parameter_dependency_count} with multiple candidates, \
-             {repeated_reference_suffix_count} repeated-reference suffix(es), \
-             {repeated_reference_schema_selection_count} repeated-reference schema selection(s), \
-             {definition_schema_selection_count} definition-schema selection(s), \
-             {design_object_owner_link_count} structural owner link(s), and \
-             {design_object_relation_count} exact outbound design-field relation occurrence(s), \
-             including {design_same_object_relation_count} within one design object, \
-             {design_reflexive_field_relation_count} reflexive field occurrence(s), and \
-             {design_unowned_field_relation_count} to fields without owner groups; \
-             {classified_design_object_count} design object(s) have class evidence and \
-             {unresolved_design_owner_count} owner identity or identities remain unresolved; {} \
-             typed parameter(s), including {} selected through complete relation-program inputs, \
-             {} exact formula, expression, or parameter field record(s), and {} exact \
-             principal-plane field record(s) transferred, while {unresolved_object_record_count} \
-             modeling-scope field record(s) across {unresolved_design_object_count} design \
-             object(s), neutral features with unresolved semantics, other parameters, sketch \
-             placement, geometry, profiles, constraints, configurations, and re-derivable history \
-             remain unresolved; {} sketch identity record(s) transfer.",
+        report.losses.push((CatiaLossCode::HistoryObjectRecordsUnresolved).note(format!(
+            "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), including {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, {object_record_reference_count} payload reference(s), comprising {resolved_object_record_reference_count} resolved, {null_object_record_reference_count} terminal-null, and {unresolved_object_record_reference_count} unresolved identities, {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_pair_count} complete numeric entity-value pair(s), {reference_signature_count} complete reference-signature packet(s) containing {reference_signature_token_count} descriptor token(s) and selecting {resolved_reference_signature_entity_count} resolved, {null_reference_signature_entity_count} terminal-null, and {unresolved_reference_signature_entity_count} unresolved entity incidences, including {classified_reference_signature_entity_count} with a resolved class, {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), {compact_entity_value_packet_count} compact value packet(s), {layout_entity_value_packet_count} layout-bearing value packet(s), {e9_scalar_entity_value_packet_count} E9 scalar packet(s), {escaped_word_entity_suffix_count} escaped-word entity suffix(es), {token_8149_entity_suffix_count} standalone 8149 suffix token(s), {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix value(s), comprising {control_e8_entity_suffix_value_count} E8 and {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} complete relation expression(s), {relation_program_instance_count} complete compound relation-program instance(s), comprising {lead12_relation_program_instance_count} lead-12 and {lead54_relation_program_instance_count} lead-54 frames, {resolved_relation_program_instance_count} resolved and {unresolved_relation_program_instance_count} unresolved program identities, with {resolved_relation_program_repeated_reference_count} resolved and {unresolved_relation_program_repeated_reference_count} unresolved repeated-reference identities, {resolved_lead12_relation_program_context_entity_count} resolved and {unresolved_lead12_relation_program_context_entity_count} unresolved lead-12 context identities, and {resolved_lead54_relation_program_trailing_entity_count} resolved and {unresolved_lead54_relation_program_trailing_entity_count} unresolved lead-54 trailing identities; {relation_expression_instance_count} select relation-expression programs, {other_relation_program_instance_count} select other resolved entities, and those relation-expression instances select {instanced_relation_expression_count} distinct expression entity or entities and retain {relation_program_parameter_dependency_count} parameter symbol occurrence(s), comprising {resolved_relation_program_parameter_dependency_count} uniquely resolved and {unresolved_relation_program_parameter_dependency_count} unresolved, including {ambiguous_relation_program_parameter_dependency_count} with multiple candidates; {typed_relation_program_instance_count} typed program instance(s) comprise {resolved_relation_program_input_instance_count} with complete ordered inputs and {unresolved_relation_program_input_instance_count} with incomplete input binding, retaining {resolved_relation_program_input_count} resolved input occurrence(s) selecting {distinct_relation_program_input_entity_count} distinct entity identity or identities; {schema_configuration_record_count} complete schema-configuration Configuration record(s) retain {resolved_schema_configuration_reference_count} resolved, {null_schema_configuration_reference_count} terminal-null, and {unresolved_schema_configuration_reference_count} unresolved reference identities; {schema_configuration_row_link_count} complete configrow link(s) retain {resolved_schema_configuration_row_class_count} resolved and {null_schema_configuration_row_class_count} terminal-null class identities plus {resolved_schema_configuration_row_successor_count} resolved and {null_schema_configuration_row_successor_count} terminal-null successor identities, with {ordered_schema_configuration_row_link_count} row link(s) in {complete_schema_configuration_row_chain_count} complete chain(s), comprising {resolved_schema_configuration_row_chain_terminal_count} resolved, {null_schema_configuration_row_chain_terminal_count} terminal-null, and {unresolved_schema_configuration_row_chain_terminal_count} unresolved terminals; {schema_configuration_row_source_interval_chain_count} source-ordered chain(s) retain {schema_configuration_row_intervening_entity_count} entity or entities from the open intervals between rows and successors, including {schema_configuration_row_intervening_schema_configuration_count} complete schema-configuration Configuration record(s), while {unordered_schema_configuration_row_link_count} row link(s) have unresolved order; {parameter_value_count} complete named parameter value(s), {range_interval_count} complete source-schema Range interval(s), comprising {range_interval_no_slot_count} no-slot production(s), {range_interval_nominal_count} finite nominal(s), {range_interval_finite_slot_count} finite deviation slot(s), and {range_interval_unset_slot_count} unset deviation slot(s), {constraint_range_count} complete constraint-range value(s), comprising {dimension_constraint_range_count} dimension and {complex_constraint_range_count} complex-constraint range(s), with {evaluated_constraint_range_count} finite evaluation(s) and {unset_constraint_range_count} unset evaluation(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset value(s), with {structurally_owned_definition_chain_evaluation_count} structurally owned and {unowned_definition_chain_evaluation_count} without a resolved structural owner; {unassigned_definition_chain_value_count} chain value(s), including {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal unassigned owner slots; {formula_relation_count} complete formula relation(s), comprising {resolved_formula_output_count} resolved, {null_formula_output_count} terminal-null, and {unresolved_formula_output_count} unresolved output identities, {formula_parameter_dependency_count} formula parameter symbol occurrence(s), comprising {resolved_formula_parameter_dependency_count} uniquely resolved and {unresolved_formula_parameter_dependency_count} unresolved, including {ambiguous_formula_parameter_dependency_count} with multiple candidates, {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed parameter(s), including {} selected through complete relation-program inputs, {} exact formula, expression, or parameter field record(s), and {} exact principal-plane field record(s) transferred, while {unresolved_object_record_count} modeling-scope field record(s) across {unresolved_design_object_count} design object(s), neutral features with unresolved semantics, other parameters, sketch placement, geometry, profiles, constraints, configurations, and re-derivable history remain unresolved; {} sketch identity record(s) transfer.",
             native.design_objects.len(),
             formula_transfer.typed_parameter_count,
             formula_transfer.relation_program_parameter_count,
@@ -3699,35 +3507,8 @@ fn finish_decode(
         )));
     }
     if !native.legacy_entity_runs.is_empty() {
-        report
-            .losses
-            .push(CatiaLossCode::HistoryLegacyRunsUnresolved.note(format!(
-            "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} \
-             complete compact schema program(s), containing {legacy_schema_identifier_count} \
-             complete identifier packet(s), and {legacy_entity_identity_count} source-ordered \
-             entity identity marker(s), comprising {legacy_identity_lead_81_count} lead-81, \
-             {legacy_identity_lead_82_count} lead-82, {legacy_identity_lead_e5_count} lead-E5, and \
-             {legacy_identity_lead_fd_count} lead-FD record(s), {legacy_role_selector_count} \
-             complete schema role selector(s), including {legacy_selected_role_count} unresolved \
-             schema-selected role name(s) and {legacy_role_field_binding_count} immediate \
-             schema-field binding(s), {legacy_schema_field_count} complete role-bounded schema \
-             field(s), {legacy_text_field_count} complete schema text field(s), including \
-             {legacy_e3_role_tail_text_field_count} with E3 paged-role tails and \
-             {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} \
-             typed expression/signature pair(s), including {legacy_parameter_relation_count} with \
-             exact parameter identities, {legacy_synchronous_state_count} relation update-state \
-             field(s), comprising {legacy_synchronous_relation_count} synchronous and \
-             {legacy_asynchronous_relation_count} asynchronous state(s), \
-             {legacy_type_descriptor_count} type descriptor(s), including \
-             {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} \
-             typed scalar evaluation(s), including {legacy_named_scalar_value_count} named \
-             scalar(s), {legacy_string_value_count} string value(s), including \
-             {legacy_named_string_value_count} named string(s), and {legacy_integer_value_count} \
-             signed integer value(s), including {legacy_named_integer_value_count} named \
-             integer(s); {} uniquely named, literal-typed parameter(s), including {} resolved \
-             through descriptor selectors, and {} local-input legacy formula(s) transferred, while \
-             remaining selector semantics, unbound relation ownership and parameters, unresolved \
-             selector types, feature semantics, and feature history remain unresolved.",
+        report.losses.push((CatiaLossCode::HistoryLegacyRunsUnresolved).note(format!(
+            "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} complete compact schema program(s), containing {legacy_schema_identifier_count} complete identifier packet(s), and {legacy_entity_identity_count} source-ordered entity identity marker(s), comprising {legacy_identity_lead_81_count} lead-81, {legacy_identity_lead_82_count} lead-82, {legacy_identity_lead_e5_count} lead-E5, and {legacy_identity_lead_fd_count} lead-FD record(s), {legacy_role_selector_count} complete schema role selector(s), including {legacy_selected_role_count} unresolved schema-selected role name(s) and {legacy_role_field_binding_count} immediate schema-field binding(s), {legacy_schema_field_count} complete role-bounded schema field(s), {legacy_text_field_count} complete schema text field(s), including {legacy_e3_role_tail_text_field_count} with E3 paged-role tails and {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_synchronous_state_count} relation update-state field(s), comprising {legacy_synchronous_relation_count} synchronous and {legacy_asynchronous_relation_count} asynchronous state(s), {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s), {legacy_string_value_count} string value(s), including {legacy_named_string_value_count} named string(s), and {legacy_integer_value_count} signed integer value(s), including {legacy_named_integer_value_count} named integer(s); {} uniquely named, literal-typed parameter(s), including {} resolved through descriptor selectors, and {} local-input legacy formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
             native.legacy_entity_runs.len(),
             formula_transfer.legacy_parameter_count,
             formula_transfer.legacy_selector_parameter_count,
@@ -3736,7 +3517,7 @@ fn finish_decode(
     }
     if unresolved_dimension_quantity_count != 0 {
         report.losses.push(
-            CatiaLossCode::AttributesDimensionQuantityUnresolved.note(format!(
+            (CatiaLossCode::AttributesDimensionQuantityUnresolved).note(format!(
                 "{unresolved_dimension_quantity_count} finite `Range`/`CstAttr_Dimension` \
                  scalar production(s) remain native because the admitted selectors, suffix \
                  framing, interval, and owner incidences do not assign a physical quantity."
@@ -3744,11 +3525,8 @@ fn finish_decode(
         );
     }
     if !native.value_blocks.is_empty() {
-        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note(format!(
-                "CATIA native data retains {} visualization value block(s), {value_field_count} \
-                 encoded field(s), and {value_selection_count} schema-selected presentation \
-                 value(s); {} display-color packet(s) remain without a proven typed face or body \
-                 target ({} packet(s) transferred), while other visualization fields remain native.",
+        report.losses.push((CatiaLossCode::AttributesVisualizationUnbound).note(format!(
+                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven typed face or body target ({} packet(s) transferred), while other visualization fields remain native.",
                 native.value_blocks.len(),
                 appearance_transfer.unresolved_packets(),
                 appearance_transfer.transferred_packets(),

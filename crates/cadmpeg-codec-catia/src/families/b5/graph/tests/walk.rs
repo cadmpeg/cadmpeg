@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::families::b5::graph::collect_object_stream_frames;
 use crate::families::b5::graph::controls::{B5EdgeTerminalControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::propagate_vertex_points;
@@ -463,8 +465,8 @@ fn object_stream_runs_cross_complete_vertex_allocations() {
 }
 
 #[test]
-fn object_stream_runs_cross_support_bound_external_pole_allocations() {
-    let bytes = crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
+fn object_stream_runs_include_complete_inline_surface_frames() {
+    let bytes = crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain();
 
     assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
 }
@@ -1141,7 +1143,10 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         payload: offset_payload,
     };
     let records = HashMap::from([(2, &source), (4, &offset_directrix)]);
-    let pcurves = BTreeMap::from([(3, object_stream_pcurve(7, vec![-3.0, 4.0], None))]);
+    let pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-10.0, -3.0, 4.0, 10.0], Some(20.0)),
+    )]);
     let source_extrusion = B5ExtrusionSurface {
         object_id: 10,
         direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
@@ -1165,7 +1170,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         ]),
     };
     let mut carrier_payload = vec![0x81, 0x84];
-    for value in [0.0f64, 0.0, 1.0, 2.0, 9.0, 1.0, 0.0, 35.0, 7.0] {
+    for value in [0.0f64, 0.0, 1.0, 2.0, 9.0, 1.0, 0.0, 5.0, 2.0] {
         carrier_payload.extend_from_slice(&value.to_le_bytes());
     }
     carrier_payload.extend_from_slice(&[0x01, 0x09]);
@@ -1233,15 +1238,63 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         None
     );
 
-    let mut increasing_auxiliary_scalars = carrier;
     let auxiliary_start = 2 + 7 * 8;
+    let mut increasing_auxiliary_scalars = carrier.clone();
     increasing_auxiliary_scalars.payload[auxiliary_start..auxiliary_start + 8]
-        .copy_from_slice(&7.0f64.to_le_bytes());
-    increasing_auxiliary_scalars.payload[auxiliary_start + 8..auxiliary_start + 16]
-        .copy_from_slice(&35.0f64.to_le_bytes());
+        .copy_from_slice(&1.0f64.to_le_bytes());
+    let increasing_pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-6.0, -3.0, 4.0, 20.0], Some(26.0)),
+    )]);
+    assert!(parse_extrusion_surface_with_context(
+        &increasing_auxiliary_scalars,
+        &records,
+        &increasing_pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_some());
+    let mut five_knot_carrier = carrier.clone();
+    *five_knot_carrier.payload.last_mut().expect("count control") = 0x15;
+    let five_knot_pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-10.0, -3.0, -2.0, 0.0, 2.0, 4.0, 10.0], Some(20.0)),
+    )]);
+    assert!(parse_extrusion_surface_with_context(
+        &five_knot_carrier,
+        &records,
+        &five_knot_pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_some());
+    let mut wrong_count = carrier.clone();
+    *wrong_count.payload.last_mut().expect("count control") = 0x15;
+    assert!(parse_extrusion_surface_with_context(
+        &wrong_count,
+        &records,
+        &pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_none());
+    let missing_flanks = BTreeMap::from([(3, object_stream_pcurve(7, vec![-3.0, 4.0], Some(7.0)))]);
+    assert!(parse_extrusion_surface_with_context(
+        &carrier,
+        &records,
+        &missing_flanks,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_none());
+    let mut swapped_auxiliary_scalars = carrier;
+    swapped_auxiliary_scalars.payload[auxiliary_start..auxiliary_start + 8]
+        .copy_from_slice(&2.0f64.to_le_bytes());
+    swapped_auxiliary_scalars.payload[auxiliary_start + 8..auxiliary_start + 16]
+        .copy_from_slice(&5.0f64.to_le_bytes());
     assert_eq!(
         parse_extrusion_surface_with_context(
-            &increasing_auxiliary_scalars,
+            &swapped_auxiliary_scalars,
             &records,
             &pcurves,
             std::slice::from_ref(&offset_construction),
@@ -1300,13 +1353,16 @@ fn supported_surface_preserves_ordered_support_pcurves() {
             carrier_surface: 2,
             support_surfaces: [3, 4],
             support_pcurves: [5, 6],
-            parameters: B5SupportedSurfaceParameters::ScalarPair {
-                controls: [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
-                scalars: [
-                    crate::test_support::test_b5::positive(101.6),
-                    crate::test_support::test_b5::positive(20.0)
-                ],
-            },
+            parameters: B5SupportedSurfaceParameters::Chamfer(
+                crate::families::chamfer::ChamferParameters::decode(
+                    [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
+                    [
+                        crate::test_support::test_b5::finite(101.6),
+                        crate::test_support::test_b5::finite(20.0)
+                    ]
+                )
+                .expect("valid chamfer")
+            ),
         })
     );
     let scalar_pair = parse_supported_surface(&scalar_pair).expect("two-scalar supported surface");
@@ -1321,19 +1377,23 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &scalar_pair.parameters,
         &plane
     ));
-    let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
-        controls: [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
-        scalars: [
-            crate::test_support::test_b5::positive(0.76),
-            crate::test_support::test_b5::positive(std::f64::consts::FRAC_PI_4),
-        ],
-    };
+    let cone_parameters = B5SupportedSurfaceParameters::Chamfer(
+        crate::families::chamfer::ChamferParameters::decode(
+            [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+            [
+                crate::test_support::test_b5::finite(0.76),
+                crate::test_support::test_b5::finite(std::f64::consts::FRAC_PI_4),
+            ],
+        )
+        .expect("valid chamfer"),
+    );
     let cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4),
+        radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
@@ -1344,21 +1404,22 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &cone_parameters,
         &cone
     ));
-    let wrong_cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+    let other_cone_angle = B5Surface::Cone {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
+        radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
         angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
-    assert!(!supported_surface_parameters_match_carrier(
+    assert!(supported_surface_parameters_match_carrier(
         &cone_parameters,
-        &wrong_cone
+        &other_cone_angle
     ));
     let construction = parse_supported_surface(&record).expect("supported surface");
     let pcurve0 = B5Record {
@@ -1393,7 +1454,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
 fn supported_surface_parameter_matching_is_scale_independent() {
     let radius = 1e-200_f64;
     let parameters = B5SupportedSurfaceParameters::Radius {
-        controls: [0; 6],
+        controls: [0x05, 0x05, 0x03, 0x03, 0x05, 0x05],
         construction_radius: crate::test_support::test_b5::positive_length(radius),
     };
     let cylinder = |carrier_radius| B5Surface::Cylinder {
@@ -1433,46 +1494,75 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(1.0),
         azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
-        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        latitude_range: crate::test_support::test_b5::increasing([
+            -1.0,
+            std::f64::consts::FRAC_PI_2,
+        ]),
         construction_radius: carrier_radius,
         chart_origin: crate::test_support::test_b5::finite(0.0),
     };
 
-    for carrier in [
-        cylinder(radius),
-        torus(radius),
-        sphere(crate::test_support::test_b5::positive_length(radius)),
+    for (selector, closure, carrier) in [
+        (0x05, 0x05, cylinder(radius)),
+        (0x09, 0x05, torus(radius)),
+        (
+            0x0d,
+            0x09,
+            sphere(crate::test_support::test_b5::positive_length(radius)),
+        ),
     ] {
+        let mut parameters = parameters.clone();
+        if let B5SupportedSurfaceParameters::Radius { controls, .. } = &mut parameters {
+            controls[0] = selector;
+            controls[5] = closure;
+        }
         assert!(supported_surface_parameters_match_carrier(
             &parameters,
             &carrier
         ));
     }
-    for carrier in [
-        cylinder(2.0 * radius),
-        torus(2.0 * radius),
-        sphere(crate::test_support::test_b5::positive_length(2.0 * radius)),
+    for (selector, closure, carrier) in [
+        (0x05, 0x05, cylinder(2.0 * radius)),
+        (0x09, 0x05, torus(2.0 * radius)),
+        (
+            0x0d,
+            0x09,
+            sphere(crate::test_support::test_b5::positive_length(2.0 * radius)),
+        ),
     ] {
+        let mut parameters = parameters.clone();
+        if let B5SupportedSurfaceParameters::Radius { controls, .. } = &mut parameters {
+            controls[0] = selector;
+            controls[5] = closure;
+        }
         assert!(!supported_surface_parameters_match_carrier(
             &parameters,
             &carrier
         ));
     }
 
+    assert!(!supported_surface_parameters_match_carrier(
+        &parameters,
+        &torus(radius)
+    ));
     let half_angle = 1e-200_f64;
-    let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
-        controls: [0; 6],
-        scalars: [
-            crate::test_support::test_b5::positive(1.0),
-            crate::test_support::test_b5::positive(half_angle),
-        ],
-    };
-    let cone = |carrier_half_angle| B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+    let cone_parameters = B5SupportedSurfaceParameters::Chamfer(
+        crate::families::chamfer::ChamferParameters::decode(
+            [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+            [
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(half_angle),
+            ],
+        )
+        .expect("valid chamfer"),
+    );
+    let cone = |carrier_radial_angle| B5Surface::Cone {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: carrier_half_angle,
+        radial_angle: carrier_radial_angle,
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
@@ -1483,7 +1573,7 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         &cone_parameters,
         &cone(crate::test_support::test_b5::positive_angle(half_angle))
     ));
-    assert!(!supported_surface_parameters_match_carrier(
+    assert!(supported_surface_parameters_match_carrier(
         &cone_parameters,
         &cone(crate::test_support::test_b5::positive_angle(
             2.0 * half_angle

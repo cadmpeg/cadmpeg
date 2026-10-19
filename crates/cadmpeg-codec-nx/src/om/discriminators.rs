@@ -206,3 +206,30 @@ impl TryFrom<u8> for PointHeaderMode {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConstructionBinary64Frame;
+
+impl ConstructionBinary64Frame {
+    pub(crate) const DISCRIMINATOR: [u8; 18] = [
+        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x00,
+    ];
+
+    pub(crate) fn atom_from_wire(
+        value: f64,
+        raw: [u8; 8],
+    ) -> Result<super::scalar::ShiftedBinary64, &'static str> {
+        if !matches!(raw[0], 0x30 | 0xb0) {
+            return Err("raw_values must contain construction binary64 markers 30 or b0");
+        }
+        super::scalar::ShiftedBinary64::from_wire(value, raw)
+    }
+}
+
+impl super::scalar_run::ScalarFrame for ConstructionBinary64Frame {
+    type Atom = super::scalar::ShiftedBinary64;
+    fn prefix_len(self) -> u64 {
+        cadmpeg_core::decode::u64_from_index(Self::DISCRIMINATOR.len())
+    }
+}

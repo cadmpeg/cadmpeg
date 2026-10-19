@@ -351,6 +351,9 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/drafts.rs`                  | `MAX_PATH_CELLS`                          | `65`                                                    | 1    | Cell count of a compact component path. Outside the range the selection is not read.                                                                                                                                                                                         |
 | `cadmpeg-codec-sldprt`   | `src/brep/spline.rs`                               | `MAX_ARRAY_VALUES`                        | `1_000_000`                                             | 2    | Declared count of one spline value array. A larger array is skipped.                                                                                                                                                                                                         |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
+| `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
+| `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`     | `1_000_000`                                             | 4    | Floor of the local comparison budget for source-bound zero-entity vertex contributors. Exhaustion skips topology and reports `topology.zero-entity-candidates-bounded`. |
+| `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT` | `256`                                                   | 4    | Operations allowed per support occurrence above the `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS` floor; same exhaustion and loss.                                                                                                                                                   |
 | `cadmpeg-codec-catia`    | `src/families/standard/decode.rs`                  | `MAX_BEZIER_SEARCH_NODES`                 | `1 << 16`                                               | 4    | Best-first subdivision nodes for one quintic span. A limit curve whose search reaches it binds no edge and reports `topology.standard-search-bounded`.                                                                                                                       |
 | `cadmpeg-codec-catia`    | `src/families/standard/decode.rs`                  | `MAX_NATIVE_PORT_CHOICES`                 | `65_536`                                                | 4    | Pre-check on exhaustive native-port binding. Above it the ports stay unresolved, later trim-mesh and incidence paths run, and `topology.standard-search-bounded` is reported.                                                                                                |
 | `cadmpeg-codec-catia`    | `src/families/standard/decode.rs`                  | `MAX_NATIVE_PORT_WORK`                    | `20_000_000`                                            | 4    | Port × choice work pre-check for the same binding; same outcome and loss.                                                                                                                                                                                                    |
@@ -360,8 +363,6 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia`    | `src/families/standard/decode/edge_geometry.rs`    | `MAX_SELECTION_STATES`                    | `4_096`                                                 | 4    | Range-selection search states. Exhaustion answers `false` (not proven non-overlapping), and the rejected trim-mesh solutions report `topology.standard-search-bounded`.                                                                                                      |
 | `cadmpeg-codec-catia`    | `src/families/standard/records.rs`                 | `MAX_F32_CONTAINMENT_ULPS`                | `3.0`                                                   | N    | Rounding slack in `f32` ULPs for a bounding-volume check.                                                                                                                                                                                                                    |
 | `cadmpeg-codec-catia`    | `src/families/standard/records.rs`                 | `MAX_ROW_BYTES`                           | `35`                                                    | 1    | Maximum curve-support row width; bounds the backward predecessor search.                                                                                                                                                                                                     |
-| `cadmpeg-codec-catia`    | `src/families/zero_entity/topology.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`     | `1_000_000`                                             | 4    | Floor of the `WorkBudget` for zero-entity endpoint candidates and closed-face transfer. Exhaustion drops the cut-short candidates and reports `topology.zero-entity-candidates-bounded`. |
-| `cadmpeg-codec-catia`    | `src/families/zero_entity/topology.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT` | `256`                                                   | 4    | Operations allowed per support occurrence above the `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS` floor; same exhaustion and loss.                                                                                                                                                   |
 | `cadmpeg-codec-catia`    | `src/families/b5/graph.rs`                         | `MAX_OBJECT_STREAM_SELECTION_WORK`        | `2_000_000`                                             | 4    | `WorkBudget` for object-stream population selection (`freeform/mod.rs`). Exhaustion keeps the topology native and reports `TopologyObjectStreamWorkSliceExhausted`.                                                                                                          |
 | `cadmpeg-codec-catia`    | `src/families/b5/graph.rs`                         | `MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE`   | `2`                                                     | 4    | Isolated geometry bytes the B5 topology populations of one stream copy, per stream byte. A run past it is read alone and `topology.b5-population-bounded` is reported.                                                                                                       |
 | `cadmpeg-codec-catia`    | `src/families/b5/graph.rs`                         | `MAX_TARGETED_SURFACE_RESOLUTION_STEPS`   | `4_096`                                                 | 4    | `WorkBudget` for resolving one requested surface through aliases, constructions and analytic offsets. Exhaustion leaves that surface unresolved and reports `topology.standard-search-bounded`.                                                                              |
@@ -439,16 +440,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 224.
+Production `MAX_*` constants: 225.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 29    |
+| 1    | Format or reader invariant | 30    |
 | 2    | Per-input bound            | 68    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 106   |
 | N    | Not a decode bound         | 21    |
-|      | Total                      | 224   |
+|      | Total                      | 225   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -458,7 +459,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 17,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
-and `cadmpeg-codec-catia` 56.
+and `cadmpeg-codec-catia` 57.
 
 ## Routing
 

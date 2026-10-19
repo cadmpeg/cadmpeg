@@ -26,9 +26,24 @@ use projection::{
 };
 
 pub(crate) mod class5b5c;
+mod class60;
+pub(crate) mod class61;
+mod owner_frames;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
+use class60::CatiaConsolidatedClass60Record;
 
 pub(crate) mod edge_definition;
+
+pub(crate) mod chamfer;
+use chamfer::{
+    consolidated_chamfers, object_chamfers, CatiaConsolidatedChamfer, CatiaObjectChamfer,
+};
+
+mod parameter_map;
+use parameter_map::CatiaSampledParameterMap;
+
+mod domain_relation;
+use domain_relation::CatiaConsolidatedDomainRelation;
 
 mod edge_node;
 use edge_node::{
@@ -36,12 +51,22 @@ use edge_node::{
     CatiaConsolidatedEdgeNodeWire,
 };
 
+mod e5_curve_support;
+use e5_curve_support::CatiaE5CurveSupportRecord;
+
 pub(crate) mod entity_record;
 use entity_record::{
     CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityRecordWire,
     CatiaEntityValueProduction,
 };
 
+pub(crate) mod zero_entity_allocation;
+use zero_entity_allocation::CatiaZeroEntityAllocationEdge;
+
+pub(crate) mod inline_field;
+use inline_field::CatiaInlineField;
+
+pub(crate) mod project_range;
 pub(crate) mod schema_configuration_chain;
 use schema_configuration_chain::{
     derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain,
@@ -58,12 +83,13 @@ use owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
-use crate::families::zero_entity::topology::EdgeEnd;
+use crate::families::b2::records::B2ParameterPointPayload;
 use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
     PayloadSubtype,
 };
+use crate::storage_property::{self, CatiaStoragePropertyMember};
 use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
@@ -95,6 +121,20 @@ enum CatiaOwnerReferenceEncoding {
     AllCompact,
 }
 
+impl From<crate::families::b2::records::B2OwnerReferenceEncoding> for CatiaOwnerReferenceEncoding {
+    fn from(value: crate::families::b2::records::B2OwnerReferenceEncoding) -> Self {
+        match value {
+            crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
+                Self::TaggedU16Strong
+            }
+            crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
+                Self::WidthCodedStrong
+            }
+            crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact => Self::AllCompact,
+        }
+    }
+}
+
 /// Target encoding of a consolidated class-`0x5f` face node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -105,22 +145,42 @@ enum CatiaFaceNodeTargetEncoding {
     TaggedU16Strong,
 }
 
-/// Derived class-`0x5f` face-node relation associated with a consolidated
-/// class-`0x62` packet within one bounded record source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Source-local class-`0x5f` occurrence within its owner's bounded source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "CatiaFaceNodeRelationWire")]
 struct CatiaFaceNodeRelation {
-    /// Face-node record byte offset.
-    byte_offset: u64,
-    /// Complete face-node to packet span.
-    byte_len: u64,
-    /// Width-coded header token.
-    header_token: u32,
-    /// Target encoding selected after the `0x82` lead.
+    source_offset: u64,
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
     target_encoding: CatiaFaceNodeTargetEncoding,
-    /// Class-`0x5f` target retained by the enclosing source-scoped relation.
     target: u32,
-    /// Two terminal bytes of the face-node payload.
     terminal: NativeBytes<[u8; 2]>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CatiaFaceNodeRelationWire {
+    source_offset: u64,
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
+    target_encoding: CatiaFaceNodeTargetEncoding,
+    target: u32,
+    terminal: NativeBytes<[u8; 2]>,
+}
+
+impl TryFrom<CatiaFaceNodeRelationWire> for CatiaFaceNodeRelation {
+    type Error = &'static str;
+    fn try_from(wire: CatiaFaceNodeRelationWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            source_offset: wire.source_offset,
+            frame: wire.frame,
+            target_encoding: wire.target_encoding,
+            target: wire.target,
+            terminal: wire.terminal,
+        };
+        if !owner_frames::valid_face_node(&record) {
+            return Err("face-node fields disagree with the complete frame");
+        }
+        Ok(record)
+    }
 }
 
 /// Selected class of a fixed-nine owner identity target.
@@ -197,9 +257,20 @@ enum CatiaOwnerPacketPayload {
     Counted {
         /// Persistent identities in serialization order.
         references: Vec<u32>,
+        /// Addressing form of each serialized occurrence.
+        reference_encodings: Vec<CatiaAllocationReferenceEncoding>,
         /// Complete nonempty class-specific tail.
         tail: crate::families::b2::counted_owner_tail::CountedOwnerTail,
     },
+}
+
+impl CatiaOwnerPacketPayload {
+    fn final_reference(&self) -> Option<u32> {
+        match self {
+            Self::FixedNine { references, .. } => references.last().copied(),
+            Self::Counted { references, .. } => references.last().copied(),
+        }
+    }
 }
 
 /// One fixed-nine boundary edge retained when four resolved class-`0x5e`
@@ -215,7 +286,7 @@ struct CatiaOwnerBoundaryEdge {
 }
 
 /// Owner-local boundary evidence derived from a closed fixed-nine cycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CatiaOwnerBoundaryCycle {
     /// Source-scoped class-`0x5f` face node that precedes this boundary
     /// allocation and closes its checked identity, when present.
@@ -231,12 +302,12 @@ struct CatiaOwnerBoundaryCycle {
 pub(crate) struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
     id: String,
-    /// Record byte offset.
-    byte_offset: u64,
+    /// Logical offset within the bounded record source.
+    source_offset: u64,
+    /// Complete source frame.
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
     /// Zero-based bounded record-source ordinal.
     source_index: usize,
-    /// Width-coded header token.
-    header_token: u32,
     /// Count-specific reference lane and tail.
     payload: CatiaOwnerPacketPayload,
     /// Source-scoped class-`0x5f` face node, when the packet relation closes.
@@ -281,9 +352,9 @@ impl CatiaConsolidatedOwnerPacket {
 #[derive(Serialize, Deserialize)]
 struct CatiaConsolidatedOwnerPacketWire {
     id: String,
-    byte_offset: u64,
+    source_offset: u64,
     source_index: usize,
-    header_token: u32,
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
     payload: CatiaOwnerPacketPayload,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     identity_targets: Vec<CatiaOwnerIdentityTarget>,
@@ -325,9 +396,9 @@ impl From<CatiaConsolidatedOwnerPacket> for CatiaConsolidatedOwnerPacketWire {
         };
         Self {
             id: value.id,
-            byte_offset: value.byte_offset,
+            source_offset: value.source_offset,
             source_index: value.source_index,
-            header_token: value.header_token,
+            frame: value.frame,
             payload,
             identity_targets,
             face_node: value.face_node,
@@ -380,14 +451,20 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
                 counted
             }
         };
-        Ok(Self {
+        let record = Self {
             id: wire.id,
-            byte_offset: wire.byte_offset,
+            source_offset: wire.source_offset,
             source_index: wire.source_index,
-            header_token: wire.header_token,
+            frame: wire.frame,
             payload,
             face_node: wire.face_node,
-        })
+        };
+        if !owner_frames::valid_owner_packet(&record) {
+            return Err(
+                "owner fields or incidence disagree with the complete source frames".into(),
+            );
+        }
+        Ok(record)
     }
 }
 
@@ -666,6 +743,7 @@ pub(crate) struct CatiaConsolidatedCylinder {
     id: String,
     /// Byte offset of the framed record.
     byte_offset: u64,
+    header: crate::wire::records::WidthCodedToken,
     /// Cylinder-axis origin.
     origin: FiniteVector<3>,
     /// Cylinder radius.
@@ -682,6 +760,7 @@ pub(crate) struct CatiaConsolidatedCylinder {
 struct CatiaConsolidatedCylinderWire {
     id: String,
     byte_offset: u64,
+    header: crate::wire::records::WidthCodedToken,
     layout: u8,
     origin: FiniteVector<3>,
     radius: cadmpeg_ir::scalar::PositiveLength,
@@ -740,6 +819,7 @@ impl From<CatiaConsolidatedCylinder> for CatiaConsolidatedCylinderWire {
         Self {
             id: value.id,
             byte_offset: value.byte_offset,
+            header: value.header,
             layout,
             origin: value.origin,
             radius: value.radius,
@@ -835,120 +915,13 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
+            header: wire.header,
             origin: wire.origin,
             radius: wire.radius,
             u_range: wire.u_range,
             v_range: wire.v_range,
             payload,
         })
-    }
-}
-
-/// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "CatiaConsolidatedEmbeddedCylinderWire")]
-pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the embedded frame, including its varying pre-byte.
-    byte_offset: u64,
-    /// Owning type-3 consolidated group.
-    group: String,
-    /// Compact embedded object identity.
-    object_id: u32,
-    /// Cylinder-axis origin.
-    origin: FiniteVector<3>,
-    /// Cylinder radius.
-    radius: cadmpeg_ir::scalar::PositiveLength,
-    /// Full-turn arc-length circumferential interval.
-    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    /// Axial interval.
-    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    /// Token selecting the serialized frame-vector role.
-    frame_token: u8,
-    /// Cylinder-axis unit direction.
-    axis: crate::checked::RelaxedHypotUnitVector3,
-    /// Unit direction from which the circumferential parameter is measured.
-    reference_direction: crate::checked::RelaxedHypotUnitVector3,
-}
-
-#[derive(Deserialize)]
-struct CatiaConsolidatedEmbeddedCylinderWire {
-    id: String,
-    byte_offset: u64,
-    group: String,
-    object_id: u32,
-    origin: FiniteVector<3>,
-    radius: cadmpeg_ir::scalar::PositiveLength,
-    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    frame_token: u8,
-    axis: crate::checked::RelaxedHypotUnitVector3,
-    reference_direction: crate::checked::RelaxedHypotUnitVector3,
-}
-
-impl TryFrom<CatiaConsolidatedEmbeddedCylinderWire> for CatiaConsolidatedEmbeddedCylinder {
-    type Error = String;
-    fn try_from(wire: CatiaConsolidatedEmbeddedCylinderWire) -> Result<Self, Self::Error> {
-        CatiaConsolidatedCylinderPayload::resolved_5a(
-            wire.radius,
-            wire.u_range,
-            wire.frame_token,
-            wire.axis,
-            wire.reference_direction,
-        )?;
-        Ok(Self {
-            id: wire.id,
-            byte_offset: wire.byte_offset,
-            group: wire.group,
-            object_id: wire.object_id,
-            origin: wire.origin,
-            radius: wire.radius,
-            u_range: wire.u_range,
-            v_range: wire.v_range,
-            frame_token: wire.frame_token,
-            axis: wire.axis,
-            reference_direction: wire.reference_direction,
-        })
-    }
-}
-
-/// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum CatiaConsolidatedParameterPointPayload {
-    /// One retained scalar after two zero tuple fields are elided.
-    Scalar {
-        /// Stored scalar.
-        value: FiniteReal,
-    },
-    /// Two surface-chart coordinates.
-    Uv {
-        /// Surface-chart coordinates.
-        uv: FiniteVector<2>,
-    },
-    /// Host-chain station followed by two surface-chart coordinates.
-    StationUv {
-        /// Host-chain station.
-        station: FiniteReal,
-        /// Surface-chart coordinates.
-        uv: FiniteVector<2>,
-    },
-    /// Unsplit five-scalar lane.
-    FiveScalars {
-        /// Stored finite scalars.
-        values: FiniteVector<5>,
-    },
-}
-
-impl CatiaConsolidatedParameterPointPayload {
-    const fn layout(&self) -> u8 {
-        match self {
-            Self::Scalar { .. } => 0x0a,
-            Self::Uv { .. } => 0x12,
-            Self::StationUv { .. } => 0x1a,
-            Self::FiveScalars { .. } => 0x2a,
-        }
     }
 }
 
@@ -962,12 +935,12 @@ pub(crate) struct CatiaConsolidatedParameterPoint {
     byte_offset: u64,
     /// Complete framed-record length.
     byte_len: u64,
-    /// First byte of the two-byte class-specific prefix.
-    prefix: crate::families::b2::records::B2ParameterPointPrefix,
-    /// Second byte of the two-byte class-specific prefix.
+    /// Source-local representation operand with its compact encoding.
+    operand: crate::wire::compact_unsigned::CompactUnsigned,
+    /// Scalar control immediately following the operand.
     control: u8,
     /// Layout-specific finite scalar lane.
-    payload: CatiaConsolidatedParameterPointPayload,
+    payload: B2ParameterPointPayload,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -975,10 +948,9 @@ struct CatiaConsolidatedParameterPointWire {
     id: String,
     byte_offset: u64,
     byte_len: u64,
-    layout: u8,
-    prefix: u8,
+    operand: crate::wire::compact_unsigned::CompactUnsigned,
     control: u8,
-    payload: CatiaConsolidatedParameterPointPayload,
+    payload: B2ParameterPointPayload,
 }
 
 #[cfg(test)]
@@ -988,8 +960,7 @@ impl From<CatiaConsolidatedParameterPoint> for CatiaConsolidatedParameterPointWi
             id: value.id,
             byte_offset: value.byte_offset,
             byte_len: value.byte_len,
-            layout: value.payload.layout(),
-            prefix: value.prefix.as_u8(),
+            operand: value.operand,
             control: value.control,
             payload: value.payload,
         }
@@ -1000,75 +971,20 @@ impl TryFrom<CatiaConsolidatedParameterPointWire> for CatiaConsolidatedParameter
     type Error = String;
 
     fn try_from(wire: CatiaConsolidatedParameterPointWire) -> Result<Self, Self::Error> {
-        if wire.layout != wire.payload.layout() {
-            return Err(format!(
-                "parameter-point layout {:#04x} does not match payload",
-                wire.layout
-            ));
+        let overhead = wire
+            .byte_len
+            .checked_sub(u64::from(wire.payload.byte_len(wire.operand)));
+        if !matches!(overhead, Some(5..=7)) || !wire.payload.matches_control(wire.control) {
+            return Err("parameter-point frame length or control does not match payload".into());
         }
-        let prefix = crate::families::b2::records::B2ParameterPointPrefix::from_u8(wire.prefix)
-            .ok_or_else(|| format!("unknown parameter-point prefix {:#04x}", wire.prefix))?;
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
             byte_len: wire.byte_len,
-            prefix,
+            operand: wire.operand,
             control: wire.control,
             payload: wire.payload,
         })
-    }
-}
-
-/// Selector-specific payload of a consolidated `B:27` plane carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum CatiaConsolidatedPlaneCarrierPayload {
-    /// Two-coordinate point, two-coordinate direction, and three tail scalars.
-    PointDirection2 {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: FiniteVector<2>,
-        /// In-plane direction with its third component omitted; the decoder
-        /// stores the first two components of an admitted unit direction.
-        direction: [f64; 2],
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<3>,
-    },
-    /// Two-coordinate point, three-coordinate direction, and three tail scalars.
-    PointDirection3 {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: FiniteVector<2>,
-        /// In-plane unit direction.
-        direction: crate::checked::RelaxedHypotUnitVector3,
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<3>,
-    },
-    /// Two-coordinate point followed by four scalar values with no direction
-    /// lane in this layout.
-    PointTail {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: FiniteVector<2>,
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<4>,
-    },
-    /// Finite scalar lane for a selector whose semantic layout is not yet
-    /// established.
-    ScalarLane {
-        /// Second payload byte selecting the scalar layout.
-        #[serde(skip, default)]
-        selector: u8,
-        /// Complete selector-specific scalar lane in source order.
-        values: Vec<FiniteReal>,
-    },
-}
-
-impl CatiaConsolidatedPlaneCarrierPayload {
-    const fn selector(&self) -> u8 {
-        match self {
-            Self::PointDirection2 { .. } => 0xe4,
-            Self::PointDirection3 { .. } => 0xc4,
-            Self::PointTail { .. } => 0xec,
-            Self::ScalarLane { selector, .. } => *selector,
-        }
     }
 }
 
@@ -1089,10 +1005,11 @@ pub(crate) struct CatiaConsolidatedPlaneCarrier {
     /// Width-coded frame header token.
     header_token: u32,
     /// Selector-specific finite scalar payload.
-    payload: CatiaConsolidatedPlaneCarrierPayload,
+    payload: crate::families::b2::records::B2PlaneCarrierPayload,
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CatiaConsolidatedPlaneCarrierWire {
     id: String,
     byte_offset: u64,
@@ -1101,7 +1018,7 @@ struct CatiaConsolidatedPlaneCarrierWire {
     flag: ConsolidatedFrameFlag,
     header_token: u32,
     selector: u8,
-    payload: CatiaConsolidatedPlaneCarrierPayload,
+    payload: crate::families::b2::records::B2PlaneCarrierPayload,
 }
 
 #[cfg(test)]
@@ -1124,14 +1041,26 @@ impl TryFrom<CatiaConsolidatedPlaneCarrierWire> for CatiaConsolidatedPlaneCarrie
     type Error = String;
 
     fn try_from(mut wire: CatiaConsolidatedPlaneCarrierWire) -> Result<Self, Self::Error> {
-        if let CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, .. } = &mut wire.payload
+        if let crate::families::b2::records::B2PlaneCarrierPayload::ScalarLane {
+            selector, ..
+        } = &mut wire.payload
         {
             *selector = wire.selector;
+            if crate::families::b2::records::B2PlaneCarrierLayout::try_from(*selector).is_ok() {
+                return Err("known plane selector requires a plane payload".to_owned());
+            }
         } else if wire.payload.selector() != wire.selector {
             return Err(format!(
                 "plane-carrier selector {:#04x} does not match payload",
                 wire.selector
             ));
+        }
+        if matches!(
+            wire.payload,
+            crate::families::b2::records::B2PlaneCarrierPayload::Plane { .. }
+        ) && !wire.payload.valid_plane()
+        {
+            return Err("plane direction does not match its scalar layout".to_owned());
         }
         Ok(Self {
             id: wire.id,
@@ -1261,17 +1190,17 @@ pub(crate) struct CatiaConsolidatedLineProfile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 pub(crate) enum CatiaRevolutionReferenceToken {
-    /// Compact object-reference token `0x08`.
-    Compact,
-    /// Wide object-reference token `0x0a`.
-    Wide,
+    /// Reference lead `0x08` followed by a two-byte value.
+    Lead08,
+    /// Reference lead `0x0a` followed by a two-byte value.
+    Lead0a,
 }
 
 impl From<CatiaRevolutionReferenceToken> for u8 {
     fn from(value: CatiaRevolutionReferenceToken) -> Self {
         match value {
-            CatiaRevolutionReferenceToken::Compact => 0x08,
-            CatiaRevolutionReferenceToken::Wide => 0x0a,
+            CatiaRevolutionReferenceToken::Lead08 => 0x08,
+            CatiaRevolutionReferenceToken::Lead0a => 0x0a,
         }
     }
 }
@@ -1281,8 +1210,8 @@ impl TryFrom<u8> for CatiaRevolutionReferenceToken {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x08 => Ok(Self::Compact),
-            0x0a => Ok(Self::Wide),
+            0x08 => Ok(Self::Lead08),
+            0x0a => Ok(Self::Lead0a),
             other => Err(format!("reference_token {other:#x} is not 0x08 or 0x0a")),
         }
     }
@@ -1290,6 +1219,7 @@ impl TryFrom<u8> for CatiaRevolutionReferenceToken {
 
 /// One structurally complete consolidated `B:2d` surface-of-revolution record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CatiaConsolidatedRevolution {
     /// Stable native-record identity.
     id: String,
@@ -1297,8 +1227,8 @@ pub(crate) struct CatiaConsolidatedRevolution {
     byte_offset: u64,
     /// Reference-token dialect.
     reference_token: CatiaRevolutionReferenceToken,
-    /// Unresolved consolidated allocation identity of the profile curve.
-    profile_allocation_id: u16,
+    /// Stored nonzero profile reference; its namespace is unresolved.
+    profile_reference: u16,
     /// Axis-frame origin.
     origin: FiniteVector<3>,
     /// First transverse unit direction.
@@ -1316,73 +1246,6 @@ pub(crate) struct CatiaConsolidatedRevolution {
     profile_circle: Option<String>,
     /// Positive scale from revolution angle to stored angular parameter.
     angular_scale: cadmpeg_ir::scalar::PositiveReal,
-}
-
-/// One structurally complete consolidated class-`0x61` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaConsolidatedClass61Record {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the framed record.
-    byte_offset: u64,
-    /// Width-coded header token.
-    header_token: u32,
-    /// Counted or long-form record payload.
-    payload: CatiaConsolidatedClass61Payload,
-}
-
-/// Structurally decoded payload of a consolidated class-`0x61` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum CatiaConsolidatedClass61Payload {
-    /// Count-selected compact reference lane followed by a class-specific tail.
-    Counted {
-        /// Compact identities in serialization order.
-        references: Vec<u32>,
-        /// Complete nonempty tail, including terminal byte `0x03`.
-        tail: NativeBytes<Vec<u8>>,
-    },
-    /// Long form with a monotone member lane and five persistent references.
-    Long {
-        /// Complete eight-byte prefix preceding the member-list marker.
-        prefix: NativeBytes<[u8; 8]>,
-        /// Strictly increasing allocation members.
-        members: Vec<u16>,
-        /// Five persistent identities following the list delimiter.
-        references: [u16; 5],
-        /// Finite class-specific scalar preceding the terminal byte.
-        scalar: FiniteReal,
-    },
-}
-
-/// One typed consolidated class-`0x60` group opener.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CatiaConsolidatedGroup {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the framed record.
-    byte_offset: u64,
-    /// Compact group-type code.
-    group_type: u32,
-}
-
-/// One complete consolidated cone-face chart descriptor.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaConsolidatedConeFace {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the framed record.
-    byte_offset: u64,
-    /// Complete framed-record length.
-    byte_len: u64,
-    /// Complete reference-and-control program preceding the scalars.
-    program: NativeBytes<Vec<u8>>,
-    /// Stored angular chart scale.
-    angular_scale: FiniteReal,
-    /// Cone half-angle in radians, strictly between zero and a quarter turn.
-    half_angle: cadmpeg_ir::scalar::PositiveAngle,
-    /// Complete immediately following parameter-point run.
-    pub(crate) parameter_points: Vec<String>,
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -1438,6 +1301,17 @@ enum CatiaOwnerIdentityEncoding {
     Allocation(CatiaAllocationReferenceEncoding),
     /// Raw one-byte weak identity in the width-coded alternating dialect.
     RawU8,
+}
+
+impl From<crate::families::b2::records::B2OwnerIdentityEncoding> for CatiaOwnerIdentityEncoding {
+    fn from(value: crate::families::b2::records::B2OwnerIdentityEncoding) -> Self {
+        match value {
+            crate::families::b2::records::B2OwnerIdentityEncoding::Allocation(encoding) => {
+                Self::Allocation(projection::native_allocation_reference_encoding(encoding))
+            }
+            crate::families::b2::records::B2OwnerIdentityEncoding::RawU8 => Self::RawU8,
+        }
+    }
 }
 
 /// Typed class-`0x18` descriptor bound to a class-`0x25` edge definition.
@@ -1531,13 +1405,6 @@ pub(crate) enum CatiaConsolidatedSupportBinding {
     Cylinder {
         /// Carrier record byte offset.
         byte_offset: u64,
-    },
-    /// Cylinder frame embedded in a `b2 03 60` wrapper.
-    EmbeddedCylinder {
-        /// Embedded frame byte offset.
-        byte_offset: u64,
-        /// Enclosing wrapper byte offset.
-        wrapper_byte_offset: u64,
     },
     /// Arc-length `b2 03 19` circle.
     Circle {
@@ -2585,6 +2452,9 @@ pub(crate) struct CatiaRangeInterval {
     /// Exact same-graph object-head storage selectors selecting this interval.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) incoming_storage_references: Vec<CatiaEntityIncomingStorageReference>,
+    /// Complete same-storage `GSMProject` frame and cylinder-face incidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) project_target: Option<project_range::ProjectRangeTarget>,
 }
 
 /// Exact scalar-suffix dialect associating a nominal with a `Range` interval.
@@ -5471,6 +5341,7 @@ fn range_interval(
         nominal: range_nominal(suffix_value),
         incoming_references: Vec::new(),
         incoming_storage_references: Vec::new(),
+        project_target: None,
     })
 }
 
@@ -7119,11 +6990,11 @@ pub(crate) struct CatiaZeroEntityLoop {
     tag: NativeBytes<[u8; 2]>,
     /// Nonterminal even-lane logical member identifiers.
     pub(crate) member_ids: Vec<u32>,
-    /// Odd-lane typed references in member order.
-    pub(crate) typed_references: Vec<u32>,
-    /// Global zero-entity records selected by the typed references.
+    /// Backward distances from the loop to physical-edge stride records.
+    pub(crate) edge_stride_distances: Vec<u32>,
+    /// Physical-edge stride records selected by the backward distances.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) typed_records: Vec<String>,
+    pub(crate) edge_stride_records: Vec<String>,
     /// Face-local support record ordinals selected by the logical members.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) support_record_ordinals: Vec<u32>,
@@ -7167,12 +7038,6 @@ pub(crate) struct CatiaZeroEntityEdgeStride {
     pub(crate) record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub(crate) allocations: [u32; 5],
-    /// The three allocations in the `0638`/`2569` topology namespace, in
-    /// source order `[T, T-1, T-2]`.
-    pub(crate) topology_refs: [u32; 3],
-    /// The two allocations selecting the adjacent surface-support slots, in
-    /// source order `[X, Y]`.
-    pub(crate) surface_support_refs: [u32; 2],
 }
 
 /// One positional zero-entity `0638` oriented use.
@@ -7201,46 +7066,6 @@ pub(crate) struct CatiaZeroEntityOrientedUsePair {
     pub(crate) base_columns: [u32; 2],
     /// Side-one then side-two oriented uses.
     pub(crate) uses: [CatiaZeroEntityOrientedUse; 2],
-}
-
-/// Two zero-entity radial support occurrences with matching bounded model-space witnesses.
-///
-/// This relation does not establish curve coincidence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaZeroEntityEndpointPairCandidate {
-    /// Stable derived-pair identity.
-    pub(crate) id: String,
-    /// Two face-record identities in support-record order.
-    pub(crate) face_records: [String; 2],
-    /// Two radial support-record identities in ascending ordinal order.
-    pub(crate) support_records: [String; 2],
-    /// Model-space endpoints oriented by the first support occurrence.
-    pub(crate) model_endpoints: [FinitePoint3; 2],
-    /// Model-space midpoint witness supplied by the first support occurrence.
-    pub(crate) model_midpoint: FinitePoint3,
-}
-
-/// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CatiaZeroEntityEndpointPairEndpoint {
-    /// Derived endpoint-pair candidate.
-    pub(crate) endpoint_pair: String,
-    /// Start or end of that candidate's oriented endpoint pair.
-    pub(crate) endpoint_index: EdgeEnd,
-}
-
-/// One geometric endpoint-locus candidate established by a complete endpoint clique.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaZeroEntityEndpointLocusCandidate {
-    /// Stable derived-locus identity.
-    pub(crate) id: String,
-    /// Incident endpoints in endpoint-pair and endpoint order.
-    pub(crate) incident_endpoint_pair_endpoints:
-        cadmpeg_ir::features::NonEmptyMembers<CatiaZeroEntityEndpointPairEndpoint>,
-    /// Model-space point from the first incident endpoint.
-    pub(crate) representative_point: FinitePoint3,
-    /// Maximum pairwise distance between incident endpoint coordinates.
-    pub(crate) maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
 /// One counted zero-entity `05xx` vertex-incidence record.
@@ -7539,6 +7364,14 @@ define_catia_arenas! {
         /// Exact outer alias-row cores in source order.
         pub(crate) stored;
     },
+    inline_fields: CatiaInlineField {
+        /// Strict inline field incidences and complete wide schema paths.
+        pub(crate) stored;
+    },
+    storage_property_members: CatiaStoragePropertyMember {
+        /// Complete bounded storage-property members in source order.
+        pub(crate) stored;
+    },
     catalog_entries: CatiaCatalogEntry {
         => catalogs.entries;
     },
@@ -7550,7 +7383,7 @@ define_catia_arenas! {
         /// Exact consolidated arc-length circle supports.
         pub(crate) stored;
     },
-    consolidated_class61_records: CatiaConsolidatedClass61Record {
+    consolidated_class61_records: class61::CatiaConsolidatedClass61Record {
         /// Complete consolidated class-`0x61` records.
         pub(crate) stored;
     },
@@ -7558,8 +7391,12 @@ define_catia_arenas! {
         /// Complete source-local consolidated class-`0x5b`/`0x5c` records.
         pub(crate) stored;
     },
-    consolidated_cone_faces: CatiaConsolidatedConeFace {
-        /// Complete consolidated cone-face chart descriptors.
+    consolidated_chamfers: CatiaConsolidatedChamfer {
+        /// Complete compact two-support chamfer constructions.
+        pub(crate) stored;
+    },
+    object_chamfers: CatiaObjectChamfer {
+        /// Complete object-id two-support chamfer constructions.
         pub(crate) stored;
     },
     consolidated_cones: CatiaConsolidatedCone {
@@ -7570,8 +7407,8 @@ define_catia_arenas! {
         /// Exact consolidated cylinder charts.
         pub(crate) stored;
     },
-    consolidated_embedded_cylinders: CatiaConsolidatedEmbeddedCylinder {
-        /// Exact cylinder charts embedded in type-3 consolidated groups.
+    consolidated_domain_relations: CatiaConsolidatedDomainRelation {
+        /// Complete source-local class-24 and class-25 scalar parameter relations.
         pub(crate) stored;
     },
     consolidated_edge_nodes: CatiaConsolidatedEdgeNode {
@@ -7582,8 +7419,8 @@ define_catia_arenas! {
         /// Complete consolidated historical edge runs.
         pub(crate) stored;
     },
-    consolidated_groups: CatiaConsolidatedGroup {
-        /// Typed consolidated class-`0x60` group openers.
+    consolidated_class60_records: CatiaConsolidatedClass60Record {
+        /// Complete counted allocation-reference lists.
         pub(crate) stored;
     },
     consolidated_line_profiles: CatiaConsolidatedLineProfile {
@@ -7630,6 +7467,10 @@ define_catia_arenas! {
         /// Design objects grouped by their serialized owner entity identity.
         pub(crate) stored;
     },
+    e5_curve_supports: CatiaE5CurveSupportRecord {
+        /// Complete E5 reference/co-facet correspondence programs.
+        pub(crate) stored;
+    },
     entity_records: CatiaEntityRecord {
         /// Exact `7C05` entity-table records paired with object records.
         pub(crate) stored;
@@ -7657,6 +7498,10 @@ define_catia_arenas! {
         /// Exact JPEG previews extracted from summary-information records.
         pub(crate) stored;
     },
+    sampled_parameter_maps: CatiaSampledParameterMap {
+        /// Complete source-local A8 sampled parameter correspondences.
+        pub(crate) stored;
+    },
     reference_signature_cohorts: CatiaReferenceSignatureCohort {
         /// Source-ordered descriptor cohorts grouped by exact reference pair.
         pub(crate) stored;
@@ -7672,6 +7517,10 @@ define_catia_arenas! {
     value_schema_selections: CatiaValueSchemaSelection {
         => value_blocks.schema_selections;
     },
+    zero_entity_allocation_edges: CatiaZeroEntityAllocationEdge {
+        /// Complete source edge/use/support/vertex allocation chains.
+        pub(crate) stored;
+    },
     zero_entity_edge_strides: CatiaZeroEntityEdgeStride {
         /// Zero-entity edge-stride allocation tuples.
         pub(crate) stored;
@@ -7684,20 +7533,12 @@ define_catia_arenas! {
         /// Complete zero-entity face-roster, shell, and body roots.
         pub(crate) stored;
     },
-    zero_entity_endpoint_pair_candidates: CatiaZeroEntityEndpointPairCandidate {
-        /// Zero-entity endpoint pairs established by radial support occurrences.
-        pub(crate) stored;
-    },
     zero_entity_records: CatiaZeroEntityRecord {
         /// Complete zero-entity framed-record identity namespace.
         pub(crate) stored;
     },
     zero_entity_support_runs: CatiaZeroEntitySupportRun {
         /// Zero-entity surface carriers and their face-local support tapes.
-        pub(crate) stored;
-    },
-    zero_entity_endpoint_locus_candidates: CatiaZeroEntityEndpointLocusCandidate {
-        /// Geometric endpoint loci established by complete endpoint-pair endpoint cliques.
         pub(crate) stored;
     },
     zero_entity_vertex_incidences: CatiaZeroEntityVertexIncidence {
@@ -7979,47 +7820,6 @@ pub(crate) fn legacy_evaluation_roles(
     })
 }
 
-fn consolidated_class61_records(
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedClass61Record> {
-    let mut class61_records = Vec::new();
-    for record in crate::families::b2::records::b2_counted_61_from_records(bytes, records) {
-        class61_records.push((
-            record.pos,
-            record.header_token,
-            CatiaConsolidatedClass61Payload::Counted {
-                references: record.references,
-                tail: record.tail.into(),
-            },
-        ));
-    }
-    for record in crate::families::b2::records::b2_long_61_from_records(bytes, records) {
-        class61_records.push((
-            record.pos,
-            record.header_token,
-            CatiaConsolidatedClass61Payload::Long {
-                prefix: record.prefix.into(),
-                members: record.members,
-                references: record.references,
-                scalar: record.scalar,
-            },
-        ));
-    }
-    class61_records.sort_by_key(|(left, _, _)| *left);
-    let mut output = Vec::new();
-    for (index, (pos, header_token, payload)) in class61_records.into_iter().enumerate() {
-        let value = CatiaConsolidatedClass61Record {
-            id: format!("catia:consolidated:class61-record#{index:00}"),
-            byte_offset: u64_from_index(pos),
-            header_token,
-            payload,
-        };
-        output.push(value);
-    }
-    output
-}
-
 fn consolidated_class5b5c_records(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -8041,61 +7841,6 @@ fn consolidated_class5b5c_records(
         output.push(value);
     }
     Ok(output)
-}
-
-fn consolidated_cone_faces(
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-    parameter_points: &[CatiaConsolidatedParameterPoint],
-) -> Vec<CatiaConsolidatedConeFace> {
-    let mut point_ids = HashMap::new();
-    for point in parameter_points {
-        let id = point.id.clone();
-        point_ids.insert(point.byte_offset, id);
-    }
-    let mut class18_ends = HashMap::new();
-    for record in records.iter().filter(|record| {
-        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x18
-    }) {
-        if let Some(range) = record.range() {
-            class18_ends.insert(range.start, range.end);
-        }
-    }
-    let mut output = Vec::new();
-    for (index, face) in crate::families::b2::records::b2_cone_faces(bytes)
-        .into_iter()
-        .enumerate()
-    {
-        let mut positions = Vec::new();
-        let mut next = face.end;
-        while let Some(&end) = class18_ends.get(&next) {
-            let position = u64_from_index(next);
-            positions.push(position);
-            next = end;
-        }
-        let mut bound_points = Vec::new();
-        for position in positions {
-            let Some(id) = point_ids.get(&position) else {
-                bound_points.clear();
-                break;
-            };
-            let id = id.to_owned();
-            bound_points.push(id);
-        }
-        let byte_offset = u64_from_index(face.pos);
-        let byte_len = u64_from_index(face.end - face.pos);
-        let value = CatiaConsolidatedConeFace {
-            id: format!("catia:consolidated:cone-face#{index:00}"),
-            byte_offset,
-            byte_len,
-            program: (face.program).into(),
-            angular_scale: face.angular_scale,
-            half_angle: face.half_angle,
-            parameter_points: bound_points,
-        };
-        output.push(value);
-    }
-    output
 }
 
 fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaConsolidatedCone> {
@@ -8162,6 +7907,7 @@ fn consolidated_cylinders(
         let value = CatiaConsolidatedCylinder {
             id: format!("catia:consolidated:cylinder#{index:00}"),
             byte_offset: u64_from_index(cylinder.pos),
+            header: cylinder.header,
             origin: cylinder.origin.coordinates().into(),
             radius: cylinder.radius,
             u_range: cylinder.u_range,
@@ -8173,81 +7919,21 @@ fn consolidated_cylinders(
     cylinders
 }
 
-fn consolidated_cylinder_groups(
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-) -> (
-    Vec<CatiaConsolidatedGroup>,
-    Vec<CatiaConsolidatedEmbeddedCylinder>,
-) {
-    let mut groups = Vec::new();
-    let mut cylinders = Vec::new();
-    let mut embedded =
-        crate::families::b2::records::b2_embedded_cylinders_from_records(bytes, records).peekable();
-    for group in crate::families::b2::records::b2_groups_from_records(bytes, records) {
-        let group_pos = group.pos;
-        let group = CatiaConsolidatedGroup {
-            id: format!("catia:consolidated:group#{:00}", groups.len()),
-            byte_offset: u64_from_index(group.pos),
-            group_type: group.group_type,
-        };
-        while embedded
-            .peek()
-            .is_some_and(|entry| entry.wrapper_pos == group_pos)
-        {
-            let Some(entry) = embedded.next() else { break };
-            let value = CatiaConsolidatedEmbeddedCylinder {
-                id: format!(
-                    "catia:consolidated:embedded-cylinder#{:00}",
-                    cylinders.len()
-                ),
-                byte_offset: u64_from_index(entry.pos),
-                group: group.id.clone(),
-                object_id: entry.object_id,
-                origin: entry.cylinder.origin.coordinates().into(),
-                radius: entry.cylinder.radius,
-                u_range: entry.cylinder.u_range,
-                v_range: entry.cylinder.v_range,
-                frame_token: entry.cylinder.frame_token(),
-                axis: entry.cylinder.frame.axis(),
-                reference_direction: entry.cylinder.frame.reference(),
-            };
-            cylinders.push(value);
-        }
-        groups.push(group);
-    }
-    (groups, cylinders)
-}
-
 fn consolidated_parameter_points(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<CatiaConsolidatedParameterPoint> {
-    use crate::families::b2::records::B2ParameterPointPayload;
-
     let mut points = Vec::new();
     for (index, point) in
         crate::families::b2::records::b2_parameter_points_from_records(bytes, records).enumerate()
     {
-        let payload = match point.payload {
-            B2ParameterPointPayload::Scalar { value } => {
-                CatiaConsolidatedParameterPointPayload::Scalar { value }
-            }
-            B2ParameterPointPayload::Uv { uv } => CatiaConsolidatedParameterPointPayload::Uv { uv },
-            B2ParameterPointPayload::StationUv { station, uv } => {
-                CatiaConsolidatedParameterPointPayload::StationUv { station, uv }
-            }
-            B2ParameterPointPayload::FiveScalars { values } => {
-                CatiaConsolidatedParameterPointPayload::FiveScalars { values }
-            }
-        };
         let value = CatiaConsolidatedParameterPoint {
             id: format!("catia:consolidated:parameter-point#{index:00}"),
             byte_offset: u64_from_index(point.pos),
             byte_len: u64_from_index(point.end - point.pos),
-            prefix: point.prefix,
+            operand: point.operand,
             control: point.control,
-            payload,
+            payload: point.payload,
         };
         points.push(value);
     }
@@ -8258,48 +7944,12 @@ fn consolidated_plane_carriers(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<CatiaConsolidatedPlaneCarrier> {
-    use crate::families::b2::records::B2PlaneCarrierPayload;
-
     let mut carriers = Vec::new();
     for (index, carrier) in
         crate::families::b2::records::b2_plane_carriers_from_records(bytes, records)
             .into_iter()
             .enumerate()
     {
-        let payload = match carrier.payload {
-            B2PlaneCarrierPayload::PointDirection2 {
-                origin,
-                frame,
-                tail,
-            } => {
-                let [x, y, _] = origin.coordinates();
-                let direction = frame.reference().as_raw();
-                CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-                    point: [x, y].into(),
-                    direction: [direction.x, direction.y],
-                    tail,
-                }
-            }
-            B2PlaneCarrierPayload::PointDirection3 {
-                origin,
-                direction,
-                tail,
-                ..
-            } => {
-                let [x, y, _] = origin.coordinates();
-                CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-                    point: [x, y].into(),
-                    direction,
-                    tail,
-                }
-            }
-            B2PlaneCarrierPayload::PointTail { point, tail } => {
-                CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
-            }
-            B2PlaneCarrierPayload::ScalarLane { selector, values } => {
-                CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
-            }
-        };
         let value = CatiaConsolidatedPlaneCarrier {
             id: format!("catia:consolidated:plane-carrier#{index:00}"),
             byte_offset: u64_from_index(carrier.pos),
@@ -8307,7 +7957,7 @@ fn consolidated_plane_carriers(
             width: carrier.width,
             flag: carrier.flag,
             header_token: carrier.header_token,
-            payload,
+            payload: carrier.payload,
         };
         carriers.push(value);
     }
@@ -8410,7 +8060,7 @@ fn consolidated_revolutions(
             id: format!("catia:consolidated:revolution#{index:00}"),
             byte_offset: u64_from_index(revolution.pos),
             reference_token: revolution.reference_token,
-            profile_allocation_id: revolution.profile_allocation_id,
+            profile_reference: revolution.profile_reference,
             origin: revolution.origin.coordinates().into(),
             direction_x: revolution.profile_frame.axis(),
             direction_y: revolution.profile_frame.reference(),
@@ -8516,14 +8166,18 @@ fn zero_entity_support_runs(
             let mut native_loops = Vec::new();
 
             for loop_record in loops {
-                let mut typed_records = Vec::new();
-
-                for ordinal in &loop_record.typed_references {
-                    let Some(record) = zero_entity_record(records, *ordinal) else {
-                        typed_records.clear();
+                let mut edge_stride_records = Vec::new();
+                for distance in &loop_record.edge_stride_distances {
+                    let Some(record) = loop_record
+                        .record_ordinal
+                        .checked_sub(*distance)
+                        .and_then(|ordinal| zero_entity_record(records, ordinal))
+                        .filter(|record| record.tag == [0x5e, 0x1a])
+                    else {
+                        edge_stride_records.clear();
                         break;
                     };
-                    typed_records.push(record.id.clone());
+                    edge_stride_records.push(record.id.clone());
                 }
                 let mut member_ids = Vec::new();
 
@@ -8533,8 +8187,8 @@ fn zero_entity_support_runs(
                     record_ordinal: loop_record.record_ordinal,
                     tag: (loop_record.tag).into(),
                     member_ids,
-                    typed_references: loop_record.typed_references,
-                    typed_records,
+                    edge_stride_distances: loop_record.edge_stride_distances,
+                    edge_stride_records,
                     support_record_ordinals: loop_record.support_record_ordinals,
                     terminal_id: loop_record.members.terminal_id(),
                     gap: loop_record.members.gap(),
@@ -8583,62 +8237,6 @@ fn zero_entity_support_runs(
     output
 }
 
-fn zero_entity_endpoint_pair_id(index: usize) -> String {
-    format!("catia:zero-entity:endpoint-pair-candidate#{index}")
-}
-
-fn zero_entity_endpoint_pair_candidates(
-    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate>,
-) -> Vec<CatiaZeroEntityEndpointPairCandidate> {
-    let mut output = Vec::new();
-
-    for (index, candidate) in candidates.into_iter().enumerate() {
-        output.push(CatiaZeroEntityEndpointPairCandidate {
-            id: zero_entity_endpoint_pair_id(index),
-            face_records: candidate
-                .face_record_ordinals
-                .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
-            support_records: candidate
-                .support_record_ordinals
-                .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
-            model_endpoints: candidate.model_endpoints,
-            model_midpoint: candidate.model_midpoint,
-        });
-    }
-    output
-}
-
-fn zero_entity_endpoint_locus_candidates(
-    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointLocusCandidate>,
-) -> Result<Vec<CatiaZeroEntityEndpointLocusCandidate>, CodecError> {
-    let mut output = Vec::new();
-
-    for (index, candidate) in candidates.into_iter().enumerate() {
-        let mut endpoints = Vec::new();
-
-        for (pair, endpoint_index) in candidate.incident_endpoint_pair_endpoints {
-            endpoints.push(CatiaZeroEntityEndpointPairEndpoint {
-                endpoint_pair: zero_entity_endpoint_pair_id(pair.ordinal()),
-                endpoint_index,
-            });
-        }
-        output.push(CatiaZeroEntityEndpointLocusCandidate {
-            id: format!("catia:zero-entity:endpoint-locus-candidate#{index}"),
-            incident_endpoint_pair_endpoints: endpoints
-                .try_into()
-                .map_err(CodecError::malformed)?,
-            representative_point: candidate.representative_point,
-            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(
-                candidate.maximum_deviation,
-            )
-            .ok_or_else(|| {
-                CodecError::malformed("endpoint locus deviation must be finite and nonnegative")
-            })?,
-        });
-    }
-    Ok(output)
-}
-
 fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityEdgeStride> {
     let records =
         crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range);
@@ -8650,8 +8248,6 @@ fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroE
             byte_offset: u64_from_index(record.pos),
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
-            topology_refs: record.topology_refs(),
-            surface_support_refs: record.surface_support_refs(),
         });
     }
     output
@@ -8766,13 +8362,20 @@ impl CatiaNative {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
-        .expect("build the decode context");
-        let consolidated_records =
-            crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
-        Self::decode_with_records(
+        .expect("test record source fits the service profile");
+        let sources: Vec<_> = ranges
+            .iter()
+            .map(|range| {
+                vec![
+                    crate::wire::records::SourceExtent::within(bytes, range.start, range.end)
+                        .expect("bounded test source"),
+                ]
+            })
+            .collect();
+        Self::decode_with_record_sources(
             &ctx,
             bytes,
-            &consolidated_records,
+            &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("decode the records")
@@ -8789,7 +8392,10 @@ impl CatiaNative {
             bytes,
             sources.iter().map(|source| source.iter()),
         )?;
-        Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)
+        let mut native = Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)?;
+        native.sampled_parameter_maps =
+            parameter_map::derive(ctx, bytes, sources, &consolidated_records)?;
+        Ok(native)
     }
 
     fn decode_with_records(
@@ -8804,6 +8410,8 @@ impl CatiaNative {
             None => Vec::new(),
         };
         let parsed_finjpl = container::finjpl_segments(&container::BodyExtent::whole(bytes));
+        let storage_property_members = storage_property::parse(bytes, &parsed_finjpl)?;
+        let parsed_alias_rows = object_graph::surface_aliases(bytes, &parsed_finjpl);
         let mut finjpl_segments = Vec::new();
         for (index, segment) in parsed_finjpl.into_iter().enumerate() {
             let id = format!("catia:outer:finjpl#{index}");
@@ -8831,7 +8439,7 @@ impl CatiaNative {
             })
             .collect::<std::collections::HashMap<_, _>>();
         let mut alias_rows = Vec::new();
-        for row in object_graph::surface_aliases(bytes) {
+        for row in parsed_alias_rows {
             let row = CatiaAliasRow::from_source(row);
             alias_rows.push(row);
         }
@@ -9005,8 +8613,9 @@ impl CatiaNative {
                 &mut relation_dependencies,
             )?;
         }
-        refusal.push_relation_dependencies_bounded(relation_dependencies.bounded_relations);
+        let inline_fields = inline_field::derive(&object_graphs, &entity_records, &catalogs);
         let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
+        refusal.push_relation_dependencies_bounded(relation_dependencies.bounded_relations);
         let row_chains =
             derive_schema_configuration_row_chains(ctx, &entity_records, &entity_references)?;
         refusal.push_configuration_row_order_bounded(row_chains.bounded_links);
@@ -9102,21 +8711,20 @@ impl CatiaNative {
                 .map(CatiaOuterContainerBinding::from_source);
         }
         let consolidated_circles = consolidated_circles(bytes, consolidated_records);
-        let consolidated_class61_records =
-            consolidated_class61_records(bytes, consolidated_records);
+        let consolidated_class61_records = class61::records(bytes, consolidated_records)?;
         let consolidated_class5b5c_records =
             consolidated_class5b5c_records(bytes, consolidated_records)?;
         let consolidated_parameter_points =
             consolidated_parameter_points(bytes, consolidated_records);
-        let consolidated_cone_faces =
-            consolidated_cone_faces(bytes, consolidated_records, &consolidated_parameter_points);
+        let consolidated_chamfers =
+            consolidated_chamfers(bytes, consolidated_records, &consolidated_parameter_points);
+        let object_chamfers = object_chamfers(bytes);
         let consolidated_cones = consolidated_cones(bytes, consolidated_records);
         let consolidated_cylinders = consolidated_cylinders(bytes, consolidated_records);
-        let (consolidated_groups, consolidated_embedded_cylinders) =
-            consolidated_cylinder_groups(bytes, consolidated_records);
+        let consolidated_class60_records = class60::records(bytes, consolidated_records)?;
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
         let mut consolidated_owner_packets =
-            consolidated_owner_packets(bytes, consolidated_records);
+            consolidated_owner_packets(bytes, consolidated_records)?;
         resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
         let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
@@ -9126,6 +8734,7 @@ impl CatiaNative {
             consolidated_revolutions(bytes, consolidated_records, &consolidated_circles);
         let consolidated_spheres = consolidated_spheres(bytes, consolidated_records);
         let consolidated_tori = consolidated_tori(bytes, consolidated_records);
+        let consolidated_domain_relations = domain_relation::derive(bytes, consolidated_records)?;
         let zero_entity_range = container::outer_preamble_range(bytes).unwrap_or_else(|| {
             if bytes.starts_with(container::OUTER_MAGIC) {
                 0..0
@@ -9146,26 +8755,14 @@ impl CatiaNative {
                 zero_entity_range.clone(),
                 refusal,
             )?;
-        let zero_entity_topology_allowance =
-            crate::families::zero_entity::topology::zero_entity_topology_allowance(
-                parsed_zero_entity_support_runs
-                    .iter()
-                    .map(|run| run.supports.len())
-                    .sum(),
-            );
-        let endpoint_candidates =
-            crate::families::zero_entity::topology::bounded_endpoint_candidates(
-                ctx,
+        let zero_entity_allocation_edges = zero_entity_allocation::derive(
+            crate::families::zero_entity::allocation::parse(
+                bytes,
+                zero_entity_range.clone(),
                 &parsed_zero_entity_support_runs,
-                zero_entity_topology_allowance,
-            )?;
-        if endpoint_candidates.bounded {
-            refusal.push_zero_entity_candidates_bounded(zero_entity_topology_allowance);
-        }
-        let zero_entity_endpoint_pair_candidates =
-            zero_entity_endpoint_pair_candidates(endpoint_candidates.pairs);
-        let zero_entity_endpoint_locus_candidates =
-            zero_entity_endpoint_locus_candidates(endpoint_candidates.loci)?;
+            )?,
+            &zero_entity_records,
+        )?;
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
@@ -9182,19 +8779,24 @@ impl CatiaNative {
         )?;
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
+        let e5_curve_supports = e5_curve_support::derive(ctx, bytes)?;
         Ok(Self {
+            sampled_parameter_maps: Vec::new(),
             alias_rows,
+            inline_fields,
+            storage_property_members,
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
             consolidated_class5b5c_records,
-            consolidated_cone_faces,
+            consolidated_chamfers,
+            object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
-            consolidated_embedded_cylinders,
+            consolidated_domain_relations,
             consolidated_edge_nodes,
             consolidated_edge_runs,
-            consolidated_groups,
+            consolidated_class60_records,
             consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,
@@ -9206,6 +8808,7 @@ impl CatiaNative {
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
+            e5_curve_supports,
             entity_records,
             external_references,
             finjpl_segments,
@@ -9215,13 +8818,12 @@ impl CatiaNative {
             reference_signature_cohorts,
             schema_configuration_row_chains,
             value_blocks,
+            zero_entity_allocation_edges,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
             zero_entity_ownership_roots,
-            zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
-            zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
         })
     }
@@ -9299,21 +8901,8 @@ impl ExtentOwners {
 mod tests;
 
 #[cfg(test)]
-mod consolidated_cone_face_tests {
-    use super::consolidated_parameter_points;
-
-    #[test]
-    fn cone_face_stream_yields_four_parameter_points() {
-        let bytes = crate::test_support::test_b2::b2_cone_face_parameter_point_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let points = consolidated_parameter_points(&bytes, &records);
-        assert_eq!(points.len(), 4);
-    }
-}
-
-#[cfg(test)]
 mod consolidated_cylinder_tests {
-    use super::{consolidated_cylinder_groups, consolidated_cylinders};
+    use super::consolidated_cylinders;
 
     #[test]
     fn cylinder_stream_yields_one_standalone_cylinder() {
@@ -9321,14 +8910,6 @@ mod consolidated_cylinder_tests {
         let records = crate::wire::records::consolidated_records(&bytes);
         let cylinders = consolidated_cylinders(&bytes, &records);
         assert_eq!(cylinders.len(), 1);
-    }
-
-    #[test]
-    fn embedded_cylinder_stream_yields_one_group_and_one_cylinder() {
-        let bytes = crate::test_support::test_b2::b2_embedded_cylinder_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let (groups, cylinders) = consolidated_cylinder_groups(&bytes, &records);
-        assert_eq!((groups.len(), cylinders.len()), (1, 1));
     }
 }
 

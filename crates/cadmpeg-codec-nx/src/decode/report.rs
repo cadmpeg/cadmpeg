@@ -6,12 +6,12 @@ use super::feature_completeness::operands::{
     pattern_feature_is_incomplete,
 };
 use super::feature_completeness::{
-    active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
-    combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
-    delete_body_definition_is_incomplete, draft_definition_is_incomplete,
-    extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
-    face_blend_definition_is_incomplete, fillet_definition_is_incomplete,
-    hole_definition_is_incomplete, incomplete_expression_parameters, loft_definition_is_incomplete,
+    chamfer_definition_is_incomplete, combine_definition_is_incomplete,
+    datum_coordinate_system_is_incomplete, delete_body_definition_is_incomplete,
+    draft_definition_is_incomplete, extend_surface_definition_is_incomplete,
+    extrude_definition_is_incomplete, face_blend_definition_is_incomplete,
+    fillet_definition_is_incomplete, hole_definition_is_incomplete,
+    incomplete_expression_parameters, loft_definition_is_incomplete,
     offset_surface_definition_is_incomplete, output_free_local_body_construction,
     output_free_native_snapshot, output_free_pattern_construction,
     output_free_trim_surface_construction, projected_curve_direction_is_incomplete,
@@ -334,13 +334,15 @@ pub(super) fn build_geometry_report(
 
     if counts.intersection_rejections.total() > 0 {
         push_report_loss(&mut losses, NxLossCode::IntersectionRecordsOpaque, format_args!(
-            "{} surface-intersection record(s) without a complete validated CHART_s and \
+            "{} surface-intersection record(s) without a unique identity, unambiguous supports, and a complete validated CHART_s and \
                  term-endpoint witness remain opaque constructions. Support-UV values govern \
                  optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
                  Parasolid stream is preserved verbatim as an unknown passthrough record so the \
-                 unresolved source bytes remain available. Rejections: {} missing chart, {} missing \
+                 unresolved source bytes remain available. Rejections: {} missing support, {} duplicate identity, {} missing chart, {} missing \
                  start term, {} missing end term, {} endpoint mismatch.",
             counts.intersection_rejections.total(),
+            counts.intersection_rejections.missing_support,
+            counts.intersection_rejections.duplicate_identity,
             counts.intersection_rejections.missing_chart,
             counts.intersection_rejections.missing_start_term,
             counts.intersection_rejections.missing_end_term,
@@ -365,9 +367,11 @@ pub(super) fn build_geometry_report(
             push_report_loss(&mut losses, NxLossCode::DeltasApplied, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
+                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
-                 each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
+                 each key within each current body-sequence interval. Type-38 records and deletion \
+                 candidates remained in the native ledger without replay; the paired partition's \
+                 current relation remained authoritative. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
@@ -384,14 +388,16 @@ pub(super) fn build_geometry_report(
                  Spans outside those events were retained with exact inflated-stream bounds and \
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
-                 terminal tombstone resolved to an exact current or earlier-added key.",
+                 terminal tombstone considered for replay resolved to an exact current or earlier-added key.",
                 scan.count(StreamKind::Deltas)
             ));
         } else {
             push_report_loss(&mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                    Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
-                 event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
+                    Equal-schema deltas were paired with the preceding partition. Type-38 records and deletion \
+                 candidates remained in the native ledger without replay; the paired partition's \
+                 current relation remained authoritative. Other exact-key revisions in current body-sequence intervals were applied using the last \
+                 event for each key, but {unmatched_tombstones} terminal tombstone(s) considered for replay have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
                 scan.count(StreamKind::Deltas)
             ));
@@ -491,39 +497,14 @@ pub(crate) fn append_design_intent_losses(
         );
     }
 
-    let active_configuration_count = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| configuration.active)
-        .count();
-    let mut current_bodies = BTreeSet::new();
-    for body in &ir.model.bodies {
-        current_bodies.insert(&body.id);
-    }
-    let mut incomplete_configuration_count = 0usize;
-    for configuration in &ir.model.configurations {
-        let incomplete = configuration.bodies.is_none()
-            || active_configuration_count != 1
-            || (configuration.active
-                && configuration.bodies.as_deref().is_none_or(|bodies| {
-                    bodies.len() != current_bodies.len()
-                        || current_bodies.iter().any(|body| !bodies.contains(body))
-                }))
-            || (configuration.active
-                && active_configuration_state_is_incomplete(ir, configuration));
-        if incomplete {
-            incomplete_configuration_count += 1;
-        }
-    }
-    if incomplete_configuration_count != 0 {
+    let arrangement_count = ir.model.configurations.len();
+    if arrangement_count != 0 {
         push_report_loss(
             losses,
             NxLossCode::ConfigurationStateUnresolved,
             format_args!(
-                "Activation, complete body membership, evaluated feature state, or evaluated \
-                 parameter state remains unresolved for {incomplete_configuration_count} NX \
-                 design configuration(s)."
+                "Arrangement-specific component suppression, its controlling expression, \
+                 and positioning constraints remain unresolved for {arrangement_count} NX arrangement(s)."
             ),
         );
     }

@@ -1,6 +1,6 @@
 use crate::test_support::test_b2::{
-    b2_cylinder_stream, b2_embedded_cylinder_stream, b2_fixed_owner_boundary_cycle_stream,
-    b2_implicit_axis_cylinder_stream, b2_range_origin_cylinder_stream,
+    b2_cylinder_stream, b2_fixed_owner_boundary_cycle_stream, b2_implicit_axis_cylinder_stream,
+    b2_range_origin_cylinder_stream, b2_wide_cylinder_stream,
     b2_width_coded_owner_with_allocation_stream,
 };
 
@@ -49,16 +49,14 @@ fn consolidated_cylinder_deserialization_admits_each_layout_chart() {
 }
 
 #[test]
-fn embedded_cylinder_deserialization_uses_the_layout_5a_admission() {
-    let native = crate::native::CatiaNative::decode(&b2_embedded_cylinder_stream());
-    assert!(!native.consolidated_embedded_cylinders.is_empty());
-    for cylinder in &native.consolidated_embedded_cylinders {
-        let valid = serde_json::to_value(cylinder).expect("embedded wire");
+fn wide_cylinder_deserialization_uses_the_layout_5a_admission() {
+    let native = crate::native::CatiaNative::decode(&b2_wide_cylinder_stream());
+    assert!(!native.consolidated_cylinders.is_empty());
+    for cylinder in &native.consolidated_cylinders {
+        let valid = serde_json::to_value(cylinder).expect("cylinder wire");
         assert_eq!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedEmbeddedCylinder>(
-                valid.clone()
-            )
-            .expect("admitted embedded chart"),
+            serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(valid.clone())
+                .expect("admitted wide-header chart"),
             *cylinder
         );
         for (field, value) in [
@@ -68,9 +66,13 @@ fn embedded_cylinder_deserialization_uses_the_layout_5a_admission() {
             ("u_range", serde_json::json!([0.0, 0.1])),
         ] {
             let mut invalid = valid.clone();
-            invalid[field] = value;
+            if field == "u_range" {
+                invalid[field] = value;
+            } else {
+                invalid["payload"][field] = value;
+            }
             assert!(
-                serde_json::from_value::<crate::native::CatiaConsolidatedEmbeddedCylinder>(invalid)
+                serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(invalid)
                     .is_err(),
                 "{field}"
             );

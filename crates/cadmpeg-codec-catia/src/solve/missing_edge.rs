@@ -1,8 +1,10 @@
-//! Mesh missing-edge enumeration for standard nested B-rep streams.
+// SPDX-License-Identifier: Apache-2.0
 //!
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
+/// Mesh missing-edge enumeration for standard nested B-rep streams.
 use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 
 type MissingEdgeDomainsOutput =
     Result<Option<(Vec<MeshFaceAssignmentDomain>, Vec<MeshEdgeRun>)>, CodecError>;
@@ -17,7 +19,6 @@ use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTo
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -36,86 +37,6 @@ pub(crate) fn standard_edge_rows(
     };
     let after_faces = face_run.after_faces();
     Ok(parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows))
-}
-
-fn standard_edge_port_identities(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    global: bool,
-) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) = parse_standard_edge_tables_scoped(bytes, after_faces)
-    else {
-        return Ok(None);
-    };
-    let mut identity_by_handle = HashMap::new();
-    let mut next_identity = 0u32;
-    let mut pairs = Vec::new();
-    for (row, scope) in edge_rows.iter().zip(scopes) {
-        let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
-            return Ok(None);
-        };
-        let pair = if !global && row.boundary_layout() != EdgeBoundaryLayout::CompleteBoundaryRun {
-            let start = next_identity;
-            let Some(next) = next_identity.checked_add(2) else {
-                return Ok(None);
-            };
-            next_identity = next;
-            let Some(end) = start.checked_add(1) else {
-                return Ok(None);
-            };
-            [start, end]
-        } else {
-            let mut pair = [0; 2];
-            for (port, handle) in [first, last].into_iter().enumerate() {
-                let key = (if global { 0 } else { scope }, handle);
-                let identity = if let Some(identity) = identity_by_handle.get(&key) {
-                    *identity
-                } else {
-                    let identity = next_identity;
-                    let Some(next) = next_identity.checked_add(1) else {
-                        return Ok(None);
-                    };
-                    next_identity = next;
-                    identity_by_handle.insert(key, identity);
-                    identity
-                };
-                pair[port] = identity;
-            }
-            pair
-        };
-        pairs.push(pair);
-    }
-    Ok(Some(pairs))
-}
-
-pub(crate) fn fbb_edge_port_identities(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
-    let face_run = largest_fbb_run(bytes)?;
-    let after_faces = face_run.after_faces();
-    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    let mut identity_by_handle = HashMap::new();
-    let mut pairs = Vec::new();
-    for (row, scope) in edge_rows.iter().zip(scopes) {
-        let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
-            return None;
-        };
-        let mut pair = [0; 2];
-        for (port, handle) in [first, last].into_iter().enumerate() {
-            let next = u32::try_from(identity_by_handle.len()).ok()?;
-            let key = (if global { 0 } else { scope }, handle);
-            pair[port] = if let Some(&identity) = identity_by_handle.get(&key) {
-                identity
-            } else {
-                identity_by_handle.insert(key, next);
-                next
-            };
-        }
-        pairs.push(pair);
-    }
-    Some(pairs)
 }
 
 const INDEXED_VISUALIZATION_POINT_MARKER: [u8; 6] = [0xff, 0xff, 0x02, 0x00, 0x01, 0xff];
@@ -302,6 +223,86 @@ fn compressed_visualization_point_bindings(
         }
     }
     (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
+}
+
+fn standard_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    global: bool,
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
+    let after_faces = face_run.after_faces();
+    let Some((edge_rows, scopes, _, _)) = parse_standard_edge_tables_scoped(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
+    let mut identity_by_handle = HashMap::new();
+    let mut next_identity = 0u32;
+    let mut pairs = Vec::new();
+    for (row, scope) in edge_rows.iter().zip(scopes) {
+        let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
+            return Ok(None);
+        };
+        let pair = if !global && row.boundary_layout() != EdgeBoundaryLayout::CompleteBoundaryRun {
+            let start = next_identity;
+            let Some(next) = next_identity.checked_add(2) else {
+                return Ok(None);
+            };
+            next_identity = next;
+            let Some(end) = start.checked_add(1) else {
+                return Ok(None);
+            };
+            [start, end]
+        } else {
+            let mut pair = [0; 2];
+            for (port, handle) in [first, last].into_iter().enumerate() {
+                let key = (if global { 0 } else { scope }, handle);
+                let identity = if let Some(identity) = identity_by_handle.get(&key) {
+                    *identity
+                } else {
+                    let identity = next_identity;
+                    let Some(next) = next_identity.checked_add(1) else {
+                        return Ok(None);
+                    };
+                    next_identity = next;
+                    identity_by_handle.insert(key, identity);
+                    identity
+                };
+                pair[port] = identity;
+            }
+            pair
+        };
+        pairs.push(pair);
+    }
+    Ok(Some(pairs))
+}
+
+pub(crate) fn fbb_edge_port_identities(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
+    let face_run = largest_fbb_run(bytes)?;
+    let after_faces = face_run.after_faces();
+    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let mut identity_by_handle = HashMap::new();
+    let mut pairs = Vec::new();
+    for (row, scope) in edge_rows.iter().zip(scopes) {
+        let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
+            return None;
+        };
+        let mut pair = [0; 2];
+        for (port, handle) in [first, last].into_iter().enumerate() {
+            let next = u32::try_from(identity_by_handle.len()).ok()?;
+            let key = (if global { 0 } else { scope }, handle);
+            pair[port] = if let Some(&identity) = identity_by_handle.get(&key) {
+                identity
+            } else {
+                identity_by_handle.insert(key, next);
+                next
+            };
+        }
+        pairs.push(pair);
+    }
+    Some(pairs)
 }
 
 /// Select conservative endpoint identities for the bounded topology solver.
@@ -1996,7 +1997,6 @@ fn standard_mesh_missing_edge_assignment_domains(
             dead_states: HashSet<DeadState>,
             remaining_states: &'a mut usize,
             states: usize,
-            depth: usize,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
@@ -2041,8 +2041,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     return Ok(Some(()));
                 }
                 let before = self.assignments;
-                self.depth += 1;
-                let walked = self.walk_state(GapWalkState {
+                let Some(()) = self.walk_state(GapWalkState {
                     gap,
                     offset,
                     used,
@@ -2050,9 +2049,8 @@ fn standard_mesh_missing_edge_assignment_domains(
                     current_points,
                     gap_placed_start,
                     placed,
-                });
-                self.depth -= 1;
-                let Some(()) = walked? else {
+                })?
+                else {
                     return Ok(None);
                 };
                 if self.assignments == before {
@@ -2072,9 +2070,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     placed,
                 } = inputs;
 
-                if self.depth > WorkBudget::RECURSION_DEPTH {
-                    return Ok(None);
-                }
+                let _depth = self.ctx.enter_nested("catia_gap_assignment_depth")?;
                 let Some(remaining) = self.remaining_states.checked_sub(1) else {
                     return Ok(None);
                 };
@@ -2092,7 +2088,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 if gap == self.gaps.len() {
                     if index_from_u32(used.count_ones()) == self.missing.len() {
                         self.assignments += 1;
-                        let copy = placed.clone();
+                        let copy = (placed).clone();
                         self.complete.push(copy);
                     }
                     return Ok(Some(()));
@@ -2128,7 +2124,8 @@ fn standard_mesh_missing_edge_assignment_domains(
                             .and_then(|next| {
                                 self.corner_points.get(&(self.face, next.cycle, next.start))
                             })
-                            .map(|source| Arc::new(source.clone()));
+                            .map(|source| Arc::new((source).clone()));
+
                         let saved = placed[gap_placed_start..].to_vec();
                         if offset < target {
                             let slack = target - offset;
@@ -2225,7 +2222,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 ports.push(Some(edge_ports[edge][1]));
                                 ports
                             }
-                            (None, _) => vec![None],
+                            (None, _) => self.ctx.alloc_filled(1, None, "catia_gap_next_ports")?,
                         };
                         next_ports.sort_unstable_by(Ord::cmp);
                         next_ports.dedup();
@@ -2247,7 +2244,6 @@ fn standard_mesh_missing_edge_assignment_domains(
                                             }
                                         }
                                     }
-
                                     Some(Arc::new(next))
                                 }
                             }
@@ -2327,7 +2323,6 @@ fn standard_mesh_missing_edge_assignment_domains(
             dead_states: HashSet::new(),
             remaining_states,
             states: 0,
-            depth: 0,
             assignments: 0,
             complete: Vec::new(),
         };
@@ -2337,7 +2332,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         let first_points = gaps
             .first()
             .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)))
-            .map(|source| Arc::new(source.clone()));
+            .map(|source| Arc::new((source).clone()));
         if search
             .walk(GapSearchState {
                 gap: 0,
@@ -2359,6 +2354,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     }
 
     fn endpoint_trail_assignments(
+        _ctx: &DecodeContext<'_>,
         face: usize,
         (gaps, cycle_lengths): (&[MeshBoundaryGap], &[usize]),
         missing: &[usize],
@@ -2457,6 +2453,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                         .cmp(&right.edges.iter().copied().min())
                 });
                 let mut placements = Vec::new();
+
                 for gap in gaps {
                     let mut candidates = Vec::new();
                     for (index, trail) in available.iter().enumerate() {
@@ -2530,14 +2527,17 @@ fn standard_mesh_missing_edge_assignment_domains(
                 return None;
             }
             let mut trail_edges = Vec::new();
+
             for trail in &trails {
                 let copy = trail.edges.clone();
                 trail_edges.push(copy);
             }
             let orders = bounded_oriented_trail_orders(&trail_edges, MAX_ASSIGNMENTS_PER_FACE)?;
             let mut assignments = Vec::new();
+
             for order in orders {
                 let mut placements = Vec::new();
+
                 placements.extend(order.into_iter().enumerate().map(|(offset, edge)| {
                     MeshEdgePlacementCandidate {
                         edge,
@@ -2555,6 +2555,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     }
 
     fn endpoint_cycle_assignments(
+        _ctx: &DecodeContext<'_>,
         face: usize,
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
@@ -2578,8 +2579,10 @@ fn standard_mesh_missing_edge_assignment_domains(
             let orders =
                 bounded_endpoint_cycle_orders(missing, edge_candidates, MAX_ASSIGNMENTS_PER_FACE)?;
             let mut assignments = Vec::new();
+
             for order in orders {
                 let mut placements = Vec::new();
+
                 placements.extend(order.into_iter().enumerate().map(|(offset, edge)| {
                     MeshEdgePlacementCandidate {
                         edge,
@@ -2605,7 +2608,6 @@ fn standard_mesh_missing_edge_assignment_domains(
     if let Some(candidates) = edge_candidates {
         let mut domains = Vec::new();
         let mut transition_rows = Vec::new();
-
         for pairs in candidates {
             let mut points = HashSet::new();
             let mut transitions = HashMap::<usize, HashSet<usize>>::new();
@@ -2617,6 +2619,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     transitions.entry(from).or_default().insert(to);
                 }
             }
+
             domains.push(Arc::new(points));
             let mut retained_transitions = HashMap::new();
             for (point, targets) in transitions {
@@ -2638,7 +2641,6 @@ fn standard_mesh_missing_edge_assignment_domains(
     let placement_ports = complete_boundary_ports.then_some(edge_ports.as_slice());
     let singleton_edge_points = if let Some(candidates) = edge_candidates {
         let mut singleton = Vec::new();
-
         singleton.extend(candidates.iter().map(|domain| {
             <[[usize; 2]; 1]>::try_from(domain.as_slice())
                 .ok()
@@ -2688,7 +2690,6 @@ fn standard_mesh_missing_edge_assignment_domains(
         }
     }
     let mut assignment_results = Vec::new();
-
     for face in coverage {
         let cycle_lengths = &context.cycle_lengths[face.face];
         let unordered_full_cycle = edge_candidates.and_then(|candidates| {
@@ -2712,11 +2713,14 @@ fn standard_mesh_missing_edge_assignment_domains(
             .then_some(face.missing_edges.as_slice())
         });
         if let Some(edges) = unordered_full_cycle {
-            assignment_results.push(MeshFaceAssignmentDomain::UnorderedFullCycle(edges.to_vec()));
+            assignment_results.push(MeshFaceAssignmentDomain::UnorderedFullCycle(
+                (edges).to_vec(),
+            ));
             continue;
         }
         let cycle_assignments = if let Some(candidates) = edge_candidates {
             endpoint_cycle_assignments(
+                ctx,
                 face.face,
                 &face.gaps,
                 cycle_lengths,
@@ -2730,6 +2734,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         let trail_assignments = if cycle_assignments.is_none() {
             if let Some(edge_points) = singleton_edge_points.as_ref() {
                 endpoint_trail_assignments(
+                    ctx,
                     face.face,
                     (&face.gaps, cycle_lengths),
                     &face.missing_edges,
@@ -2815,7 +2820,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         };
         assignment_results.push(domain);
     }
-    Ok(Some((assignment_results, edge_runs.clone())))
+    Ok(Some((assignment_results, (edge_runs).clone())))
 }
 
 fn standard_mesh_missing_edge_assignments(

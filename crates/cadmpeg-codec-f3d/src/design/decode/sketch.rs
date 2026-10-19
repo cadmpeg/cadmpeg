@@ -110,7 +110,7 @@ fn entity_meta_scope(bulk_scope: &str) -> Option<String> {
 pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
     cache: &'a mut HashMap<&'s str, IndexedRecordOffsets>,
     stream: &'s str,
-    bytes: &[u8],
+    bytes: &'a [u8],
 ) -> &'a IndexedRecordOffsets {
     match cache.entry(stream) {
         std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -1336,11 +1336,9 @@ fn decode_headers_for_indices(
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in scan.entries.iter().filter(|entry| {
+        super::sheet_metal_settings::is_settings_stream(scan, entry, ContainerRole::Bulkstream)
+    }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
         decode_headers_for_indices_from_stream(&entry.name, &scope, bytes, wanted, &mut out);

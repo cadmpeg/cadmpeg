@@ -24,11 +24,11 @@ pub(crate) fn e5_circle_stream() -> Vec<u8> {
     ] {
         write(&mut record, at, value);
     }
-    let mut edge = vec![0u8; 19];
+    let mut edge = vec![0u8; 20];
     edge[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     edge[3] = 0xff;
-    edge[5..7].copy_from_slice(&6u16.to_le_bytes());
-    edge[13..19].copy_from_slice(&[0x85, 0x80, 0x81, 0x82, 0x80, 0x80]);
+    edge[5..7].copy_from_slice(&7u16.to_le_bytes());
+    edge[13..20].copy_from_slice(&[0x85, 0x80, 0x81, 0x82, 0x80, 0x80, 0x21]);
     record.extend_from_slice(&edge);
     for xyz in [[12.5f32, 20.0, 30.0], [7.5, 20.0, 30.0]] {
         record.extend_from_slice(&[0x05, 0x08, 0x01]);
@@ -271,6 +271,7 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
         ];
         support.extend_from_slice(&le_f64(0.0));
         support.extend_from_slice(&le_f64(1.0));
+        support.extend_from_slice(&[0; 12]);
         append_e5_record(
             &mut bytes,
             0xc0,
@@ -282,7 +283,7 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
     let mut bound_payload = vec![0x84, 0xbc, 0xbd, 0xbe, 0xbf, 0x84];
     for parameter in [0.0_f64, 1.0, 0.0, 1.0] {
         bound_payload.extend_from_slice(&le_f64(parameter));
-        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        bound_payload.extend_from_slice(&1_u32.to_le_bytes());
     }
     append_e5_record(&mut bytes, 0x0e, 0, &bound_payload);
 
@@ -301,7 +302,7 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
                 0x80 + end,
                 0x80,
                 0x80,
-                0x80,
+                0x21,
             ],
         );
     }
@@ -310,10 +311,18 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
     for index in 0..4 {
         loop_payload.extend_from_slice(&[0xbc + index, 0xd0 + index]);
     }
-    loop_payload.push(0xb2);
+    loop_payload.extend_from_slice(&[0xb2, 0x84]);
+    for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0] {
+        loop_payload.extend_from_slice(&sign.to_le_bytes());
+    }
     append_e5_record(&mut bytes, 0x09, 90, &loop_payload);
     append_e5_record(&mut bytes, 0x00, 91, &[0x82, 0xb2, 0xda, 1, 0]);
-    append_e5_record(&mut bytes, 0x08, 92, &[0x81, 0xdb, 0x81, 1, 0, 1, 0, 1, 0]);
+    append_e5_record(
+        &mut bytes,
+        0x08,
+        92,
+        &[0x81, 0xdb, 0x81, 1, 0, 255, 255, 255, 255],
+    );
     append_e5_record(&mut bytes, 0x01, 93, &[0x81, 0xdc]);
 
     for xyz in [
@@ -332,4 +341,31 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
         }
     }
     bytes
+}
+
+/// A complete identity affine map for topology fixtures.
+pub(crate) fn affine_support(
+    curves: [u32; 2],
+    range: [cadmpeg_ir::scalar::FiniteReal; 2],
+) -> crate::families::e5::support::E5CurveSupport {
+    use crate::families::e5::support::{
+        E5CurveSupport, E5CurveSupportKind, E5EquivalentParameters, E5ParameterProgram,
+    };
+    use cadmpeg_ir::scalar::{FiniteReal, NonNegativeLength, NonZeroReal};
+    E5CurveSupport {
+        kind: E5CurveSupportKind::Intersection {
+            curves,
+            correspondence: E5EquivalentParameters {
+                map_accuracy: NonNegativeLength::new(0.0).unwrap(),
+                co_domain: range,
+                program: E5ParameterProgram::Affine {
+                    scale: NonZeroReal::new(1.0).unwrap(),
+                    offset: FiniteReal::new(0.0).unwrap(),
+                },
+                active_reference_limits: range,
+                fit_tolerance: NonNegativeLength::new(0.0).unwrap(),
+            },
+        },
+        range,
+    }
 }

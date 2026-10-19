@@ -3,6 +3,7 @@
 //!
 //! Each wrapper feeds arbitrary bytes to one internal parser and discards the
 //! result. The contract is that no input may panic.
+
 #![doc(hidden)]
 
 use crate::framing::node_kind::NodeKind;
@@ -105,7 +106,7 @@ pub fn topology(data: &[u8]) {
         let _ = node.f64_at(0);
     }
     drop(crate::topology::composite_curves(data));
-    drop(crate::topology::intersection_data_curves(data));
+    drop(crate::topology::declared_composite_curves(data));
     drop(crate::topology::blend_surfaces(data));
     drop(crate::topology::offset_surfaces(data));
     drop(crate::topology::surface_curves(data));

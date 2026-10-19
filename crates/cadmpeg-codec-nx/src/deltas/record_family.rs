@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted delta record layouts and their native-wire projections.
 
-use super::attdef_state::AttdefSlots;
-use super::group::{GroupReferenceStatus, GroupSelector};
+use super::group::GroupReferenceStatus;
+use super::intersection::IntersectionReferences;
+use super::list::ListFields;
+use super::pointer_list_block::PointerListBlockFields;
 use super::record_kind::RecordKind;
+use super::world::WorldReferences;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::iter_wire::IterWire;
 use crate::nurbs::curve_references::CurveDescriptorReferences;
 use crate::parasolid::entity_references::EntityReferences;
+use crate::records::group::GroupSelector;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -122,7 +126,7 @@ pub(crate) enum RecordFamily {
         node_id: u32,
     },
     Intersection {
-        references: [u32; 11],
+        references: IntersectionReferences,
         node_id: u32,
     },
     Chart,
@@ -168,13 +172,11 @@ pub(crate) enum RecordFamily {
         references: [u32; 6],
         node_id: u32,
     },
-    Type70 {
-        references: [u32; 4],
-        trailing_reference: NonNullXmt,
-        node_id: u32,
+    List {
+        fields: ListFields,
     },
-    AttdefList {
-        slots: AttdefSlots,
+    PointerListBlock {
+        fields: PointerListBlockFields,
     },
     Entity51 {
         leading_references: [u32; 5],
@@ -195,14 +197,11 @@ pub(crate) enum RecordFamily {
         selector: GroupSelector,
         linked_reference_status: GroupReferenceStatus,
     },
-    IntersectionData {
-        references: [u32; 11],
-    },
     Type91 {
         references: [u32; 6],
     },
-    Type101 {
-        references: [u32; 15],
+    World {
+        references: WorldReferences,
     },
     BSurface {
         references: [u32; 7],
@@ -229,8 +228,11 @@ pub(crate) enum RecordFamily {
         references: [u32; 8],
         node_id: u32,
     },
-    Type141 {
-        references: [u32; 4],
+    GeometricOwner {
+        owner: NonNullXmt,
+        next: NonNullXmt,
+        previous: NonNullXmt,
+        shared_geometry: NonNullXmt,
     },
     SupportUv,
 }
@@ -253,7 +255,9 @@ impl Serialize for RecordFamilyReferences<'_> {
             RecordFamily::Line { references, .. } => references.serialize(serializer),
             RecordFamily::Circle { references, .. } => references.serialize(serializer),
             RecordFamily::Ellipse { references, .. } => references.serialize(serializer),
-            RecordFamily::Intersection { references, .. } => references.serialize(serializer),
+            RecordFamily::Intersection { references, .. } => {
+                references.values().serialize(serializer)
+            }
             RecordFamily::Plane { references, .. } => references.serialize(serializer),
             RecordFamily::Cylinder { references, .. } => references.serialize(serializer),
             RecordFamily::Cone { references, .. } => references.serialize(serializer),
@@ -263,19 +267,9 @@ impl Serialize for RecordFamilyReferences<'_> {
             RecordFamily::BlendBound { references, .. } => references.serialize(serializer),
             RecordFamily::OffsetSurf { references, .. } => references.serialize(serializer),
             RecordFamily::Type67 { references, .. } => references.serialize(serializer),
-            RecordFamily::Type70 {
-                references,
-                trailing_reference,
-                ..
-            } => IterWire(
-                references
-                    .iter()
-                    .copied()
-                    .chain([u32::from(*trailing_reference); 2]),
-            )
-            .serialize(serializer),
-            RecordFamily::AttdefList { slots } => {
-                IterWire(std::iter::once(1).chain(slots.references())).serialize(serializer)
+            RecordFamily::List { fields } => fields.references().serialize(serializer),
+            RecordFamily::PointerListBlock { fields } => {
+                IterWire(fields.references()).serialize(serializer)
             }
             RecordFamily::Entity51 {
                 leading_references,
@@ -288,9 +282,8 @@ impl Serialize for RecordFamilyReferences<'_> {
             )
             .serialize(serializer),
             RecordFamily::Group { references, .. } => references.serialize(serializer),
-            RecordFamily::IntersectionData { references, .. } => references.serialize(serializer),
             RecordFamily::Type91 { references, .. } => references.serialize(serializer),
-            RecordFamily::Type101 { references, .. } => references.serialize(serializer),
+            RecordFamily::World { references, .. } => references.values().serialize(serializer),
             RecordFamily::BSurface { references, .. } => references.serialize(serializer),
             RecordFamily::TrimmedCurve { references, .. } => references.serialize(serializer),
             RecordFamily::BCurve { references, .. } => references.serialize(serializer),
@@ -301,7 +294,18 @@ impl Serialize for RecordFamilyReferences<'_> {
                 }
             },
             RecordFamily::SpCurve { references, .. } => references.serialize(serializer),
-            RecordFamily::Type141 { references } => references.serialize(serializer),
+            RecordFamily::GeometricOwner {
+                owner,
+                next,
+                previous,
+                shared_geometry,
+            } => [
+                u32::from(*owner),
+                u32::from(*next),
+                u32::from(*previous),
+                u32::from(*shared_geometry),
+            ]
+            .serialize(serializer),
             RecordFamily::Chart
             | RecordFamily::TermUse
             | RecordFamily::Type45
@@ -353,8 +357,8 @@ impl RecordFamily {
             RecordKind::BlendBound => 59,
             RecordKind::OffsetSurf => 60,
             RecordKind::Type67 => 67,
-            RecordKind::Type70 => 70,
-            RecordKind::AttdefList => 74,
+            RecordKind::List => 70,
+            RecordKind::PointerListBlock => 74,
             RecordKind::Entity51 => 81,
             RecordKind::Entity52 => 82,
             RecordKind::Entity53 => 83,
@@ -367,7 +371,7 @@ impl RecordFamily {
             RecordKind::Entity62 => 98,
             RecordKind::Group => 90,
             RecordKind::Type91 => 91,
-            RecordKind::Type101 => 101,
+            RecordKind::World => 101,
             RecordKind::BSurface => 124,
             RecordKind::BSurfaceData => 125,
             RecordKind::BSurfaceDescriptor => 126,
@@ -378,7 +382,7 @@ impl RecordFamily {
             RecordKind::BCurveData => 135,
             RecordKind::BCurveDescriptor => 136,
             RecordKind::SpCurve => 137,
-            RecordKind::Type141 => 141,
+            RecordKind::GeometricOwner => 141,
             RecordKind::SupportUv => 204,
         }
     }
@@ -410,8 +414,8 @@ impl RecordFamily {
             Self::BlendBound { .. } => RecordKind::BlendBound,
             Self::OffsetSurf { .. } => RecordKind::OffsetSurf,
             Self::Type67 { .. } => RecordKind::Type67,
-            Self::Type70 { .. } => RecordKind::Type70,
-            Self::AttdefList { .. } => RecordKind::AttdefList,
+            Self::List { .. } => RecordKind::List,
+            Self::PointerListBlock { .. } => RecordKind::PointerListBlock,
             Self::Entity51 { .. } => RecordKind::Entity51,
             Self::Entity52 => RecordKind::Entity52,
             Self::Entity53 => RecordKind::Entity53,
@@ -422,9 +426,9 @@ impl RecordFamily {
             Self::Entity58 => RecordKind::Entity58,
             Self::Entity59 => RecordKind::Entity59,
             Self::Entity62 => RecordKind::Entity62,
-            Self::Group { .. } | Self::IntersectionData { .. } => RecordKind::Group,
+            Self::Group { .. } => RecordKind::Group,
             Self::Type91 { .. } => RecordKind::Type91,
-            Self::Type101 { .. } => RecordKind::Type101,
+            Self::World { .. } => RecordKind::World,
             Self::BSurface { .. } => RecordKind::BSurface,
             Self::BSurfaceData => RecordKind::BSurfaceData,
             Self::BSurfaceDescriptor => RecordKind::BSurfaceDescriptor,
@@ -435,7 +439,7 @@ impl RecordFamily {
             Self::BCurveData => RecordKind::BCurveData,
             Self::BCurveDescriptor { .. } => RecordKind::BCurveDescriptor,
             Self::SpCurve { .. } => RecordKind::SpCurve,
-            Self::Type141 { .. } => RecordKind::Type141,
+            Self::GeometricOwner { .. } => RecordKind::GeometricOwner,
             Self::SupportUv => RecordKind::SupportUv,
         }
     }
@@ -443,6 +447,7 @@ impl RecordFamily {
     /// Kernel node identifier when this family serializes one.
     pub(crate) const fn node_id(&self) -> Option<u32> {
         match self {
+            Self::List { .. } => Some(0),
             Self::Body { node_id, .. }
             | Self::Shell { node_id, .. }
             | Self::Face { node_id, .. }
@@ -463,7 +468,6 @@ impl RecordFamily {
             | Self::BlendSurf { node_id, .. }
             | Self::OffsetSurf { node_id, .. }
             | Self::Type67 { node_id, .. }
-            | Self::Type70 { node_id, .. }
             | Self::Group { node_id, .. }
             | Self::BSurface { node_id, .. }
             | Self::TrimmedCurve { node_id, .. }
@@ -474,7 +478,7 @@ impl RecordFamily {
             | Self::TermUse
             | Self::Type45
             | Self::BlendBound { .. }
-            | Self::AttdefList { .. }
+            | Self::PointerListBlock { .. }
             | Self::Entity51 { .. }
             | Self::Entity52
             | Self::Entity53
@@ -485,16 +489,15 @@ impl RecordFamily {
             | Self::Entity58
             | Self::Entity59
             | Self::Entity62
-            | Self::IntersectionData { .. }
             | Self::Type91 { .. }
-            | Self::Type101 { .. }
+            | Self::World { .. }
             | Self::BSurfaceData
             | Self::BSurfaceDescriptor
             | Self::Multiplicities
             | Self::Knots
             | Self::BCurveData
             | Self::BCurveDescriptor { .. }
-            | Self::Type141 { .. }
+            | Self::GeometricOwner { .. }
             | Self::SupportUv => None,
         }
     }
@@ -518,10 +521,7 @@ impl RecordFamily {
 
     /// Stable family name used by the deltas census and native records.
     pub(crate) const fn family_name(&self) -> &'static str {
-        match self {
-            Self::IntersectionData { .. } => "INTERSECTION_DATA",
-            _ => self.record_kind().name(),
-        }
+        self.record_kind().name()
     }
 
     /// Ordered references retained by this record layout.
@@ -540,7 +540,7 @@ impl RecordFamily {
             Self::Line { references, .. } => references.to_vec(),
             Self::Circle { references, .. } => references.to_vec(),
             Self::Ellipse { references, .. } => references.to_vec(),
-            Self::Intersection { references, .. } => references.to_vec(),
+            Self::Intersection { references, .. } => references.values().to_vec(),
             Self::Plane { references, .. } => references.to_vec(),
             Self::Cylinder { references, .. } => references.to_vec(),
             Self::Cone { references, .. } => references.to_vec(),
@@ -550,16 +550,8 @@ impl RecordFamily {
             Self::BlendBound { references, .. } => references.to_vec(),
             Self::OffsetSurf { references, .. } => references.to_vec(),
             Self::Type67 { references, .. } => references.to_vec(),
-            Self::Type70 {
-                references,
-                trailing_reference,
-                ..
-            } => references
-                .iter()
-                .copied()
-                .chain([u32::from(*trailing_reference); 2])
-                .collect(),
-            Self::AttdefList { slots } => std::iter::once(1).chain(slots.references()).collect(),
+            Self::List { fields } => fields.references().to_vec(),
+            Self::PointerListBlock { fields } => fields.references().collect(),
             Self::Entity51 {
                 leading_references,
                 trailing_references,
@@ -569,15 +561,25 @@ impl RecordFamily {
                 .chain(trailing_references.values().iter().copied())
                 .collect(),
             Self::Group { references, .. } => references.to_vec(),
-            Self::IntersectionData { references, .. } => references.to_vec(),
             Self::Type91 { references, .. } => references.to_vec(),
-            Self::Type101 { references, .. } => references.to_vec(),
+            Self::World { references, .. } => references.values().to_vec(),
             Self::BSurface { references, .. } => references.to_vec(),
             Self::TrimmedCurve { references, .. } => references.to_vec(),
             Self::BCurve { references, .. } => references.to_vec(),
             Self::BCurveDescriptor { references, .. } => references.values(),
             Self::SpCurve { references, .. } => references.to_vec(),
-            Self::Type141 { references, .. } => references.to_vec(),
+            Self::GeometricOwner {
+                owner,
+                next,
+                previous,
+                shared_geometry,
+            } => [
+                u32::from(*owner),
+                u32::from(*next),
+                u32::from(*previous),
+                u32::from(*shared_geometry),
+            ]
+            .to_vec(),
             Self::Chart
             | Self::TermUse
             | Self::Type45
@@ -842,18 +844,6 @@ impl RecordFamily {
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
-            "TYPE_70" => {
-                let [a, b, c, d, trailing, repeated] = <[u32; 6]>::try_from(references).ok()?;
-                (trailing == repeated).then_some(())?;
-                Self::Type70 {
-                    references: [a, b, c, d],
-                    trailing_reference: NonNullXmt::try_from(trailing).ok()?,
-                    node_id: node_id?,
-                }
-            }
-            "ATTDEF_LIST" => Self::AttdefList {
-                slots: AttdefSlots::from_delta_references(references).ok()?,
-            },
             "ENTITY_51" => {
                 let leading_references = references.get(..5)?.try_into().ok()?;
                 let trailing_references =
@@ -905,13 +895,10 @@ impl RecordFamily {
                 selector: group_selector?,
                 linked_reference_status: group_linked_reference_status?,
             },
-            "INTERSECTION_DATA" => Self::IntersectionData {
-                references: references.try_into().ok()?,
-            },
             "TYPE_91" => Self::Type91 {
                 references: references.try_into().ok()?,
             },
-            "TYPE_101" => Self::Type101 {
+            "WORLD" => Self::World {
                 references: references.try_into().ok()?,
             },
             "B_SURFACE" => Self::BSurface {
@@ -954,9 +941,16 @@ impl RecordFamily {
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
-            "TYPE_141" => Self::Type141 {
-                references: references.try_into().ok()?,
-            },
+            "GEOMETRIC_OWNER" => {
+                let [owner, next, previous, shared_geometry]: [u32; 4] =
+                    references.try_into().ok()?;
+                Self::GeometricOwner {
+                    owner: owner.try_into().ok()?,
+                    next: next.try_into().ok()?,
+                    previous: previous.try_into().ok()?,
+                    shared_geometry: shared_geometry.try_into().ok()?,
+                }
+            }
             "SUPPORT_UV" => {
                 references.is_empty().then_some(())?;
                 Self::SupportUv
@@ -1052,5 +1046,87 @@ mod point_coordinate_tests {
                 .is_none());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod geometric_owner_tests {
+    use super::{RecordFamily, RecordFamilyReferences};
+
+    #[test]
+    fn geometric_owner_wire_preserves_primary_pointer_order_and_rejects_null_targets() {
+        let references = [1119, 4949, 951, 936];
+        let family = RecordFamily::from_wire(
+            "GEOMETRIC_OWNER",
+            141,
+            None,
+            None,
+            None,
+            None,
+            references.to_vec(),
+        )
+        .expect("four canonical pointers");
+        let RecordFamily::GeometricOwner {
+            owner,
+            next,
+            previous,
+            shared_geometry,
+        } = &family
+        else {
+            panic!("named geometric-owner family");
+        };
+        assert_eq!(
+            [
+                u32::from(*owner),
+                u32::from(*next),
+                u32::from(*previous),
+                u32::from(*shared_geometry)
+            ],
+            references
+        );
+        assert_eq!(family.family_name(), "GEOMETRIC_OWNER");
+        assert_eq!(family.kind(), 141);
+        assert_eq!(
+            serde_json::to_value(RecordFamilyReferences(&family)).unwrap(),
+            serde_json::json!(references)
+        );
+        for slot in 0..4 {
+            for null in [0, 1] {
+                let mut invalid = references;
+                invalid[slot] = null;
+                assert!(RecordFamily::from_wire(
+                    "GEOMETRIC_OWNER",
+                    141,
+                    None,
+                    None,
+                    None,
+                    None,
+                    invalid.to_vec(),
+                )
+                .is_none());
+            }
+        }
+        for invalid in [vec![1119, 4949, 951], vec![1119, 4949, 951, 936, 937]] {
+            assert!(RecordFamily::from_wire(
+                "GEOMETRIC_OWNER",
+                141,
+                None,
+                None,
+                None,
+                None,
+                invalid,
+            )
+            .is_none());
+        }
+        assert!(RecordFamily::from_wire(
+            "TYPE_141",
+            141,
+            None,
+            None,
+            None,
+            None,
+            references.to_vec(),
+        )
+        .is_none());
     }
 }

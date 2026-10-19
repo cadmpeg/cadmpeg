@@ -83,6 +83,11 @@ pub(crate) struct LayerClassification {
     losses: Vec<LossNote>,
 }
 
+impl crate::NxCodec {
+    /// Parasolid dialect grammars this host verifies under their own identities.
+    pub const VERIFIED_PARASOLID_GRAMMARS: &'static [DialectId] = &[];
+}
+
 impl LayerClassification {
     pub(crate) fn container_kind(&self) -> cadmpeg_ir::ContainerKind {
         self.host.container_kind()
@@ -104,11 +109,8 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
             ));
         }
     }
-    let extra = cadmpeg_parasolid::extra_layers(
-        carriers,
-        // NX verifies no Parasolid schema itself; every kernel layer is residual.
-        &[],
-    );
+    let extra =
+        cadmpeg_parasolid::extra_layers(carriers, crate::NxCodec::VERIFIED_PARASOLID_GRAMMARS);
     let host = NxDialect::of_container(&scan.container);
     let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
     let mut losses = Vec::new();

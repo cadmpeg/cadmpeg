@@ -153,3 +153,90 @@ pub(crate) fn zero_entity_ownership_stream(face_count: u8) -> Vec<u8> {
 
     face_roster.into_iter().chain(shell).chain(body).collect()
 }
+
+/// Two oppositely oriented triangular faces with three source-closed physical edges.
+pub(crate) fn zero_entity_allocation_stream() -> Vec<u8> {
+    fn tagged(record: &mut [u8], offset: usize, value: u32) {
+        record[offset] = 0x10;
+        record[offset + 1..offset + 5].copy_from_slice(&value.to_le_bytes());
+    }
+    fn frame(tag: [u8; 2]) -> Vec<u8> {
+        let mut record = vec![0; usize::from(tag[1]) + 12];
+        record[..4].copy_from_slice(&[0xa9, 0x03, tag[0], tag[1]]);
+        tagged(&mut record, 7, 1);
+        record
+    }
+    let prototype = zero_entity_support_stream();
+    let mut stream = Vec::new();
+    for order in [[(0, 1), (1, 2), (2, 0)], [(2, 0), (1, 2), (0, 1)]] {
+        stream.extend_from_slice(&prototype[..118]);
+        for (index, (start, end)) in order.into_iter().enumerate() {
+            let mut support = prototype[118..].to_vec();
+            tagged(
+                &mut support,
+                12,
+                u32::try_from(index + 2).expect("three slots"),
+            );
+            let uv = [[0_f64, 0.], [1., 0.], [0., 1.]];
+            for (offset, point) in [(93, uv[start]), (109, uv[end])] {
+                support[offset..offset + 8].copy_from_slice(&point[0].to_le_bytes());
+                support[offset + 8..offset + 16].copy_from_slice(&point[1].to_le_bytes());
+            }
+            stream.extend(support);
+        }
+    }
+    for base in [[72_u32, 49], [74, 53], [76, 57]] {
+        let mut header = frame([0x25, 0x69]);
+        header[12] = 0x82;
+        tagged(&mut header, 13, base[0]);
+        tagged(&mut header, 18, base[1]);
+        stream.extend(header);
+        for side in [1, 2] {
+            let mut use_record = frame([0x06, 0x38]);
+            use_record[12] = 0x83;
+            tagged(&mut use_record, 13, side);
+            tagged(&mut use_record, 18, base[0] + side);
+            tagged(&mut use_record, 23, base[1] + side);
+            stream.extend(use_record);
+        }
+    }
+    for distances in [[8, 1], [9, 7], [8, 6]] {
+        let mut incidence = frame([0x05, 0x0b]);
+        incidence[12] = 0x82;
+        tagged(&mut incidence, 13, distances[0]);
+        tagged(&mut incidence, 18, distances[1]);
+        stream.extend(incidence);
+        let mut owner = frame([0x5d, 0x06]);
+        tagged(&mut owner, 12, 1);
+        stream.extend(owner);
+    }
+    for values in [[15, 5, 3, 14, 13], [13, 4, 2, 12, 11], [11, 3, 7, 10, 9]] {
+        let mut stride = frame([0x5e, 0x1a]);
+        for (index, value) in values.into_iter().enumerate() {
+            tagged(&mut stride, 12 + index * 5, value);
+        }
+        stride[37] = 0x21;
+        stream.extend(stride);
+    }
+    for (values, trailer) in [
+        ([90, 3, 89, 2, 88, 1, 92], [0x83, 0x41, 0xff, 0x01, 0x01]),
+        ([70, 2, 69, 3, 68, 4, 72], [0x83, 0xc1, 0x92, 0x00, 0x01]),
+    ] {
+        let mut loop_record = frame([0x62, 0x29]);
+        loop_record[12] = 0x87;
+        for (index, value) in values.into_iter().enumerate() {
+            tagged(&mut loop_record, 13 + index * 5, value);
+        }
+        loop_record[48..].copy_from_slice(&trailer);
+        stream.extend(loop_record);
+    }
+    for (first, control) in [(95, 5), (75, 3)] {
+        let mut face = frame([0x5f, 0x0c]);
+        face[12] = 0x82;
+        tagged(&mut face, 13, first);
+        tagged(&mut face, 18, 3);
+        face[23] = control;
+        stream.extend(face);
+    }
+    stream
+}

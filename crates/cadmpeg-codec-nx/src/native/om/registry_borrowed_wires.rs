@@ -1,22 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed class and field registry metadata serialization.
 
-use super::{registry_layout, ClassDefinition, FieldDefinition};
+use super::{ClassDefinition, FieldDefinition};
 use serde::ser::SerializeMap;
 use serde::Serialize;
 
 impl Serialize for ClassDefinition {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tail = [0_u8; 17];
-        tail[0] = self.trailing_code;
-        let registry = if self.registry_suffix.len() <= 16 {
-            let end = self.registry_suffix.len() + 1;
-            tail[1..end].copy_from_slice(&self.registry_suffix);
-            crate::om::registry::class_registry_layout(&tail[..end])
-        } else {
-            None
-        };
-        let layout = registry_layout(&self.registry_suffix);
+        let registry = self.registry_layout();
         let mut wire = serializer.serialize_map(None)?;
         wire.serialize_entry("id", &self.id)?;
         wire.serialize_entry("name", &self.name)?;
@@ -30,28 +21,17 @@ impl Serialize for ClassDefinition {
             )?;
             wire.serialize_entry("registry_reference", &registry.reference.get())?;
         }
+        if let Some(reference) = &self.registry_reference_declaration {
+            wire.serialize_entry("registry_reference_declaration", reference)?;
+        }
         if !self.registry_suffix.is_empty() {
             wire.serialize_entry("registry_suffix", &self.registry_suffix)?;
         }
-        if let Some(layout) = &layout {
-            if !layout.prefix.is_empty() {
-                wire.serialize_entry(
-                    "layout_prefix",
-                    &cadmpeg_ir::native::bytes::NativeBytes::from(layout.prefix),
-                )?;
-            }
-        }
-        if let Some(fingerprint) = registry
-            .map(|value| value.schema_fingerprint)
-            .or_else(|| layout.as_ref().map(|value| value.fingerprint))
-        {
+        if let Some(fingerprint) = registry.map(|value| value.schema_fingerprint) {
             wire.serialize_entry(
                 "schema_fingerprint",
                 &cadmpeg_ir::native::bytes::NativeBytes::from(fingerprint),
             )?;
-        }
-        if let Some(layout) = &layout {
-            wire.serialize_entry("layout_terminal", &layout.terminal)?;
         }
         wire.serialize_entry("section_offset", &self.section_offset)?;
         wire.serialize_entry("source_entry", &self.source_entry)?;
@@ -62,12 +42,7 @@ impl Serialize for ClassDefinition {
 
 impl Serialize for FieldDefinition {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tail = [0_u8; 6];
-        tail[0] = self.trailing_code;
-        let suffix_len = self.registry_suffix.len().min(5);
-        tail[1..=suffix_len].copy_from_slice(&self.registry_suffix[..suffix_len]);
-        let registry = crate::om::registry::field_registry_layout(&tail[..=suffix_len]);
-        let layout = registry_layout(&self.registry_suffix);
+        let registry = self.registry_layout();
         let mut wire = serializer.serialize_map(None)?;
         wire.serialize_entry("id", &self.id)?;
         wire.serialize_entry("name", &self.name)?;
@@ -80,19 +55,6 @@ impl Serialize for FieldDefinition {
         if !self.registry_suffix.is_empty() {
             wire.serialize_entry("registry_suffix", &self.registry_suffix)?;
         }
-        if let Some(layout) = &layout {
-            if !layout.prefix.is_empty() {
-                wire.serialize_entry(
-                    "layout_prefix",
-                    &cadmpeg_ir::native::bytes::NativeBytes::from(layout.prefix),
-                )?;
-            }
-            wire.serialize_entry(
-                "schema_fingerprint",
-                &cadmpeg_ir::native::bytes::NativeBytes::from(layout.fingerprint),
-            )?;
-            wire.serialize_entry("layout_terminal", &layout.terminal)?;
-        }
         wire.serialize_entry("section_offset", &self.section_offset)?;
         wire.serialize_entry("source_entry", &self.source_entry)?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
@@ -104,6 +66,60 @@ impl Serialize for FieldDefinition {
 mod tests {
     use super::*;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
+
+    #[test]
+    fn class_registry_reference_roundtrip_and_source_bounds() {
+        let reference = serde_json::from_value(serde_json::json!({
+            "name": "UGS::OM::Meta", "code": 2, "source_offset": 1475
+        }))
+        .unwrap();
+        let class = ClassDefinition {
+            id: "nx:om-entry-5:class#643".to_owned(),
+            name: "UGS::OM::RootObject".to_owned(),
+            ordinal: 0,
+            trailing_code: 0x38,
+            registry_suffix: vec![0x16, 0xb0, 0x4b, 0xa5, 0xfe, 0x91, 0x1b, 0xf6, 0x79, 0x01]
+                .into(),
+            registry_reference_declaration: Some(reference),
+            section_offset: 1364,
+            source_entry: "/Root/FastLoad/RMFastLoad".to_owned(),
+            source_offset: 2007,
+        };
+        let value = serde_json::to_value(&class).unwrap();
+        assert_eq!(value["registry_reference"], 1);
+        assert_eq!(
+            value["registry_reference_declaration"]["name"],
+            "UGS::OM::Meta"
+        );
+        assert_eq!(value["registry_reference_declaration"]["code"], 2);
+        assert_eq!(value["schema_fingerprint"], "b04ba5fe911bf679");
+        assert!(value.get("layout_prefix").is_none());
+        assert!(value.get("layout_terminal").is_none());
+        assert_eq!(
+            serde_json::from_value::<ClassDefinition>(value.clone()).unwrap(),
+            class
+        );
+        assert_eq!(
+            serde_json::to_vec(&class).unwrap(),
+            serde_json::to_vec(&super::super::ClassDefinitionWire::from(class.clone())).unwrap()
+        );
+        assert_native_limit(&class, value.clone());
+        let mut invalid = value.clone();
+        invalid["registry_reference_declaration"]["source_offset"] = 2007.into();
+        assert!(serde_json::from_value::<ClassDefinition>(invalid).is_err());
+        invalid = value.clone();
+        invalid["registry_reference_declaration"]["name"] = "unframed name".into();
+        assert!(serde_json::from_value::<ClassDefinition>(invalid).is_err());
+        invalid = value.clone();
+        invalid["registry_reference_declaration"]["unexpected"] = true.into();
+        assert!(serde_json::from_value::<ClassDefinition>(invalid).is_err());
+        invalid = value.clone();
+        invalid["registry_reference_declaration"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<ClassDefinition>(invalid).is_err());
+        invalid = value;
+        invalid["schema_fingerprint"] = "b14ba5fe911bf679".into();
+        assert!(serde_json::from_value::<ClassDefinition>(invalid).is_err());
+    }
 
     #[test]
     fn class_registry_borrowed_bytes_and_limit() {
@@ -120,6 +136,7 @@ mod tests {
                 ordinal: 0,
                 trailing_code: 0x38,
                 registry_suffix: suffix.into(),
+                registry_reference_declaration: None,
                 section_offset: 0,
                 source_entry: "entry".to_owned(),
                 source_offset: 1,

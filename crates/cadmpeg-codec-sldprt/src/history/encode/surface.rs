@@ -521,6 +521,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
+            if continuity.weight().is_some() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has a weighted filled-surface condition",
+                    feature.id
+                )));
+            }
             let merge_result = merge_result.ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved filled-surface merge state",
@@ -536,7 +542,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Continuity"),
-                crate::feature_schema::surface_continuity_token(continuity).into(),
+                crate::feature_schema::surface_continuity_token(continuity.continuity()).into(),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("MergeResult"),

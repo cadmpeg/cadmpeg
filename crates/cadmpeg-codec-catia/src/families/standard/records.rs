@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Standard-nested `SurfacicReps` record decoders.
 //!
 //! Decodes per-face analytic surface records, plane bounds, the `0x60`
@@ -246,12 +247,10 @@ struct StandardSurfaceRecordTable {
 fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
     for prefix in surface_prefixes(brep) {
-        if face_sense(brep, &prefix).is_some() {
-            records.insert(
-                prefix.pos - analytic_plane::MARKER,
-                StandardSurfaceRecord::Analytic(prefix),
-            );
-        }
+        records.insert(
+            prefix.pos - analytic_plane::MARKER,
+            StandardSurfaceRecord::Analytic(prefix),
+        );
     }
     let mut analytic_ranges = Vec::new();
     for record in records.values() {
@@ -558,9 +557,10 @@ pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Opti
         .map(|[identities]| identities)
 }
 
-/// Locate every per-face analytic surface record by the strict 5-byte template
+/// Locate complete analytic surface records by the strict 5-byte template
 /// `[target_u24 le][00][prebyte] 00 33 <kind>` ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). The strict template
-/// rejects collisional `00 33` matches inside other binary data.
+/// rejects collisional `00 33` matches inside other binary data. FV-08 fixes
+/// the record length and requires the terminal face-sense byte.
 pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
     let mut out = Vec::new();
     if brep.len() < 8 {
@@ -577,11 +577,15 @@ pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
         if brep[i - 2] != 0x00 || brep[i - 1] != kind.prebyte() {
             continue;
         }
-        out.push(SurfacePrefix {
+        let prefix = SurfacePrefix {
             pos: i,
             target: u24_le(brep, i - analytic_plane::MARKER),
             kind,
-        });
+        };
+        if face_sense(brep, &prefix).is_none() {
+            continue;
+        }
+        out.push(prefix);
     }
     out
 }
@@ -591,29 +595,23 @@ pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
 /// valid bounds record carries it.
 pub(super) fn plane_params<S: std::hash::BuildHasher>(
     brep: &[u8],
+    records: &[StandardSurfaceRecord],
     normals: &HashMap<u32, FiniteVector<3>, S>,
 ) -> Vec<PlaneParams> {
-    const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
-
     let mut out = Vec::new();
     let mut duplicate_targets = HashSet::new();
     let mut seen_targets = HashSet::new();
-    let mut p = 0usize;
-    while p + MARKER.len() + 40 <= brep.len() {
-        let Some(relative) = brep[p..].windows(MARKER.len()).position(|w| w == MARKER) else {
-            break;
+    for record in records {
+        let StandardSurfaceRecord::Analytic(prefix) = record else {
+            continue;
         };
-        let pos = p + relative;
-        p = pos + 1;
-        if pos < 4 || pos + MARKER.len() + 40 > brep.len() {
+        if prefix.kind != AnalyticSurfaceKind::Plane {
             continue;
         }
-        let Some(bounds) = face_bounds_at(brep, pos + MARKER.len())
-            .filter(|bounds| bounds.sphere_radius.get() > 0.0)
-        else {
+        let Some(bounds) = standard_face_bounds(brep, record) else {
             continue;
         };
-        let target = u24_le(brep, pos - 3);
+        let target = prefix.target;
         if !seen_targets.insert(target) {
             duplicate_targets.insert(target);
         }
@@ -996,6 +994,73 @@ mod tests {
     use super::axis_from_xy;
 
     #[test]
+    fn analytic_surface_records_require_the_complete_fixed_length_and_sense() {
+        for (kind, prebyte, length) in [
+            (0x32, 0x02, 49),
+            (0x33, 0x1a, 73),
+            (0x34, 0x1a, 73),
+            (0x35, 0x12, 65),
+            (0x38, 0x1e, 77),
+        ] {
+            let mut bytes = vec![1, 0, 0, 0, prebyte, 0, 0x33, kind];
+            bytes.resize(length, 0);
+            for sense in [0x01, 0xff] {
+                bytes[length - 1] = sense;
+                let prefixes = crate::test_support::with_service_context(|_ctx| {
+                    super::surface_prefixes(&bytes)
+                });
+                assert_eq!(prefixes.len(), 1);
+                assert_eq!(prefixes[0].pos, 5);
+                assert_eq!(super::face_sense(&bytes, &prefixes[0]), Some(sense == 1));
+            }
+            for end in 0..length {
+                assert!(crate::test_support::with_service_context(|_ctx| {
+                    super::surface_prefixes(&bytes[..end])
+                })
+                .is_empty());
+            }
+            for sense in [0, 2, 0x60] {
+                bytes[length - 1] = sense;
+                assert!(crate::test_support::with_service_context(|_ctx| {
+                    super::surface_prefixes(&bytes)
+                })
+                .is_empty());
+            }
+            bytes[length - 1] = 1;
+            bytes[4] = prebyte + 1;
+            assert!(crate::test_support::with_service_context(|_ctx| {
+                super::surface_prefixes(&bytes)
+            })
+            .is_empty());
+        }
+    }
+
+    #[test]
+    fn plane_parameters_use_only_the_admitted_surface_roster() {
+        let mut bytes = vec![1, 0, 0, 0, 2, 0, 0x33, 0x32];
+        for value in [0.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+        let records =
+            crate::test_support::with_service_context(|_ctx| super::surface_prefixes(&bytes))
+                .into_iter()
+                .map(super::StandardSurfaceRecord::Analytic)
+                .collect::<Vec<_>>();
+        // A different population repeats the tag outside the admitted roster.
+        bytes.extend_from_within(..);
+        let normals = std::collections::HashMap::from([(
+            1,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0]).expect("finite plane normal"),
+        )]);
+        let planes = crate::test_support::with_service_context(|_ctx| {
+            super::plane_params(&bytes, &records, &normals)
+        });
+        assert_eq!(planes.len(), 1);
+        assert_eq!(planes[0].target, 1);
+    }
+
+    #[test]
     fn support_predecessor_requires_the_row_marker() {
         // A line support row is 60, its u24 tag, the five-byte line body,
         // and two local face references (format specification section 5.5).
@@ -1064,7 +1129,9 @@ mod tests {
 
     #[test]
     fn surface_prefix_and_vertex_roster_parse_one_entry_each() {
-        let prefix = [0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33, 0];
+        let mut prefix = vec![0; crate::layout::analytic_surface_cylinder::LEN];
+        prefix[..9].copy_from_slice(&[0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33, 0]);
+        prefix[crate::layout::analytic_surface_cylinder::SIGN] = 1;
         assert_eq!(super::surface_prefixes(&prefix).len(), 1);
         let roster = [0x54, 1, 0, 0, 0, 0, 0];
         assert_eq!(super::standard_vertex_roster(&roster, 1), Some(vec![1]));

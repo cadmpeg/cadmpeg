@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-
 //! Feature-output lineage from operation body-write frames.
 
 use crate::native::attach::body_writes_match_boolean_target;
@@ -35,7 +34,7 @@ fn native_body_write(id: &str) -> crate::native::features::FeatureOperationBodyW
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             17,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
-            crate::om::body_write::BodyImageTag::Form10,
+            std::num::NonZeroU8::new(0x10).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
             0,
         )
@@ -168,7 +167,7 @@ fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
     write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
         write.frame.body_identity(),
         write.frame.group_node(),
-        write.frame.endpoint_tag(),
+        write.frame.endpoint_class_index(),
         crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(),
         write.frame.offset(),
     )
@@ -280,7 +279,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     write_b.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
         write_b.frame.body_identity(),
         crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
-        write_b.frame.endpoint_tag(),
+        write_b.frame.endpoint_class_index(),
         write_b.frame.body_image(),
         write_b.frame.offset(),
     )
@@ -326,13 +325,13 @@ fn group_member(
 ) -> crate::native::parasolid::ParasolidGroupMember {
     crate::native::parasolid::ParasolidGroupMember {
         id: id.into(),
-        partition_stream_ordinal: 4,
+        primary_stream_ordinal: 4,
         group_xmt: 10,
         group_node_id: 7,
         ordinal: 0,
         list_record_xmt: 20,
         member_xmt: 30,
-        target: GroupMemberTarget::Node {
+        target: GroupMemberTarget {
             family,
             node_id: 50,
             current_xmt: current_member_xmt,
@@ -369,35 +368,37 @@ fn direct_group_use(
 
 #[test]
 fn result_topology_uses_only_unique_current_group_members() {
-    let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
-    let members = [
-        group_member("face", GroupNodeFamily::Face, Some(40)),
-        group_member("edge", GroupNodeFamily::Edge, Some(41)),
-        group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
-        group_member("historical", GroupNodeFamily::Face, None),
-        group_member("shell", GroupNodeFamily::Shell, Some(43)),
-    ];
-    let result = feature_result_group_members(
-        use_.partition_stream_ordinal,
-        &use_.parasolid_group_members,
-        &members,
-    )
-    .unwrap();
+    crate::test_support::with_decode_context(|_ctx| {
+        let use_ = group_use(&["face", "edge", "vertex", "historical", "region"]);
+        let members = [
+            group_member("face", GroupNodeFamily::Face, Some(40)),
+            group_member("edge", GroupNodeFamily::Edge, Some(41)),
+            group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
+            group_member("historical", GroupNodeFamily::Face, None),
+            group_member("region", GroupNodeFamily::Region, Some(43)),
+        ];
+        let result = feature_result_group_members(
+            use_.partition_stream_ordinal,
+            &use_.parasolid_group_members,
+            &members,
+        )
+        .unwrap();
 
-    assert_eq!(result.faces, ["nx:s4:face#40"]);
-    assert_eq!(result.edges, ["nx:s4:edge#41"]);
-    assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
+        assert_eq!(result.faces, ["nx:s4:face#40"]);
+        assert_eq!(result.edges, ["nx:s4:edge#41"]);
+        assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
 
-    let duplicate_members = [
-        group_member("face", GroupNodeFamily::Face, Some(40)),
-        group_member("face", GroupNodeFamily::Face, Some(40)),
-    ];
-    assert!(
-        feature_result_group_members(4, &["face".into()], &duplicate_members)
-            .unwrap()
-            .faces
-            .is_empty()
-    );
+        let duplicate_members = [
+            group_member("face", GroupNodeFamily::Face, Some(40)),
+            group_member("face", GroupNodeFamily::Face, Some(40)),
+        ];
+        assert!(
+            feature_result_group_members(4, &["face".into()], &duplicate_members)
+                .unwrap()
+                .faces
+                .is_empty()
+        );
+    });
 }
 
 #[test]
@@ -456,7 +457,10 @@ fn repeated_body_identity_builds_output_lineage() {
         std::slice::from_ref(&extrude.id)
     );
     assert_eq!(block.source_properties["body_write.0.body_identity"], "17");
-    assert_eq!(block.source_properties["body_write.0.endpoint_tag"], "16");
+    assert_eq!(
+        block.source_properties["body_write.0.endpoint_class_index"],
+        "16"
+    );
     assert_eq!(
         extrude.source_properties["body_write.0.body_identity"],
         "17"
@@ -497,4 +501,26 @@ fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
         crate::loss::NxLossCode::FeatureOutputLineageIncomplete.kind()
     );
     assert!(losses[0].message.contains("nx:history:write#1"));
+}
+
+#[test]
+fn result_member_union_preserves_order_and_rejects_repeated_claims() {
+    crate::test_support::with_decode_context(|ctx| {
+        let a = cadmpeg_core::nonblank_literal!("nx:s4:face#40");
+        let b = cadmpeg_core::nonblank_literal!("nx:s4:face#41");
+        let c = cadmpeg_core::nonblank_literal!("nx:s4:face#42");
+        let mut target = vec![a.clone(), b.clone()];
+        assert!(crate::native::attach::append_distinct_result_members(
+            ctx,
+            &mut target,
+            vec![b.clone(), c.clone()]
+        ));
+        assert_eq!(target, [a, b.clone(), c]);
+        assert!(!crate::native::attach::append_distinct_result_members(
+            ctx,
+            &mut target,
+            vec![b.clone(), b]
+        ));
+        assert_eq!(target.len(), 3);
+    });
 }

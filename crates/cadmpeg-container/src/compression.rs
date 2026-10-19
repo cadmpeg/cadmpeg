@@ -40,6 +40,7 @@ fn inflate_zlib_writer<'ctx, 'a>(
     spec: ExpandSpec,
 ) -> Result<(ExpandWriter<'ctx, 'a>, usize), CodecError> {
     let input = source.window();
+    let mut admitted_input = input.len().min(INFLATE_CHUNK);
     let mut decoder = Decompress::new(true);
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
@@ -47,8 +48,19 @@ fn inflate_zlib_writer<'ctx, 'a>(
     loop {
         let before_in = decoder.total_in();
         let before_out = decoder.total_out();
+        let source_end = source_offset
+            .checked_add(INFLATE_CHUNK)
+            .ok_or_else(|| CodecError::Malformed("zlib input overflow".into()))?
+            .min(input.len());
+        if source_end > admitted_input {
+            admitted_input = source_end;
+        }
         let status = decoder
-            .decompress(&input[source_offset..], &mut chunk, FlushDecompress::None)
+            .decompress(
+                &input[source_offset..source_end],
+                &mut chunk,
+                FlushDecompress::None,
+            )
             .map_err(|error| CodecError::malformed(format_args!("invalid zlib member: {error}")))?;
         let consumed = usize::try_from(decoder.total_in() - before_in)
             .map_err(|_| CodecError::Malformed("zlib input overflow".into()))?;
@@ -242,6 +254,64 @@ mod tests {
             .expect("member inflates from a longer view");
         assert_eq!(view.window(), b"one member");
         assert_eq!(consumed, member_len);
+    }
+
+    #[test]
+    fn zlib_member_reports_extent_before_a_large_unconsumed_suffix() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"one member").expect("write member");
+        let mut compressed = encoder.finish().expect("finish member");
+        let member_len = compressed.len();
+        compressed.resize(member_len + 1024 * 1024, 0x55);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
+        let (expanded, consumed) = inflate_zlib_member(&ctx, root, ExpandSpec::Unknown)
+            .expect("a complete member inflates despite the unrelated suffix");
+        assert_eq!(expanded.window(), b"one member");
+        assert_eq!(consumed, member_len);
+    }
+
+    #[test]
+    fn invalid_zlib_candidate_reports_malformed_with_a_large_suffix() {
+        let mut compressed = vec![0x78, 0x9c, 0x07];
+        compressed.resize(1024 * 1024, 0x55);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
+        assert!(matches!(
+            inflate_zlib_member(&ctx, root, ExpandSpec::Unknown),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn large_zlib_member_preserves_consumed_extent_and_requires_its_checksum() {
+        let payload = (0..65_537)
+            .map(|index| u8::try_from(index % 251).expect("remainder fits in one byte"))
+            .collect::<Vec<_>>();
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::none());
+        encoder.write_all(&payload).expect("write member");
+        let compressed = encoder.finish().expect("finish member");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
+                .expect("root");
+        let (expanded, consumed) =
+            inflate_zlib_member(&ctx, root, ExpandSpec::Unknown).expect("large member");
+        assert_eq!(expanded.window(), payload);
+        assert_eq!(consumed, compressed.len());
+        for missing in [1, 4] {
+            let truncated = root
+                .child(0, compressed.len() - missing)
+                .expect("truncated view");
+            assert!(matches!(
+                inflate_zlib_member(&ctx, truncated, ExpandSpec::Unknown),
+                Err(CodecError::Malformed(_))
+            ));
+        }
     }
 
     #[test]

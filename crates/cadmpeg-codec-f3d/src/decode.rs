@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(
-    test,
-    allow(clippy::default_trait_access, clippy::field_reassign_with_default)
-)]
 //! Assemble a `.f3d` archive into a [`CadIr`] document and [`DecodeBody`].
 //!
 //! [`crate::container`] scans the ZIP, reads ASM headers, finds the history
@@ -14,6 +10,11 @@
 //! A framing failure or a stream without decoded geometry produces a
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
+
+#![cfg_attr(
+    test,
+    allow(clippy::default_trait_access, clippy::field_reassign_with_default)
+)]
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -1017,7 +1018,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             let support_is_required = continuity
                 .resolved()
-                .is_some_and(|continuity| continuity.conditions.iter().copied().any(needs_support));
+                .is_some_and(|continuity| {
+                    continuity
+                        .conditions
+                        .iter()
+                        .map(|condition| condition.continuity())
+                        .any(needs_support)
+                });
 
             !boundary_is_resolved
                 || !continuity_is_resolved

@@ -5,6 +5,7 @@
 //! their stream-scoped references. Control points are converted from metres to
 //! millimetres. Invalid references, dimensions, knots, control points, and
 //! weights cause the affected carrier to be omitted.
+
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
@@ -589,8 +590,7 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord<'_>> {
             _ => return None,
         };
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
-        (bytes.get(pos + 2 + escape..pos + 4 + escape) == Some(&[0, 0])).then_some(())?;
-        let count = View::u16_be_at(bytes, pos + 4 + escape).map(usize::from)?;
+        let count = usize::try_from(View::u32_be_at(bytes, pos + 2 + escape)?).ok()?;
         (count > 0).then_some(())?;
         let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
         NonNullXmt::try_from(reference).ok()?;
@@ -1003,10 +1003,10 @@ fn curve_descriptor_at(
     let periodic = logical_at(bytes, pos + curve_desc::PERIODIC + shift)?;
     ((poles > 0) && matches!(dimension, 2..=4) && (distinct > 0) && valid_knot_type(knot_type))
         .then_some(())?;
-    if matches!(
-        bytes.get(pos + curve_desc::PERIODIC + shift..pos + curve_desc::LEN + shift),
-        Some([0, 0, 0, 1] | [0, 0, 1, 4])
-    ) {
+    let flags = bytes.get(pos + curve_desc::PERIODIC + shift..pos + curve_desc::LEN + shift)?;
+    // The primary array declares three logical flags and one byte. The form
+    // byte does not restrict the following complete status-reference array.
+    if matches!(flags, [0 | 1, 0 | 1, 0 | 1, _]) {
         let status_references = (|| {
             let mut at = pos + curve_desc::LEN + shift;
             let mut read_reference = || {
@@ -1037,7 +1037,9 @@ fn curve_descriptor_at(
                 at,
             ));
         }
-        allow_compact_fallback.then_some(())?;
+        if matches!(flags, [0, 0, 0, 1] | [0, 0, 1, 4]) {
+            allow_compact_fallback.then_some(())?;
+        }
     }
     let (mult, mult_len) = read_xmt(bytes, pos + 23 + shift)?;
     let (knots, knots_len) = read_xmt(bytes, pos + 23 + shift + mult_len)?;

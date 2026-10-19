@@ -533,10 +533,7 @@ pub(super) fn emit_topology(
         let Some(start) = start else {
             continue;
         };
-        let end_fin = fin_fields
-            .other
-            .filter(|target| u32::from(*target) > 1)
-            .or(fin_fields.forward);
+        let end_fin = fin_fields.other.or(fin_fields.forward);
         let Some(end_fields) = graph
             .get_target(NodeKind::Fin, end_fin)
             .and_then(Node::fin_fields)
@@ -767,12 +764,13 @@ pub(super) fn emit_topology(
                             face.surface
                                 .and_then(|target| surfaces.get(&u32::from(target)))
                         })?;
-                    let carrier_id = fields
-                        .curve_xmt
-                        .and_then(|target| pcurves.get(&u32::from(target)))?;
-                    let use_range = fields
-                        .curve_xmt
-                        .and_then(|target| trim_ranges.get(&u32::from(target)))
+                    let carrier_xmt = u32::from(fields.curve_xmt?);
+                    if pcurve_supports.get(&carrier_xmt) != Some(support) {
+                        return None;
+                    }
+                    let carrier_id = pcurves.get(&carrier_xmt)?;
+                    let use_range = trim_ranges
+                        .get(&carrier_xmt)
                         .copied()
                         .and_then(ordered_parameter_range);
                     Some((edge, support, carrier_id, use_range))
@@ -970,10 +968,6 @@ pub(super) fn emit_topology(
                 .curve_xmt
                 .and_then(|target| curves.get(&u32::from(target)))
                 == Some(edge_curve)
-                && fields
-                    .curve_xmt
-                    .and_then(|target| pcurve_supports.get(&u32::from(target)))
-                    == Some(support)
             {
                 serialized_branch_pcurves.insert((
                     edge_curve.clone(),
@@ -1769,13 +1763,6 @@ pub(super) fn source_meta(
                 census.body_revisions.len(),
             );
         }
-        if !census.term_use_numeric_tails.is_empty() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.term_use_numeric_tails"),
-                census.term_use_numeric_tails.len(),
-            );
-        }
         if !census.tagged_reference_lanes.is_empty() {
             insert_source_attribute(
                 &mut attributes,
@@ -1790,11 +1777,11 @@ pub(super) fn source_meta(
                 census.reference_type_maps.len(),
             );
         }
-        if !census.reference_state_packets.is_empty() {
+        if !census.pmark_packets.is_empty() {
             insert_source_attribute(
                 &mut attributes,
-                format_args!("deltas.{index}.reference_state_packets"),
-                census.reference_state_packets.len(),
+                format_args!("deltas.{index}.pmark_packets"),
+                census.pmark_packets.len(),
             );
         }
         if !census.reference_marker_packets.is_empty() {
@@ -1804,11 +1791,11 @@ pub(super) fn source_meta(
                 census.reference_marker_packets.len(),
             );
         }
-        if !census.inline_schema_declarations.is_empty() {
+        if !census.schema_nodes.is_empty() {
             insert_source_attribute(
                 &mut attributes,
-                format_args!("deltas.{index}.inline_schema_declarations"),
-                census.inline_schema_declarations.len(),
+                format_args!("deltas.{index}.schema_nodes"),
+                census.schema_nodes.len(),
             );
         }
         for (name, count) in census.full_counts() {

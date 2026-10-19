@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic validation of the Fusion `f3d` native namespace.
 //!
-//! [`validate_native`] loads the `f3d` native namespace from a decoded
+//! [`validate_native_charged`] loads the `f3d` native namespace from a decoded
 //! [`CadIr`] and checks the settled byte frames and cross-record relationships
 //! of every Fusion Design record family: body maps and bounds, parameter
 //! scopes and their feature operands, sketch geometry and relations, dimension
 //! loci, persistent identity links, and the ASM history graph. It returns the
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
+
+mod sheet_metal_settings;
 
 use cadmpeg_core::convert::f64_from_index;
 
@@ -851,6 +853,7 @@ fn validate_loaded(
     validate_design_intent_failures(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings)?;
     validate_parameter_scopes(&ctx, &mut findings)?;
+    sheet_metal_settings::validate(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);

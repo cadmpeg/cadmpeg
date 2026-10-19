@@ -87,7 +87,7 @@ def run_command(command: Sequence[str], timeout: float, stderr_path: Path) -> Co
 
 
 def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, str | None]:
-    """Read and validate the v6 refusal envelope emitted by ``dump``."""
+    """Read and validate the schema-versioned refusal envelope emitted by ``dump``."""
 
     try:
         payload = json.loads(report_path.read_text(encoding="utf-8"))

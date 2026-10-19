@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of source-closed CATIA sketch relations.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+pub(crate) mod frame;
+
+use std::collections::{BTreeMap, HashSet};
 
 use crate::unique_index::UniqueIndex;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::{
-    NativeOperandField, SketchConstraint, SketchConstraintId, SketchEntity, SketchEntityId,
-    SketchGeometry, SketchId, SketchNativeOperand,
+    NativeOperandField, SketchConstraint, SketchConstraintId, SketchId, SketchNativeOperand,
 };
 
 use crate::chain_walk::{ChainStep, ChainStops};
@@ -17,567 +18,7 @@ use crate::ids::neutral_history_id;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
     CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaNative, CatiaObjectRecord,
-    CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
 };
-
-/// Transfer sketch member records whose source identity is complete but whose
-/// coordinate grammar is not yet typed.
-///
-/// A Sketch owner record selects child design-object owner records in source
-/// order. A child contributes one native sketch entity only when that exact
-/// owner record resolves to one child design object and that child has exactly
-/// one admitted geometry field. The field remains native geometry; this lane
-/// does not infer coordinates, construction state, profiles, or constraints.
-/// The returned object-record identities are the exact fields represented by
-/// the emitted native entities and are used to close design-record accounting.
-pub(crate) fn transfer_native_sketch_entities(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-    native: &CatiaNative,
-    feature_transfer: &DesignFeatureTransfer,
-    graph_scope: &crate::decode::ModelingGraphScope,
-) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
-    let object_records = unique_object_records(native);
-    let entity_records = unique_entity_records(native);
-    let design_objects = unique_design_objects(native);
-    let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
-    for object in native
-        .design_objects
-        .iter()
-        .filter(|object| graph_scope.contains(object.parent.as_str()))
-    {
-        let Some(owner_record) = object.owner_record.as_deref() else {
-            continue;
-        };
-
-        let members = design_objects_by_owner_record
-            .entry(owner_record)
-            .or_default();
-        members.push(object);
-    }
-
-    let mut sketches = Vec::new();
-    for sketch in &ir.model.sketches {
-        let Some(native_ref) = sketch.native_ref.as_deref() else {
-            continue;
-        };
-        let id = sketch.id.clone();
-        let native_ref = native_ref.to_owned();
-        sketches.push((id, native_ref));
-    }
-    let mut entity_ids = HashSet::new();
-    let mut member_refs = HashMap::<SketchId, HashSet<String>>::new();
-    for entity in &ir.model.sketch_entities {
-        entity_ids.insert(entity.id().clone());
-        if let Some(native_ref) = &entity.native_ref {
-            member_refs
-                .entry(entity.sketch.clone())
-                .or_default()
-                .insert(native_ref.clone());
-        }
-    }
-    let mut transferred = HashSet::new();
-
-    for (sketch_id, sketch_native_ref) in sketches {
-        let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
-            continue;
-        };
-        if !graph_scope.contains(sketch_object.parent.as_str()) {
-            continue;
-        }
-        let Some(owner_record_id) = sketch_object.owner_record.as_deref() else {
-            continue;
-        };
-        if !feature_transfer
-            .sketch_owner_records
-            .contains(owner_record_id)
-        {
-            continue;
-        }
-        let Some(owner_record) = object_records.get(owner_record_id).copied() else {
-            continue;
-        };
-        if owner_record.parent != sketch_object.parent
-            || owner_record.design_object.as_deref() != sketch_object.owner_design_object.as_deref()
-        {
-            continue;
-        }
-
-        let mut seen_fields = HashSet::new();
-        for child_object in exact_sketch_member_objects(
-            owner_record,
-            &object_records,
-            &design_objects_by_owner_record,
-            &design_objects,
-        ) {
-            let geometry_fields =
-                admitted_sketch_geometry_fields(child_object, &object_records, &entity_records);
-            let [geometry_field] = geometry_fields.as_slice() else {
-                continue;
-            };
-            if !seen_fields.insert(geometry_field.id.as_str()) {
-                continue;
-            }
-
-            let entity_id = match neutral_history_id(
-                &geometry_field.id,
-                &cadmpeg_ir::identity_component!("sketch-entity"),
-            )
-            .map(SketchEntityId::from)
-            {
-                Ok(id) => id,
-                Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
-                Err(error) => return Err(error),
-            };
-            if entity_ids.contains(&entity_id)
-                || member_refs
-                    .get(&sketch_id)
-                    .is_some_and(|refs| refs.contains(geometry_field.id.as_str()))
-            {
-                continue;
-            }
-            ctx.charge_entities(1, "admit CATIA sketch entity")?;
-            entity_ids.insert(entity_id.clone());
-            member_refs
-                .entry(sketch_id.clone())
-                .or_default()
-                .insert(geometry_field.id.clone());
-            let sketch_copy = sketch_id.clone();
-            let field_copy = geometry_field.id.clone();
-            ir.model.sketch_entities.push(
-                SketchEntity::new(
-                    entity_id,
-                    sketch_copy,
-                    SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
-                )
-                .with_native_ref(Some(field_copy)),
-            );
-            let transferred_id = geometry_field.id.clone();
-            transferred.insert(transferred_id);
-        }
-    }
-
-    Ok(transferred)
-}
-
-/// Transfer one source-closed native relation between a sketch point and a
-/// `ConstraintDYS` field.
-///
-/// The relation is admitted only when the point field is selected by an exact
-/// Sketch owner-list incidence, the point field references a complete
-/// `ConstraintDYS` field, and that target field is independently selected by
-/// the same Sketch owner list. This proves incidence and source identity. It
-/// does not assign a neutral constraint kind, coordinates, or driving state.
-pub(crate) fn transfer_native_sketch_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-    native: &CatiaNative,
-    feature_transfer: &DesignFeatureTransfer,
-    graph_scope: &crate::decode::ModelingGraphScope,
-) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
-    let object_records = unique_object_records(native);
-    let entity_records = unique_entity_records(native);
-    let design_objects = unique_design_objects(native);
-    let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
-    for object in native
-        .design_objects
-        .iter()
-        .filter(|object| graph_scope.contains(object.parent.as_str()))
-    {
-        let Some(owner_record) = object.owner_record.as_deref() else {
-            continue;
-        };
-
-        let members = design_objects_by_owner_record
-            .entry(owner_record)
-            .or_default();
-        members.push(object);
-    }
-
-    let mut sketches = Vec::new();
-    for sketch in &ir.model.sketches {
-        let Some(native_ref) = sketch.native_ref.as_deref() else {
-            continue;
-        };
-        let id = sketch.id.clone();
-        let native_ref = native_ref.to_owned();
-        sketches.push((id, native_ref));
-    }
-    let mut candidates = HashMap::<(SketchId, &str), NativeSketchConstraintCandidate<'_>>::new();
-
-    for (sketch_id, sketch_native_ref) in sketches {
-        let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
-            continue;
-        };
-        if !graph_scope.contains(sketch_object.parent.as_str()) {
-            continue;
-        }
-        let Some(owner_record_id) = sketch_object.owner_record.as_deref() else {
-            continue;
-        };
-        if !feature_transfer
-            .sketch_owner_records
-            .contains(owner_record_id)
-        {
-            continue;
-        }
-        let Some(owner_record) = object_records.get(owner_record_id).copied() else {
-            continue;
-        };
-        if owner_record.parent != sketch_object.parent
-            || owner_record.design_object.as_deref() != sketch_object.owner_design_object.as_deref()
-        {
-            continue;
-        }
-
-        let member_objects = exact_sketch_member_objects(
-            owner_record,
-            &object_records,
-            &design_objects_by_owner_record,
-            &design_objects,
-        );
-        let member_object_ids = member_objects
-            .iter()
-            .map(|object| object.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
-        let mut sketch_entities = UniqueIndex::new();
-        for entity in ir
-            .model
-            .sketch_entities
-            .iter()
-            .filter(|entity| entity.sketch == sketch_id)
-        {
-            let Some(native_ref) = entity.native_ref.as_deref() else {
-                continue;
-            };
-            let key = native_ref.to_owned();
-            let id = entity.id().clone();
-            sketch_entities.insert(key, id);
-        }
-
-        for child_object in member_objects {
-            for geometry_field in
-                admitted_sketch_geometry_fields(child_object, &object_records, &entity_records)
-            {
-                let Some(sketch_entity) = sketch_entities.get(geometry_field.id.as_str()) else {
-                    continue;
-                };
-                for reference in &geometry_field.references {
-                    let Some(target_id) = reference.target() else {
-                        continue;
-                    };
-                    if reference.is_null() {
-                        continue;
-                    }
-                    let Some(target_record) = object_records.get(target_id).copied() else {
-                        continue;
-                    };
-                    let (Some("ConstraintDYS"), Some(target_entry)) =
-                        (target_record.class_name(), target_record.class_entry())
-                    else {
-                        continue;
-                    };
-                    if target_record.parent != owner_record.parent
-                        || target_record.entity_id() != Some(reference.entity_id())
-                        || reference.design_object() != target_record.design_object.as_deref()
-                    {
-                        continue;
-                    }
-                    let Some(target_design_object) = target_record.design_object.as_deref() else {
-                        continue;
-                    };
-                    if !member_object_ids.contains(target_design_object) {
-                        continue;
-                    }
-                    let Some(target_object) = design_objects.get(target_design_object).copied()
-                    else {
-                        continue;
-                    };
-                    if target_object.parent != owner_record.parent
-                        || target_record.owner_entity_id() != Some(target_object.owner_entity_id)
-                    {
-                        continue;
-                    }
-                    let Some(target_entity_record_id) = target_record.entity_record() else {
-                        continue;
-                    };
-                    let Some(target_entity_record) =
-                        entity_records.get(target_entity_record_id).copied()
-                    else {
-                        continue;
-                    };
-                    if target_entity_record.object_graph != target_record.parent
-                        || target_entity_record.object_record != target_record.id
-                        || Some(target_entity_record.entity_id) != target_record.entity_id()
-                    {
-                        continue;
-                    }
-
-                    let key_id = sketch_id.clone();
-                    let key = (key_id, target_record.id.as_str());
-
-                    let candidate = match candidates.entry(key) {
-                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            let owner = sketch_id.clone();
-                            entry.insert(NativeSketchConstraintCandidate {
-                                sketch: owner,
-                                target_record,
-                                target_entity_record,
-                                target_entry,
-                                entities: Vec::new(),
-                                incidences: Vec::new(),
-                            })
-                        }
-                    };
-                    if !candidate.entities.contains(sketch_entity) {
-                        let id = sketch_entity.clone();
-                        candidate.entities.push(id);
-                    }
-                    let field = geometry_field.id.clone();
-                    candidate.incidences.push(NativeSketchConstraintIncidence {
-                        field,
-                        field_offset: geometry_field.byte_offset,
-                        reference_offset: reference.payload_offset(),
-                    });
-                }
-            }
-        }
-    }
-
-    let mut candidates = candidates.into_values().collect::<Vec<_>>();
-    candidates.sort_by(|left, right| {
-        left.target_record
-            .byte_offset
-            .cmp(&right.target_record.byte_offset)
-            .then(left.target_record.id.cmp(&right.target_record.id))
-            .then(left.sketch.cmp(&right.sketch))
-    });
-
-    let mut constraint_keys = SketchConstraintKeys::of(ir);
-    let mut transferred = HashSet::new();
-    for candidate in candidates {
-        let constraint_id = match neutral_history_id(
-            &candidate.target_entity_record.id,
-            &cadmpeg_ir::identity_component!("sketch-constraint"),
-        )
-        .map(SketchConstraintId::from)
-        {
-            Ok(id) => id,
-            Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
-            Err(error) => return Err(error),
-        };
-        if constraint_keys.contains(&constraint_id, &candidate.target_entity_record.id) {
-            continue;
-        }
-        let Some(object_index) = u32::try_from(candidate.target_record.ordinal).ok() else {
-            continue;
-        };
-        let mut native_properties = BTreeMap::new();
-        insert_property(
-            &mut native_properties,
-            format_args!("catia_relation_source_class"),
-            format_args!("2DPoint"),
-        );
-        insert_property(
-            &mut native_properties,
-            format_args!("catia_relation_target_class"),
-            format_args!("ConstraintDYS"),
-        );
-        insert_property(
-            &mut native_properties,
-            format_args!("catia_relation_target_entry"),
-            format_args!("{}", candidate.target_entry),
-        );
-        insert_property(
-            &mut native_properties,
-            format_args!("catia_relation_target_ordinal"),
-            format_args!("{}", candidate.target_record.ordinal),
-        );
-        insert_property(
-            &mut native_properties,
-            format_args!("catia_relation_target_offset"),
-            format_args!("{}", candidate.target_record.byte_offset),
-        );
-        insert_target_reference_properties(
-            &mut native_properties,
-            &candidate.target_record.references,
-            &object_records,
-        );
-        insert_property(
-            &mut native_properties,
-            format_args!("catia_relation_incidence_count"),
-            format_args!("{}", candidate.incidences.len()),
-        );
-        for (ordinal, incidence) in candidate.incidences.iter().enumerate() {
-            insert_property(
-                &mut native_properties,
-                format_args!("catia_relation_incidence_{ordinal}_source_field"),
-                format_args!("{}", incidence.field),
-            );
-            insert_property(
-                &mut native_properties,
-                format_args!("catia_relation_incidence_{ordinal}_source_field_offset"),
-                format_args!("{}", incidence.field_offset),
-            );
-            insert_property(
-                &mut native_properties,
-                format_args!("catia_relation_incidence_{ordinal}_source_reference_offset"),
-                format_args!("{}", incidence.reference_offset),
-            );
-        }
-        let field_id = candidate.target_record.id.clone();
-        let Some(field_name) = cadmpeg_core::text::NonBlankString::new(field_id) else {
-            continue;
-        };
-        let operand_ref = candidate.target_entity_record.id.clone();
-        let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::native_with_operand(
-            cadmpeg_core::nonblank_literal!("ConstraintDYS"),
-            native_properties,
-            candidate.entities,
-            SketchNativeOperand {
-                native_kind: cadmpeg_core::nonblank_literal!("ConstraintDYS"),
-                field: Some(NativeOperandField {
-                    name: field_name,
-                    role: None,
-                }),
-                object_index: Some(object_index),
-                native_ref: Some(operand_ref),
-            },
-        );
-        ctx.charge_entities(1, "admit CATIA sketch constraint")?;
-        let neutral_ref = candidate.target_entity_record.id.clone();
-        constraint_keys.insert(constraint_id.clone(), neutral_ref.clone());
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id,
-            sketch: candidate.sketch,
-            definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some(neutral_ref),
-        });
-        let transferred_id = candidate.target_record.id.clone();
-        transferred.insert(transferred_id);
-    }
-    Ok(transferred)
-}
-
-struct NativeSketchConstraintCandidate<'a> {
-    sketch: SketchId,
-    target_record: &'a CatiaObjectRecord,
-    target_entity_record: &'a CatiaEntityRecord,
-    target_entry: &'a str,
-    entities: Vec<SketchEntityId>,
-    incidences: Vec<NativeSketchConstraintIncidence>,
-}
-
-struct NativeSketchConstraintIncidence {
-    field: String,
-    field_offset: u64,
-    reference_offset: u64,
-}
-
-fn insert_target_reference_properties(
-    properties: &mut BTreeMap<String, String>,
-    references: &[CatiaObjectRecordReference],
-    object_records: &UniqueIndex<&str, &CatiaObjectRecord>,
-) {
-    insert_property(
-        properties,
-        format_args!("catia_relation_target_reference_count"),
-        format_args!("{}", references.len()),
-    );
-    for (ordinal, reference) in references.iter().enumerate() {
-        insert_property(
-            properties,
-            format_args!("catia_relation_target_reference_{ordinal}_entity_id"),
-            format_args!("{}", reference.entity_id()),
-        );
-        insert_property(
-            properties,
-            format_args!("catia_relation_target_reference_{ordinal}_payload_offset"),
-            format_args!("{}", reference.payload_offset()),
-        );
-        let state = if reference.is_null() {
-            "null"
-        } else if reference.target().is_some() {
-            "resolved"
-        } else {
-            "unresolved"
-        };
-        insert_property(
-            properties,
-            format_args!("catia_relation_target_reference_{ordinal}_state"),
-            format_args!("{state}"),
-        );
-        match reference.source() {
-            CatiaObjectRecordReferenceSource::Field => {
-                insert_property(
-                    properties,
-                    format_args!("catia_relation_target_reference_{ordinal}_source"),
-                    format_args!("field"),
-                );
-            }
-            CatiaObjectRecordReferenceSource::ListItem {
-                list_payload_offset,
-                item_ordinal,
-            } => {
-                insert_property(
-                    properties,
-                    format_args!("catia_relation_target_reference_{ordinal}_source"),
-                    format_args!("list_item"),
-                );
-                insert_property(
-                    properties,
-                    format_args!("catia_relation_target_reference_{ordinal}_list_payload_offset"),
-                    format_args!("{list_payload_offset}"),
-                );
-                insert_property(
-                    properties,
-                    format_args!("catia_relation_target_reference_{ordinal}_item_ordinal"),
-                    format_args!("{item_ordinal}"),
-                );
-            }
-        }
-        if let Some(target) = reference.target() {
-            insert_property(
-                properties,
-                format_args!("catia_relation_target_reference_{ordinal}_target_record"),
-                format_args!("{target}"),
-            );
-            if let Some(target_record) = object_records.get(target) {
-                if let Some(class_name) = target_record.class_name() {
-                    insert_property(
-                        properties,
-                        format_args!("catia_relation_target_reference_{ordinal}_target_class"),
-                        format_args!("{class_name}"),
-                    );
-                }
-                if let Some(class_entry) = target_record.class_entry() {
-                    insert_property(
-                        properties,
-                        format_args!("catia_relation_target_reference_{ordinal}_target_entry"),
-                        format_args!("{class_entry}"),
-                    );
-                }
-            }
-        }
-        if let Some(design_object) = reference.design_object() {
-            insert_property(
-                properties,
-                format_args!("catia_relation_target_reference_{ordinal}_target_design_object"),
-                format_args!("{design_object}"),
-            );
-        }
-    }
-}
 
 fn insert_property(
     properties: &mut BTreeMap<String, String>,
@@ -587,78 +28,13 @@ fn insert_property(
     properties.insert(key.to_string(), value.to_string());
 }
 
-fn exact_sketch_member_objects<'a>(
-    owner_record: &'a CatiaObjectRecord,
-    object_records: &UniqueIndex<&'a str, &'a CatiaObjectRecord>,
-    design_objects_by_owner_record: &HashMap<&'a str, Vec<&'a CatiaDesignObject>>,
-    design_objects: &UniqueIndex<&'a str, &'a CatiaDesignObject>,
-) -> Vec<&'a CatiaDesignObject> {
-    (owner_record.references.iter().filter_map(|reference| {
-        let target_id = reference.target()?;
-        if reference.is_null() {
-            return None;
-        }
-        let target_record = object_records.get(target_id).copied()?;
-        if target_record.parent != owner_record.parent
-            || target_record.entity_id() != Some(reference.entity_id())
-            || reference.design_object() != target_record.design_object.as_deref()
-        {
-            return None;
-        }
-        let child_objects = design_objects_by_owner_record.get(target_id)?;
-        let [child_object] = child_objects.as_slice() else {
-            return None;
-        };
-        if design_objects.get(child_object.id.as_str()).is_none()
-            || child_object.parent != owner_record.parent
-            || child_object.owner_record.as_deref() != Some(target_id)
-            || child_object.owner_entity_id != reference.entity_id()
-        {
-            return None;
-        }
-        Some(*child_object)
-    }))
-    .collect()
-}
-
-fn admitted_sketch_geometry_fields<'a>(
-    child_object: &'a CatiaDesignObject,
-    object_records: &UniqueIndex<&'a str, &'a CatiaObjectRecord>,
-    entity_records: &UniqueIndex<&'a str, &'a CatiaEntityRecord>,
-) -> Vec<&'a CatiaObjectRecord> {
-    (child_object
-        .fields
-        .iter()
-        .filter_map(|field_id| object_records.get(field_id.as_str()).copied())
-        .filter(|field| {
-            let Some(entity_record_id) = field.entity_record() else {
-                return false;
-            };
-            let Some(entity_record) = entity_records.get(entity_record_id) else {
-                return false;
-            };
-            field.parent == child_object.parent
-                && field.design_object.as_deref() == Some(child_object.id.as_str())
-                && field.owner_entity_id() == Some(child_object.owner_entity_id)
-                && field.entity_id().is_some()
-                && entity_record.object_graph == field.parent
-                && entity_record.object_record == field.id
-                && Some(entity_record.entity_id) == field.entity_id()
-                && field.class_entry().is_some()
-                && field.class_name() == Some("2DPoint")
-        }))
-    .collect()
-}
-
 /// Transfer complete constraint ranges whose structural owner is one
 /// transferred sketch.
 ///
 /// A range is an opaque constraint at this layer. Its exact selectors,
 /// framing, and evaluation are retained as native properties. The unique
-/// source record is retained as a native operand. If that exact source record
-/// is already represented by one entity in the same sketch, the entity is
-/// bound by identity; no geometry, dimensional, or driving-parameter role is
-/// inferred from the range alone.
+/// source record is retained as a native operand. No geometry, dimensional,
+/// or driving-parameter role is inferred from the range alone.
 /// The returned object-record identities are the exact range and source
 /// operand records represented by the emitted neutral constraints. The source
 /// operand's semantic role remains unresolved by design.
@@ -702,16 +78,12 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         }
         let constraint_kind = range.constraint.value.clone();
-        let mut bound_entities = Vec::new();
-        if let Some(entity_id) = binding.entity {
-            bound_entities.push(entity_id);
-        }
         let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::native_with_operand(
             cadmpeg_core::text::NonBlankString::new(constraint_kind).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("empty native sketch constraint kind")
             })?,
             constraint_properties(range),
-            bound_entities,
+            Vec::new(),
             binding.operand,
         );
         ctx.charge_entities(1, "admit CATIA sketch constraint")?;
@@ -744,7 +116,6 @@ struct ConstraintBinding {
     sketch: SketchId,
     source_object_record: String,
     operand: SketchNativeOperand,
-    entity: Option<SketchEntityId>,
 }
 
 struct ConstraintIndexes<'a> {
@@ -752,7 +123,6 @@ struct ConstraintIndexes<'a> {
     object_records: UniqueIndex<&'a str, &'a CatiaObjectRecord>,
     design_objects: UniqueIndex<&'a str, &'a CatiaDesignObject>,
     sketch_ids: UniqueIndex<String, SketchId>,
-    sketch_entities: UniqueIndex<String, (SketchEntityId, SketchId)>,
 }
 
 impl<'a> ConstraintIndexes<'a> {
@@ -761,35 +131,15 @@ impl<'a> ConstraintIndexes<'a> {
         let object_records = unique_object_records(native);
         let design_objects = unique_design_objects(native);
         let sketch_ids = sketch_ids_by_native_ref(ir);
-        let sketch_entities = sketch_entities_by_native_ref(ir);
         Self {
             entity_records,
             object_records,
             design_objects,
             sketch_ids,
-            sketch_entities,
         }
     }
 }
 
-fn sketch_entities_by_native_ref(ir: &CadIr) -> UniqueIndex<String, (SketchEntityId, SketchId)> {
-    let mut index = UniqueIndex::new();
-    for entity in &ir.model.sketch_entities {
-        let Some(native_ref) = entity.native_ref.as_deref() else {
-            continue;
-        };
-        let key = native_ref.to_owned();
-        let id = entity.id().clone();
-        let sketch = entity.sketch.clone();
-        index.insert(key, (id, sketch));
-    }
-    index
-}
-
-/// Bind one constraint range to its exact source operand.
-///
-/// `sketch_owners` answers the nearest transferred feature on a design
-/// object's exact owner chain. A missing link or a cycle rejects the chain.
 fn constraint_binding<'a>(
     range_entity: &CatiaEntityRecord,
     range: &CatiaConstraintRange,
@@ -840,26 +190,17 @@ fn constraint_binding<'a>(
             return None;
         }
         let source_design_object = source_record.design_object.as_deref()?;
-        Some((
-            source_record_id,
-            source_record,
-            source_entity_record,
-            source_design_object,
-        ))
+        Some((source_record, source_entity_record, source_design_object))
     })();
-    let (source_record_id, source_record, source_entity_record, source_design_object) = selected?;
-    let sketch = sketch_owners
-        .stop(source_design_object)
-        .and_then(|owner| indexes.sketch_ids.get(owner).cloned())?;
-    let entity = indexes
-        .sketch_entities
-        .get(source_record_id)
-        .filter(|(_, entity_sketch)| entity_sketch == &sketch)
-        .map(|(entity, _)| entity.clone());
+    let (source_record, source_entity_record, source_design_object) = selected?;
+    let sketch = indexes
+        .sketch_ids
+        .get(sketch_owners.stop(source_design_object)?)
+        .cloned()?;
     let object_index = u32::try_from(source_record.ordinal).ok()?;
     let native_kind = match source_record.class_name().filter(|class| !class.is_empty()) {
         Some(name) => {
-            let name = name.to_owned();
+            let name = (name).to_owned();
 
             cadmpeg_core::text::NonBlankString::new(name)?
         }
@@ -881,7 +222,6 @@ fn constraint_binding<'a>(
             object_index: Some(object_index),
             native_ref: Some(native_ref),
         },
-        entity,
     })
 }
 
@@ -1035,10 +375,7 @@ impl SketchConstraintKeys {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        transfer_constraint_ranges, transfer_native_sketch_constraints,
-        transfer_native_sketch_entities,
-    };
+    use super::transfer_constraint_ranges;
     use crate::native::entity_record::CatiaEntityRecord;
     use crate::native::CatiaConstraintRange;
     use crate::native::CatiaNative;
@@ -1046,9 +383,6 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::sketches::SketchConstraint;
     use cadmpeg_ir::sketches::SketchConstraintId;
-    use cadmpeg_ir::sketches::SketchEntity;
-    use cadmpeg_ir::sketches::SketchEntityId;
-    use cadmpeg_ir::sketches::SketchGeometry;
     use cadmpeg_ir::sketches::SketchId;
     use std::collections::HashMap;
     use std::collections::HashSet;
@@ -1267,542 +601,6 @@ mod tests {
         )
     }
 
-    fn native_sketch_fixture(
-        geometry_class: &str,
-    ) -> (
-        CadIr,
-        CatiaNative,
-        DesignFeatureTransfer,
-        crate::decode::ModelingGraphScope,
-    ) {
-        let mut sketch_owner = object_record(
-            "sketch-owner-record",
-            Some("parent-object"),
-            1,
-            "sketch-owner-entity",
-            "Sketch",
-        );
-        sketch_owner.owner = Some(CatiaObjectOwner::Entity(2));
-        sketch_owner
-            .references
-            .push(CatiaObjectRecordReference::from_parts(
-                3,
-                0,
-                CatiaObjectRecordReferenceSource::Field,
-                false,
-                Some("child-owner-record".to_string()),
-                Some("parent-object".to_string()),
-            ));
-
-        let mut child_owner = object_record(
-            "child-owner-record",
-            Some("parent-object"),
-            3,
-            "child-owner-entity",
-            "Prism_EndLimit_Length",
-        );
-        child_owner.owner = Some(CatiaObjectOwner::Entity(2));
-
-        let geometry_field_id = "catia:outer:object-record#geometry-field";
-        let geometry_entity_id = "catia:outer:entity-record#geometry-field";
-        let mut geometry_field = object_record(
-            geometry_field_id,
-            Some("child-object"),
-            4,
-            geometry_entity_id,
-            geometry_class,
-        );
-        geometry_field.owner = Some(CatiaObjectOwner::Entity(3));
-
-        let native = CatiaNative {
-            design_objects: vec![
-                {
-                    let mut object = design_object("parent-object", None);
-                    object.owner_entity_id = 2;
-                    object
-                },
-                {
-                    let mut object = design_object("sketch-object", Some("parent-object"));
-                    object.owner_entity_id = 1;
-                    object.owner_record = Some("sketch-owner-record".to_string());
-                    object.owner_class = Some(crate::native::CatiaDesignClass {
-                        entry: "entry".to_string(),
-                        name: "Sketch".to_string(),
-                    });
-                    object
-                },
-                {
-                    let mut object = design_object("child-object", Some("parent-object"));
-                    object.owner_entity_id = 3;
-                    object.owner_record = Some("child-owner-record".to_string());
-                    object.fields.push(geometry_field_id.to_string());
-                    object
-                },
-            ],
-            entity_records: vec![entity_record(geometry_entity_id, geometry_field_id, 4)],
-            object_graphs: vec![CatiaObjectGraph {
-                id: "graph".to_string(),
-                byte_offset: 0,
-                byte_len: 0,
-                finjpl_segment: None,
-                outer_container: None,
-                catalog_byte_offset: None,
-                catalog: None,
-                records: vec![sketch_owner, child_owner, geometry_field],
-            }],
-            ..CatiaNative::default()
-        };
-        let mut ir = CadIr::empty();
-        ir.model.sketches.push(Sketch {
-            id: SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
-            name: None,
-            configuration: None,
-            visible: None,
-            placement: SketchPlacement::Unresolved {},
-            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-            native_ref: Some("sketch-object".to_string()),
-        });
-        let feature_transfer = DesignFeatureTransfer {
-            feature_ids: HashMap::from([(
-                "sketch-object".to_string(),
-                cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#0".to_string())
-                    .expect("identity grammar"),
-            )]),
-            sketch_owner_records: HashSet::from(["sketch-owner-record".to_string()]),
-            ..DesignFeatureTransfer::default()
-        };
-        (
-            ir,
-            native,
-            feature_transfer,
-            crate::decode::ModelingGraphScope::Scoped("graph".to_string()),
-        )
-    }
-
-    fn native_sketch_constraint_fixture() -> (
-        CadIr,
-        CatiaNative,
-        DesignFeatureTransfer,
-        crate::decode::ModelingGraphScope,
-    ) {
-        let (ir, mut native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
-        let constraint_owner_record = object_record(
-            "constraint-owner-record",
-            Some("parent-object"),
-            5,
-            "constraint-owner-entity",
-            "Prism_EndLimit_Length",
-        );
-        let constraint_field_id = "catia:outer:object-record#constraint-field";
-        let constraint_entity_id = "catia:outer:entity-record#constraint-field";
-        let mut constraint_field = object_record(
-            constraint_field_id,
-            Some("constraint-object"),
-            6,
-            constraint_entity_id,
-            "ConstraintDYS",
-        );
-        constraint_field.owner = Some(CatiaObjectOwner::Entity(5));
-        constraint_field
-            .references
-            .push(CatiaObjectRecordReference::from_parts(
-                7,
-                4,
-                CatiaObjectRecordReferenceSource::Field,
-                false,
-                Some("constraint-target-record".to_string()),
-                Some("parent-object".to_string()),
-            ));
-        constraint_field.references.extend([
-            CatiaObjectRecordReference::from_parts(
-                8,
-                8,
-                CatiaObjectRecordReferenceSource::ListItem {
-                    list_payload_offset: 6,
-                    item_ordinal: 2,
-                },
-                true,
-                None,
-                None,
-            ),
-            CatiaObjectRecordReference::from_parts(
-                9,
-                12,
-                CatiaObjectRecordReferenceSource::Field,
-                false,
-                None,
-                None,
-            ),
-        ]);
-        let constraint_target_record = object_record(
-            "constraint-target-record",
-            Some("parent-object"),
-            7,
-            "catia:outer:entity-record#constraint-target",
-            "Sketch",
-        );
-
-        let mut constraint_object = design_object("constraint-object", Some("parent-object"));
-        constraint_object.owner_entity_id = 5;
-        constraint_object.owner_record = Some("constraint-owner-record".to_string());
-        constraint_object
-            .fields
-            .push(constraint_field_id.to_string());
-        native.design_objects.push(constraint_object);
-        native.entity_records.extend([
-            entity_record(constraint_entity_id, constraint_field_id, 6),
-            entity_record(
-                "catia:outer:entity-record#constraint-target",
-                "constraint-target-record",
-                7,
-            ),
-        ]);
-        native.object_graphs[0].records.extend([
-            constraint_owner_record,
-            constraint_field,
-            constraint_target_record,
-        ]);
-
-        let sketch_owner = native.object_graphs[0]
-            .records
-            .iter_mut()
-            .find(|record| record.id == "sketch-owner-record")
-            .expect("sketch owner record");
-        sketch_owner
-            .references
-            .push(CatiaObjectRecordReference::from_parts(
-                5,
-                1,
-                CatiaObjectRecordReferenceSource::Field,
-                false,
-                Some("constraint-owner-record".to_string()),
-                Some("parent-object".to_string()),
-            ));
-        let geometry_field = native.object_graphs[0]
-            .records
-            .iter_mut()
-            .find(|record| record.id == "catia:outer:object-record#geometry-field")
-            .expect("geometry field");
-        geometry_field
-            .references
-            .push(CatiaObjectRecordReference::from_parts(
-                6,
-                2,
-                CatiaObjectRecordReferenceSource::Field,
-                false,
-                Some(constraint_field_id.to_string()),
-                Some("constraint-object".to_string()),
-            ));
-
-        (ir, native, transfer, graph_scope)
-    }
-
-    #[test]
-    fn transfers_one_exact_native_sketch_geometry_member() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
-
-        let transferred = crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer the native sketch entities")
-        });
-        assert_eq!(transferred.len(), 1);
-        assert!(transferred.contains("catia:outer:object-record#geometry-field"));
-        assert_eq!(ir.model.sketch_entities.len(), 1);
-        let entity = &ir.model.sketch_entities[0];
-        assert_eq!(entity.sketch.as_str(), "synthetic:test:sketch#0");
-        assert_eq!(
-            entity.native_ref.as_deref(),
-            Some("catia:outer:object-record#geometry-field")
-        );
-        assert_eq!(
-            entity.id().as_str(),
-            "catia:outer:sketch-entity#geometry-field"
-        );
-        assert!(entity.geometry_ref.is_none());
-        assert!(matches!(entity.geometry.definition(),
-            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind == "2DPoint"
-        ));
-    }
-
-    #[test]
-    fn sketch_entity_limit_refuses_before_native_member_push() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
-        let error = crate::test_support::with_entity_limit(0, |ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect_err("one sketch member exceeds zero entities");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
-                && limit.operation == "admit CATIA sketch entity")
-        );
-        assert!(ir.model.sketch_entities.is_empty());
-    }
-
-    #[test]
-    fn does_not_promote_an_unadmitted_native_sketch_member() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
-
-        assert!(
-            crate::test_support::with_service_context(|ctx| transfer_native_sketch_entities(
-                ctx,
-                &mut ir,
-                &native,
-                &transfer,
-                &graph_scope
-            )
-            .expect("transfer the native sketch entities"))
-            .is_empty()
-        );
-        assert!(ir.model.sketch_entities.is_empty());
-    }
-
-    #[test]
-    fn refuses_an_ambiguous_native_sketch_geometry_group() {
-        let (mut ir, mut native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
-        let second_field_id = "catia:outer:object-record#second-geometry-field";
-        let second_entity_id = "catia:outer:entity-record#second-geometry-field";
-        let mut second = object_record(
-            second_field_id,
-            Some("child-object"),
-            5,
-            second_entity_id,
-            "2DPoint",
-        );
-        second.owner = Some(CatiaObjectOwner::Entity(3));
-        native.object_graphs[0].records.push(second);
-        native
-            .entity_records
-            .push(entity_record(second_entity_id, second_field_id, 5));
-        native
-            .design_objects
-            .iter_mut()
-            .find(|object| object.id == "child-object")
-            .expect("child design object")
-            .fields
-            .push(second_field_id.to_string());
-
-        assert!(
-            crate::test_support::with_service_context(|ctx| transfer_native_sketch_entities(
-                ctx,
-                &mut ir,
-                &native,
-                &transfer,
-                &graph_scope
-            )
-            .expect("transfer the native sketch entities"))
-            .is_empty()
-        );
-        assert!(ir.model.sketch_entities.is_empty());
-    }
-
-    #[test]
-    fn refuses_constraint_relations_with_duplicate_sketch_entity_references() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
-        crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer the native sketch entities")
-        });
-        assert!(!ir.model.sketch_entities.is_empty());
-        let duplicates = ir.model.sketch_entities.clone();
-        ir.model.sketch_entities.extend(duplicates.clone());
-        ir.model.sketch_entities.extend(duplicates);
-        assert!(crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch constraints")
-        })
-        .is_empty());
-        assert!(ir.model.sketch_constraints.is_empty());
-    }
-
-    #[test]
-    fn transfers_a_source_closed_native_sketch_constraint_relation() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
-
-        crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer the native sketch entities")
-        });
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| transfer_native_sketch_constraints(
-                ctx,
-                &mut ir,
-                &native,
-                &transfer,
-                &graph_scope
-            )
-            .expect("transfer native sketch constraints")),
-            HashSet::from(["catia:outer:object-record#constraint-field".to_string()])
-        );
-        assert_eq!(ir.model.sketch_constraints.len(), 1);
-        let constraint = &ir.model.sketch_constraints[0];
-        assert_eq!(constraint.sketch.as_str(), "synthetic:test:sketch#0");
-        assert_eq!(
-            constraint.native_ref.as_deref(),
-            Some("catia:outer:entity-record#constraint-field")
-        );
-        let SketchConstraintDefinitionInput::Native {
-            native_kind,
-            native_properties,
-            entities,
-            parameter,
-            operands,
-            ..
-        } = constraint.definition.kind()
-        else {
-            panic!("expected opaque native sketch constraint");
-        };
-        assert_eq!(native_kind, "ConstraintDYS");
-        assert_eq!(native_properties["catia_relation_source_class"], "2DPoint");
-        assert_eq!(
-            native_properties["catia_relation_target_class"],
-            "ConstraintDYS"
-        );
-        assert_eq!(native_properties["catia_relation_target_entry"], "entry");
-        assert_eq!(
-            native_properties["catia_relation_target_reference_count"],
-            "3"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_0_entity_id"],
-            "7"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_0_payload_offset"],
-            "4"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_0_state"],
-            "resolved"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_0_source"],
-            "field"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_0_target_record"],
-            "constraint-target-record"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_0_target_class"],
-            "Sketch"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_1_entity_id"],
-            "8"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_1_state"],
-            "null"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_1_source"],
-            "list_item"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_1_list_payload_offset"],
-            "6"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_1_item_ordinal"],
-            "2"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_2_entity_id"],
-            "9"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_2_state"],
-            "unresolved"
-        );
-        assert_eq!(
-            native_properties["catia_relation_target_reference_2_source"],
-            "field"
-        );
-        assert_eq!(native_properties["catia_relation_incidence_count"], "1");
-        assert_eq!(entities.len(), 1);
-        assert_eq!(
-            entities[0].as_str(),
-            "catia:outer:sketch-entity#geometry-field"
-        );
-        assert!(parameter.is_none());
-        assert_eq!(operands.len(), 1);
-        assert_eq!(operands[0].native_kind, "ConstraintDYS");
-        assert_eq!(
-            operands[0].field.as_ref().map(|field| field.name.as_str()),
-            Some("catia:outer:object-record#constraint-field")
-        );
-        assert_eq!(
-            operands[0].native_ref.as_deref(),
-            Some("catia:outer:entity-record#constraint-field")
-        );
-    }
-
-    #[test]
-    fn sketch_constraint_entity_limit_refuses_before_native_relation_push() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
-        crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer the native sketch entities")
-        });
-        let error = crate::test_support::with_entity_limit(0, |ctx| {
-            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect_err("one sketch relation exceeds zero entities");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
-                && limit.operation == "admit CATIA sketch constraint")
-        );
-        assert!(ir.model.sketch_constraints.is_empty());
-    }
-
-    #[test]
-    fn refuses_a_native_sketch_constraint_without_source_incidence() {
-        let (mut ir, mut native, transfer, graph_scope) = native_sketch_constraint_fixture();
-        native.object_graphs[0]
-            .records
-            .iter_mut()
-            .find(|record| record.id == "catia:outer:object-record#geometry-field")
-            .expect("geometry field")
-            .references
-            .clear();
-
-        crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer the native sketch entities")
-        });
-        assert!(crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch constraints")
-        })
-        .is_empty());
-        assert!(ir.model.sketch_constraints.is_empty());
-    }
-
-    #[test]
-    fn refuses_a_native_sketch_constraint_without_target_sketch_membership() {
-        let (mut ir, mut native, transfer, graph_scope) = native_sketch_constraint_fixture();
-        native.object_graphs[0]
-            .records
-            .iter_mut()
-            .find(|record| record.id == "sketch-owner-record")
-            .expect("sketch owner record")
-            .references
-            .retain(|reference| reference.target() != Some("constraint-owner-record"));
-
-        crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer the native sketch entities")
-        });
-        assert!(crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch constraints")
-        })
-        .is_empty());
-        assert!(ir.model.sketch_constraints.is_empty());
-    }
-
     #[test]
     fn blank_native_operand_fields_remain_unresolved() {
         for name in ["", " \t"] {
@@ -1944,6 +742,7 @@ mod tests {
             }),
             incoming_references: Vec::new(),
             incoming_storage_references: Vec::new(),
+            project_target: None,
         });
 
         crate::test_support::with_service_context(|ctx| {
@@ -1961,98 +760,6 @@ mod tests {
             panic!("expected native constraint");
         };
         assert!(constraint_parameter.is_none());
-    }
-
-    #[test]
-    fn binds_a_constraint_to_an_exact_native_sketch_entity() {
-        let (mut ir, native, transfer, graph_scope) = fixture(false);
-        let entity_id = SketchEntityId::mint("synthetic:test:sketch-entity#source".to_string())
-            .expect("valid test fixture");
-        ir.model.sketch_entities.push(
-            SketchEntity::new(
-                entity_id.clone(),
-                SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
-                SketchGeometry::native(
-                    cadmpeg_core::text::NonBlankString::new("2DPoint")
-                        .expect("nonempty source identity"),
-                ),
-            )
-            .with_native_ref(Some("source-record".to_string())),
-        );
-
-        crate::test_support::with_service_context(|ctx| {
-            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect("valid sketch constraint transfer");
-
-        let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
-        else {
-            panic!("expected opaque native constraint");
-        };
-        assert_eq!(entities, &vec![entity_id]);
-    }
-
-    #[test]
-    fn refuses_a_constraint_entity_binding_when_native_identity_is_ambiguous() {
-        let (mut ir, native, transfer, graph_scope) = fixture(false);
-        for suffix in ["first", "second"] {
-            ir.model.sketch_entities.push(
-                SketchEntity::new(
-                    SketchEntityId::mint(format!("synthetic:test:sketch-entity#{suffix}"))
-                        .expect("valid test fixture"),
-                    SketchId::mint("synthetic:test:sketch#0".to_string())
-                        .expect("valid test fixture"),
-                    SketchGeometry::native(
-                        cadmpeg_core::text::NonBlankString::new("2DPoint")
-                            .expect("nonempty source identity"),
-                    ),
-                )
-                .with_native_ref(Some("source-record".to_string())),
-            );
-        }
-
-        crate::test_support::with_service_context(|ctx| {
-            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect("valid sketch constraint transfer");
-
-        let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
-        else {
-            panic!("expected opaque native constraint");
-        };
-        assert!(entities.is_empty());
-    }
-
-    #[test]
-    fn refuses_a_constraint_entity_binding_from_another_sketch() {
-        let (mut ir, native, transfer, graph_scope) = fixture(false);
-        ir.model.sketch_entities.push(
-            SketchEntity::new(
-                SketchEntityId::mint("synthetic:test:other-sketch-entity#source".to_string())
-                    .expect("valid test fixture"),
-                SketchId::mint("synthetic:test:other-sketch#0".to_string())
-                    .expect("valid test fixture"),
-                SketchGeometry::native(
-                    cadmpeg_core::text::NonBlankString::new("2DPoint")
-                        .expect("nonempty source identity"),
-                ),
-            )
-            .with_native_ref(Some("source-record".to_string())),
-        );
-
-        crate::test_support::with_service_context(|ctx| {
-            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect("valid sketch constraint transfer");
-
-        let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
-        else {
-            panic!("expected opaque native constraint");
-        };
-        assert!(entities.is_empty());
     }
 
     #[test]
@@ -2163,44 +870,6 @@ mod tests {
     }
 
     #[test]
-    fn sketch_and_sketch_entity_lookups_find_their_native_refs() {
-        let (mut ir, _, _, _) = fixture(false);
-        let admitted = { super::sketch_ids_by_native_ref(&ir) };
-        assert!(admitted.get("sketch-object").is_some());
-        ir.model.sketch_entities.push(
-            SketchEntity::new(
-                SketchEntityId::mint("synthetic:test:sketch-entity#0".to_string())
-                    .expect("identity grammar"),
-                ir.model.sketches[0].id.clone(),
-                SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
-            )
-            .with_native_ref(Some("field-record".to_string())),
-        );
-        let admitted = { super::sketch_entities_by_native_ref(&ir) };
-        assert!(admitted.get("field-record").is_some());
-    }
-
-    #[test]
-    fn unadmitted_point_member_transfers_no_sketch_entities() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect("transfer the native sketch entities");
-        assert!(admitted.is_empty());
-    }
-
-    #[test]
-    fn unadmitted_point_member_fixture_transfers_no_constraints() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect("transfer native sketch constraints");
-        assert!(admitted.is_empty());
-    }
-
-    #[test]
     fn constraint_range_properties_carry_the_constraint_value() {
         let (_, native, _, _) = fixture(false);
         let range = native.entity_records[0]
@@ -2208,58 +877,6 @@ mod tests {
             .expect("constraint range");
         let admitted = super::constraint_properties(range);
         assert_eq!(admitted["catia_constraint_value"], "CstAttr_Dimension");
-    }
-
-    fn seeded_sketch_entity(id: &str, sketch: SketchId) -> SketchEntity {
-        SketchEntity::new(
-            SketchEntityId::mint(id.to_string()).expect("valid test fixture"),
-            sketch,
-            SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
-        )
-        .with_native_ref(Some("catia:outer:object-record#geometry-field".to_string()))
-    }
-
-    #[test]
-    fn native_sketch_members_skip_identities_already_in_the_model() {
-        let transfer_entities = |ir: &mut CadIr| {
-            let (_, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
-            crate::test_support::with_service_context(|ctx| {
-                transfer_native_sketch_entities(ctx, ir, &native, &transfer, &graph_scope)
-            })
-            .expect("transfer the native sketch entities")
-        };
-
-        let (mut same_sketch, ..) = native_sketch_fixture("2DPoint");
-        let sketch = same_sketch.model.sketches[0].id.clone();
-        same_sketch.model.sketch_entities.push(seeded_sketch_entity(
-            "synthetic:test:sketch-entity#seeded",
-            sketch,
-        ));
-        assert!(transfer_entities(&mut same_sketch).is_empty());
-        assert_eq!(same_sketch.model.sketch_entities.len(), 1);
-
-        let (mut other_sketch, ..) = native_sketch_fixture("2DPoint");
-        other_sketch
-            .model
-            .sketch_entities
-            .push(seeded_sketch_entity(
-                "synthetic:test:sketch-entity#other",
-                SketchId::mint("synthetic:test:other-sketch#0".to_string())
-                    .expect("valid test fixture"),
-            ));
-        assert_eq!(transfer_entities(&mut other_sketch).len(), 1);
-        assert_eq!(other_sketch.model.sketch_entities.len(), 2);
-
-        let (mut repeated, ..) = native_sketch_fixture("2DPoint");
-        let mut second = repeated.model.sketches[0].clone();
-        second.id = SketchId::mint("synthetic:test:sketch#1".to_string()).expect("valid fixture");
-        repeated.model.sketches.push(second);
-        assert_eq!(transfer_entities(&mut repeated).len(), 1);
-        assert_eq!(repeated.model.sketch_entities.len(), 1);
-        assert_eq!(
-            repeated.model.sketch_entities[0].sketch.as_str(),
-            "synthetic:test:sketch#0"
-        );
     }
 
     fn seeded_constraint_variants(constraint: &SketchConstraint) -> [SketchConstraint; 2] {
@@ -2274,29 +891,6 @@ mod tests {
                 ..constraint.clone()
             },
         ]
-    }
-
-    #[test]
-    fn native_sketch_relations_skip_identities_already_in_the_model() {
-        let transfer_relations = |ir: &mut CadIr| {
-            let (_, native, transfer, graph_scope) = native_sketch_constraint_fixture();
-            crate::test_support::with_service_context(|ctx| {
-                transfer_native_sketch_entities(ctx, ir, &native, &transfer, &graph_scope)?;
-                transfer_native_sketch_constraints(ctx, ir, &native, &transfer, &graph_scope)
-            })
-            .expect("transfer native sketch constraints")
-        };
-        let (mut ir, ..) = native_sketch_constraint_fixture();
-        assert_eq!(transfer_relations(&mut ir).len(), 1);
-        assert!(transfer_relations(&mut ir).is_empty());
-        assert_eq!(ir.model.sketch_constraints.len(), 1);
-
-        for seeded in seeded_constraint_variants(&ir.model.sketch_constraints[0]) {
-            let (mut seeded_ir, ..) = native_sketch_constraint_fixture();
-            seeded_ir.model.sketch_constraints.push(seeded);
-            assert!(transfer_relations(&mut seeded_ir).is_empty());
-            assert_eq!(seeded_ir.model.sketch_constraints.len(), 1);
-        }
     }
 
     #[test]

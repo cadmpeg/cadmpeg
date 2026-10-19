@@ -8,14 +8,15 @@ use super::{
     CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter,
     DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
     FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
-    FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame, FlexForm, FlexMode,
-    FuzzyTolerance, GeometryImportFormat, HelicalSweepLaw, HelicalSweepTravel,
-    HelixConstructionStyle, HelixShape, InnerWireTaper, NoGeneratedSection, ParameterPmi,
-    PmiDimensionSubtype, PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
-    RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
-    SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode,
-    SolidSweepOperation, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode,
-    SweepPathExtent, SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
+    FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
+    FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
+    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape, InnerWireTaper,
+    NoGeneratedSection, ParameterPmi, PmiDimensionSubtype, PolygonSideCount, PrincipalPlane,
+    RevolutionFuseOrder, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner,
+    ScaleFactors, SheetMetalBendPosition, SheetMetalHeightDatum, SheetMetalHemBendPosition,
+    SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation,
+    SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode, SweepPathExtent,
+    SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
 };
 
 rewrite_scalar!(BinderCopyOnChange);
@@ -77,6 +78,7 @@ rewrite_scalar!(RuledSurfaceCorner);
 rewrite_scalar!(ScaleFactors);
 rewrite_scalar!(SheetMetalBendPosition);
 rewrite_scalar!(SheetMetalHeightDatum);
+rewrite_scalar!(SheetMetalHemBendPosition);
 rewrite_scalar!(SheetMetalHemDirection);
 rewrite_scalar!(SheetMetalThicknessSide);
 rewrite_scalar!(ShellJoin);
@@ -93,3 +95,5 @@ rewrite_scalar!(UnresolvedFamily);
 rewrite_scalar!(WrapMode);
 
 rewrite_scalar!(super::SweepCircularRegion);
+
+rewrite_scalar!(FilledSurfaceBoundaryCondition);

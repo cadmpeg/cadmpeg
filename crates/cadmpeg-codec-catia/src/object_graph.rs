@@ -11,6 +11,8 @@ use crate::checked::extents_overlap;
 use crate::layout::outer_alias_row as alias_row;
 use crate::{catalog, entity_table, value_block};
 
+pub(crate) mod inline;
+
 /// One decoded outer object graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ObjectGraph {
@@ -671,11 +673,14 @@ impl SurfaceAlias {
 }
 
 /// Decode fixed surface-alias row cores from an outer body.
-pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
+pub(crate) fn surface_aliases(
+    data: &[u8],
+    segments: &[crate::container::FinjplSegment],
+) -> Vec<SurfaceAlias> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
     let mut aliases = Vec::new();
     for (pos, bytes) in data.windows(MARKER.len()).enumerate() {
-        if bytes != MARKER {
+        if bytes != MARKER || crate::storage_property::is_member(data, pos, segments) {
             continue;
         }
         let Some(row) = pos.checked_sub(alias_row::MARKER) else {
@@ -691,8 +696,7 @@ pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
             continue;
         };
         let group = alias_group_membership(data, pos);
-        if lead_raw & 0xff != 1 && !matches!(lead_raw, 0x8e | 0x8f | 0x0000_0133) && group.is_none()
-        {
+        if lead_raw & 0xff != 1 && !matches!(lead_raw, 0x8e | 0x8f) && group.is_none() {
             continue;
         }
         let f1 = [
@@ -726,7 +730,10 @@ pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
 /// The returned map contains only alias cores outside complete object graphs,
 /// value blocks, and catalogs. A `None` value means that the raw tag exists but
 /// its canonical target is not unique.
-pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
+pub(crate) fn surface_alias_tag_map(
+    data: &[u8],
+    segments: &[crate::container::FinjplSegment],
+) -> HashMap<u32, Option<u32>> {
     let paired_object_graph_roots = entity_table::paired_object_graph_roots(data);
     let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots);
     let mut value_blocks = value_block::parse(data);
@@ -752,7 +759,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
         })
         .collect::<Vec<_>>();
 
-    let mut rows = surface_aliases(data);
+    let mut rows = surface_aliases(data, segments);
     rows.retain(|row| {
         let row_start = row.row_pos;
         !object_graphs
@@ -988,13 +995,10 @@ fn parse_candidate(
                 let payload = decode_payload(&data[child + 6..record_end])?;
                 (lead, ObjectRecordBody::Nested { head, payload })
             }
-            None if is_inline_body(body) => {
-                let lead = body[0];
-                (lead, ObjectRecordBody::Inline(body.to_vec()))
-            }
-            None if allow_opaque_childless_records && !body.is_empty() => {
-                let lead = body[0];
-                (lead, ObjectRecordBody::Inline(body.to_vec()))
+            None if inline::parse(body).is_some()
+                || (allow_opaque_childless_records && !body.is_empty()) =>
+            {
+                (body[0], ObjectRecordBody::Inline(body.to_vec()))
             }
             None => return None,
         };
@@ -1320,45 +1324,6 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
         ] if *owner != 0
     );
     extended_class_storage_owner.then_some(3)
-}
-
-pub(crate) fn is_inline_body(body: &[u8]) -> bool {
-    let Some(rest) = body.strip_prefix(&[0x10, 0xfe]) else {
-        return false;
-    };
-    let Some(rest) = strip_reference(rest) else {
-        return false;
-    };
-    let rest = if let Some(rest) = rest.strip_prefix(&[0x82, 0xf2, 0xf0, 0x82]) {
-        rest
-    } else if rest.len() >= 12
-        && rest[0] == 0x82
-        && rest[1] == 0x32
-        && rest[6] == 0x32
-        && rest[11] == 0x82
-    {
-        &rest[12..]
-    } else {
-        return false;
-    };
-    let Some(rest) = strip_reference(rest) else {
-        return false;
-    };
-    if rest == [0x81, 0x06] {
-        return true;
-    }
-    let Some(rest) = rest.strip_prefix(&[0x82]) else {
-        return false;
-    };
-    strip_reference(rest) == Some(&[0x06][..])
-}
-
-fn strip_reference(bytes: &[u8]) -> Option<&[u8]> {
-    match bytes {
-        [0x80..=0xd0, rest @ ..] => Some(rest),
-        [0xd1..=0xe4, _, rest @ ..] => Some(rest),
-        _ => None,
-    }
 }
 
 struct RepeatedReferenceSuffixView<'a> {

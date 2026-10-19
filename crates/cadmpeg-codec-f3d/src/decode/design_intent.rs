@@ -163,6 +163,8 @@ pub(super) struct DesignNative {
     design_record_headers: Vec<DesignRecordHeader>,
     /// Surface-trim operations of the admitted scopes.
     design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
+    design_sheet_metal_settings:
+        Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
 }
 
 impl DesignNative {
@@ -207,6 +209,7 @@ impl DesignNative {
             design_parameter_scopes,
             design_record_headers,
             design_surface_trim_operations,
+            design_sheet_metal_settings,
         } = self;
         native.asm_histories = asm_histories;
         native.asm_face_boundaries = asm_face_boundaries;
@@ -246,6 +249,7 @@ impl DesignNative {
         native.design_record_headers.extend(design_record_headers);
         native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
         native.design_surface_trim_operations = design_surface_trim_operations;
+        native.design_sheet_metal_settings = design_sheet_metal_settings;
     }
 }
 
@@ -549,6 +553,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             ),
         );
     }
+    design.design_sheet_metal_settings =
+        crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
     design.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
             scan,

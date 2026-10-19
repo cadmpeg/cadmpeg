@@ -4,10 +4,16 @@
 //! [`NativeModel::extract`] runs the extraction dependency DAG and groups
 //! record vectors into domain sub-structs. JT graph admission rejects
 //! inconsistent owners before attachment.
+//! Eager, best-effort extraction of the native NX object model.
+//!
+//! [`NativeModel::extract`] runs the extraction dependency DAG and groups
+//! record vectors into domain sub-structs. JT graph admission rejects
+//! inconsistent owners before attachment.
 
 use crate::jt::ArithmeticWorkBound;
+
 use crate::native::features::draft::feature_draft_construction_binary32_lanes;
-use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_binary64_lanes;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
 use crate::native::features::draft::feature_draft_construction_graph_strings;
 use crate::native::features::draft::feature_draft_construction_identity_frames;
@@ -16,16 +22,19 @@ use crate::native::features::draft::feature_draft_construction_payloads;
 use crate::native::features::draft::feature_draft_construction_references;
 use crate::native::features::draft::feature_draft_construction_terminal_lanes;
 use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
-use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionBinary64Lane;
 use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
 use crate::native::features::draft::FeatureDraftConstructionGraphString;
 use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
 use crate::native::features::draft::FeatureDraftConstructionIndexLane;
 use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
+use crate::native::features::named_target::{
+    feature_construction_named_targets, FeatureConstructionNamedTarget,
+};
 use crate::native::features::pattern::feature_identical_instance_output_lanes;
 use crate::native::features::pattern::feature_multi_instance_output_lanes;
-use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
+use crate::native::features::pattern::feature_pattern_construction_binary64_lanes;
 use crate::native::features::pattern::feature_pattern_construction_payloads;
 use crate::native::features::pattern::feature_pattern_construction_strings;
 use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
@@ -33,12 +42,13 @@ use crate::native::features::pattern::feature_pattern_references;
 use crate::native::features::pattern::feature_pattern_transform_lanes;
 use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
 use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
-use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionBinary64Lane;
 use crate::native::features::pattern::FeaturePatternConstructionString;
 use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
 use crate::native::features::pattern::FeaturePatternReference;
 use crate::native::features::pattern::FeaturePatternTransformLane;
 
+use super::assembly_placement::{assembly_placements, AssemblyPlacement};
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
     display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
@@ -70,15 +80,23 @@ use super::features::construction_records::{
     feature_extrude_payload_headers, feature_extrude_profile_references,
     feature_operation_body_11_continuations, feature_operation_body_members,
     feature_operation_body_operands, feature_operation_body_reference_lanes,
-    feature_operation_body_scalar_triples, feature_operation_terminal_discriminators,
-    feature_point_construction_headers, feature_point_construction_scalar_lanes,
-    feature_projected_curve_construction_payloads, feature_projected_curve_construction_strings,
-    feature_projected_curve_references, feature_surface_construction_payloads,
-    feature_surface_construction_references, feature_surface_construction_scalar_pairs,
-    feature_surface_construction_strings, feature_swp104_leading_branches,
-    feature_thru_curve_construction_envelopes,
+    feature_operation_body_scalar_triples, feature_point_construction_headers,
+    feature_point_construction_scalar_lanes, feature_projected_curve_construction_payloads,
+    feature_projected_curve_construction_strings, feature_projected_curve_references,
+    feature_studio_post_branch_references, feature_surface_construction_references,
+    feature_surface_construction_scalar_pairs, feature_surface_construction_strings,
+    feature_swp104_leading_branches, feature_thru_curve_construction_envelopes,
+};
+use super::features::enlarge::{
+    feature_enlarge_construction_envelopes, FeatureEnlargeConstructionEnvelope,
+};
+use super::features::extract_face::{
+    feature_extract_face_construction_envelopes, FeatureExtractFaceConstructionEnvelope,
 };
 use super::features::operation_record::FeatureOperationRecord;
+use super::features::surface_allocation::{
+    feature_surface_construction_payloads, FeatureSurfaceConstructionPayload,
+};
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use super::features::{
     feature_body_data_block_uses, feature_body_reference_occurrences, feature_body_references,
@@ -127,8 +145,8 @@ use super::features::{
     FeatureSketchPayloadFixedPair, FeatureSketchPayloadMixedPair, FeatureSketchPayloadNamedRecord,
     FeatureSketchPayloadScalarLane, FeatureSketchPoint, FeatureSketchPointGroup,
     FeatureSketchPointUse, FeatureSketchPrecedingNamedPointUse, FeatureSketchRecord,
-    FeatureSketchReference, FeatureSurfaceConstructionPayload, FeatureSurfaceConstructionReference,
-    FeatureSurfaceConstructionString, FeatureThruCurveConstructionEnvelope, OffsetStoreNamedPoint,
+    FeatureSketchReference, FeatureSurfaceConstructionReference, FeatureSurfaceConstructionString,
+    FeatureThruCurveConstructionEnvelope, OffsetStoreNamedPoint,
 };
 use super::om::{
     audit_trail_rows, class_definitions, configuration_attribute_uses, configurations,
@@ -161,29 +179,27 @@ use super::parasolid::{
     parasolid_chart_records, parasolid_deltas_events_with_censuses,
     parasolid_entity_51_numeric_uses, parasolid_entity_51_records, parasolid_entity_51_string_uses,
     parasolid_entity_51_structured_uses, parasolid_entity_value_records,
-    parasolid_field_names_records, parasolid_group_members, parasolid_group_records,
-    parasolid_support_uv_records, parasolid_term_use_records,
-    parasolid_topology_attribute_class_uses,
+    parasolid_field_names_records, parasolid_groups, parasolid_support_uv_records,
+    parasolid_term_use_records, parasolid_topology_attribute_class_uses,
     parasolid_topology_attribute_fields_have_untransferred_values,
-    parasolid_topology_attribute_list_references, per_parasolid_stream, ParasolidAttributeClassUse,
-    ParasolidAttributeDefinition, ParasolidAttributeFieldNames, ParasolidAttributeFieldUse,
-    ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord, ParasolidChartRecord,
-    ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
-    ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasRecord,
-    ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
-    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
-    ParasolidDeltasSchemaReferencePreamble, ParasolidDeltasTaggedReferenceLane,
-    ParasolidDeltasTermUseNumericTail, ParasolidDeltasTerminalNullReferences,
-    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
-    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
-    ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
-    ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
-    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidFieldNamesRecord,
-    ParasolidGroupMember, ParasolidGroupRecord, ParasolidIntersectionRecord,
-    ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
-    ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
-    ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
+    parasolid_topology_attribute_list_references, per_parasolid_stream, resolve_group_members,
+    ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldNames,
+    ParasolidAttributeFieldUse, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
+    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasPartitionPrefix,
+    ParasolidDeltasPmarkPacket, ParasolidDeltasRecord, ParasolidDeltasReferenceMarkerPacket,
+    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan, ParasolidDeltasSchemaNode,
+    ParasolidDeltasTaggedReferenceLane, ParasolidDeltasTerminalNullReferences,
+    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse,
+    ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
+    ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord,
+    ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
+    ParasolidEntityVectorRecord, ParasolidFieldNamesRecord, ParasolidGroupMember,
+    ParasolidGroupRecord, ParasolidIntersectionRecord, ParasolidOffsetSurfaceRecord,
+    ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord, ParasolidTermUseRecord,
+    ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
+    ParasolidTrimmedCurveRecord,
 };
+use super::rmfastload_storage::RmFastLoadStorage;
 use super::segments::{
     segment_body_bindings, segment_body_lineage_statuses, segment_index_rows, segment_om_links,
     segment_stream_links, SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow,
@@ -211,6 +227,7 @@ use crate::native::features::extrude_32::{
 use crate::native::features::fset::{
     feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };
+use crate::native::features::fset_indices::{feature_fset_index_lanes, FeatureFsetIndexLane};
 use crate::native::features::holes::feature_hole_package_construction_group_lanes;
 use crate::native::features::holes::feature_hole_package_construction_group_uses;
 use crate::native::features::holes::feature_simple_hole_construction_groups;
@@ -234,7 +251,6 @@ use crate::native::features::surface_branches::{
     feature_surface_construction_branches, FeatureSurfaceConstructionBranch,
 };
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
-use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use crate::native::features::thru_curve_branches::{
     feature_thru_curve_construction_branch_groups, FeatureThruCurveConstructionBranchGroup,
 };
@@ -301,15 +317,12 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) deltas_records: Vec<ParasolidDeltasRecord>,
     pub(super) deltas_tombstones: Vec<ParasolidDeltasTombstone>,
     pub(super) deltas_body_revisions: Vec<ParasolidDeltasBodyRevision>,
-    pub(super) deltas_term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
     pub(super) deltas_tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(super) deltas_reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
-    pub(super) deltas_reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
-    pub(super) deltas_schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
+    pub(super) deltas_pmark_packets: Vec<ParasolidDeltasPmarkPacket>,
+    pub(super) deltas_partition_prefixes: Vec<ParasolidDeltasPartitionPrefix>,
     pub(super) deltas_reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
-    pub(super) deltas_type_150_state_packets: Vec<ParasolidDeltasType150StatePacket>,
-    pub(super) deltas_inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
-    pub(super) deltas_inline_body_states: Vec<ParasolidDeltasInlineBodyState>,
+    pub(super) deltas_schema_nodes: Vec<ParasolidDeltasSchemaNode>,
     pub(super) deltas_residual_spans: Vec<ParasolidDeltasResidualSpan>,
     pub(super) blend_surface_records: Vec<ParasolidBlendSurfaceRecord>,
     pub(super) blend_bound_records: Vec<ParasolidBlendBoundRecord>,
@@ -378,8 +391,6 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_operation_tagged_references: Vec<FeatureOperationObjectReference>,
     pub(super) feature_operation_data_block_references: Vec<FeatureOperationObjectReference>,
     pub(super) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
-    pub(super) feature_operation_terminal_discriminators:
-        Vec<FeatureOperationTerminalDiscriminator>,
     pub(super) feature_operation_terminal_frames: Vec<FeatureOperationTerminalFrame>,
     pub(super) feature_operation_state_journal_uses: Vec<FeatureOperationStateJournalUse>,
     pub(super) feature_payload_strings: Vec<FeaturePayloadString>,
@@ -420,6 +431,7 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_projected_curve_construction_strings:
         Vec<FeatureProjectedCurveConstructionString>,
     pub(super) feature_fset_reference_graphs: Vec<FeatureFsetReferenceGraph>,
+    pub(super) feature_fset_index_lanes: Vec<FeatureFsetIndexLane>,
     pub(super) feature_fset_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(super) feature_delete_reference_fields: Vec<FeatureDeleteReferenceField>,
     pub(super) feature_delete_construction_payloads: Vec<FeatureDeleteConstructionPayload>,
@@ -427,7 +439,9 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_pattern_counted_reference_lanes: Vec<FeaturePatternCountedReferenceLane>,
     pub(super) feature_pattern_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(super) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
-    pub(super) feature_pattern_construction_fixed_lanes: Vec<FeaturePatternConstructionFixedLane>,
+    pub(super) feature_construction_named_targets: Vec<FeatureConstructionNamedTarget>,
+    pub(super) feature_pattern_construction_binary64_lanes:
+        Vec<FeaturePatternConstructionBinary64Lane>,
     pub(super) feature_pattern_transform_lanes: Vec<FeaturePatternTransformLane>,
     pub(super) feature_multi_instance_output_lanes: Vec<FeatureMultiInstanceOutputLane>,
     pub(super) feature_identical_instance_output_lanes: Vec<FeatureIdenticalInstanceOutputLane>,
@@ -437,13 +451,17 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_draft_construction_index_lanes: Vec<FeatureDraftConstructionIndexLane>,
     pub(super) feature_draft_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(super) feature_draft_construction_graph_payloads: Vec<FeatureDraftConstructionGraphPayload>,
-    pub(super) feature_draft_construction_fixed_lanes: Vec<FeatureDraftConstructionFixedLane>,
+    pub(super) feature_draft_construction_binary64_lanes: Vec<FeatureDraftConstructionBinary64Lane>,
     pub(super) feature_draft_construction_binary32_lanes: Vec<FeatureDraftConstructionBinary32Lane>,
     pub(super) feature_draft_construction_graph_strings: Vec<FeatureDraftConstructionGraphString>,
     pub(super) feature_draft_construction_identity_frames:
         Vec<FeatureDraftConstructionIdentityFrame>,
     pub(super) feature_draft_construction_terminal_lanes: Vec<FeatureDraftConstructionTerminalLane>,
+    pub(super) feature_enlarge_construction_envelopes: Vec<FeatureEnlargeConstructionEnvelope>,
+    pub(super) feature_extract_face_construction_envelopes:
+        Vec<FeatureExtractFaceConstructionEnvelope>,
     pub(super) feature_surface_construction_references: Vec<FeatureSurfaceConstructionReference>,
+    pub(super) feature_studio_post_branch_references: Vec<FeatureSurfaceConstructionReference>,
     pub(super) feature_surface_construction_payloads: Vec<FeatureSurfaceConstructionPayload>,
     pub(super) feature_surface_construction_scalar_pairs: Vec<FeaturePayloadScalarPair>,
     pub(super) feature_surface_construction_strings: Vec<FeatureSurfaceConstructionString>,
@@ -499,6 +517,7 @@ pub(in crate::native) struct FeatureRecords {
 
 /// Records extracted from the `om` domain.
 pub(in crate::native) struct OmRecords {
+    pub(super) assembly_placements: Vec<AssemblyPlacement>,
     pub(super) om_record_areas: Vec<OmRecordArea>,
     pub(super) audit_trail_rows: Vec<OmAuditTrailRow>,
     pub(super) operation_state_journal_groups: Vec<OmOperationStateJournalGroup>,
@@ -515,6 +534,7 @@ pub(in crate::native) struct OmRecords {
     pub(super) object_record_identity_bounded_sections: Vec<IdentityBoundedSection>,
     pub(super) rmfastload_object_id_tables: Vec<RmFastLoadObjectIdTable>,
     pub(super) rmfastload_object_ids: Vec<RmFastLoadObjectId>,
+    pub(super) rmfastload_physical_storages: Vec<RmFastLoadStorage>,
     pub(super) data_blocks: Vec<DataBlock>,
     pub(super) data_block_control_forms: Vec<DataBlockControlForm>,
     pub(super) data_block_control_values: Vec<DataBlockControlValue>,
@@ -719,13 +739,13 @@ impl NativeModel {
         }
         let delta_pairs = pair_stream_indices(
             streams,
-            (!segment_stream_links.is_empty()).then_some(&linked_deltas),
+            (container.segment_stream_wrappers().next().is_some()).then_some(&linked_deltas),
         );
         let deltas_events =
             parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses())?;
-        let parasolid_group_records =
-            parasolid_group_records(streams, &delta_pairs, &deltas_events.records)?;
-        let parasolid_group_members = parasolid_group_members(streams, &delta_pairs, parsed)?;
+        let (parasolid_group_records, mut parasolid_group_members) =
+            parasolid_groups(streams, &delta_pairs, &deltas_events)?;
+        resolve_group_members(&mut parasolid_group_members, parsed);
         let parasolid_blend_surface_records =
             per_parasolid_stream::<ParasolidBlendSurfaceRecord>(parsed)?;
         let parasolid_blend_bound_records = parasolid_blend_bound_records(streams)?;
@@ -737,7 +757,8 @@ impl NativeModel {
             per_parasolid_stream::<ParasolidSurfaceCurveRecord>(parsed)?;
         let parasolid_intersection_records =
             per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)?;
-        let parasolid_term_use_records = parasolid_term_use_records(streams)?;
+        let parasolid_term_use_records =
+            parasolid_term_use_records(streams, &deltas_events.records)?;
         let parasolid_support_uv_records = parasolid_support_uv_records(streams)?;
         let parasolid_chart_records = parasolid_chart_records(streams)?;
         let parasolid_attribute_definitions = parasolid_attribute_definitions(streams)?;
@@ -837,8 +858,6 @@ impl NativeModel {
             crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
         )?;
         let feature_operation_common_frames = feature_operation_common_frames(container)?;
-        let feature_operation_terminal_discriminators =
-            feature_operation_terminal_discriminators(container)?;
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(container, &feature_operation_common_frames)?;
         let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
@@ -1048,6 +1067,7 @@ impl NativeModel {
                 &feature_projected_curve_construction_payloads,
             )?;
         let feature_fset_reference_graphs = feature_fset_reference_graphs(container)?;
+        let feature_fset_index_lanes = feature_fset_index_lanes(container)?;
         let feature_fset_construction_payloads =
             feature_fset_construction_payloads(container, &feature_fset_reference_graphs)?;
         let feature_delete_reference_fields = feature_delete_reference_fields(container)?;
@@ -1065,10 +1085,12 @@ impl NativeModel {
             container,
             &feature_pattern_construction_payloads,
         )?;
-        let feature_pattern_construction_fixed_lanes = feature_pattern_construction_fixed_lanes(
-            container,
-            &feature_pattern_construction_payloads,
-        )?;
+        let feature_pattern_construction_binary64_lanes =
+            feature_pattern_construction_binary64_lanes(
+                ctx,
+                container,
+                &feature_pattern_construction_payloads,
+            )?;
         let feature_pattern_transform_lanes = feature_pattern_transform_lanes(container)?;
         let feature_multi_instance_output_lanes = feature_multi_instance_output_lanes(container)?;
         let feature_identical_instance_output_lanes =
@@ -1089,7 +1111,8 @@ impl NativeModel {
             &feature_draft_construction_index_lanes,
             &feature_draft_construction_references,
         )?;
-        let feature_draft_construction_fixed_lanes = feature_draft_construction_fixed_lanes(
+        let feature_draft_construction_binary64_lanes = feature_draft_construction_binary64_lanes(
+            ctx,
             container,
             &feature_draft_construction_graph_payloads,
         )?;
@@ -1108,11 +1131,23 @@ impl NativeModel {
             )?;
         let feature_draft_construction_terminal_lanes =
             feature_draft_construction_terminal_lanes(container)?;
+        let feature_enlarge_construction_envelopes =
+            feature_enlarge_construction_envelopes(container)?;
+        let feature_extract_face_construction_envelopes =
+            feature_extract_face_construction_envelopes(container)?;
         let feature_surface_construction_references =
             feature_surface_construction_references(container)?;
+        let feature_studio_post_branch_references =
+            feature_studio_post_branch_references(ctx, container)?;
+        let feature_surface_construction_branches =
+            feature_surface_construction_branches(ctx, container)?;
         let feature_surface_construction_payloads = feature_surface_construction_payloads(
+            ctx,
             container,
             &feature_surface_construction_references,
+            &feature_operation_labels,
+            &feature_surface_construction_branches,
+            &feature_studio_post_branch_references,
         )?;
         let feature_surface_construction_scalar_pairs = feature_surface_construction_scalar_pairs(
             container,
@@ -1122,8 +1157,6 @@ impl NativeModel {
             container,
             &feature_surface_construction_payloads,
         )?;
-        let feature_surface_construction_branches =
-            feature_surface_construction_branches(ctx, container)?;
         let feature_swp104_leading_branches = feature_swp104_leading_branches(container)?;
         let feature_thru_curve_construction_branch_groups =
             feature_thru_curve_construction_branch_groups(container)?;
@@ -1139,6 +1172,12 @@ impl NativeModel {
             feature_operation_body_reference_lanes(container)?;
         let feature_extrude_construction_profiles =
             feature_extrude_construction_profiles(&feature_extrude_profile_references);
+        let feature_construction_named_targets = feature_construction_named_targets(
+            ctx,
+            container,
+            &feature_pattern_construction_payloads,
+            &feature_extrude_construction_profiles,
+        )?;
         let feature_extrude_payload_32_branches = feature_extrude_payload_32_branches(container)?;
         let feature_extrude_32_constructions = feature_extrude_32_constructions(
             &feature_extrude_profile_references,
@@ -1234,6 +1273,8 @@ impl NativeModel {
         let expression_declarations = expression_declarations(container)?;
         let expressions = expressions(container, &expression_declarations)?;
         let classes = class_definitions(container)?;
+        let rmfastload_physical_storages =
+            super::rmfastload_storage::collect(ctx, container, &classes)?;
         let fields = field_definitions(container)?;
         let (object_records, object_record_identity_bounded_sections) = object_records(container)?;
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
@@ -1343,6 +1384,7 @@ impl NativeModel {
             &object_uuid_values,
         )?;
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
+        let assembly_placements = assembly_placements(container)?;
         Ok(NativeModel {
             display_jt: DisplayJtRecords {
                 graph: DisplayJtGraph::from_wire(DisplayJtGraphWire {
@@ -1384,15 +1426,12 @@ impl NativeModel {
                 deltas_records: deltas_events.records,
                 deltas_tombstones: deltas_events.tombstones,
                 deltas_body_revisions: deltas_events.body_revisions,
-                deltas_term_use_numeric_tails: deltas_events.term_use_numeric_tails,
                 deltas_tagged_reference_lanes: deltas_events.tagged_reference_lanes,
                 deltas_reference_type_maps: deltas_events.reference_type_maps,
-                deltas_reference_state_packets: deltas_events.reference_state_packets,
-                deltas_schema_reference_preambles: deltas_events.schema_reference_preambles,
+                deltas_pmark_packets: deltas_events.pmark_packets,
+                deltas_partition_prefixes: deltas_events.partition_prefixes,
                 deltas_reference_marker_packets: deltas_events.reference_marker_packets,
-                deltas_type_150_state_packets: deltas_events.type_150_state_packets,
-                deltas_inline_schema_declarations: deltas_events.inline_schema_declarations,
-                deltas_inline_body_states: deltas_events.inline_body_states,
+                deltas_schema_nodes: deltas_events.schema_nodes,
                 deltas_residual_spans: deltas_events.residual_spans,
                 blend_surface_records: parasolid_blend_surface_records,
                 blend_bound_records: parasolid_blend_bound_records,
@@ -1452,7 +1491,6 @@ impl NativeModel {
                 feature_operation_tagged_references,
                 feature_operation_data_block_references,
                 feature_operation_common_frames,
-                feature_operation_terminal_discriminators,
                 feature_operation_terminal_frames,
                 feature_operation_state_journal_uses,
                 feature_payload_strings,
@@ -1489,6 +1527,7 @@ impl NativeModel {
                 feature_projected_curve_construction_payloads,
                 feature_projected_curve_construction_strings,
                 feature_fset_reference_graphs,
+                feature_fset_index_lanes,
                 feature_fset_construction_payloads,
                 feature_delete_reference_fields,
                 feature_delete_construction_payloads,
@@ -1496,7 +1535,8 @@ impl NativeModel {
                 feature_pattern_counted_reference_lanes,
                 feature_pattern_construction_payloads,
                 feature_pattern_construction_strings,
-                feature_pattern_construction_fixed_lanes,
+                feature_construction_named_targets,
+                feature_pattern_construction_binary64_lanes,
                 feature_pattern_transform_lanes,
                 feature_multi_instance_output_lanes,
                 feature_identical_instance_output_lanes,
@@ -1506,12 +1546,15 @@ impl NativeModel {
                 feature_draft_construction_index_lanes,
                 feature_draft_construction_payloads,
                 feature_draft_construction_graph_payloads,
-                feature_draft_construction_fixed_lanes,
+                feature_draft_construction_binary64_lanes,
                 feature_draft_construction_binary32_lanes,
                 feature_draft_construction_graph_strings,
                 feature_draft_construction_identity_frames,
                 feature_draft_construction_terminal_lanes,
+                feature_enlarge_construction_envelopes,
+                feature_extract_face_construction_envelopes,
                 feature_surface_construction_references,
+                feature_studio_post_branch_references,
                 feature_surface_construction_payloads,
                 feature_surface_construction_scalar_pairs,
                 feature_surface_construction_strings,
@@ -1564,6 +1607,7 @@ impl NativeModel {
                 feature_block_dimensions,
             },
             om: OmRecords {
+                assembly_placements,
                 om_record_areas,
                 audit_trail_rows,
                 operation_state_journal_groups,
@@ -1580,6 +1624,7 @@ impl NativeModel {
                 object_record_identity_bounded_sections,
                 rmfastload_object_id_tables,
                 rmfastload_object_ids,
+                rmfastload_physical_storages,
                 data_blocks,
                 data_block_control_forms,
                 data_block_control_values,

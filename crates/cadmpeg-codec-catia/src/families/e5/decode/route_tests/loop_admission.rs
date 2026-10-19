@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use crate::families::e5::decode::E5LoopPlan;
 use crate::families::e5::graph::{E5Loop, E5LoopMember, E5OrientedMember};
 
@@ -27,8 +28,8 @@ fn loop_record(indices: &[usize]) -> E5Loop {
                 })
                 .collect(),
         ),
-        outer: Some(true),
-        orientation_hint: None,
+        outer: true,
+        absolute_orientation: crate::families::e5::graph::Sign::Positive,
     }
 }
 
