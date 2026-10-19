@@ -722,7 +722,9 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     let opaque = namespace.arenas().get("opaque_records");
     let generated_comment = opaque.is_some_and(|records| {
         records.iter().any(|record| {
-            let fields = record.fields();
+            let Ok(fields) = record.fields() else {
+                return false;
+            };
             record.id() == "rhino:source:opaque#comment"
                 && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
                 && fields.get("data").and_then(serde_json::Value::as_str)
@@ -789,7 +791,10 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
 }
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let fields = &record.fields();
+    let Ok(fields) = record.fields() else {
+        return false;
+    };
+    let fields = &fields;
     json_i64(fields, "archive_index") == Some(0)
         && json_i64(fields, "linetype_index") == Some(-1)
         && json_i64(fields, "material_index") == Some(-1)
@@ -801,7 +806,10 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let fields = &record.fields();
+    let Ok(fields) = record.fields() else {
+        return false;
+    };
+    let fields = &fields;
     json_i64(fields, "layer_index") == Some(0)
         && json_i64(fields, "material_index") == Some(-1)
         && json_i64(fields, "linetype_index") == Some(-1)

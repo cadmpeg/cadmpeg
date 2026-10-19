@@ -208,7 +208,9 @@ fn decode_uses_type114_entity_boundary_for_form7_association() {
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }
@@ -406,7 +408,9 @@ fn decode_uses_type128_entity_boundary_for_form7_association() {
         .find(|record| record.id() == "iges:entity:directory#5")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }
@@ -626,7 +630,9 @@ fn decode_uses_type144_entity_boundary_for_form0_association() {
         .find(|record| record.id() == "iges:entity:directory#15")
         .unwrap();
     assert_eq!(
-        source.fields()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#17")]
     );
 }

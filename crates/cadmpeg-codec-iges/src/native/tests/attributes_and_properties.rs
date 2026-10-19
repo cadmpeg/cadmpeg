@@ -40,7 +40,7 @@ fn native_attribute_definition_and_instance_keep_nested_values() {
     let definitions =
         &decoded.ir().native.namespace("iges").unwrap().arenas()["attribute_table_definitions"];
     assert_eq!(
-        definitions[0].fields()["attributes"]
+        definitions[0].fields().unwrap()["attributes"]
             .as_array()
             .unwrap()
             .len(),
@@ -60,7 +60,13 @@ fn native_attribute_definition_and_instance_keep_nested_values() {
         .unwrap();
     let instances =
         &decoded.ir().native.namespace("iges").unwrap().arenas()["attribute_table_instances"];
-    assert_eq!(instances[0].fields()["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        instances[0].fields().unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]

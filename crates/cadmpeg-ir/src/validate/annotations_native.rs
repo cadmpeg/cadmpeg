@@ -122,7 +122,7 @@ pub(super) fn check_annotations(
         };
         let entity = &values[*position];
         let product_fields = match entity {
-            AnnotatedEntity::Product(product) => Some(product.fields()),
+            AnnotatedEntity::Product(product) => Some(product.fields()?),
             AnnotatedEntity::Projected(_) | AnnotatedEntity::Source(_) => None,
         };
         for path in note.fields().keys() {

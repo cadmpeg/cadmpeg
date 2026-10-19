@@ -350,7 +350,7 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     let wire = serde_json::to_value(&document).unwrap();
     let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
     let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
-    assert_eq!(record.fields(), fields);
+    assert_eq!(record.fields().unwrap(), fields);
     assert_eq!(record.field("nested"), Some(nested));
     assert_eq!(record.field("missing"), None);
     assert_eq!(record.field("id"), None);
@@ -450,7 +450,7 @@ fn stored_text_reads_back_a_field_nested_to_the_native_bound() {
     )
     .unwrap();
     assert_eq!(record.field("nested"), Some(nested.clone()));
-    assert_eq!(record.fields()["nested"], nested);
+    assert_eq!(record.fields().unwrap()["nested"], nested);
     assert_eq!(
         serde_json::to_value(&record).unwrap(),
         serde_json::json!({"id": id, "nested": nested})
@@ -529,7 +529,7 @@ fn flat_fields_build_a_record_no_reader_has_to_measure() {
     assert_eq!(
         NativeRecord::new(
             crate::ids::Identity::new(id).expect("valid identity"),
-            record.fields().clone()
+            record.fields().unwrap().clone()
         )
         .unwrap(),
         record,
@@ -1007,7 +1007,7 @@ fn native_field_copy_preserves_bits() {
     .unwrap();
     let ctx = super::test_ctx();
     let copied = record.copy_fields(&ctx).unwrap();
-    assert_eq!(copied, record.fields());
+    assert_eq!(copied, record.fields().unwrap());
     assert_eq!(copied["unsigned"].as_u64(), Some(u64::MAX));
     assert_eq!(
         copied["negative_zero"].as_f64().unwrap().to_bits(),
@@ -1130,4 +1130,76 @@ fn typed_read_holds_one_depth_frame_per_stored_container_level() {
             assert_eq!((limit.limit, limit.used), (2, 2));
         }
     }
+}
+
+#[test]
+fn field_reads_report_invalid_stored_text_without_panicking() {
+    use super::NativeConvertError;
+
+    let id = crate::ids::Identity::new("test:native:record#invalid").unwrap();
+    for (json, category) in [
+        ("{", serde_json::error::Category::Eof),
+        (
+            r#"{"id":"test:native:record#invalid","value":1e999}"#,
+            serde_json::error::Category::Syntax,
+        ),
+    ] {
+        let record = NativeRecord {
+            id: id.clone(),
+            json: json.into(),
+        };
+        let NativeConvertError::ReadRecord {
+            id: refused,
+            source,
+        } = record.fields().unwrap_err()
+        else {
+            panic!("invalid stored JSON must report its record identity");
+        };
+        assert_eq!(refused, id);
+        assert_eq!(source.classify(), category);
+        assert!(record.copy_fields(&super::test_ctx()).is_err());
+        assert_eq!(record.field("value"), None);
+    }
+    for json in ["null", "[]", "1", r#""text""#] {
+        let record = NativeRecord {
+            id: id.clone(),
+            json: json.into(),
+        };
+        assert!(matches!(
+            record.fields(),
+            Err(NativeConvertError::NonObject)
+        ));
+    }
+}
+
+#[test]
+fn map_constructor_renders_the_same_canonical_json_as_serde() {
+    #[derive(Serialize)]
+    struct Record<'a> {
+        id: &'a str,
+        #[serde(flatten)]
+        fields: &'a serde_json::Map<String, serde_json::Value>,
+    }
+
+    let fields = serde_json::json!({
+        "a\"key": [null, true, false, u64::MAX, i64::MIN, -0.0, 1.25e100],
+        "nested": {"z": ["line\nbreak", "quote\"", "back\\slash"], "a": {}},
+        "text": "\u{0}\t\r é 🦀",
+        "$serde_json::private::RawValue": "plain field text"
+    });
+    let fields = fields.as_object().unwrap().clone();
+    let id = "test:native:record#escaped-\"é🦀";
+    let expected = serde_json::to_string(&Record {
+        id,
+        fields: &fields,
+    })
+    .unwrap();
+    let record = NativeRecord::new(crate::ids::Identity::new(id).unwrap(), fields.clone()).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), expected);
+    let copied = record.fields().unwrap();
+    assert_eq!(copied, fields);
+    assert_eq!(
+        copied["a\"key"][5].as_f64().unwrap().to_bits(),
+        (-0.0_f64).to_bits()
+    );
 }

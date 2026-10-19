@@ -44,18 +44,24 @@ fn decode_preserves_counted_curve_expression_programs() {
     );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].fields()["entity_id"], 0x094c);
-    assert_eq!(records[0].fields()["lines"][2]["text"], "theta=w*t*360");
+    assert_eq!(records[0].fields().unwrap()["entity_id"], 0x094c);
     assert_eq!(
-        records[0].fields()["assignments"][2]["target"]["name"],
+        records[0].fields().unwrap()["lines"][2]["text"],
+        "theta=w*t*360"
+    );
+    assert_eq!(
+        records[0].fields().unwrap()["assignments"][2]["target"]["name"],
         "theta"
     );
     assert_eq!(
-        records[0].fields()["assignments"][2]["dependencies"][0],
+        records[0].fields().unwrap()["assignments"][2]["dependencies"][0],
         "w"
     );
-    assert_eq!(records[0].fields()["assignments"][0]["value"], 5.0);
-    assert_eq!(records[0].fields()["local_system"]["dimensions"], 4);
+    assert_eq!(records[0].fields().unwrap()["assignments"][0]["value"], 5.0);
+    assert_eq!(
+        records[0].fields().unwrap()["local_system"]["dimensions"],
+        4
+    );
     assert_eq!(result.ir().model.features.len(), 1);
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Helix {
@@ -304,30 +310,36 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["solve_blocks"][0]["variables"][0], "width");
-    assert_eq!(native.fields()["solve_blocks"][0]["variables"][1], "height");
     assert_eq!(
-        native.fields()["solve_blocks"][0]["equations"][0]["left"],
+        native.fields().unwrap()["solve_blocks"][0]["variables"][0],
         "width"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["equations"][0]["right"],
+        native.fields().unwrap()["solve_blocks"][0]["variables"][1],
+        "height"
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["equations"][0]["left"],
+        "width"
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["equations"][0]["right"],
         "height+1"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["equations"][1]["dependencies"][2],
+        native.fields().unwrap()["solve_blocks"][0]["equations"][1]["dependencies"][2],
         "area"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["assignments"][0]["target"]["name"],
+        native.fields().unwrap()["solve_blocks"][0]["assignments"][0]["target"]["name"],
         "offset"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["assignments"][0]["dependencies"][0],
+        native.fields().unwrap()["solve_blocks"][0]["assignments"][0]["dependencies"][0],
         "base"
     );
     assert_eq!(
-        native.fields()["solve_blocks"][0]["assignments"][0]["value"],
+        native.fields().unwrap()["solve_blocks"][0]["assignments"][0]["value"],
         11.0
     );
     assert_eq!(
@@ -393,8 +405,8 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         ),
         0
     );
-    assert!(native.fields()["solve_blocks"][0]["solutions"][0].is_null());
-    assert!(native.fields()["solve_blocks"][0]["solutions"][1].is_null());
+    assert!(native.fields().unwrap()["solve_blocks"][0]["solutions"][0].is_null());
+    assert!(native.fields().unwrap()["solve_blocks"][0]["solutions"][1].is_null());
 }
 
 #[test]
@@ -442,8 +454,14 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][0],
+        6.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][1],
+        4.0
+    );
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -478,7 +496,7 @@ fn decode_leaves_a_nonconverging_nonlinear_solve_block_unsolved() {
         .expect("the nonlinear solver ceiling is not a decode failure");
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert!(native.fields()["solve_blocks"][0]["solutions"][0].is_null());
+    assert!(native.fields().unwrap()["solve_blocks"][0]["solutions"][0].is_null());
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -636,8 +654,14 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][0],
+        6.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][1],
+        4.0
+    );
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -716,7 +740,7 @@ fn decode_retains_scoped_model_name_call_as_model_context() {
     assert!(parameter.dependencies.is_empty());
     assert!(!parameter.properties.contains_key("external_dependencies"));
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert!(native.fields()["assignments"][0]["dependencies"]
+    assert!(native.fields().unwrap()["assignments"][0]["dependencies"]
         .as_array()
         .is_some_and(Vec::is_empty));
 }
@@ -755,12 +779,15 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
     );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["kind"],
+        native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "scoped_symbol"
     );
-    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d7:0");
     assert_eq!(
-        native.fields()["assignments"][1]["target"]["name"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "d7:0"
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][1]["target"]["name"],
         "width:fid_25:cid_12"
     );
     assert_eq!(
@@ -804,12 +831,15 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
     assert_eq!(parameter.properties["external_dependencies"], "d42");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["kind"],
+        native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "system_symbol"
     );
-    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d42");
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["family"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "d42"
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][0]["target"]["family"],
         "dimension"
     );
     assert_eq!(
@@ -848,14 +878,14 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
     assert_eq!(parameter.name, "result");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["kind"],
+        native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "function_write"
     );
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["name"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
         "store_value"
     );
-    let fields = native.fields();
+    let fields = native.fields().unwrap();
     let arguments = fields["assignments"][0]["target"]["arguments"]
         .as_array()
         .expect("function arguments");
@@ -910,7 +940,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
         "samples,row_index,column_index"
     );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    let first = &native.fields()["assignments"][0];
+    let first = &native.fields().unwrap()["assignments"][0];
     assert_eq!(first["target"]["kind"], "table_cell");
     assert_eq!(first["target"]["parameter"], "samples");
     assert_eq!(first["target"]["row"], "row_index");
@@ -919,7 +949,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     assert_eq!(first["dependencies"][1], "row_index");
     assert_eq!(first["dependencies"][2], "column_index");
     assert_eq!(first["dependencies"][3], "driver");
-    let second = &native.fields()["assignments"][1];
+    let second = &native.fields().unwrap()["assignments"][1];
     assert_eq!(second["target"]["kind"], "table_cell");
     assert_eq!(second["target"]["parameter"], "series");
     assert_eq!(second["target"]["row"], "2");
@@ -1028,7 +1058,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .namespace("creo")
         .expect("Creo native data")
         .arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["prohibited_constructs"][0], "itos");
+    assert_eq!(native.fields().unwrap()["prohibited_constructs"][0], "itos");
     let coverage = result.report();
     assert_eq!(
         wire::coverage_count(
@@ -1068,10 +1098,10 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
             "1 active curve-equation record(s) containing prohibited datum-curve constructs"
         )));
     assert_eq!(
-        native.fields()["assignments"][4]["expression"],
+        native.fields().unwrap()["assignments"][4]["expression"],
         "rtos(123.456,2)"
     );
-    assert!(native.fields()["assignments"][5]["value"].is_null());
+    assert!(native.fields().unwrap()["assignments"][5]["value"].is_null());
     assert_eq!(parameters[4].expression, "rtos(123.456,2)");
     assert_eq!(parameters[5].expression, "rel_model_type()");
     assert_eq!(parameters[5].value, None);
@@ -1135,9 +1165,12 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     };
     assert!((copy.get() - 76.2).abs() < 1.0e-12);
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
-        native.fields()["assignments"][0]["target"]["declared_unit"],
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "span"
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][0]["target"]["declared_unit"],
         "inch"
     );
     assert_eq!(parameters[2].properties["declared_unit"], "N/mm^2");
@@ -1150,9 +1183,12 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         "length:-1,mass:1,time:-2,angle:0,temperature:0"
     );
     assert_eq!(parameters[2].value, None);
-    assert_eq!(native.fields()["assignments"][2]["value"]["value"], 2_000.0);
     assert_eq!(
-        native.fields()["assignments"][2]["value"]["length_power"],
+        native.fields().unwrap()["assignments"][2]["value"]["value"],
+        2_000.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["assignments"][2]["value"]["length_power"],
         -1
     );
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
@@ -1201,7 +1237,8 @@ fn decode_transfers_curve_expression_conditional_activation() {
         .namespace("creo")
         .expect("Creo native data")
         .arenas()["curve_expressions"][0]
-        .fields();
+        .fields()
+        .unwrap();
     let native_assignments = curve_expression_fields["assignments"]
         .as_array()
         .expect("assignments");
@@ -1332,7 +1369,8 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .namespace("creo")
             .expect("Creo native data")
             .arenas()["curve_expressions"][0]
-            .fields()["assignments"]
+            .fields()
+            .unwrap()["assignments"]
             .as_array()
             .expect("assignments")
             .len(),

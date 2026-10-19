@@ -344,7 +344,7 @@ impl NativeRecord {
     }
 
     pub(crate) fn digest_unknown(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let fields = self.fields();
+        let fields = self.fields()?;
         for key in fields.keys() {
             if key != "links" {
                 return Err(CodecError::malformed(format_args!(
@@ -404,13 +404,17 @@ impl NativeRecord {
     ///
     /// Each call builds a new [`Value`] tree from the stored text. Read one
     /// member with [`field`](Self::field).
-    #[must_use]
-    pub fn fields(&self) -> Map<String, Value> {
-        let Value::Object(mut fields) = read_stored(&self.json) else {
-            unreachable!("a native record stores object text")
+    /// Invalid stored text returns a conversion error naming this record.
+    pub fn fields(&self) -> Result<Map<String, Value>, NativeConvertError> {
+        let value = replay::value(&self.json).map_err(|source| NativeConvertError::ReadRecord {
+            id: self.id.clone(),
+            source,
+        })?;
+        let Value::Object(mut fields) = value else {
+            return Err(NativeConvertError::NonObject);
         };
         fields.remove("id");
-        fields
+        Ok(fields)
     }
 
     /// Copy codec-owned fields under the caller's depth account.
@@ -418,7 +422,7 @@ impl NativeRecord {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Map<String, Value>, NativeConvertError> {
-        Ok(copy::fields(ctx, &self.fields())?)
+        Ok(copy::fields(ctx, &self.fields()?)?)
     }
 
     /// Rewrite native identity fields through their typed owner's field walk.
@@ -431,7 +435,7 @@ impl NativeRecord {
         T: crate::schema::rewrite::typed::RewriteIdentities,
         F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
     {
-        let mut fields = self.fields();
+        let mut fields = self.fields()?;
         fields.insert("id".to_owned(), Value::String(self.id.as_str().to_owned()));
         let mut value = Value::Object(fields);
         let mut identities = crate::schema::rewrite::typed::IdentityMap::new(map);
@@ -455,7 +459,7 @@ impl NativeRecord {
         if name == "id" {
             return None;
         }
-        Some(read_stored(replay::member(&self.json, name)?.get()))
+        replay::value(replay::member(&self.json, name)?.get()).ok()
     }
 
     /// Deserialize the codec-owned record straight from its stored text.
@@ -576,40 +580,19 @@ impl Serialize for NativeRecord {
     }
 }
 
-/// Parse stored record text, which is canonical JSON.
-fn read_stored(json: &str) -> Value {
-    match replay::value(json) {
-        Ok(value) => value,
-        Err(error) => unreachable!("stored native record text is canonical JSON: {error}"),
-    }
-}
-
-/// A record's members in canonical order: `id` first, then `fields` by key.
-struct RecordText<'a> {
-    id: &'a str,
-    fields: &'a Map<String, Value>,
-}
-
-impl Serialize for RecordText<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(self.fields.len() + 1))?;
-        serde::ser::SerializeMap::serialize_entry(&mut map, "id", self.id)?;
-        for (key, value) in self.fields {
-            serde::ser::SerializeMap::serialize_entry(&mut map, key, value)?;
-        }
-        serde::ser::SerializeMap::end(map)
-    }
-}
-
-/// Canonical compact text of one record.
+/// Canonical compact text of one record, with `id` first and fields by key.
+/// JSON values render into strings without a fallible serializer or writer.
 fn render(id: &crate::ids::Identity, fields: &Map<String, Value>) -> Box<str> {
-    match serde_json::to_string(&RecordText {
-        id: id.as_str(),
-        fields,
-    }) {
-        Ok(text) => text.into_boxed_str(),
-        Err(_) => unreachable!("a JSON object of JSON values always serializes"),
+    let mut json = String::from("{\"id\":");
+    json.push_str(&Value::String(id.as_str().to_owned()).to_string());
+    for (key, value) in fields {
+        json.push(',');
+        json.push_str(&Value::String(key.clone()).to_string());
+        json.push(':');
+        json.push_str(&value.to_string());
     }
+    json.push('}');
+    json.into_boxed_str()
 }
 
 impl<'de> Deserialize<'de> for NativeRecord {
