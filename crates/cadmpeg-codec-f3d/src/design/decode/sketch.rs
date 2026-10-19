@@ -1334,18 +1334,9 @@ pub(crate) fn decode_record_headers(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let scope = crate::ids::native_scope(&entry.name);
-        for design_type in stream_types_by_class_tag(&types, &entry.name).values() {
-            if SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
-                .is_none()
-            {
-                continue;
-            }
-            for &entity_id in design_type.entities.values() {
-                let Ok(record_index) = u32::try_from(entity_id) else {
-                    continue;
-                };
-                relation_records.push((scope.clone(), record_index));
-            }
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
+        for record_index in registered_relation_record_indices(stream_types.into_values()) {
+            relation_records.push((scope.clone(), record_index));
         }
     }
     let references = entities
@@ -1366,6 +1357,27 @@ pub(crate) fn decode_record_headers(
         );
     let wanted = wanted_record_indices(references);
     decode_headers_for_indices(scan, &wanted)
+}
+
+/// Record indices of the sketch-relation records a type table registers:
+/// every entity of a sketch-relation class type, whose entity ID repeats its
+/// record index.
+pub(in crate::design) fn registered_relation_record_indices<'a>(
+    types: impl IntoIterator<Item = &'a crate::records::entity_header::SegmentType>,
+) -> Vec<u32> {
+    let mut out = Vec::new();
+    for design_type in types {
+        if SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version).is_none() {
+            continue;
+        }
+        for &entity_id in design_type.entities.values() {
+            let Ok(record_index) = u32::try_from(entity_id) else {
+                continue;
+            };
+            out.push(record_index);
+        }
+    }
+    out
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) named by

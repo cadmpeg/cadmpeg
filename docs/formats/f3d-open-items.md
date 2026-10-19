@@ -332,13 +332,13 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Sketch constraints and complete feature definitions in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
 
-### DR-85. Typed-reference Extrude prologue
+### DR-85. Typed-reference Extrude selection groups
 
-**Question.** What is the complete Extrude scope prologue in the container generation that writes typed references?
+**Question.** What is the complete grammar of the Extrude profile selection group in the container generation that writes typed references, and what do its bytes after the parameter-record reference mean?
 
-**Known.** `f3d.md` §3.1 "A typed-reference parameter scope" gives the scope envelope. In the observed 1026-byte and 1228-byte typed Extrude scopes, eleven zero bytes follow the indexed header and the u32 operation is at offset 22, so the direction, face-extend, reversed-direction, geometry-kind, and start-support fields and the three zero bytes follow it at the current relative offsets, and the unit profile normal is at offset 40. The extent slots after the normal are absent bytes or 51-byte typed references. No admitted prologue form stores the operation at offset 22.
+**Known.** `f3d.md` §3.1 "A typed-reference Extrude scope" gives the prologue, which the decoder reads. In the observed typed selection groups, ten zero bytes follow the indexed header, a typed scope reference is at offset 21, the u32 member count is at offset 72, and the members are 51-byte typed references. After the members come the u32 opaque index, an f64, the repeated u32, and a typed reference to the group's record index plus two. Two zero bytes follow it where the plain form stores `01 + u8 variant + 00`, then a typed reference to the record index plus one, one zero byte, and a typed scope reference that ends at the paired header.
 
-**Need.** Extrude features of this generation have no complete neutral definition until the prologue, its extent slots, and its side-extent fields are framed exactly.
+**Need.** Typed Extrude features keep native profile selections and no complete neutral definition until the group, its members, and the variant meaning are framed exactly.
 
 ### DR-80. Typed parameter tail reference target
 

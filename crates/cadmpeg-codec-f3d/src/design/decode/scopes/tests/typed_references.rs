@@ -83,3 +83,71 @@ fn typed_scope_tail_requires_its_typed_references() {
     bytes[tail_reference + 9] = 35;
     assert!(parse(&bytes).is_none());
 }
+
+/// A typed-reference Extrude prologue: operation fields at offset 22, the
+/// unit profile normal at offset 40, extent slots holding typed references,
+/// and the one-sided distance extent pair.
+#[test]
+fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
+    use crate::records::feature::extrude::{
+        DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+    };
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"320");
+    bytes.extend_from_slice(&652u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    for value in [2u32, 1, 2] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
+    assert_eq!(bytes.len(), 40);
+    for value in [0.0f64, 1.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 0]);
+    typed_reference(&mut bytes, 701);
+    typed_reference(&mut bytes, 702);
+    bytes.push(0);
+    typed_reference(&mut bytes, 703);
+    bytes.push(0);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    let reference_count_at = bytes.len();
+    let members = [701, 702, 703];
+    let prologue = crate::design::decode::scopes::extrude::exact_typed_extrude_prologue(
+        &bytes,
+        0,
+        reference_count_at,
+        &members,
+    )
+    .expect("typed extrude prologue");
+    let DesignExtrudePrologue::ReferenceAware {
+        operation,
+        operation_offset,
+        extent,
+        reference,
+        ..
+    } = prologue
+    else {
+        panic!("typed prologue is reference-aware");
+    };
+    assert_eq!(operation, DesignExtrudeOperation::Cut);
+    assert_eq!(operation_offset, 22);
+    assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
+    assert!(reference.is_none());
+
+    // A plain eleven-byte slot reference is not admitted in the typed form.
+    let mut plain_slot = bytes.clone();
+    plain_slot[66 + 9] = 0;
+    assert!(
+        crate::design::decode::scopes::extrude::exact_typed_extrude_prologue(
+            &plain_slot,
+            0,
+            reference_count_at,
+            &members
+        )
+        .is_none()
+    );
+}

@@ -22,7 +22,7 @@ use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::draft::exact_draft_operation_with_owners;
-use super::extrude::exact_extrude_prologue;
+use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
@@ -1116,15 +1116,19 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             // The generic scope envelope is independently self-delimiting. An
             // unrecognized Extrude prologue therefore withholds only the typed
             // fields, not the scope and its ordered reference table.
-            exact_extrude_prologue(
-                bytes,
-                start,
-                paired_at,
-                class_tag.as_str(),
-                paired_class_tag,
-                *reference_count_at,
-                reference_members,
-            )
+            if typed_references {
+                exact_typed_extrude_prologue(bytes, start, *reference_count_at, reference_members)
+            } else {
+                exact_extrude_prologue(
+                    bytes,
+                    start,
+                    paired_at,
+                    class_tag.as_str(),
+                    paired_class_tag,
+                    *reference_count_at,
+                    reference_members,
+                )
+            }
         } else {
             None
         };
