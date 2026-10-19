@@ -1322,15 +1322,48 @@ pub(crate) fn decode_record_headers(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
-    let references = entities.iter().flat_map(|entity| {
-        native_stream(&entity.id)
-            .into_iter()
-            .flat_map(move |scope| {
-                entity
-                    .reference_values()
-                    .map(move |record_index| (scope, *record_index))
-            })
-    });
+    // Sketch-relation records name their sketch through `ParentNode`; a
+    // legacy counted member run does not list them. The stream's type table
+    // registers every relation-class entity, and an entity ID repeats its
+    // record index, so those registrations name the relation records.
+    let types = decode_types(scan)?;
+    let mut relation_records = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let scope = crate::ids::native_scope(&entry.name);
+        for design_type in stream_types_by_class_tag(&types, &entry.name).values() {
+            if SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
+                .is_none()
+            {
+                continue;
+            }
+            for &entity_id in design_type.entities.values() {
+                let Ok(record_index) = u32::try_from(entity_id) else {
+                    continue;
+                };
+                relation_records.push((scope.clone(), record_index));
+            }
+        }
+    }
+    let references = entities
+        .iter()
+        .flat_map(|entity| {
+            native_stream(&entity.id)
+                .into_iter()
+                .flat_map(move |scope| {
+                    entity
+                        .reference_values()
+                        .map(move |record_index| (scope, *record_index))
+                })
+        })
+        .chain(
+            relation_records
+                .iter()
+                .map(|(scope, record_index)| (scope.as_str(), *record_index)),
+        );
     let wanted = wanted_record_indices(references);
     decode_headers_for_indices(scan, &wanted)
 }

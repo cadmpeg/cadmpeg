@@ -326,11 +326,19 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-79. Typed-reference Design record grammars
 
-**Question.** What are the sketch-relation, dimension-companion, construction-recipe, and other fixed scope-tail grammars in the container generation that writes typed references?
+**Question.** What are the dimension-locus, construction-recipe, feature-prologue, and other fixed scope-tail grammars in the container generation that writes typed references?
 
-**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the parameter form, and `f3d.md` §3.1 "In the container generation that writes typed references" gives the parameter-owner frames. In that generation every local reference carries its LP-ASCII 36 target type GUID, so each reference is 51 bytes instead of eleven. Sketch and feature records also store typed references. `f3d.md` §3.1 "A typed-reference parameter scope" gives the 196-byte scope tail and the typed reference table, and `f3d.md` §3.1 "A typed-reference sketch member-run record" gives the sketch container member run and the explicit head record. The decoder reads these forms. Sketch relations, dimension companions, construction recipes, and the other fixed scope tails in this generation remain unread.
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the parameter form, and `f3d.md` §3.1 "In the container generation that writes typed references" gives the parameter-owner frames. In that generation every local reference carries its LP-ASCII 36 target type GUID, so each reference is 51 bytes instead of eleven. Sketch and feature records also store typed references. `f3d.md` §3.1 "A typed-reference parameter scope" gives the 196-byte scope tail and the typed reference table, and `f3d.md` §3.1 "A typed-reference sketch member-run record" gives the sketch container member run and the explicit head record. `f3d.md` §3.1 "A typed-reference companion prefix" gives the companion prefix. The decoder reads these forms; sketch-relation records use the width-aware reference reader. Typed dimension locus frames, construction recipes, feature-specific scope prologues such as the Extrude prologue, and the other fixed scope tails in this generation remain unread.
 
 **Need.** Sketch constraints and complete feature definitions in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
+
+### DR-85. Typed-reference Extrude prologue
+
+**Question.** What is the complete Extrude scope prologue in the container generation that writes typed references?
+
+**Known.** `f3d.md` §3.1 "A typed-reference parameter scope" gives the scope envelope. In the observed 1026-byte and 1228-byte typed Extrude scopes, eleven zero bytes follow the indexed header and the u32 operation is at offset 22, so the direction, face-extend, reversed-direction, geometry-kind, and start-support fields and the three zero bytes follow it at the current relative offsets, and the unit profile normal is at offset 40. The extent slots after the normal are absent bytes or 51-byte typed references. No admitted prologue form stores the operation at offset 22.
+
+**Need.** Extrude features of this generation have no complete neutral definition until the prologue, its extent slots, and its side-extent fields are framed exactly.
 
 ### DR-80. Typed parameter tail reference target
 
