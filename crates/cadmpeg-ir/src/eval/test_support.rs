@@ -2,7 +2,7 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-/// A degree-16 plane exercises admitted backing above inline spline support.
+/// A degree-16 plane exercises heap storage above inline spline support.
 pub(in crate::eval) fn high_degree_plane() -> crate::geometry::nurbs::NurbsSurface {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::math::Point3;
@@ -18,15 +18,8 @@ pub(in crate::eval) fn high_degree_plane() -> crate::geometry::nurbs::NurbsSurfa
                 .collect()
         })
         .collect();
-    NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        axis(),
-        axis(),
-        NurbsSurfaceLanes::new(poles, None),
-        false,
-    )
-    .expect("surface fixture admission")
-    .expect("degree-16 plane")
+    NurbsSurface::from_lanes(axis(), axis(), NurbsSurfaceLanes::new(poles, None), false)
+        .expect("degree-16 plane")
 }
 
 pub(in crate::eval) fn with_policy<T>(

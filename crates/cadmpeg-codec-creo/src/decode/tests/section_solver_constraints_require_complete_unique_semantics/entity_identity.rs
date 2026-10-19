@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{declared_solver_rows, section_skamp_constraints, synchronize_skamp_count};
-use super::fixtures::{base_definition, resolved_section_reference_line_geometry};
+use super::fixtures::base_definition;
 use crate::decode::sketch::coordinates::resolved_section_points;
 use crate::decode::sketch::geometry::{
-    section_centered_line_geometry, section_point_row_geometry, section_reference_line_geometry,
+    resolved_section_reference_line_geometry, section_centered_line_geometry,
+    section_point_row_geometry, section_reference_line_geometry,
 };
 use crate::decode::sketch::skamp::section_skamp_selected_point_id;
 use crate::decode::sketch_transfer::identity::{
@@ -19,6 +20,7 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::feature::definitions::test_support::append_points;
+use crate::feature::definitions::FeatureSkampItem;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
@@ -41,11 +43,11 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             flags: 0,
             status: 35,
             items: vec![
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 12,
                     sense: 2,
                 },
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 99,
                     sense: 3,
                 },
@@ -53,8 +55,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             offset: 95,
         }];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entities(ctx, &solver_only))
-            .expect("service solver-only entities"),
+        solver_only_section_entities(&solver_only),
         BTreeMap::from([(99, 95)])
     );
     let mut whole_entity_tangent = definition.clone();
@@ -70,11 +71,11 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::definitions::FeatureSkampItem {
+            FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
-            crate::feature::definitions::FeatureSkampItem {
+            FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             },
@@ -105,15 +106,15 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 14,
                     sense: 0,
                 },
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 12,
                     sense: 2,
                 },
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 13,
                     sense: 3,
                 },
@@ -153,7 +154,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         }
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &point_symmetry))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &point_symmetry))
             .expect("test section solve")[&3],
         [4.0, 4.0]
     );
@@ -165,7 +166,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .as_mut()
         .expect("skamp table")
         .rows_mut()[0]
-        .items[1] = crate::feature::definitions::FeatureSkampItem {
+        .items[1] = FeatureSkampItem {
         entity_id: 13,
         sense: 4,
     };
@@ -177,7 +178,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .as_mut()
         .expect("skamp table")
         .rows_mut()[0]
-        .items[2] = crate::feature::definitions::FeatureSkampItem {
+        .items[2] = FeatureSkampItem {
         entity_id: 16,
         sense: 4,
     };
@@ -290,10 +291,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
             duplicate_line,
         ));
-    let unique_ids = crate::decode::with_test_decode_ctx(|ctx| {
-        unique_section_segment_external_ids(ctx, &duplicate_entity)
-    })
-    .expect("service unique identities");
+    let unique_ids = { unique_section_segment_external_ids(&duplicate_entity) };
     assert!(!unique_ids.contains(&12));
     assert_eq!(
         section_segment_identity_suffix(
@@ -342,19 +340,8 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .insert(crate::feature::segment_rows::SegmentRow::Opaque(
             opaque_segment.clone(),
         ));
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(
-            ctx,
-            &opaque_entity
-        ))
-        .expect("service unique identities")
-        .contains(&99)
-    );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &opaque_entity))
-            .expect("service section identities")
-            .contains(&99)
-    );
+    assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
+    assert!(section_entity_external_ids(&opaque_entity).contains(&99));
 
     let mut opaque_point = definition.clone();
     opaque_point
@@ -374,13 +361,13 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                 offset: 601,
             },
         ));
-    let opaque_point_item = crate::feature::definitions::FeatureSkampItem {
+    let opaque_point_item = FeatureSkampItem {
         entity_id: 99,
         sense: 0,
     };
     assert_eq!(
         section_point_row_geometry(
-            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &opaque_point))
+            &crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &opaque_point))
                 .expect("test section solve"),
             &opaque_point
                 .segments
@@ -400,55 +387,39 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     );
     assert!(section_skamp_is_point(&opaque_point, &opaque_point_item));
     assert!(matches!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
-            ctx, refusal,
-            &opaque_point,
-            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::definitions::FeatureSkampItem {
+        section_skamp_locus(&opaque_point, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"), &FeatureSkampItem {
                 sense: 4,
                 ..opaque_point_item.clone()
-            },
-        )),
+            }),
         Some(SketchLocus::Entity(entity)) if entity.as_str().ends_with(":99")
     ));
     assert!(matches!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_midpoint(
-            ctx, refusal,
-            &opaque_point,
-            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::definitions::FeatureSkampItem {
+        section_skamp_midpoint(&opaque_point, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"), &FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
-            },
-            &opaque_point_item,
-            None,
-        )),
+            }, &opaque_point_item, None),
         Some((SketchLocus::Entity(entity), target))
             if entity.as_str().ends_with(":99") && target.as_str().ends_with(":12")
     ));
     assert_eq!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| {
-            section_skamp_midpoint(
-                ctx,
-                refusal,
-                &opaque_point,
-                &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-                &opaque_point_item,
-                &crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 12,
-                    sense: 2,
-                },
-                Some(&BTreeMap::from([(
-                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string())
-                        .expect("valid test fixture"),
-                    SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("point")
-                            .expect("nonempty source identity"),
-                    })
+        section_skamp_midpoint(
+            &opaque_point,
+            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
+            &opaque_point_item,
+            &FeatureSkampItem {
+                entity_id: 12,
+                sense: 2,
+            },
+            Some(&BTreeMap::from([(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string())
                     .expect("valid test fixture"),
-                )])),
-            )
-        }),
+                SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new("point")
+                        .expect("nonempty source identity"),
+                })
+                .expect("valid test fixture"),
+            )])),
+        ),
         None
     );
     let centered_line = crate::feature::definitions::FeatureCenteredLineSegment {
@@ -524,7 +495,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         ));
     assert!(section_skamp_is_line(
         &reference_definition,
-        &crate::feature::definitions::FeatureSkampItem {
+        &FeatureSkampItem {
             entity_id: axis_reference_line.external_id,
             sense: 0,
         },
@@ -593,7 +564,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::definitions::FeatureSkampItem {
+            &FeatureSkampItem {
                 entity_id: 101,
                 sense: 2,
             },
@@ -603,7 +574,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::definitions::FeatureSkampItem {
+            &FeatureSkampItem {
                 entity_id: 101,
                 sense: 3,
             },
@@ -613,7 +584,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::definitions::FeatureSkampItem {
+            &FeatureSkampItem {
                 entity_id: 102,
                 sense: 2,
             },
@@ -623,7 +594,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::definitions::FeatureSkampItem {
+            &FeatureSkampItem {
                 entity_id: 102,
                 sense: 3,
             },
@@ -644,21 +615,16 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .insert(crate::feature::segment_rows::SegmentRow::CenteredLine(
             centered_line,
         ));
-    let opaque_line_item = crate::feature::definitions::FeatureSkampItem {
+    let opaque_line_item = FeatureSkampItem {
         entity_id: 100,
         sense: 0,
     };
     assert!(section_skamp_is_line(&opaque_line, &opaque_line_item));
     assert!(matches!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
-            ctx, refusal,
-            &opaque_line,
-            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::definitions::FeatureSkampItem {
+        section_skamp_locus(&opaque_line, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"), &FeatureSkampItem {
                 sense: 2,
                 ..opaque_line_item
-            },
-        )),
+            }),
         Some(SketchLocus::Start(entity)) if entity.as_str().ends_with(":100")
     ));
     let mut solver_only_point_midpoint = opaque_line.clone();
@@ -673,11 +639,11 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             flags: 0,
             status: 0,
             items: vec![
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 101,
                     sense: 0,
                 },
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
                 },
@@ -720,11 +686,11 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             flags: 0,
             status: 0,
             items: vec![
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 101,
                     sense: 4,
                 },
-                crate::feature::definitions::FeatureSkampItem {
+                FeatureSkampItem {
                     entity_id: 12,
                     sense: 2,
                 },
@@ -748,11 +714,11 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         flags: 0,
         status: 34,
         items: vec![
-            crate::feature::definitions::FeatureSkampItem {
+            FeatureSkampItem {
                 entity_id: 101,
                 sense: 0,
             },
-            crate::feature::definitions::FeatureSkampItem {
+            FeatureSkampItem {
                 entity_id: 100,
                 sense: 4,
             },
@@ -772,7 +738,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         Some(SectionEntityIncidenceFamily::Point)
     );
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -817,7 +783,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             kind: 2,
             flags: 0,
             status: 1,
-            items: vec![crate::feature::definitions::FeatureSkampItem {
+            items: vec![FeatureSkampItem {
                 entity_id: 101,
                 sense: 0,
             }],
@@ -860,7 +826,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -881,7 +847,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         SketchConstraintDefinitionInput::Vertical { .. }
     ));
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -956,28 +922,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                 ..opaque_segment
             },
         ));
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(
-            ctx,
-            &opaque_collision
-        ))
-        .expect("service unique identities")
-        .contains(&12)
-    );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| ambiguous_section_segment_external_ids(
-            ctx,
-            &opaque_collision
-        ))
-        .expect("service ambiguous identities")
-        .contains(&12)
-    );
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(
-            ctx,
-            &opaque_collision
-        ))
-        .expect("service section identities")
-        .contains(&12)
-    );
+    assert!(!unique_section_segment_external_ids(&opaque_collision).contains(&12));
+    assert!(ambiguous_section_segment_external_ids(&opaque_collision).contains(&12));
+    assert!(!section_entity_external_ids(&opaque_collision).contains(&12));
 }

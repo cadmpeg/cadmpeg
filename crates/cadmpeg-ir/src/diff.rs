@@ -441,10 +441,13 @@ where
 }
 
 macro_rules! define_diff_arenas {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
-                ArenaKind::Model(ArenaName::registered(stringify!($field))),
+                ArenaKind::Model(ArenaName::registered(
+                    stringify!($field),
+                    crate::document::arena_class!($class),
+                )),
                 &left.model.$field,
                 &right.model.$field,
                 crate::schema::EntitySchema::identity,
@@ -452,7 +455,7 @@ macro_rules! define_diff_arenas {
         }
     };
 }
-crate::document::arena_registry!(define_diff_arenas);
+crate::document::classified_arena_registry!(define_diff_arenas);
 
 fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     let namespaces = left
@@ -738,7 +741,6 @@ mod tests {
             id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     degree,
                     if degree == 1 {
                         vec![0.0, 0.0, 0.5, 1.0, 1.0]
@@ -753,7 +755,6 @@ mod tests {
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("test fixture invariant"),
             )),
             source_object: None,

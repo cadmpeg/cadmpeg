@@ -35,12 +35,12 @@ mod writer;
 #[doc(hidden)]
 pub mod fuzz;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::hash::document_local_sha256;
@@ -131,14 +131,7 @@ fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = document_local_sha256(
-        &ctx,
-        ir,
-        ir.source.as_ref(),
-        "iges",
-        SOURCE_IMAGE_ID,
-        "iges_document_digest",
-    )?;
+    let digest = document_local_sha256(&ctx, ir, ir.source.as_ref(), "iges", SOURCE_IMAGE_ID)?;
     ctx.finish_session()?;
     Ok(digest)
 }
@@ -148,14 +141,11 @@ impl CodecBackend for IgesCodec {
 
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+
         Ok(representation::confidence(prefix))
     }
 
@@ -172,11 +162,11 @@ impl CodecBackend for IgesCodec {
                 reader::inspect(ctx, root.window(), representation, root.window().len())
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                let normalized = compressed::normalize(root.window())?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                let normalized = binary::normalize(root.window())?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
         }
@@ -191,11 +181,11 @@ impl CodecBackend for IgesCodec {
                 reader::decode(root.window(), root.window(), representation, ctx)
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                let normalized = compressed::normalize(root.window())?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                let normalized = binary::normalize(root.window())?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
         }
@@ -204,6 +194,9 @@ impl CodecBackend for IgesCodec {
 
 impl EncoderBackend for IgesCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Writes B-rep and product data only; design arenas are refused, not
+    /// read.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(IgesVersion::TARGETS, Some(4));
 

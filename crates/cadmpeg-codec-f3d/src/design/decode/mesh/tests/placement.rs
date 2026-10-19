@@ -67,10 +67,8 @@ fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
             addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
         }],
     };
-    let body = crate::design::test_support::with_test_decode_context(|ctx| {
-        MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
-    })
-    .expect("projected mesh");
+    let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
+        .expect("projected mesh");
 
     assert_eq!(
         body.vertices
@@ -115,10 +113,8 @@ fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
         texture_ids: None,
         attributes: Vec::new(),
     };
-    let body = crate::design::test_support::with_test_decode_context(|ctx| {
-        MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
-    })
-    .expect("projected mesh");
+    let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
+        .expect("projected mesh");
     let geometric_normal = body.vertices[1]
         .get()
         .vector_from(body.vertices[0].get())

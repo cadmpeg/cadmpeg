@@ -311,27 +311,13 @@ pub(crate) struct DefinitionDiagnostic {
 }
 
 impl DefinitionDiagnostic {
-    pub(crate) fn to_loss(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
-        let message = ctx.format_retained(
-            format_args!(
-                "instance-definition record at offset {}: {}",
-                self.source_range.start, self.diagnostic.message
-            ),
-            "Rhino instance-definition loss text",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(message.len()),
-            "Rhino instance-definition loss message",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("INSTANCE_DEFINITION_TABLE".len()),
-            "Rhino instance-definition loss tag",
-        )?;
-        Ok(self
-            .diagnostic
+    pub(crate) fn to_loss(&self) -> cadmpeg_ir::report::loss::LossNote {
+        let message = format!(
+            "instance-definition record at offset {}: {}",
+            self.source_range.start, self.diagnostic.message
+        );
+
+        self.diagnostic
             .code
             .unwrap_or(RhinoLossCode::ContainerInstanceDefinitionDegraded)
             .note(&message)
@@ -341,47 +327,37 @@ impl DefinitionDiagnostic {
                     cadmpeg_core::decode::u64_from_index(self.source_range.start),
                 )
                 .with_tag("INSTANCE_DEFINITION_TABLE"),
-            ))
+            )
     }
 }
 
 /// Renders digest bytes as retained lowercase hexadecimal.
-pub(crate) fn hex(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let byte_len = bytes
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("hex digest length overflow"))?;
-    let mut value = ctx.retained_string(byte_len, operation)?;
+    let mut value = String::new();
     for byte in bytes {
         value.push(char::from(DIGITS[usize::from(byte >> 4)]));
         value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
-    Ok(value)
+    value
 }
 
 fn checksum_warning_excluding(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
     label: &str,
     warnings: &mut Diagnostics,
 ) -> Result<(), FramingError> {
-    let direct = direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    let direct = direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
-        verify_checksum_ranges(ctx, data, chunk, &direct)?,
+        verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded_admitted(
-            ctx,
+        warnings.push_coded(
             crate::loss::RhinoLossCode::IntegrityFailure,
             format_args!("{label} CRC mismatch at offset {}", chunk.header_start),
-        )?;
+        );
     }
     Ok(())
 }
@@ -404,10 +380,7 @@ fn v6_definition_kind(value: u32) -> DefinitionKind {
     }
 }
 
-fn members(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reader: &mut BoundedReader<'_>,
-) -> Result<Vec<Uuid>, FramingError> {
+fn members(reader: &mut BoundedReader<'_>) -> Result<Vec<Uuid>, FramingError> {
     let count = reader.i32()?;
     let bytes = checked_count_bytes(
         count,
@@ -417,9 +390,7 @@ fn members(
         reader.position(),
     )?;
     let count = bytes / 16;
-    let mut values = ctx
-        .collection_vec(count, "Rhino instance member UUIDs")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut values = Vec::new();
     for _ in 0..count {
         values.push(uuid(reader)?);
     }
@@ -427,7 +398,6 @@ fn members(
 }
 
 fn anonymous_versioned<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -443,7 +413,7 @@ fn anonymous_versioned<'a>(
         ));
     }
     if verify_container_crc {
-        crate::chunks::warn_checksum(ctx, data, &chunk, label, warnings)?;
+        crate::chunks::warn_checksum(data, &chunk, label, warnings)?;
     }
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
@@ -452,7 +422,6 @@ fn anonymous_versioned<'a>(
 }
 
 fn anonymous<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -460,7 +429,7 @@ fn anonymous<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>), FramingError> {
     let (chunk, payload, version) =
-        anonymous_versioned(ctx, data, reader, archive, label, true, warnings)?;
+        anonymous_versioned(data, reader, archive, label, true, warnings)?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
@@ -477,7 +446,7 @@ fn unit_detail<'a>(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<UnitDetail, FramingError> {
-    let (_chunk, mut payload) = anonymous(ctx, data, reader, archive, "unit detail", warnings)?;
+    let (_chunk, mut payload) = anonymous(data, reader, archive, "unit detail", warnings)?;
     let unit = payload.u32()?;
     let meters_per_unit = payload.f64()?;
     let custom_name = utf16_retained(ctx, &mut payload, "Rhino instance unit name")?;
@@ -492,9 +461,9 @@ fn unit_detail<'a>(
     if unit != 11
         && (!custom_name.is_empty() || standard_scale.is_some_and(|scale| scale != meters_per_unit))
     {
-        warnings.push_coded_admitted(ctx, RhinoLossCode::RedundantFieldRepaired, format_args!(
+        warnings.push_coded(RhinoLossCode::RedundantFieldRepaired, format_args!(
             "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
-        ))?;
+        ));
     }
     payload.skip_remaining()?;
     UnitDetail::new(unit, meters_per_unit, custom_name)
@@ -515,7 +484,7 @@ fn model_component(
             "missing model-component attributes",
         ));
     }
-    crate::chunks::warn_checksum(ctx, data, &chunk, "model-component attributes", warnings)?;
+    crate::chunks::warn_checksum(data, &chunk, "model-component attributes", warnings)?;
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = payload.i32()?;
     let minor = payload.i32()?;
@@ -588,15 +557,8 @@ pub(crate) fn file_reference<'a>(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<FileReference, FramingError> {
-    let (chunk, mut payload, version) = anonymous_versioned(
-        ctx,
-        data,
-        reader,
-        archive,
-        "file reference",
-        false,
-        warnings,
-    )?;
+    let (chunk, mut payload, version) =
+        anonymous_versioned(data, reader, archive, "file reference", false, warnings)?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
@@ -633,7 +595,7 @@ pub(crate) fn file_reference<'a>(
                     "missing SHA-1 chunk",
                 ));
             }
-            crate::chunks::warn_checksum(ctx, data, &digest, "SHA-1 hash", warnings)?;
+            crate::chunks::warn_checksum(data, &digest, "SHA-1 hash", warnings)?;
             let mut bytes = BoundedReader::new(data, digest.body().start, digest.body().end)?;
             let digest_major = bytes.i32()?;
             let digest_minor = bytes.i32()?;
@@ -659,7 +621,6 @@ pub(crate) fn file_reference<'a>(
     };
     hash_payload.skip_remaining()?;
     checksum_warning_excluding(
-        ctx,
         data,
         &hash,
         &[name_range, content_range],
@@ -675,7 +636,6 @@ pub(crate) fn file_reference<'a>(
     };
     payload.skip_remaining()?;
     checksum_warning_excluding(
-        ctx,
         data,
         &chunk,
         std::slice::from_ref(&hash.range()),
@@ -693,7 +653,6 @@ pub(crate) fn file_reference<'a>(
 }
 
 fn skip_object_array(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -708,8 +667,7 @@ fn skip_object_array(
             "object array exceeds item limit",
         ));
     }
-    ctx.reserve_vec(ranges, count, "Rhino reference object ranges")
-        .map_err(crate::chunks::FramingError::from)?;
+
     for _ in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.short() {
@@ -725,21 +683,13 @@ fn skip_object_array(
 }
 
 fn reference_settings<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<Range<usize>, FramingError> {
-    let (chunk, mut payload, version) = anonymous_versioned(
-        ctx,
-        data,
-        reader,
-        archive,
-        "reference settings",
-        false,
-        warnings,
-    )?;
+    let (chunk, mut payload, version) =
+        anonymous_versioned(data, reader, archive, "reference settings", false, warnings)?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
@@ -750,7 +700,6 @@ fn reference_settings<'a>(
     if payload.bool()? {
         let (implementation, mut implementation_payload, implementation_version) =
             anonymous_versioned(
-                ctx,
                 data,
                 &mut payload,
                 archive,
@@ -765,20 +714,8 @@ fn reference_settings<'a>(
             ));
         }
         let mut children = Vec::new();
-        skip_object_array(
-            ctx,
-            data,
-            &mut implementation_payload,
-            archive,
-            &mut children,
-        )?;
-        skip_object_array(
-            ctx,
-            data,
-            &mut implementation_payload,
-            archive,
-            &mut children,
-        )?;
+        skip_object_array(data, &mut implementation_payload, archive, &mut children)?;
+        skip_object_array(data, &mut implementation_payload, archive, &mut children)?;
         if implementation_payload.bool()? {
             let parent = chunk_at(
                 data,
@@ -793,15 +730,13 @@ fn reference_settings<'a>(
                     "reference parent layer is short-framed",
                 ));
             }
-            ctx.reserve_vec(&mut children, 1, "Rhino reference parent layer range")
-                .map_err(crate::chunks::FramingError::from)?;
+
             children.push(parent.range());
             implementation_payload
                 .skip(parent.next_offset() - implementation_payload.position())?;
         }
         implementation_payload.skip_remaining()?;
         checksum_warning_excluding(
-            ctx,
             data,
             &implementation,
             &children,
@@ -812,7 +747,6 @@ fn reference_settings<'a>(
     }
     payload.skip_remaining()?;
     checksum_warning_excluding(
-        ctx,
         data,
         &chunk,
         implementation_range.as_slice(),
@@ -846,7 +780,7 @@ fn parse_v5(
             "definition UUID is nil",
         ));
     }
-    let member_ids = members(ctx, &mut reader)?;
+    let member_ids = members(&mut reader)?;
     let name = utf16_retained(ctx, &mut reader, "Rhino instance name")?;
     let description = utf16_retained(ctx, &mut reader, "Rhino instance description")?;
     let url = utf16_retained(ctx, &mut reader, "Rhino instance URL")?;
@@ -919,7 +853,6 @@ fn parse_v6(
 ) -> Result<InstanceDefinition, FramingError> {
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
     let (outer_chunk, mut reader, outer_version) = anonymous_versioned(
-        ctx,
         data,
         &mut outer,
         archive,
@@ -936,9 +869,7 @@ fn parse_v6(
     outer.skip_remaining()?;
     let component_start = reader.position();
     let (index, id, name) = model_component(ctx, data, &mut reader, archive, warnings)?;
-    let mut outer_children = ctx
-        .collection_vec(1, "Rhino instance definition checksum children")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut outer_children = Vec::new();
     outer_children.push(component_start..reader.position());
     if id.is_nil() {
         return Err(FramingError::structural(
@@ -949,34 +880,22 @@ fn parse_v6(
     let kind = v6_definition_kind(reader.u32()?);
     let units_start = reader.position();
     let units = unit_detail(ctx, data, &mut reader, archive, warnings)?;
-    ctx.reserve_vec(
-        &mut outer_children,
-        1,
-        "Rhino instance definition checksum children",
-    )
-    .map_err(crate::chunks::FramingError::from)?;
+
     outer_children.push(units_start..reader.position());
     let description = utf16_retained(ctx, &mut reader, "Rhino instance description")?;
     let url = utf16_retained(ctx, &mut reader, "Rhino instance URL")?;
     let url_tag = utf16_retained(ctx, &mut reader, "Rhino instance URL tag")?;
     let _bounds = bbox(&mut reader)?;
     let member_ids = if reader.bool()? {
-        members(ctx, &mut reader)?
+        members(&mut reader)?
     } else {
         Vec::new()
     };
     let mut linked_depth = 0;
     let mut linked_appearance = 0;
     let linked_file = if reader.bool()? {
-        let (linked_chunk, mut linked, linked_version) = anonymous_versioned(
-            ctx,
-            data,
-            &mut reader,
-            archive,
-            "linked type",
-            false,
-            warnings,
-        )?;
+        let (linked_chunk, mut linked, linked_version) =
+            anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
         if linked_version.0 != 1 || linked_version.1 < 0 {
             return Err(FramingError::structural(
                 linked.position(),
@@ -984,37 +903,24 @@ fn parse_v6(
             ));
         }
         let reference = file_reference(ctx, data, &mut linked, archive, warnings)?;
-        let mut linked_children = ctx
-            .collection_vec(1, "Rhino linked definition checksum children")
-            .map_err(crate::chunks::FramingError::from)?;
+        let mut linked_children = Vec::new();
         linked_children.push(reference.source_range.clone());
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
-            let range = reference_settings(ctx, data, &mut linked, archive, warnings)?;
-            ctx.reserve_vec(
-                &mut linked_children,
-                1,
-                "Rhino linked definition checksum children",
-            )
-            .map_err(crate::chunks::FramingError::from)?;
+            let range = reference_settings(data, &mut linked, archive, warnings)?;
+
             linked_children.push(range);
         }
         linked.skip_remaining()?;
         checksum_warning_excluding(
-            ctx,
             data,
             &linked_chunk,
             &linked_children,
             "linked type",
             warnings,
         )?;
-        ctx.reserve_vec(
-            &mut outer_children,
-            1,
-            "Rhino instance definition checksum children",
-        )
-        .map_err(crate::chunks::FramingError::from)?;
+
         outer_children.push(linked_chunk.range());
         Some(reference)
     } else {
@@ -1022,7 +928,6 @@ fn parse_v6(
     };
     reader.skip_remaining()?;
     checksum_warning_excluding(
-        ctx,
         data,
         &outer_chunk,
         &outer_children,
@@ -1063,7 +968,6 @@ fn skip_definition_child(
 }
 
 fn extract_member_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -1079,10 +983,9 @@ fn extract_member_ids(
             ));
         }
         let _definition_id = uuid(&mut outer)?;
-        return members(ctx, &mut outer);
+        return members(&mut outer);
     }
     let (_chunk, mut reader, version) = anonymous_versioned(
-        ctx,
         data,
         &mut outer,
         archive,
@@ -1112,7 +1015,7 @@ fn extract_member_ids(
     }
     reader.skip(48)?; // bounding box
     if reader.bool()? {
-        members(ctx, &mut reader)
+        members(&mut reader)
     } else {
         Ok(Vec::new())
     }
@@ -1131,7 +1034,6 @@ fn parse_idef_alternative_path(
         userdata.payload_range.end,
     )?;
     let (_chunk, mut payload, version) = anonymous_versioned(
-        ctx,
         data,
         &mut reader,
         archive,
@@ -1184,20 +1086,14 @@ fn apply_idef_alternative_path(
             Err(error @ FramingError::Resource(_)) => return Err(error),
             Err(error) => {
                 degraded = true;
-                warnings.push_admitted(
-                    ctx,
-                    format_args!(
+                warnings.push(format_args!(
                     "instance-definition alternate-path userdata at offset {} was dropped: {error}",
                     item.range.start
-                ),
-                )?;
+                ));
                 continue;
             }
         };
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(path.trim().len()),
-            "Rhino instance alternate path key",
-        )?;
+
         let Some(path) = NonBlankString::new(path.trim()) else {
             continue;
         };
@@ -1205,18 +1101,15 @@ fn apply_idef_alternative_path(
             LinkSource::Structured(reference) => {
                 if relative {
                     if reference.relative_path.is_empty() {
-                        reference.relative_path =
-                            ctx.copy_retained_text(path.as_str(), "Rhino instance relative path")?;
+                        path.as_str().clone_into(&mut reference.relative_path);
                     }
                 } else if reference.full_path.is_empty() {
-                    reference.full_path =
-                        ctx.copy_retained_text(path.as_str(), "Rhino instance full path")?;
+                    path.as_str().clone_into(&mut reference.full_path);
                 }
             }
             LinkSource::LegacyFull(full_path) => {
                 if relative {
-                    let copied_full_path =
-                        ctx.copy_retained_text(full_path.as_str(), "Rhino instance full path")?;
+                    let copied_full_path = full_path.as_str().to_owned();
                     let copied_full_path =
                         NonBlankString::new(copied_full_path).ok_or_else(|| {
                             FramingError::structural(
@@ -1251,13 +1144,8 @@ fn apply_idef_alternative_path(
 }
 
 /// Parses all instance-definition records without losing framing after a bad record.
-fn insert_opaque_index(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    indices: &mut BTreeSet<usize>,
-    index: usize,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.insert_btree_set(indices, index, "Rhino opaque instance definition indexes")?;
-    Ok(())
+fn insert_opaque_index(indices: &mut BTreeSet<usize>, index: usize) {
+    indices.insert(index);
 }
 
 pub(crate) fn parse_definitions(
@@ -1273,13 +1161,8 @@ pub(crate) fn parse_definitions(
     for (source_order, record) in records.iter().enumerate() {
         let mut warnings = Diagnostics::new();
         let parsed = (|| {
-            let (class, userdata) = parse_class_wrapper_with_userdata(
-                ctx,
-                data,
-                record.body(),
-                archive,
-                &mut warnings,
-            )?;
+            let (class, userdata) =
+                parse_class_wrapper_with_userdata(data, record.body(), archive, &mut warnings)?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
@@ -1292,19 +1175,8 @@ pub(crate) fn parse_definitions(
                 .unwrap_or_default();
             let v5_layout =
                 archive == ArchiveVersion::V5 || (archive == ArchiveVersion::V6 && first != 0x00);
-            match extract_member_ids(
-                ctx,
-                data,
-                class.class_data_range.clone(),
-                archive,
-                v5_layout,
-            ) {
+            match extract_member_ids(data, class.class_data_range.clone(), archive, v5_layout) {
                 Ok(member_ids) => {
-                    ctx.reserve_set(
-                        &mut result.scan.member_object_ids,
-                        member_ids.len(),
-                        "Rhino instance member identities",
-                    )?;
                     result.scan.member_object_ids.extend(member_ids);
                 }
                 Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
@@ -1339,11 +1211,7 @@ pub(crate) fn parse_definitions(
             )?;
             Ok((definition, userdata_degraded))
         })();
-        ctx.reserve_vec(
-            &mut result.scan.diagnostics,
-            warnings.len(),
-            "Rhino instance definition diagnostics",
-        )?;
+
         result
             .scan
             .diagnostics
@@ -1354,66 +1222,40 @@ pub(crate) fn parse_definitions(
         match parsed {
             Ok((definition, userdata_degraded)) => {
                 if userdata_degraded {
-                    insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
+                    insert_opaque_index(&mut opaque_indices, source_order);
                 }
-                ctx.reserve_set(
-                    &mut result.scan.member_object_ids,
-                    definition.members.len(),
-                    "Rhino instance member identities",
-                )?;
+
                 result
                     .scan
                     .member_object_ids
                     .extend(definition.members.iter().copied());
                 if let Some(&first) = seen.get(&definition.id) {
-                    insert_opaque_index(ctx, &mut opaque_indices, first)?;
-                    insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
-                    let duplicate_message = || {
-                        ctx.format_retained(
-                            format_args!("duplicate instance definition UUID {}", definition.id),
-                            "Rhino duplicate instance definition diagnostic",
-                        )
-                    };
+                    insert_opaque_index(&mut opaque_indices, first);
+                    insert_opaque_index(&mut opaque_indices, source_order);
+                    let duplicate_message =
+                        || format!("duplicate instance definition UUID {}", definition.id);
                     if !result.scan.ambiguous_ids.contains(&definition.id) {
-                        ctx.reserve_set(
-                            &mut result.scan.ambiguous_ids,
-                            1,
-                            "Rhino ambiguous instance definitions",
-                        )?;
                         result.scan.ambiguous_ids.insert(definition.id);
-                        ctx.reserve_vec(
-                            &mut result.scan.diagnostics,
-                            1,
-                            "Rhino instance definition diagnostics",
-                        )?;
+
                         result.scan.diagnostics.push(DefinitionDiagnostic {
                             diagnostic: RhinoDiagnostic {
                                 code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                                message: duplicate_message()?,
+                                message: duplicate_message(),
                             },
                             source_range: records[first].range.clone(),
                         });
                     }
-                    ctx.reserve_vec(
-                        &mut result.scan.diagnostics,
-                        1,
-                        "Rhino instance definition diagnostics",
-                    )?;
+
                     result.scan.diagnostics.push(DefinitionDiagnostic {
                         diagnostic: RhinoDiagnostic {
                             code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                            message: duplicate_message()?,
+                            message: duplicate_message(),
                         },
                         source_range: record.range.clone(),
                     });
                 } else {
-                    ctx.reserve_map(&mut seen, 1, "Rhino instance definition identities")?;
                     seen.insert(definition.id, source_order);
-                    ctx.reserve_vec(
-                        &mut result.scan.definitions,
-                        1,
-                        "Rhino instance definitions",
-                    )?;
+
                     result.scan.definitions.push(definition);
                 }
             }
@@ -1421,22 +1263,14 @@ pub(crate) fn parse_definitions(
                 return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
             }
             Err(error) => {
-                ctx.reserve_vec(
-                    &mut result.scan.diagnostics,
-                    1,
-                    "Rhino instance definition diagnostics",
-                )?;
                 result.scan.diagnostics.push(DefinitionDiagnostic {
                     diagnostic: RhinoDiagnostic {
                         code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                        message: ctx.format_retained(
-                            format_args!("instance definition retained: {error}"),
-                            "Rhino instance definition diagnostic",
-                        )?,
+                        message: format!("instance definition retained: {error}"),
                     },
                     source_range: record.range.clone(),
                 });
-                insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
+                insert_opaque_index(&mut opaque_indices, source_order);
             }
         }
     }
@@ -1444,8 +1278,7 @@ pub(crate) fn parse_definitions(
         .scan
         .definitions
         .retain(|definition| !result.scan.ambiguous_ids.contains(&definition.id));
-    let mut opaque_records =
-        ctx.collection_vec(opaque_indices.len(), "Rhino opaque instance definitions")?;
+    let mut opaque_records = Vec::new();
     for index in opaque_indices {
         opaque_records.push(OpaqueRecord {
             table_typecode,

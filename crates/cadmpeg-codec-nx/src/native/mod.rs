@@ -80,8 +80,7 @@ pub(crate) fn admit_construction_records(
             "feature_construction_named_targets",
         )
     {
-        ctx.charge_work(268, "admit NX construction named-target envelope")?;
-        record?.validate_links(ctx, namespace)?;
+        record?.validate_links(namespace)?;
     }
     for record in namespace
         .arena_iter_as_for_decode::<features::swp104_branch::FeatureSwp104LeadingBranch>(
@@ -124,4 +123,49 @@ pub(crate) fn admit_construction_records(
         }
     }
     features::surface_allocation::admit_surface_allocations(ctx, namespace)
+}
+
+/// Failure injection into [`attach_annotations`] for decode tests.
+#[cfg(test)]
+pub(crate) mod attach_failure {
+    use cadmpeg_core::CodecError;
+    use std::cell::Cell;
+
+    /// Where the injected failure occurs.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum Point {
+        /// Before attachment writes anything.
+        Entry,
+        /// After attachment has written everything.
+        Exit,
+    }
+
+    /// An injected failure: where it occurs and the error it returns.
+    type Injection = (Point, fn() -> CodecError);
+
+    std::thread_local! {
+        static INJECTED: Cell<Option<Injection>> = const { Cell::new(None) };
+    }
+
+    /// Clears the injected failure when dropped.
+    pub(crate) struct Injected(());
+
+    impl Drop for Injected {
+        fn drop(&mut self) {
+            INJECTED.set(None);
+        }
+    }
+
+    /// Fail attachment on this thread at `point` while the guard lives.
+    pub(crate) fn inject(point: Point, error: fn() -> CodecError) -> Injected {
+        INJECTED.set(Some((point, error)));
+        Injected(())
+    }
+
+    pub(super) fn check(point: Point) -> Result<(), CodecError> {
+        match INJECTED.get() {
+            Some((injected, error)) if injected == point => Err(error()),
+            _ => Ok(()),
+        }
+    }
 }

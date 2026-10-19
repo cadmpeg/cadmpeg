@@ -2,9 +2,10 @@
 //! Preserve source dependency for carriers without standalone topology.
 
 use super::EntityStatus;
-use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::geometry::Surface;
+use crate::loss::IgesLossCode;
+use cadmpeg_ir::geometry::{Curve, Surface};
 use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,15 +15,10 @@ pub(super) struct SourceOwnership<'ir> {
 }
 
 impl<'ir> SourceOwnership<'ir> {
-    pub(super) fn build(ctx: &DecodeContext<'_>, ir: &'ir CadIr) -> Result<Self, CodecError> {
+    pub(super) fn build(ir: &'ir CadIr) -> Self {
         let mut owned_surfaces = BTreeSet::new();
         for face in &ir.model.faces {
-            ctx.charge_work(1, "iges surface ownership scan")?;
-            ctx.insert_btree_set(
-                &mut owned_surfaces,
-                &face.surface,
-                "iges surface ownership index",
-            )?;
+            owned_surfaces.insert(&face.surface);
         }
         let mut statuses = BTreeMap::new();
         for record in ir
@@ -32,7 +28,6 @@ impl<'ir> SourceOwnership<'ir> {
             .filter_map(|namespace| namespace.arenas().get("entities"))
             .flatten()
         {
-            ctx.charge_work(1, "iges carrier ownership scan")?;
             let status = match record
                 .field("subordinate_status")
                 .and_then(|value| value.as_i64())
@@ -45,8 +40,7 @@ impl<'ir> SourceOwnership<'ir> {
                 Some(3) => EntityStatus::BothDependent,
                 _ => continue,
             };
-            ctx.insert_btree_map(
-                &mut statuses,
+            statuses.insert(
                 match record
                     .field("directory_sequence")
                     .and_then(|value| value.as_u64())
@@ -56,13 +50,12 @@ impl<'ir> SourceOwnership<'ir> {
                     None => continue,
                 },
                 status,
-                "iges carrier ownership index",
-            )?;
+            );
         }
-        Ok(Self {
+        Self {
             statuses,
             owned_surfaces,
-        })
+        }
     }
 
     pub(super) fn status(&self, source: Option<&SourceObjectAssociation>) -> EntityStatus {
@@ -83,6 +76,25 @@ impl<'ir> SourceOwnership<'ir> {
             }
         } else {
             status
+        }
+    }
+
+    pub(super) fn curve_status(
+        &self,
+        curve: &Curve,
+        losses: &mut Vec<LossNote>,
+    ) -> Option<EntityStatus> {
+        let status = self.status(curve.source_object.as_ref());
+        // Parameter-space carriers are emitted through their owning pcurves.
+        // An unreferenced copy can be imported as standalone model-space geometry.
+        if matches!(status, EntityStatus::ParameterCurve) {
+            losses.push(IgesLossCode::WriterSupportGeometryNotRepresented.note(format!(
+                "1 support geometry record ({}) was withheld because its parameter-space carrier has no exported owner",
+                curve.id
+            )));
+            None
+        } else {
+            Some(status)
         }
     }
 

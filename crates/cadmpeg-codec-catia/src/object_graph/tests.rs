@@ -50,7 +50,7 @@ fn payload_field_retained_limit_refuses_json_record() {
     };
     let arena_name = "payload_fields";
     let json_len = serde_json::to_vec(&record).expect("field JSON").len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
@@ -61,7 +61,7 @@ fn payload_field_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-            .expect("service profile admits field");
+            .expect("store the native arena");
     });
 }
 use crate::test_support::test_container::surface_alias_stream;
@@ -72,147 +72,15 @@ use crate::test_support::test_object_graph::{
     sequential_entity_backed_object_graph, value_block_stream,
 };
 
-fn parse(data: &[u8]) -> Option<super::ObjectGraph> {
-    crate::test_support::with_service_context(|ctx| super::parse(ctx, data))
-        .expect("object graph fixture fits the service limits")
-}
+use super::parse;
 
-fn parse_all(data: &[u8]) -> Vec<super::ObjectGraph> {
-    crate::test_support::with_service_context(|ctx| super::parse_all(ctx, data))
-        .expect("object graph fixture fits the service limits")
-}
+use super::parse_all;
 
-fn parse_all_with_paired_roots(
-    data: &[u8],
-    paired_roots: &std::collections::HashMap<usize, usize>,
-) -> Vec<super::ObjectGraph> {
-    crate::test_support::with_service_context(|ctx| {
-        super::parse_all_with_paired_roots(ctx, data, paired_roots)
-    })
-    .expect("paired object graph fixture fits the service limits")
-}
+use super::parse_all_with_paired_roots;
 
-fn surface_aliases(data: &[u8]) -> Vec<super::SurfaceAlias> {
-    crate::test_support::with_service_context(|ctx| super::surface_aliases(ctx, data, &[]))
-        .expect("alias fixture fits the service limits")
-}
+use super::surface_aliases;
 
-fn decode_payload(data: &[u8]) -> Option<super::ObjectPayload> {
-    crate::test_support::with_service_context(|ctx| super::decode_payload(ctx, data))
-        .expect("payload fixture fits the service limits")
-}
-
-#[test]
-fn native_payload_copy_refuses_nested_retained_and_collection_limits() {
-    use super::{ObjectPayload, PayloadField};
-    use cadmpeg_core::CodecError;
-
-    let payload = ObjectPayload {
-        size: 2,
-        fields: vec![PayloadField::Blob {
-            bytes: vec![0xa5, 0x5a].into(),
-            offset: 0,
-        }],
-    };
-    let retained = crate::test_support::with_retained_limit(1, |ctx| payload.copy_charged(ctx));
-    assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_payload_blob"));
-    let collection = crate::test_support::with_collection_limit(2, |ctx| payload.copy_charged(ctx));
-    assert!(matches!(collection, Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_payload_fields"));
-    let copied = crate::test_support::with_service_context(|ctx| payload.copy_charged(ctx))
-        .expect("service profile admits one payload field");
-    assert_eq!(copied, payload);
-}
-
-#[test]
-fn object_graph_head_tokens_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = object_graph_stream();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("object graph fixture fits the input limit");
-    let error =
-        super::parse(&ctx, &bytes).expect_err("a decoded head token exceeds zero collection items");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_object_head_tokens"));
-    assert!(parse(&bytes).is_some());
-}
-
-#[test]
-fn grouped_alias_storage_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let mut bytes = vec![0x02, 0x00];
-    bytes.extend_from_slice(&0xafu32.to_le_bytes());
-    bytes.extend_from_slice(&0x148u32.to_le_bytes());
-    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
-    bytes.extend(surface_alias_stream());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("alias fixture fits the input limit");
-    let error = super::surface_aliases(&ctx, &bytes, &[])
-        .expect_err("group storage requires a retained copy");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "catia_alias_group_storage"));
-    assert_eq!(surface_aliases(&bytes).len(), 1);
-}
-
-#[test]
-fn object_payload_fields_and_list_items_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    for (payload, operation) in [
-        (&[0x83, 0xfe][..], "catia_object_payload_fields"),
-        (&[0x3b, 0x81, 0x82, 0xfe][..], "catia_object_list_items"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-            .expect("payload fixture fits the input limit");
-        let error = super::decode_payload(&ctx, payload)
-            .expect_err("a payload collection exceeds zero items");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == operation));
-        assert!(decode_payload(payload).is_some());
-    }
-}
-
-#[test]
-fn object_bulk_rows_refuse_declared_count_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = [0x81, 0x82, 0x80, 0, 0, 0, 0];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("bulk row fixture fits the input limit");
-    let error = super::parse_bulk_table_rows(&ctx, &bytes, 0, 1)
-        .expect_err("one declared row exceeds zero items");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_object_bulk_table_rows"));
-    let parsed = crate::test_support::with_service_context(|ctx| {
-        super::parse_bulk_table_rows(ctx, &bytes, 0, 1)
-    })
-    .expect("service budget")
-    .expect("one row");
-    assert_eq!(parsed.0.len(), 1);
-}
+use super::decode_payload;
 
 fn owner_ref(record: &ObjectRecord) -> Option<u32> {
     match record.roles().owner {
@@ -1545,7 +1413,7 @@ fn object_graph_payload_keeps_3c_as_literal_when_no_bulk_extent_is_possible() {
 fn outer_surface_alias_parser_reads_fixed_core() {
     use crate::object_graph::AliasLead;
 
-    let rows = surface_aliases(&surface_alias_stream());
+    let rows = surface_aliases(&surface_alias_stream(), &[]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].lead(), AliasLead::SurfaceSupportStorage);
     assert_eq!(rows[0].tag(), 0x0012_3456);
@@ -1564,7 +1432,7 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
     ] {
         let mut bytes = surface_alias_stream();
         bytes[..4].copy_from_slice(&lead.to_le_bytes());
-        let [row] = surface_aliases(&bytes)
+        let [row] = surface_aliases(&bytes, &[])
             .try_into()
             .expect("one ordinal-linked alias row");
         assert_eq!(row.lead(), expected);
@@ -1576,7 +1444,7 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
 fn outer_alias_parser_rejects_0133_without_nullable_storage_framing() {
     let mut bytes = surface_alias_stream();
     bytes[..4].copy_from_slice(&0x0000_0133u32.to_le_bytes());
-    assert!(surface_aliases(&bytes).is_empty());
+    assert!(surface_aliases(&bytes, &[]).is_empty());
 }
 
 #[test]
@@ -1584,7 +1452,7 @@ fn outer_alias_parser_rejects_marker_literals_without_an_alias_lead() {
     for lead in [0u32, 0x15] {
         let mut bytes = surface_alias_stream();
         bytes[..4].copy_from_slice(&lead.to_le_bytes());
-        assert!(surface_aliases(&bytes).is_empty());
+        assert!(surface_aliases(&bytes, &[]).is_empty());
     }
 }
 
@@ -1598,7 +1466,7 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     alias[15..19].copy_from_slice(&0x0000_017bu32.to_le_bytes());
     bytes.extend(alias);
 
-    let [row] = surface_aliases(&bytes)
+    let [row] = surface_aliases(&bytes, &[])
         .try_into()
         .expect("one grouped alias row");
     let group = row.group.as_ref().expect("exact group header");
@@ -1609,7 +1477,7 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     assert_eq!(row.entity_record_ordinal(), 0x7b);
 
     bytes[10] = 1;
-    let [row] = surface_aliases(&bytes)
+    let [row] = surface_aliases(&bytes, &[])
         .try_into()
         .expect("one ungrouped alias row");
     assert!(row.group.is_none());
@@ -1633,7 +1501,7 @@ fn outer_alias_group_parser_accepts_each_bounded_storage_prefix() {
         alias[11..15].copy_from_slice(&0x0000_017du32.to_le_bytes());
         bytes.extend(alias);
 
-        let [row] = surface_aliases(&bytes)
+        let [row] = surface_aliases(&bytes, &[])
             .try_into()
             .expect("one grouped alias row");
         let group = row.group.expect("bounded group storage");
@@ -1647,7 +1515,7 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
     let mut bytes = surface_alias_stream();
     bytes[8..12].copy_from_slice(&0xab00_0000u32.to_le_bytes());
 
-    let rows = surface_aliases(&bytes);
+    let rows = surface_aliases(&bytes, &[]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].tag(), 0);
     assert_eq!(rows[0].tag_raw, 0xab00_0000);
@@ -1658,7 +1526,7 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
 #[test]
 fn outer_surface_alias_parser_requires_the_lead_word() {
     let bytes = surface_alias_stream();
-    assert!(surface_aliases(&bytes[4..]).is_empty());
+    assert!(surface_aliases(&bytes[4..], &[]).is_empty());
 }
 
 #[test]
@@ -1810,4 +1678,37 @@ fn payload_field_wire_rejects_a_table_count_disagreeing_with_the_rows() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("table_count"), "{error}");
+}
+
+#[test]
+fn object_graph_parses_the_fixture_stream() {
+    let bytes = object_graph_stream();
+
+    assert!(parse(&bytes).is_some());
+}
+
+#[test]
+fn object_payload_decodes_a_field_and_a_list_item() {
+    for payload in [&[0x83, 0xfe][..], &[0x3b, 0x81, 0x82, 0xfe][..]] {
+        assert!(decode_payload(payload).is_some());
+    }
+}
+
+#[test]
+fn bulk_table_rows_parse_one_row() {
+    let bytes = [0x81, 0x82, 0x80, 0, 0, 0, 0];
+
+    let parsed = super::parse_bulk_table_rows(&bytes, 0, 1).expect("one row");
+    assert_eq!(parsed.0.len(), 1);
+}
+
+#[test]
+fn grouped_alias_storage_yields_one_surface_alias() {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&0x148u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    bytes.extend(surface_alias_stream());
+
+    assert_eq!(surface_aliases(&bytes, &[]).len(), 1);
 }

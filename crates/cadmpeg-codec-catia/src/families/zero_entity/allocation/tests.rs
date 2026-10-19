@@ -10,7 +10,7 @@ fn topology(bytes: &[u8]) -> Option<AllocationTopology> {
             0..bytes.len(),
             &mut crate::nurbs::LaneRefusals::new(),
         )?;
-        parse(ctx, bytes, 0..bytes.len(), &runs)
+        parse(bytes, 0..bytes.len(), &runs)
     })
     .expect("bounded allocation fixture")
 }
@@ -46,10 +46,9 @@ fn allocation_chain_selects_source_edges_uses_supports_and_vertex_owners() {
 #[test]
 fn incomplete_or_duplicated_allocation_chains_leave_source_graph_unassigned() {
     let source = zero_entity_allocation_stream();
-    let inventory = crate::test_support::with_service_context(|ctx| {
-        records::zero_entity_record_inventory(ctx, &source)
-    })
-    .expect("fixture record inventory");
+    let inventory = crate::test_support::with_service_context(|_ctx| {
+        records::zero_entity_record_inventory(&source)
+    });
     for (ordinal, offset, value) in [(24, 18, 4_u32), (18, 19, 8), (27, 19, 1)] {
         let mut bytes = source.clone();
         let at = inventory[ordinal - 1].pos + offset;
@@ -58,36 +57,5 @@ fn incomplete_or_duplicated_allocation_chains_leave_source_graph_unassigned() {
             topology(&bytes).is_none(),
             "contradiction in record {ordinal}"
         );
-    }
-}
-
-#[test]
-fn allocation_graph_obeys_collection_and_work_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-    let bytes = zero_entity_allocation_stream();
-    let runs = crate::test_support::with_service_context(|ctx| {
-        records::zero_entity_support_runs_in_range(
-            ctx,
-            &bytes,
-            0..bytes.len(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("fixture support runs");
-    for dimension in [
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input fits");
-        let error =
-            parse(&ctx, &bytes, 0..bytes.len(), &runs).expect_err("explicit budget refused");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
     }
 }

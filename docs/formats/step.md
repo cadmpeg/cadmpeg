@@ -1191,6 +1191,14 @@ cross-section radius at axial distance `v` is `radius + v tan(semi_angle)`,
 and `(abs(semi_angle), -axis)` holds the same locus under the parameter change
 `(u, v) -> (-u, -v)`, which moves the chart that pcurves are written against.
 
+CADIR export decision: a zero half-angle cone is the cylinder over its
+cross-section, which `WR2` keeps out of `CONICAL_SURFACE`. The writer emits a
+circular section as `CYLINDRICAL_SURFACE` and an elliptical section as a
+`SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE` on the cone's placement, swept by
+a unit `VECTOR` along the axis. Both keep the cone's `(u, v)` chart. A zero
+half-angle cone whose section has a zero semi-axis, and a cone whose half-angle
+magnitude is at least `pi/2`, are refused before any byte is written.
+
 A NURBS `closed` or `periodic` field uses the STEP LOGICAL domain.
 TRUE and FALSE encode the property state. UNKNOWN is a valid LOGICAL value.
 A `POLYLINE` with `n` points is the degree-one NURBS with those points as

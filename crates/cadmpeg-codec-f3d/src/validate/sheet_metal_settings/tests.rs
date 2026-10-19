@@ -47,9 +47,9 @@ fn settings_native_links_require_the_retained_v3_tail_width() {
             native.design_sheet_metal_settings[0].paired_byte_offset = paired_offset + offset_delta;
             crate::test_support::with_decode_context(|decode| {
                 let ir = cadmpeg_ir::CadIr::empty();
-                let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
+                let ctx = crate::validate::Ctx::new(&ir, &native, decode);
                 let mut findings = Vec::new();
-                super::validate(&ctx, &mut findings).unwrap();
+                super::validate(&ctx, &mut findings);
                 assert_eq!(findings.len(), usize::from(offset_delta != 0));
             });
         }
@@ -84,9 +84,9 @@ fn settings_native_links_reject_missing_references_wrong_types_and_duplicate_car
         }
         crate::test_support::with_decode_context(|decode| {
             let ir = cadmpeg_ir::CadIr::empty();
-            let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
+            let ctx = crate::validate::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::validate(&ctx, &mut findings).unwrap();
+            super::validate(&ctx, &mut findings);
             assert_eq!(
                 findings.len(),
                 usize::from(case != 0 && case != 8),

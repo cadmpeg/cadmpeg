@@ -436,7 +436,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
     let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
@@ -488,7 +488,10 @@ fn semantic_writer_round_trips_native_axis_helix() {
             start_angle: value,
             clockwise: true,
             ..
-        }) if revolutions.get() == 0.5 && ((value.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_SCALAR_ROUND_TRIP) && actual_axial_rise.get() == 4000.0 && actual_pitch.get() == 16000.0
+        }) if revolutions.get() == 0.5
+        && ((value.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_SCALAR_ROUND_TRIP)
+        && actual_axial_rise.get() == 4000.0
+        && actual_pitch.get() == 16000.0
     ));
 }
 
@@ -605,11 +608,20 @@ fn semantic_writer_round_trips_wrap() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Wrap {
-            profile,
-            face: FaceSelection::Resolved { faces: targets, native },
-            mode: WrapMode::Emboss { depth: actual_depth },
-        }) if matches!((profile,), (PlanarProfileRef::Faces(faces),) if (faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face) && actual_depth.get() == 2.0)));
+    decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Wrap {
+        profile,
+        face: FaceSelection::Resolved { faces: targets, native },
+        mode: WrapMode::Emboss { depth: actual_depth },
+    }) if matches!(
+        (profile,),
+        (PlanarProfileRef::Faces(faces),)
+            if (
+                faces == std::slice::from_ref(&face_id)
+                && targets == std::slice::from_ref(&face_id)
+                && native == &face
+            )
+            && actual_depth.get() == 2.0
+    )));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -726,7 +738,10 @@ fn semantic_writer_round_trips_move_copy_body() {
             }),
             copies: 2,
         }) if ( bodies.as_slice() == std::slice::from_ref(&body_id) && native == &body
-            && (angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && matches!(geometry_1.get(), Vector3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(geometry_2.get(), Point3 { x: 4.0, y: 5.0, z: 6.0 }) && matches!(geometry_3.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+            && (angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)
+            && matches!(geometry_1.get(), Vector3 { x: 1.0, y: 2.0, z: 3.0 })
+            && matches!(geometry_2.get(), Point3 { x: 4.0, y: 5.0, z: 6.0 })
+            && matches!(geometry_3.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {
@@ -742,11 +757,8 @@ fn semantic_writer_round_trips_move_copy_body() {
                 panic!("typed body motion");
             };
             *bodies = BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![body_id.clone()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("distinct bodies"),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()])
+                    .expect("distinct bodies"),
             );
             *translation =
                 cadmpeg_ir::features::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0)).unwrap();
@@ -1015,11 +1027,8 @@ fn semantic_writer_round_trips_cut_with_surface() {
                 panic!("typed surface cut");
             };
             *targets = BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![body_id.clone()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("distinct bodies"),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()])
+                    .expect("distinct bodies"),
             );
             *tools = FaceSelection::Faces(vec![face_id.clone()]);
             *reverse = Some(true);
@@ -1450,7 +1459,9 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
             },
             ..
         }) if ( (edges == std::slice::from_ref(&edge_id) && edge_native == &edge
-            && faces == std::slice::from_ref(&face_id) && face_native == &face) && actual_distance.get() == 2.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+            && faces == std::slice::from_ref(&face_id) && face_native == &face)
+            && actual_distance.get() == 2.0)
+            && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {
@@ -1556,7 +1567,12 @@ fn semantic_writer_round_trips_projected_curve() {
             target_faces: FaceSelection::Resolved { faces, native },
             direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(checked_geometry_1),
             bidirectional: Some(false),
-        }) if (edges == std::slice::from_ref(&edge_id) && faces == std::slice::from_ref(&face_id) && native == &face) && matches!(checked_geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+        }) if (
+            edges == std::slice::from_ref(&edge_id)
+            && faces == std::slice::from_ref(&face_id)
+            && native == &face
+        )
+        && matches!(checked_geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {

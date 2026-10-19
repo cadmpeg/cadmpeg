@@ -1040,3 +1040,15 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
         .to_string();
     assert!(error.contains("cache_fit_tolerance"), "{error}");
 }
+
+/// A geometry-depth decode agrees with the full decode outside the design
+/// arenas. Every committed input the codec admits is cut to geometry depth.
+#[test]
+fn geometry_depth_agrees_with_full_depth() {
+    let inputs = fixtures()
+        .into_iter()
+        .map(|(name, _)| (name, read_fixture(name).expect("committed fixture")))
+        .collect::<Vec<_>>();
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
+    assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
+}

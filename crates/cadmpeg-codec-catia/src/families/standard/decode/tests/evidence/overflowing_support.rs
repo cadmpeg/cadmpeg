@@ -165,14 +165,7 @@ fn native_support_helpers_preserve_session_depth_refusal() {
             };
             assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
             assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-            assert_eq!(
-                ctx.charge_work_limit(0, "observe native support refusal"),
-                Err(limit)
-            );
-            assert_eq!(
-                standard_native_support_endpoint_pair(ctx, &native, &[], &[], None),
-                Err(limit)
-            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
         });
     }
 }

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete E5 boundary and equivalent-parameter support programs.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeLength, NonZeroReal};
 use serde::{Deserialize, Serialize};
 
@@ -208,68 +207,48 @@ fn range(view: &mut View<'_>) -> Option<[FiniteReal; 2]> {
     Some([finite(view)?, finite(view)?])
 }
 
-fn sample_lane(
-    ctx: &DecodeContext<'_>,
-    view: &mut View<'_>,
-    count: usize,
-) -> Result<Option<Vec<FiniteReal>>, CodecError> {
-    if view.counted(u64_from_index(count), 8).is_none() {
-        return Ok(None);
-    }
-    ctx.charge_retained(u64_from_index(count) * 8, "catia_e5_map_samples")?;
+fn sample_lane(view: &mut View<'_>, count: usize) -> Option<Vec<FiniteReal>> {
+    view.counted(u64_from_index(count), 8)?;
     let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, count, "catia_e5_map_samples")?;
     for _ in 0..count {
-        let Some(value) = finite(view) else {
-            return Ok(None);
-        };
+        let value = finite(view)?;
         values.push(value);
     }
-    Ok(Some(values))
+    Some(values)
 }
 
 /// Admit the complete payload. Unknown or malformed modes remain native-only.
-pub(crate) fn parse(
-    ctx: &DecodeContext<'_>,
-    class: u8,
-    payload: &[u8],
-) -> Result<Option<E5CurveSupport>, CodecError> {
+pub(crate) fn parse(class: u8, payload: &[u8]) -> Option<E5CurveSupport> {
     let count = match class {
         0xc0 => 1,
         0xc1 => 2,
-        _ => return Ok(None),
+        _ => return None,
     };
     if payload.first() != Some(&(0x80 + count)) {
-        return Ok(None);
+        return None;
     }
     let mut position = 1;
     let mut curves = [0; 2];
     for curve in curves.iter_mut().take(usize::from(count)) {
-        let Some(value) = crate::wire::tokens::object_ref(payload, &mut position, false) else {
-            return Ok(None);
-        };
+        let value = crate::wire::tokens::object_ref(payload, &mut position, false)?;
         *curve = value;
     }
     let mut view = View::over_retained(payload);
     if view.seek(position).is_none() || view.u8() != Some(0x81) {
-        return Ok(None);
+        return None;
     }
-    let Some(mode) = view.u8() else {
-        return Ok(None);
-    };
+    let mode = view.u8()?;
     if view.u8() != Some(0) {
-        return Ok(None);
+        return None;
     }
-    let Some(reference_range) = range(&mut view) else {
-        return Ok(None);
-    };
+    let reference_range = range(&mut view)?;
     if count == 1 {
         if mode != 0
             || view.f64_le().is_none_or(|v| v.to_bits() != 0)
             || view.u32_le() != Some(0)
             || !view.is_empty()
         {
-            return Ok(None);
+            return None;
         }
         let support = E5CurveSupport {
             kind: E5CurveSupportKind::Boundary {
@@ -277,51 +256,33 @@ pub(crate) fn parse(
             },
             range: reference_range,
         };
-        return Ok(support.valid().then_some(support));
+        return support.valid().then_some(support);
     }
     if !matches!(mode, 3 | 5) {
-        return Ok(None);
+        return None;
     }
-    let Some((map_accuracy, co_domain)) =
-        (|| Some((NonNegativeLength::new(view.f64_le()?)?, range(&mut view)?)))()
-    else {
-        return Ok(None);
-    };
+    let (map_accuracy, co_domain) =
+        (|| Some((NonNegativeLength::new(view.f64_le()?)?, range(&mut view)?)))()?;
     let program = if mode == 3 {
-        let Some((scale, offset)) =
-            (|| Some((NonZeroReal::new(view.f64_le()?)?, finite(&mut view)?)))()
-        else {
-            return Ok(None);
-        };
+        let (scale, offset) = (|| Some((NonZeroReal::new(view.f64_le()?)?, finite(&mut view)?)))()?;
         E5ParameterProgram::Affine { scale, offset }
     } else {
-        let Some(count) = view
+        let count = view
             .u8()
             .and_then(|v| v.checked_sub(0x80))
             .map(usize::from)
-            .filter(|n| *n >= 2)
-        else {
-            return Ok(None);
-        };
-        let Some(reference_parameters) = sample_lane(ctx, &mut view, count)? else {
-            return Ok(None);
-        };
-        let Some(co_parameters) = sample_lane(ctx, &mut view, count)? else {
-            return Ok(None);
-        };
-        ctx.charge_work(u64_from_index(count) * 8, "catia_e5_map_validation")?;
+            .filter(|n| *n >= 2)?;
+        let reference_parameters = sample_lane(&mut view, count)?;
+        let co_parameters = sample_lane(&mut view, count)?;
         E5ParameterProgram::Sampled {
             reference_parameters,
             co_parameters,
         }
     };
-    let Some((active_reference_limits, fit_tolerance)) =
-        (|| Some((range(&mut view)?, NonNegativeLength::new(view.f64_le()?)?)))()
-    else {
-        return Ok(None);
-    };
+    let (active_reference_limits, fit_tolerance) =
+        (|| Some((range(&mut view)?, NonNegativeLength::new(view.f64_le()?)?)))()?;
     if view.u32_le() != Some(0) || !view.is_empty() {
-        return Ok(None);
+        return None;
     }
     let support = E5CurveSupport {
         kind: E5CurveSupportKind::Intersection {
@@ -336,7 +297,7 @@ pub(crate) fn parse(
         },
         range: reference_range,
     };
-    Ok(support.valid().then_some(support))
+    support.valid().then_some(support)
 }
 
 #[cfg(test)]

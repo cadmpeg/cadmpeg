@@ -26,7 +26,7 @@ use crate::records::feature::sheet_metal::DesignHemParameterOwners;
 use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_base_flange_operation(
@@ -82,7 +82,6 @@ const SHEET_METAL_HEADER_SHIFTS: [usize; 2] = [0, 4];
 const MAX_EDGE_WIDTH_DISTANCE_OWNERS: usize = 2;
 
 pub(super) fn exact_edge_flange_operation(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -165,7 +164,7 @@ pub(super) fn exact_edge_flange_operation(
     }
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            edge_flange_operation_at(ctx, bytes, start, paired_at, references, header_shift)?,
+            edge_flange_operation_at(bytes, start, paired_at, references, header_shift)?,
             edge_flange_to_object_operation_at(bytes, start, paired_at, references, header_shift),
         ]
         .into_iter()
@@ -533,7 +532,6 @@ fn legacy_edge_flange_operation_at(
 /// Read the `EdgeFlange` fixed operation section for one candidate header shift
 /// and refuse the candidate unless every slot agrees.
 fn edge_flange_operation_at(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -562,13 +560,7 @@ fn edge_flange_operation_at(
         // Every reference the fixed section names is removed from this pool, so the
         // entries that remain at the end are exactly the unclaimed ones.
         // The three width modes share one fixed ten-slot allocation.
-        let mut unclaimed = match ctx.collection_vec(
-            8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS,
-            "collect F3D unclaimed flange references",
-        ) {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut unclaimed = Vec::new();
         unclaimed.extend_from_slice(references);
         let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
             let at = pool.iter().position(|entry| *entry == index)?;
@@ -823,25 +815,19 @@ fn exact_hem_operation(
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            hem_gap_length_operation_at(
-                bytes,
-                start,
-                paired_at,
-                (*references).clone(),
-                header_shift,
-            ),
+            hem_gap_length_operation_at(bytes, start, paired_at, references.clone(), header_shift),
             hem_radius_angle_operation_at(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references.clone(),
                 header_shift,
             ),
             hem_gap_length_radius_operation_at(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references.clone(),
                 header_shift,
             ),
         ]

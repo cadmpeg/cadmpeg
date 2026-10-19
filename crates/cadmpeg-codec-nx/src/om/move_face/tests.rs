@@ -9,8 +9,7 @@ fn move_face_complete_lists_preserve_serialized_pairing_and_positions() {
         let bytes = core(count);
         let view = CoreView::parse(&bytes).unwrap();
         assert_eq!(view.byte_len, bytes.len());
-        let writes =
-            crate::test_support::with_decode_context(|ctx| view.writes(ctx, 1000)).unwrap();
+        let writes = crate::test_support::with_decode_context(|_ctx| view.writes(1000)).unwrap();
         assert_eq!(writes.len(), usize::from(count));
         for (i, write) in writes.iter().enumerate() {
             let i = u8::try_from(i).unwrap();
@@ -119,7 +118,7 @@ fn move_face_empty_list_refuses_and_duplicate_native_entries_are_preserved() {
     bytes[second_body + 1] = 20;
     bytes[second_image + 1] = 40;
     let view = CoreView::parse(&bytes).unwrap();
-    let writes = crate::test_support::with_decode_context(|ctx| view.writes(ctx, 0)).unwrap();
+    let writes = crate::test_support::with_decode_context(|_ctx| view.writes(0)).unwrap();
     assert_eq!(writes.len(), 2);
     assert_eq!(writes[0].body_identity(), writes[1].body_identity());
     assert_eq!(writes[0].body_image(), writes[1].body_image());
@@ -133,7 +132,7 @@ fn move_face_control_five_preserves_the_shifted_null_frame() {
     bytes.remove(19);
     bytes.insert(22, 255);
     let view = CoreView::parse(&bytes).unwrap();
-    let writes = crate::test_support::with_decode_context(|ctx| view.writes(ctx, 0)).unwrap();
+    let writes = crate::test_support::with_decode_context(|_ctx| view.writes(0)).unwrap();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].body_identity(), 11);
     bytes[22] = 0;

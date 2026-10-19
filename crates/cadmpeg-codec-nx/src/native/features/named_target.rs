@@ -5,7 +5,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
-use super::construction_records::charged_unique_offset_data_block;
+use super::construction_records::unique_offset_data_block_id;
 use super::joined_payload::JoinedPayload;
 use super::{
     offset_data_block_bytes, FeatureConstructionPayload, FeatureExtrudeConstructionProfile,
@@ -99,7 +99,6 @@ impl TryFrom<NamedTargetWire> for FeatureConstructionNamedTarget {
 impl FeatureConstructionNamedTarget {
     pub(in crate::native) fn validate_links(
         &self,
-        ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::native::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
         use cadmpeg_ir::native::NativeConvertError;
@@ -107,9 +106,9 @@ impl FeatureConstructionNamedTarget {
             ConstructionOwner::PatternPayload(id) => ("feature_pattern_construction_payloads", id),
             ConstructionOwner::ExtrudeProfile(id) => ("feature_extrude_construction_profiles", id),
         };
-        let owner = unique_record(ctx, namespace, arena, id)?;
+        let owner = unique_record(namespace, arena, id)?;
         if owner
-            .fields()
+            .fields()?
             .get("operation_label")
             .and_then(serde_json::Value::as_str)
             != Some(self.operation_label.as_str())
@@ -118,8 +117,8 @@ impl FeatureConstructionNamedTarget {
                 "construction owner and named target must share an operation_label".into(),
             ));
         }
-        let blocks = owner
-            .fields()
+        let owner_fields = owner.fields()?;
+        let blocks = owner_fields
             .get("data_blocks")
             .and_then(serde_json::Value::as_array)
             .ok_or_else(|| {
@@ -138,9 +137,10 @@ impl FeatureConstructionNamedTarget {
             let id = block.as_str().ok_or_else(|| {
                 NativeConvertError::InvalidCollection("data_blocks must contain identities".into())
             })?;
-            let row = unique_record(ctx, namespace, "data_blocks", id)?;
+            let row = unique_record(namespace, "data_blocks", id)?;
+            let fields = row.fields()?;
             let position = ["source_offset", "byte_len"]
-                .map(|field| row.fields().get(field).and_then(serde_json::Value::as_u64));
+                .map(|field| fields.get(field).and_then(serde_json::Value::as_u64));
             let [Some(source), Some(length)] = position else {
                 return Err(NativeConvertError::InvalidCollection(
                     "construction data block requires its physical span".into(),
@@ -176,20 +176,25 @@ impl FeatureConstructionNamedTarget {
             ));
         }
         if let Some(id) = &self.data_block {
-            let target = unique_record(ctx, namespace, "data_blocks", id)?;
+            let target = unique_record(namespace, "data_blocks", id)?;
             let rows = namespace
                 .arenas()
                 .get("data_blocks")
                 .map_or(&[][..], Vec::as_slice);
-            ctx.charge_work(u64_from_index(rows.len()), "resolve NX named-target store")?;
-            let mut candidates = rows.iter().filter(|row| {
-                row.fields().get("role").and_then(serde_json::Value::as_str) == Some("column")
-                    && row
-                        .fields()
-                        .get("block_ordinal")
-                        .and_then(serde_json::Value::as_u64)
-                        == Some(u64::from(self.reference.value()))
-            });
+            let fields = rows
+                .iter()
+                .map(|row| row.fields().map(|fields| (row, fields)))
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut candidates = fields
+                .iter()
+                .filter(|(_, fields)| {
+                    fields.get("role").and_then(serde_json::Value::as_str) == Some("column")
+                        && fields
+                            .get("block_ordinal")
+                            .and_then(serde_json::Value::as_u64)
+                            == Some(u64::from(self.reference.value()))
+                })
+                .map(|(row, _)| *row);
             if candidates.next().map(cadmpeg_ir::native::NativeRecord::id) != Some(target.id())
                 || candidates.next().is_some()
             {
@@ -204,17 +209,12 @@ impl FeatureConstructionNamedTarget {
 }
 
 fn unique_record<'a>(
-    ctx: &DecodeContext<'_>,
     namespace: &'a cadmpeg_ir::native::NativeNamespace,
     arena: &str,
     id: &str,
 ) -> Result<&'a cadmpeg_ir::native::NativeRecord, cadmpeg_ir::native::NativeConvertError> {
     use cadmpeg_ir::native::NativeConvertError;
     let rows = namespace.arenas().get(arena).map_or(&[][..], Vec::as_slice);
-    ctx.charge_work(
-        u64_from_index(rows.len()),
-        "resolve NX named-target native link",
-    )?;
     let mut matched = rows.iter().filter(|row| row.id() == id);
     let row = matched.next().ok_or_else(|| {
         NativeConvertError::InvalidCollection(
@@ -230,20 +230,20 @@ fn unique_record<'a>(
 }
 
 pub(in crate::native) fn feature_construction_named_targets(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     container: &Container,
     patterns: &[FeatureConstructionPayload],
     profiles: &[FeatureExtrudeConstructionProfile],
 ) -> Result<Vec<FeatureConstructionNamedTarget>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let indexed = container.indexed_om_sections(ctx)?;
+    let blocks = offset_data_block_bytes(container)?;
+    let indexed = container.indexed_om_sections();
     let mut targets = Vec::new();
     let mut collect = |id: &str,
                        operation_label: &str,
                        owner: ConstructionOwner<&str>,
-                       joined: &JoinedPayload<'_>|
+                       joined: &JoinedPayload|
      -> Result<(), CodecError> {
-        for (ordinal, parsed) in crate::om::named_target::named_targets(ctx, joined.bytes())?
+        for (ordinal, parsed) in crate::om::named_target::named_targets(joined.bytes())
             .into_iter()
             .enumerate()
         {
@@ -259,41 +259,36 @@ pub(in crate::native) fn feature_construction_named_targets(
                 continue;
             };
             let owner = match owner {
-                ConstructionOwner::PatternPayload(value) => ConstructionOwner::PatternPayload(
-                    ctx.copy_retained_text(value, "NX named-target payload owner")?,
-                ),
-                ConstructionOwner::ExtrudeProfile(value) => ConstructionOwner::ExtrudeProfile(
-                    ctx.copy_retained_text(value, "NX named-target profile owner")?,
-                ),
+                ConstructionOwner::PatternPayload(value) => {
+                    ConstructionOwner::PatternPayload((value).to_owned())
+                }
+                ConstructionOwner::ExtrudeProfile(value) => {
+                    ConstructionOwner::ExtrudeProfile((value).to_owned())
+                }
             };
             let target = FeatureConstructionNamedTarget {
-                id: super::format_feature_child_id(ctx, id, "-named-target-", ordinal)?,
-                operation_label: ctx
-                    .copy_retained_text(operation_label, "NX named-target operation")?,
+                id: super::format_feature_child_id(id, "-named-target-", ordinal),
+                operation_label: (operation_label).to_owned(),
                 owner,
-                ordinal: u32::try_from(ordinal)
-                    .map_err(|_| ctx.refuse_codec_limit("NX named-target ordinal", 0, 1))?,
-                value: PrintableString::new(
-                    ctx.copy_retained_text(parsed.value.as_str(), "NX named-target name")?,
-                )
-                .map_err(CodecError::malformed)?,
+                ordinal: u32::try_from(ordinal).map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "{} exceeds its local bound",
+                        "NX named-target ordinal"
+                    ))
+                })?,
+                value: PrintableString::new((parsed.value.as_str()).to_owned())
+                    .map_err(CodecError::malformed)?,
                 reference: parsed.reference,
-                data_block: charged_unique_offset_data_block(
-                    ctx,
-                    &indexed,
-                    parsed.reference.value(),
-                )?,
+                data_block: unique_offset_data_block_id(&indexed, parsed.reference.value()),
                 payload_offset: u64_from_index(parsed.offset),
                 source_offsets: [first, reference, name],
             };
-            ctx.reserve_vec(&mut targets, 1, "NX construction named targets")?;
             targets.push(target);
         }
         Ok(())
     };
     for payload in patterns {
-        if let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
-        {
+        if let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) {
             collect(
                 &payload.id,
                 &payload.operation_label,
@@ -304,13 +299,12 @@ pub(in crate::native) fn feature_construction_named_targets(
     }
     for profile in profiles {
         if let Some(joined) = JoinedPayload::from_source(
-            ctx,
             profile
                 .references
                 .iter()
                 .map(|reference| &reference.data_block),
             &blocks,
-        )? {
+        ) {
             collect(
                 &profile.id,
                 &profile.operation_label,
@@ -352,9 +346,9 @@ mod tests {
     #[test]
     fn named_target_rejects_missing_owner_during_native_check() {
         let record: FeatureConstructionNamedTarget = serde_json::from_str(WIRE).unwrap();
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             assert!(record
-                .validate_links(ctx, &cadmpeg_ir::native::NativeNamespace::default())
+                .validate_links(&cadmpeg_ir::native::NativeNamespace::default())
                 .is_err());
         });
     }
@@ -390,7 +384,7 @@ mod tests {
             wire["source_offsets"] = serde_json::json!([10, 15, 103]);
             let record: FeatureConstructionNamedTarget =
                 serde_json::from_value(wire.clone()).unwrap();
-            record.validate_links(ctx, &namespace).unwrap();
+            record.validate_links(&namespace).unwrap();
             for (field, value) in [
                 ("operation_label", serde_json::json!("nx:test:other#0")),
                 ("source_offsets", serde_json::json!([10, 15, 19])),
@@ -400,7 +394,7 @@ mod tests {
                 let mut wrong = wire.clone();
                 wrong[field] = value;
                 let record: FeatureConstructionNamedTarget = serde_json::from_value(wrong).unwrap();
-                assert!(record.validate_links(ctx, &namespace).is_err());
+                assert!(record.validate_links(&namespace).is_err());
             }
             wire["object_index"] = serde_json::json!(0);
             wire["raw_object_index"] = serde_json::json!("00");
@@ -410,7 +404,7 @@ mod tests {
             wire.as_object_mut().unwrap().remove("data_block");
             wire["source_offsets"] = serde_json::json!([10, 15, 102]);
             let record: FeatureConstructionNamedTarget = serde_json::from_value(wire).unwrap();
-            record.validate_links(ctx, &namespace).unwrap();
+            record.validate_links(&namespace).unwrap();
             let mut rows: Vec<serde_json::Value> = namespace.arenas()["data_blocks"]
                 .iter()
                 .map(|row| serde_json::to_value(row).unwrap())
@@ -420,7 +414,7 @@ mod tests {
             let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             wire["source_offsets"] = serde_json::json!([10, 15, 103]);
             let record: FeatureConstructionNamedTarget = serde_json::from_value(wire).unwrap();
-            assert!(record.validate_links(ctx, &namespace).is_err());
+            assert!(record.validate_links(&namespace).is_err());
         });
     }
 

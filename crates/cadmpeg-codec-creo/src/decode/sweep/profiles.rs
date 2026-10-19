@@ -53,7 +53,7 @@ fn sketch_geometry_endpoints(
             Some([seam, seam])
         }
         SketchGeometryDefinition::Nurbs { .. } => {
-            let Some(nurbs) = sketch_nurbs_curve(ctx, geometry)? else {
+            let Some(nurbs) = sketch_nurbs_curve(geometry) else {
                 return Ok(None);
             };
             let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
@@ -79,66 +79,36 @@ fn sketch_geometry_endpoints(
 }
 
 fn unique_profile_sketch<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'a CadIr,
     sketch_id: &SketchId,
-) -> Result<Option<&'a cadmpeg_ir::sketches::Sketch>, cadmpeg_core::CodecError> {
+) -> Option<&'a cadmpeg_ir::sketches::Sketch> {
     let mut found = None;
     for sketch in &ir.model.sketches {
-        let work = cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len())
-            .checked_add(cadmpeg_core::decode::u64_from_index(
-                sketch_id.as_str().len(),
-            ))
-            .and_then(|work| work.checked_add(1))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo profile sketch lookup", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "creo profile sketch lookup")?;
         if sketch.id == *sketch_id {
             if found.is_some() {
-                return Ok(None);
+                return None;
             }
             found = Some(sketch);
         }
     }
-    Ok(found)
+    found
 }
 
 fn unique_profile_entity<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'a CadIr,
     sketch_id: &SketchId,
     entity_id: &cadmpeg_ir::sketches::SketchEntityId,
-) -> Result<Option<&'a cadmpeg_ir::sketches::SketchEntity>, cadmpeg_core::CodecError> {
+) -> Option<&'a cadmpeg_ir::sketches::SketchEntity> {
     let mut found = None;
     for entity in &ir.model.sketch_entities {
-        let work = cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len())
-            .checked_add(cadmpeg_core::decode::u64_from_index(
-                sketch_id.as_str().len(),
-            ))
-            .and_then(|work| {
-                work.checked_add(cadmpeg_core::decode::u64_from_index(
-                    entity.id().as_str().len(),
-                ))
-            })
-            .and_then(|work| {
-                work.checked_add(cadmpeg_core::decode::u64_from_index(
-                    entity_id.as_str().len(),
-                ))
-            })
-            .and_then(|work| work.checked_add(1))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo profile entity lookup", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "creo profile entity lookup")?;
         if entity.sketch == *sketch_id && entity.id() == entity_id {
             if found.is_some() {
-                return Ok(None);
+                return None;
             }
             found = Some(entity);
         }
     }
-    Ok(found)
+    found
 }
 
 pub(in super::super) fn connected_sketch_profile_vertices(
@@ -150,19 +120,18 @@ pub(in super::super) fn connected_sketch_profile_vertices(
     impl ExactSizeIterator<Item = (usize, Vec<[f64; 2]>)> + std::fmt::Debug,
     cadmpeg_core::CodecError,
 > {
-    let Some(sketch) = unique_profile_sketch(ctx, ir, sketch_id)? else {
+    let Some(sketch) = unique_profile_sketch(ir, sketch_id) else {
         return Ok(Vec::new().into_iter());
     };
     let mut profiles = Vec::new();
     for (profile_index, profile) in sketch.profiles.iter().enumerate() {
-        ctx.charge_work(1, "creo connected profile row scan")?;
         if profile.is_empty() {
             continue;
         }
         let mut uses = Vec::new();
         let mut valid = true;
         for entity_use in profile {
-            let Some(geometry) = unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
+            let Some(geometry) = unique_profile_entity(ir, sketch_id, &entity_use.entity)
                 .map(|entity| source_carriers.sketch_geometry(entity))
             else {
                 valid = false;
@@ -175,33 +144,16 @@ pub(in super::super) fn connected_sketch_profile_vertices(
             if entity_use.reversed {
                 std::mem::swap(&mut start, &mut end);
             }
-            ctx.reserve_vec(&mut uses, 1, "creo connected profile uses")?;
             uses.push((start, end));
         }
         if !valid {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(uses.len())
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo connected profile scale", u64::MAX, u64::MAX)
-                })?,
-            "creo connected profile scale",
-        )?;
         let scale = uses
             .iter()
             .flat_map(|(start, end)| start.iter().chain(end))
             .map(|coordinate| coordinate.abs())
             .fold(1.0, f64::max);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(uses.len())
-                .checked_mul(6)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo connected profile closure", u64::MAX, u64::MAX)
-                })?,
-            "creo connected profile closure",
-        )?;
         if !uses.windows(2).all(|adjacent| {
             let end = adjacent[0].1;
             let next = adjacent[1].0;
@@ -216,21 +168,10 @@ pub(in super::super) fn connected_sketch_profile_vertices(
             continue;
         };
         let mut vertices = Vec::new();
-        ctx.reserve_vec(&mut vertices, uses.len(), "creo connected profile vertices")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(uses.len())
-                .checked_mul(2)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo connected profile projection", u64::MAX, u64::MAX)
-                })?,
-            "creo connected profile projection",
-        )?;
         vertices.extend(uses.iter().map(|(start, _)| *start));
         if (terminal[0] - first[0]).hypot(terminal[1] - first[1]) > EPS_ENDPOINT_AGREEMENT * scale {
-            ctx.reserve_vec(&mut vertices, 1, "creo connected profile vertices")?;
             vertices.push(terminal);
         }
-        ctx.reserve_vec(&mut profiles, 1, "creo connected profile rows")?;
         profiles.push((profile_index, vertices));
     }
     Ok(profiles.into_iter())
@@ -284,7 +225,6 @@ pub(in super::super) fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> Option<Pc
 }
 
 pub(in super::super) fn circular_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 2],
     radius: f64,
     start_angle: f64,
@@ -296,21 +236,16 @@ pub(in super::super) fn circular_pcurve(
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
     if !count.is_finite() || count > f64::from(MAX_CIRCULAR_PCURVE_SEGMENTS) {
-        let requested = cadmpeg_core::convert::truncate_f64_to_u64(count).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "creo circular pcurve segments",
-                u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
-                u64::MAX,
-            )
-        })?;
-        return Err(ctx.refuse_codec_limit(
-            "creo circular pcurve segments",
-            u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
-            requested,
-        ));
+        refusal.note(
+            format_args!("creo circular pcurve record for {record}"),
+            &format_args!(
+                "the arc span needs more than {MAX_CIRCULAR_PCURVE_SEGMENTS} quarter-turn segments"
+            ),
+        );
+        return Ok(None);
     }
     let segment_count = cadmpeg_core::convert::truncate_f64_to_usize(count).ok_or_else(|| {
-        ctx.refuse_codec_limit("creo circular pcurve segments", u64::MAX, u64::MAX)
+        cadmpeg_core::CodecError::malformed("Creo circular pcurve segments overflows")
     })?;
     let step = span
         / cadmpeg_core::convert::f64_from_index(segment_count).ok_or_else(|| {
@@ -318,33 +253,8 @@ pub(in super::super) fn circular_pcurve(
                 "Creo pcurve segment index cannot be represented exactly",
             )
         })?;
-    let pole_count = segment_count
-        .checked_mul(2)
-        .and_then(|n| n.checked_add(1))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("creo circular pcurve controls", u64::MAX, u64::MAX)
-        })?;
-    let knot_count = segment_count
-        .checked_mul(2)
-        .and_then(|n| n.checked_add(4))
-        .ok_or_else(|| ctx.refuse_codec_limit("creo circular pcurve knots", u64::MAX, u64::MAX))?;
-    let mut temporary_storage = ctx.reserve_scoped(0, "creo circular pcurve temporary lanes")?;
     let mut control_points = Vec::new();
-    temporary_storage.with_storage(|| {
-        ctx.reserve_vec(
-            &mut control_points,
-            pole_count,
-            "creo circular pcurve controls",
-        )
-    })?;
     let mut weights = Vec::new();
-    temporary_storage.with_storage(|| {
-        ctx.reserve_vec(&mut weights, pole_count, "creo circular pcurve weights")
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(pole_count),
-        "creo circular pcurve pole projection",
-    )?;
     for segment in 0..segment_count {
         let first = start_angle
             + cadmpeg_core::convert::f64_from_index(segment).ok_or_else(|| {
@@ -374,11 +284,6 @@ pub(in super::super) fn circular_pcurve(
         weights.push(1.0);
     }
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "creo circular pcurve knots")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(knot_count),
-        "creo circular pcurve knot projection",
-    )?;
     knots.extend([0.0; 3]);
     for boundary in 1..segment_count {
         knots.extend(
@@ -395,59 +300,48 @@ pub(in super::super) fn circular_pcurve(
     }
     knots.extend([1.0; 3]);
     let mut weighted = Vec::new();
-    ctx.reserve_vec(
-        &mut weighted,
-        pole_count,
-        "creo circular pcurve weighted poles",
-    )?;
-    let nurbs = (|| -> Result<Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
+    let nurbs = (|| -> Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError> {
         use cadmpeg_ir::geometry::nurbs::KnotVector;
         use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
         use cadmpeg_ir::scalar::NonZeroReal;
         use cadmpeg_ir::units::FinitePoint2;
 
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(pole_count), "creo circular pcurve weight scan")?;
         for (index, &weight) in weights.iter().enumerate() {
             if NonZeroReal::new(weight).is_none() {
-                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
-                    field: ctx.copy_retained_text("pcurve poles", "creo circular pcurve refusal field")?,
+                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                    field: "pcurve poles".to_owned(),
                     index,
                     weight,
-                }));
+                });
             }
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(pole_count), "creo circular pcurve weighted pole projection")?;
         for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
             let Some(point) = FinitePoint2::new(point) else {
-                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    ctx.copy_retained_text("control_points contains a non-finite point", "creo circular pcurve refusal text")?,
-                )));
+                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".to_owned(),
+                ));
             };
             let Some(admitted_weight) = NonZeroReal::new(weight) else {
-                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
-                    field: ctx.copy_retained_text("pcurve poles", "creo circular pcurve refusal field")?,
+                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                    field: "pcurve poles".to_owned(),
                     index,
                     weight,
-                }));
+                });
             };
             weighted.push(WeightedPole2 { point, weight: admitted_weight });
         }
-        let knots = match KnotVector::new(ctx, knots)? {
-            Ok(knots) => knots,
-            Err(error) => return Ok(Err(error)),
-        };
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx,
+        let knots = KnotVector::new(knots)?;
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
             2,
             knots,
             PcurveNurbsPoles::Rational { points: weighted },
             false,
         )
-    })()?;
+    })();
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
-            refusal.note_checked(
-                ctx,
+            refusal.note(
                 format_args!("creo circular pcurve record for {record}"),
                 &error,
             );
@@ -457,7 +351,6 @@ pub(in super::super) fn circular_pcurve(
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SketchGeometry,
     reversed: bool,
     start: [f64; 2],
@@ -472,13 +365,18 @@ pub(in super::super) fn extrusion_cap_pcurve(
             start_angle,
             end_angle,
         } => {
-            let [start_angle, end_angle] = if reversed {
-                [end_angle.get(), start_angle.get()]
+            // The cap traces the forward sweep the profile area and the edge
+            // curves use: at most one turn from the start angle. An arc stored
+            // within one turn keeps its stored end angle.
+            let start = start_angle.get();
+            let sweep = forward_arc_sweep(start, end_angle.get());
+            let end = if end_angle.get() - start == sweep {
+                end_angle.get()
             } else {
-                [start_angle.get(), end_angle.get()]
+                start + sweep
             };
+            let [start_angle, end_angle] = if reversed { [end, start] } else { [start, end] };
             circular_pcurve(
-                ctx,
                 [center.u, center.v],
                 radius.get(),
                 start_angle,
@@ -490,7 +388,6 @@ pub(in super::super) fn extrusion_cap_pcurve(
         SketchGeometryDefinition::Circle { center, radius } => {
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
             circular_pcurve(
-                ctx,
                 [center.u, center.v],
                 radius.get(),
                 start_angle,
@@ -500,7 +397,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
             )
         }
         SketchGeometryDefinition::Nurbs { .. } => {
-            sketch_nurbs_pcurve(ctx, geometry, reversed, record, refusal)
+            Ok(sketch_nurbs_pcurve(geometry, reversed, record, refusal))
         }
         _ => Ok(line_pcurve(start, end)),
     }
@@ -572,7 +469,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
         let end = entity.end();
         let contribution = match geometry {
             ProfileGeometry::Nurbs { .. } => {
-                let Some(sketch) = geometry.to_sketch(ctx)? else {
+                let Some(sketch) = geometry.to_sketch() else {
                     return Ok(None);
                 };
                 let Some(area) = nurbs_profile_signed_area_twice(ctx, &sketch, *reversed)? else {
@@ -670,11 +567,8 @@ impl ProfileGeometry {
         })
     }
 
-    pub(super) fn to_sketch(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-        Ok(SketchGeometry::try_from(match self {
+    pub(super) fn to_sketch(&self) -> Option<SketchGeometry> {
+        SketchGeometry::try_from(match self {
             Self::Line { start, end } => SketchGeometryDefinition::Line {
                 start: *start,
                 end: *end,
@@ -695,15 +589,10 @@ impl ProfileGeometry {
                 radius: *radius,
             },
             Self::Nurbs { curve } => SketchGeometryDefinition::Nurbs {
-                curve: super::nurbs::copy_pcurve_nurbs(
-                    ctx,
-                    curve,
-                    "creo profile sketch NURBS knots",
-                    "creo profile sketch NURBS poles",
-                )?,
+                curve: curve.clone(),
             },
         })
-        .ok())
+        .ok()
     }
 }
 
@@ -767,6 +656,7 @@ impl ValidatedProfile {
     fn new(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         entities: ExtrusionProfile,
+        work: &mut ProfileValidationWork,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         for entity in &entities {
             if matches!(entity.geometry, ProfileGeometry::Nurbs { .. }) {
@@ -777,39 +667,34 @@ impl ValidatedProfile {
                     .map(f64::abs)
                     .fold(1.0, f64::max);
                 let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
-                let Some(polyline) = profile_nurbs_polyline(ctx, entity, tolerance)? else {
-                    return Ok(None);
+                let polyline = match profile_nurbs_polyline(ctx, entity, tolerance)? {
+                    Ok(polyline) => polyline,
+                    Err(stop) => {
+                        work.sampling_stopped(stop);
+                        return Ok(None);
+                    }
                 };
-                let segments = polyline.points.windows(2);
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(segments.len()),
-                    "creo NURBS carrier segment bounds",
-                )?;
-                let (mut ordered, _storage) =
-                    ctx.with_scoped_storage("creo NURBS carrier segment bounds", || {
-                        ctx.collect_vec(
-                            segments.clone().enumerate().map(|(index, segment)| {
-                                (
-                                    index,
-                                    [segment[0], segment[1]],
-                                    segment[0][0].min(segment[1][0]),
-                                    segment[0][0].max(segment[1][0]),
-                                )
-                            }),
-                            "creo NURBS carrier segment bounds",
+                let segments = polyline.windows(2);
+                let mut ordered = segments
+                    .clone()
+                    .enumerate()
+                    .map(|(index, segment)| {
+                        (
+                            index,
+                            [segment[0], segment[1]],
+                            segment[0][0].min(segment[1][0]),
+                            segment[0][0].max(segment[1][0]),
                         )
-                    })?;
-                ctx.stable_sort_by(
-                    &mut ordered,
-                    |first, second| first.2.total_cmp(&second.2),
-                    |_| 0,
-                    "creo NURBS carrier bound ordering",
-                )?;
+                    })
+                    .collect::<Vec<_>>();
+                ordered.sort_by(|first, second| first.2.total_cmp(&second.2));
                 for (position, first) in ordered.iter().enumerate() {
                     for second in ordered.iter().skip(position + 1) {
-                        ctx.charge_work(1, "creo NURBS carrier self intersection pairs")?;
                         if second.2 > first.3 + tolerance {
                             break;
+                        }
+                        if !work.charge(1) {
+                            return Ok(None);
                         }
                         if first.1[0][1].min(first.1[1][1])
                             > second.1[0][1].max(second.1[1][1]) + tolerance
@@ -827,7 +712,7 @@ impl ValidatedProfile {
                             (second.0 == first.0 + 1).then_some(first.1[1]),
                             (first.0 == 0
                                 && second.0 + 1 == segments.len()
-                                && polyline.points.first() == polyline.points.last())
+                                && polyline.first() == polyline.last())
                             .then_some(first.1[0]),
                         ];
                         if segments_intersect(first.1, second.1, tolerance, contacts) {
@@ -857,7 +742,7 @@ pub(in super::super) fn resolved_sketch_profiles(
     sketch_id: &SketchId,
     minimum_entity_count: usize,
 ) -> Result<Option<Vec<ExtrusionProfile>>, cadmpeg_core::CodecError> {
-    let Some(sketch) = unique_profile_sketch(ctx, ir, sketch_id)? else {
+    let Some(sketch) = unique_profile_sketch(ir, sketch_id) else {
         return Ok(None);
     };
     if sketch.profiles.is_empty() {
@@ -865,55 +750,32 @@ pub(in super::super) fn resolved_sketch_profiles(
     }
     let mut profiles = Vec::new();
     for profile in &sketch.profiles {
-        ctx.charge_work(1, "creo resolved profile row scan")?;
         let mut geometries = Vec::new();
         for entity_use in profile {
-            let Some(entity) = unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
-            else {
+            let Some(entity) = unique_profile_entity(ir, sketch_id, &entity_use.entity) else {
                 return Ok(None);
             };
             let source_geometry = source_carriers.sketch_geometry(entity);
             let source_geometry = match source_geometry.definition() {
-                SketchGeometryDefinition::Nurbs { curve } => {
-                    let operation = "creo resolved profile NURBS copy";
-                    SketchGeometry::nurbs(curve.try_clone_for_decode(ctx, operation)?)
-                }
+                SketchGeometryDefinition::Nurbs { curve } => SketchGeometry::nurbs(curve.clone()),
                 SketchGeometryDefinition::Line { .. }
                 | SketchGeometryDefinition::Arc { .. }
-                | SketchGeometryDefinition::Circle { .. } => source_geometry
-                    .try_clone_for_decode(ctx, "creo resolved analytic profile copy")?,
+                | SketchGeometryDefinition::Circle { .. } => source_geometry.clone(),
                 _ => return Ok(None),
             };
             let Some(row) = ProfileEntity::new(ctx, source_geometry, entity_use.reversed)? else {
                 return Ok(None);
             };
-            ctx.reserve_vec(&mut geometries, 1, "creo resolved profile entities")?;
             geometries.push(row);
         }
         if geometries.len() < minimum_entity_count {
             return Ok(None);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(geometries.len())
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo resolved profile scale", u64::MAX, u64::MAX)
-                })?,
-            "creo resolved profile scale",
-        )?;
         let scale = geometries
             .iter()
             .flat_map(|entity| entity.start().into_iter().chain(entity.end()))
             .map(f64::abs)
             .fold(1.0, f64::max);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(geometries.len())
-                .checked_mul(6)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo resolved profile closure", u64::MAX, u64::MAX)
-                })?,
-            "creo resolved profile closure",
-        )?;
         if !geometries.iter().enumerate().all(|(index, entity)| {
             let end = entity.end();
             let next = geometries[(index + 1) % geometries.len()].start();
@@ -921,7 +783,6 @@ pub(in super::super) fn resolved_sketch_profiles(
         }) {
             return Ok(None);
         }
-        ctx.reserve_vec(&mut profiles, 1, "creo resolved profile rows")?;
         profiles.push(geometries);
     }
     Ok(Some(profiles))
@@ -1200,7 +1061,7 @@ struct NurbsProfileSpan {
 
 fn nurbs_profile_point(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_>,
     nurbs: &NurbsCurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -1216,47 +1077,56 @@ fn nurbs_profile_point(
 
 const MAX_NURBS_PROFILE_POINTS: usize = 262_145;
 
+/// Why a NURBS profile segment has no polyline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProfileSamplingStop {
+    /// The curve does not evaluate to a finite polyline.
+    Unresolved,
+    /// Sampling reached a local cap.
+    Capped { bound: &'static str, value: usize },
+}
+
+impl ProfileSamplingStop {
+    fn cap_reason(self) -> Option<String> {
+        match self {
+            Self::Unresolved => None,
+            Self::Capped { bound, value } => Some(format!(
+                "NURBS profile sampling stopped at {bound} ({value})"
+            )),
+        }
+    }
+}
+
 fn append_nurbs_profile_point(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     points: &mut Vec<[f64; 2]>,
     point: [f64; 2],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), ProfileSamplingStop> {
+    // A profile that needs more points than the ceiling is not sampled.
     if points.len() >= MAX_NURBS_PROFILE_POINTS {
-        let requested = cadmpeg_core::decode::u64_from_index(points.len())
-            .checked_add(1)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo NURBS profile point ceiling", u64::MAX, u64::MAX)
-            })?;
-        return Err(ctx.refuse_codec_limit(
-            "creo NURBS profile point ceiling",
-            cadmpeg_core::decode::u64_from_index(MAX_NURBS_PROFILE_POINTS),
-            requested,
-        ));
+        return Err(ProfileSamplingStop::Capped {
+            bound: "MAX_NURBS_PROFILE_POINTS",
+            value: MAX_NURBS_PROFILE_POINTS,
+        });
     }
-    ctx.reserve_scoped_vec(storage, points, 1, "creo NURBS profile polyline points")?;
     points.push(point);
     Ok(())
 }
 
 fn append_nurbs_profile_span(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_>,
     nurbs: &NurbsCurve,
     span: &NurbsProfileSpan,
     points: &mut Vec<[f64; 2]>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-) -> Result<Option<()>, cadmpeg_core::CodecError> {
+) -> Result<Result<(), ProfileSamplingStop>, cadmpeg_core::CodecError> {
     const MAX_DEPTH: usize = 24;
     let _depth = ctx.enter_nested("creo NURBS profile sampling depth")?;
-    ctx.charge_work(1, "creo NURBS profile sampling spans")?;
     if !(span.start.is_finite() && span.end.is_finite() && span.start < span.end) {
-        return Ok(None);
+        return Ok(Err(ProfileSamplingStop::Unresolved));
     }
     let middle = span.start + (span.end - span.start) * 0.5;
     if middle == span.start || middle == span.end {
-        append_nurbs_profile_point(ctx, storage, points, span.end_point)?;
-        return Ok(Some(()));
+        return Ok(append_nurbs_profile_point(points, span.end_point));
     }
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
@@ -1265,35 +1135,26 @@ fn append_nurbs_profile_span(
         nurbs_profile_point(ctx, evaluator, nurbs, first_quarter)?,
         nurbs_profile_point(ctx, evaluator, nurbs, third_quarter)?,
     ) else {
-        return Ok(None);
+        return Ok(Err(ProfileSamplingStop::Unresolved));
     };
     let chord = [span.start_point, span.end_point];
     let flatness = planar_point_segment_distance(first_quarter_point, chord)
         .max(planar_point_segment_distance(middle_point, chord))
         .max(planar_point_segment_distance(third_quarter_point, chord));
     if !(flatness.is_finite() && span.tolerance.is_finite() && span.tolerance > 0.0) {
-        return Ok(None);
+        return Ok(Err(ProfileSamplingStop::Unresolved));
     }
     if flatness <= span.tolerance {
-        append_nurbs_profile_point(ctx, storage, points, span.end_point)?;
-        return Ok(Some(()));
+        return Ok(append_nurbs_profile_point(points, span.end_point));
     }
+    // A span that is not flat at the subdivision ceiling is not sampled.
     if span.depth >= MAX_DEPTH {
-        return Err(ctx.refuse_codec_limit(
-            "creo NURBS profile sampling ceiling",
-            cadmpeg_core::decode::u64_from_index(MAX_DEPTH),
-            cadmpeg_core::decode::u64_from_index(span.depth)
-                .checked_add(1)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "creo NURBS profile sampling ceiling",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
-        ));
+        return Ok(Err(ProfileSamplingStop::Capped {
+            bound: "MAX_DEPTH",
+            value: MAX_DEPTH,
+        }));
     }
-    if append_nurbs_profile_span(
+    if let Err(stop) = append_nurbs_profile_span(
         ctx,
         evaluator,
         nurbs,
@@ -1306,11 +1167,8 @@ fn append_nurbs_profile_span(
             depth: span.depth + 1,
         },
         points,
-        storage,
-    )?
-    .is_none()
-    {
-        return Ok(None);
+    )? {
+        return Ok(Err(stop));
     }
     append_nurbs_profile_span(
         ctx,
@@ -1325,31 +1183,26 @@ fn append_nurbs_profile_span(
             depth: span.depth + 1,
         },
         points,
-        storage,
     )
 }
 
-struct ProfilePolyline<'a> {
-    points: Vec<[f64; 2]>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'a>,
-}
-
-fn nurbs_profile_polyline<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+fn nurbs_profile_polyline(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     nurbs: &NurbsCurve,
     tolerance: f64,
-) -> Result<Option<ProfilePolyline<'ctx>>, cadmpeg_core::CodecError> {
+) -> Result<Result<Vec<[f64; 2]>, ProfileSamplingStop>, cadmpeg_core::CodecError> {
     let Some(range) = nurbs_intrinsic_parameter_range(nurbs) else {
-        return Ok(None);
+        return Ok(Err(ProfileSamplingStop::Unresolved));
     };
-    let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, nurbs)?;
+    let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(nurbs);
     let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
     let Some(first) = nurbs_profile_point(ctx, &mut evaluator, nurbs, lower)? else {
-        return Ok(None);
+        return Ok(Err(ProfileSamplingStop::Unresolved));
     };
     let mut points = Vec::new();
-    let mut storage = ctx.reserve_scoped(0, "creo NURBS profile polyline points")?;
-    append_nurbs_profile_point(ctx, &mut storage, &mut points, first)?;
+    if let Err(stop) = append_nurbs_profile_point(&mut points, first) {
+        return Ok(Err(stop));
+    }
     for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
@@ -1360,12 +1213,14 @@ fn nurbs_profile_polyline<'ctx>(
             nurbs_profile_point(ctx, &mut evaluator, nurbs, start)?,
             nurbs_profile_point(ctx, &mut evaluator, nurbs, end)?,
         ) else {
-            return Ok(None);
+            return Ok(Err(ProfileSamplingStop::Unresolved));
         };
         if points.last().copied() != Some(start_point) {
-            append_nurbs_profile_point(ctx, &mut storage, &mut points, start_point)?;
+            if let Err(stop) = append_nurbs_profile_point(&mut points, start_point) {
+                return Ok(Err(stop));
+            }
         }
-        if append_nurbs_profile_span(
+        if let Err(stop) = append_nurbs_profile_span(
             ctx,
             &mut evaluator,
             nurbs,
@@ -1378,29 +1233,27 @@ fn nurbs_profile_polyline<'ctx>(
                 depth: 0,
             },
             &mut points,
-            &mut storage,
-        )?
-        .is_none()
-        {
-            return Ok(None);
+        )? {
+            return Ok(Err(stop));
         }
     }
-    Ok((points.len() >= 2).then_some(ProfilePolyline {
-        points,
-        _storage: storage,
-    }))
+    Ok(if points.len() >= 2 {
+        Ok(points)
+    } else {
+        Err(ProfileSamplingStop::Unresolved)
+    })
 }
 
-fn profile_nurbs_polyline<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+fn profile_nurbs_polyline(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &ProfileEntity,
     tolerance: f64,
-) -> Result<Option<ProfilePolyline<'ctx>>, cadmpeg_core::CodecError> {
-    let Some(sketch) = segment.geometry.to_sketch(ctx)? else {
-        return Ok(None);
+) -> Result<Result<Vec<[f64; 2]>, ProfileSamplingStop>, cadmpeg_core::CodecError> {
+    let Some(sketch) = segment.geometry.to_sketch() else {
+        return Ok(Err(ProfileSamplingStop::Unresolved));
     };
-    let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed)? else {
-        return Ok(None);
+    let Some(nurbs) = oriented_sketch_nurbs_curve(&sketch, segment.reversed) else {
+        return Ok(Err(ProfileSamplingStop::Unresolved));
     };
     nurbs_profile_polyline(ctx, &nurbs, tolerance)
 }
@@ -1410,7 +1263,7 @@ fn nurbs_profile_signed_area_twice(
     geometry: &SketchGeometry,
     reversed: bool,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
+    let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, reversed) else {
         return Ok(None);
     };
     let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
@@ -1461,29 +1314,32 @@ fn nurbs_profile_signed_area_twice(
     Ok(area_twice.is_finite().then_some(area_twice))
 }
 
+#[cfg(test)]
 fn polylines_intersect(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     first: &[[f64; 2]],
     second: &[[f64; 2]],
     tolerance: f64,
     contacts: [Option<[f64; 2]>; 2],
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> bool {
     for first_segment in first.windows(2) {
         for second_segment in second.windows(2) {
-            ctx.charge_work(1, "creo profile polyline intersection pairs")?;
             if segments_intersect(
                 [first_segment[0], first_segment[1]],
                 [second_segment[0], second_segment[1]],
                 tolerance,
                 contacts,
             ) {
-                return Ok(true);
+                return true;
             }
         }
     }
-    Ok(false)
+    false
 }
 
+/// Whether two profile segments meet away from `contacts`, one segment pair
+/// at a time. [`ordered_extrusion_profiles`] answers the same question for
+/// every pair of a profile set at once.
+#[cfg(test)]
 pub(in super::super) fn profile_segments_intersect(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     first: &ProfileEntity,
@@ -1491,17 +1347,15 @@ pub(in super::super) fn profile_segments_intersect(
     tolerance: f64,
     contacts: [Option<[f64; 2]>; 2],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    ctx.charge_work(1, "creo profile segment intersection")?;
     let first_nurbs = matches!(first.geometry, ProfileGeometry::Nurbs { .. });
     let second_nurbs = matches!(second.geometry, ProfileGeometry::Nurbs { .. });
     if first_nurbs || second_nurbs {
         if first_nurbs {
             if let Some(arc) = profile_arc(second) {
-                let Some(polyline) = profile_nurbs_polyline(ctx, first, tolerance)? else {
+                let Ok(polyline) = profile_nurbs_polyline(ctx, first, tolerance)? else {
                     return Ok(false);
                 };
-                for segment in polyline.points.windows(2) {
-                    ctx.charge_work(1, "creo profile NURBS arc intersection segments")?;
+                for segment in polyline.windows(2) {
                     if line_arc_intersect([segment[0], segment[1]], arc, tolerance, contacts) {
                         return Ok(true);
                     }
@@ -1511,11 +1365,10 @@ pub(in super::super) fn profile_segments_intersect(
         }
         if second_nurbs {
             if let Some(arc) = profile_arc(first) {
-                let Some(polyline) = profile_nurbs_polyline(ctx, second, tolerance)? else {
+                let Ok(polyline) = profile_nurbs_polyline(ctx, second, tolerance)? else {
                     return Ok(false);
                 };
-                for segment in polyline.points.windows(2) {
-                    ctx.charge_work(1, "creo profile NURBS arc intersection segments")?;
+                for segment in polyline.windows(2) {
                     if line_arc_intersect([segment[0], segment[1]], arc, tolerance, contacts) {
                         return Ok(true);
                     }
@@ -1526,7 +1379,7 @@ pub(in super::super) fn profile_segments_intersect(
         let first_line = [first.start(), first.end()];
         let second_line = [second.start(), second.end()];
         let first_polyline = if first_nurbs {
-            profile_nurbs_polyline(ctx, first, tolerance)?
+            profile_nurbs_polyline(ctx, first, tolerance)?.ok()
         } else {
             None
         };
@@ -1534,24 +1387,23 @@ pub(in super::super) fn profile_segments_intersect(
             return Ok(true);
         }
         let second_polyline = if second_nurbs {
-            profile_nurbs_polyline(ctx, second, tolerance)?
+            profile_nurbs_polyline(ctx, second, tolerance)?.ok()
         } else {
             None
         };
         if second_nurbs && second_polyline.is_none() {
             return Ok(true);
         }
-        return polylines_intersect(
-            ctx,
+        return Ok(polylines_intersect(
             first_polyline
                 .as_ref()
-                .map_or(first_line.as_slice(), |line| line.points.as_slice()),
+                .map_or(first_line.as_slice(), Vec::as_slice),
             second_polyline
                 .as_ref()
-                .map_or(second_line.as_slice(), |line| line.points.as_slice()),
+                .map_or(second_line.as_slice(), Vec::as_slice),
             tolerance,
             contacts,
-        );
+        ));
     }
     Ok(match (profile_arc(first), profile_arc(second)) {
         (None, None) => segments_intersect(
@@ -1570,73 +1422,475 @@ pub(in super::super) fn profile_segments_intersect(
     })
 }
 
+/// An axis-aligned box. An empty box has inverted, infinite corners.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PieceBounds {
+    min: [f64; 2],
+    max: [f64; 2],
+}
+
+impl PieceBounds {
+    const EMPTY: Self = Self {
+        min: [f64::INFINITY; 2],
+        max: [f64::NEG_INFINITY; 2],
+    };
+
+    fn include(&mut self, point: [f64; 2]) {
+        for ((min, max), value) in self.min.iter_mut().zip(&mut self.max).zip(point) {
+            *min = min.min(value);
+            *max = max.max(value);
+        }
+    }
+
+    fn union(mut self, other: Self) -> Self {
+        self.include(other.min);
+        self.include(other.max);
+        self
+    }
+
+    fn widened(self, margin: f64) -> Self {
+        Self {
+            min: self.min.map(|value| value - margin),
+            max: self.max.map(|value| value + margin),
+        }
+    }
+
+    fn contains(self, point: [f64; 2]) -> bool {
+        (0..2).all(|axis| self.min[axis] <= point[axis] && point[axis] <= self.max[axis])
+    }
+
+    fn covers(self, other: Self) -> bool {
+        self.contains(other.min) && self.contains(other.max)
+    }
+
+    fn overlaps(self, other: Self) -> bool {
+        (0..2).all(|axis| self.min[axis] <= other.max[axis] && other.min[axis] <= self.max[axis])
+    }
+}
+
+/// A straight piece of a profile segment, or a whole arc segment.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ProfilePiece {
+    Line([[f64; 2]; 2]),
+    Arc(([f64; 2], f64, f64, f64)),
+}
+
+impl ProfilePiece {
+    /// Bounds of the piece; an arc is bounded by its whole circle.
+    fn bounds(self) -> PieceBounds {
+        let mut bounds = PieceBounds::EMPTY;
+        match self {
+            Self::Line([start, end]) => {
+                bounds.include(start);
+                bounds.include(end);
+            }
+            Self::Arc((center, radius, _, _)) => {
+                let radius = radius.abs();
+                bounds.include([center[0] - radius, center[1] - radius]);
+                bounds.include([center[0] + radius, center[1] + radius]);
+            }
+        }
+        bounds
+    }
+
+    /// Whether the pieces of two distinct segments meet away from
+    /// `contacts`, with `self` from the segment earlier in profile order.
+    fn intersects(self, other: Self, tolerance: f64, contacts: [Option<[f64; 2]>; 2]) -> bool {
+        match (self, other) {
+            (Self::Line(first), Self::Line(second)) => {
+                segments_intersect(first, second, tolerance, contacts)
+            }
+            (Self::Line(line), Self::Arc(arc)) | (Self::Arc(arc), Self::Line(line)) => {
+                line_arc_intersect(line, arc, tolerance, contacts)
+            }
+            (Self::Arc(first), Self::Arc(second)) => {
+                arcs_intersect(first, second, tolerance, contacts)
+            }
+        }
+    }
+}
+
+/// The pieces one profile's winding number walks, with their bounds and the
+/// segment endpoints widened by the profile tolerance.
+///
+/// A point outside the bounds is separated from every piece by a line, so
+/// the angle it sees the profile through stays below a half turn and the
+/// profile does not strictly contain it.
+struct ContainmentShape {
+    pieces: Vec<ProfilePiece>,
+    bounds: PieceBounds,
+    tolerance: f64,
+}
+
+impl ContainmentShape {
+    fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        profile: &ExtrusionProfile,
+    ) -> Result<Result<Self, ProfileSamplingStop>, cadmpeg_core::CodecError> {
+        let scale = profile
+            .iter()
+            .flat_map(|entity| entity.start().into_iter().chain(entity.end()))
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
+        let mut pieces = Vec::new();
+        let mut bounds = PieceBounds::EMPTY;
+        for segment in profile {
+            bounds.include(segment.start());
+            bounds.include(segment.end());
+            if matches!(segment.geometry, ProfileGeometry::Nurbs { .. }) {
+                match profile_nurbs_polyline(ctx, segment, tolerance)? {
+                    Ok(polyline) => pieces.extend(
+                        polyline
+                            .windows(2)
+                            .map(|pair| ProfilePiece::Line([pair[0], pair[1]])),
+                    ),
+                    Err(stop) => return Ok(Err(stop)),
+                }
+            } else if let Some(arc) = profile_arc(segment) {
+                pieces.push(ProfilePiece::Arc(arc));
+            } else {
+                pieces.push(ProfilePiece::Line([segment.start(), segment.end()]));
+            }
+        }
+        for piece in &pieces {
+            bounds = bounds.union(piece.bounds());
+        }
+        Ok(Ok(Self {
+            pieces,
+            bounds: bounds.widened(tolerance),
+            tolerance,
+        }))
+    }
+
+    fn strictly_contains(&self, point: [f64; 2]) -> bool {
+        let mut winding = 0.0;
+        for piece in &self.pieces {
+            match *piece {
+                ProfilePiece::Line([first, second]) => {
+                    let first = [first[0] - point[0], first[1] - point[1]];
+                    let second = [second[0] - point[0], second[1] - point[1]];
+                    winding += first[0]
+                        .mul_add(second[1], -(first[1] * second[0]))
+                        .atan2(first[0].mul_add(second[0], first[1] * second[1]));
+                }
+                ProfilePiece::Arc((center, radius, start, delta)) => {
+                    let relative = [point[0] - center[0], point[1] - center[1]];
+                    let distance = relative[0].hypot(relative[1]);
+                    if !distance.is_finite()
+                        || point_on_profile_arc(
+                            point,
+                            (center, radius, start, delta),
+                            self.tolerance,
+                        )
+                    {
+                        return false;
+                    }
+                    let correction = if distance < radius {
+                        let [x, y] = relative.map(|v| v / radius);
+                        let angle = |t: f64| {
+                            (x * t.sin() - y * t.cos()).atan2(1.0 - x * t.cos() - y * t.sin())
+                        };
+                        delta + angle(start + delta) - angle(start)
+                    } else {
+                        let [x, y] = relative.map(|v| -v / distance);
+                        let ratio = radius / distance;
+                        let angle = |t: f64| {
+                            let a = x + ratio * t.cos();
+                            let b = y + ratio * t.sin();
+                            (x * b - y * a).atan2(x * a + y * b)
+                        };
+                        angle(start + delta) - angle(start)
+                    };
+                    if !correction.is_finite() {
+                        return false;
+                    }
+                    winding += correction;
+                }
+            }
+        }
+        winding.abs() > std::f64::consts::PI
+    }
+}
+
+#[cfg(test)]
 pub(in super::super) fn profile_strictly_contains(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     profile: &ExtrusionProfile,
     point: [f64; 2],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let scale = profile
-        .iter()
-        .flat_map(|entity| entity.start().into_iter().chain(entity.end()))
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
-    let mut winding = 0.0;
-    for segment in profile {
-        let mut accumulate = |first: [f64; 2], second: [f64; 2]| {
-            let first = [first[0] - point[0], first[1] - point[1]];
-            let second = [second[0] - point[0], second[1] - point[1]];
-            winding += first[0]
-                .mul_add(second[1], -(first[1] * second[0]))
-                .atan2(first[0].mul_add(second[0], first[1] * second[1]));
-        };
-        if matches!(segment.geometry, ProfileGeometry::Nurbs { .. }) {
-            let Some(polyline) = profile_nurbs_polyline(ctx, segment, tolerance)? else {
-                return Ok(false);
-            };
-            for pair in polyline.points.windows(2) {
-                ctx.charge_work(1, "creo profile NURBS winding segments")?;
-                accumulate(pair[0], pair[1]);
-            }
-        } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
-            ctx.charge_work(4, "creo profile arc winding pieces")?;
-            let relative = [point[0] - center[0], point[1] - center[1]];
-            let distance = relative[0].hypot(relative[1]);
-            if !distance.is_finite()
-                || point_on_profile_arc(point, (center, radius, start, delta), tolerance)
-            {
-                return Ok(false);
-            }
-            let correction = if distance < radius {
-                let [x, y] = relative.map(|v| v / radius);
-                let angle =
-                    |t: f64| (x * t.sin() - y * t.cos()).atan2(1.0 - x * t.cos() - y * t.sin());
-                delta + angle(start + delta) - angle(start)
-            } else {
-                let [x, y] = relative.map(|v| -v / distance);
-                let ratio = radius / distance;
-                let angle = |t: f64| {
-                    let a = x + ratio * t.cos();
-                    let b = y + ratio * t.sin();
-                    (x * b - y * a).atan2(x * a + y * b)
-                };
-                angle(start + delta) - angle(start)
-            };
-            if !correction.is_finite() {
-                return Ok(false);
-            }
-            winding += correction;
-        } else {
-            ctx.charge_work(1, "creo profile line winding segments")?;
-            accumulate(segment.start(), segment.end());
-        }
-    }
-    Ok(winding.abs() > std::f64::consts::PI)
+    Ok(ContainmentShape::new(ctx, profile)?.is_ok_and(|shape| shape.strictly_contains(point)))
 }
 
+/// Work units one profile set's validation may spend per piece it compares.
+const PROFILE_VALIDATION_WORK_PER_PIECE: usize = 256;
+/// Work units any profile set's validation may spend.
+const PROFILE_VALIDATION_WORK_FLOOR: usize = 1 << 22;
+
+/// Local work of one profile set's validation: the piece pairs and point
+/// candidates its sweeps visit, the pieces its containment tests walk, and
+/// the NURBS self-intersection pairs. The first cap that stops validation
+/// is kept as the reason.
+struct ProfileValidationWork {
+    budget: cadmpeg_core::decode::WorkBudget,
+    limit: usize,
+    capped: Option<String>,
+}
+
+impl ProfileValidationWork {
+    /// The work of a set with `pieces` pieces, or `None` when its limit is
+    /// not a `usize`.
+    fn new(pieces: usize) -> Option<Self> {
+        let limit = pieces
+            .checked_mul(PROFILE_VALIDATION_WORK_PER_PIECE)?
+            .max(PROFILE_VALIDATION_WORK_FLOOR);
+        Some(Self {
+            budget: cadmpeg_core::decode::WorkBudget::new(limit),
+            limit,
+            capped: None,
+        })
+    }
+
+    fn charge(&mut self, work: usize) -> bool {
+        if self.budget.charge_by(work) {
+            return true;
+        }
+        self.capped.get_or_insert_with(|| {
+            format!(
+                "profile validation reached its local work limit of {} units \
+                 (PROFILE_VALIDATION_WORK_PER_PIECE ({PROFILE_VALIDATION_WORK_PER_PIECE}) per \
+                 compared piece, at least PROFILE_VALIDATION_WORK_FLOOR \
+                 ({PROFILE_VALIDATION_WORK_FLOOR}))",
+                self.limit
+            )
+        });
+        false
+    }
+
+    fn sampling_stopped(&mut self, stop: ProfileSamplingStop) {
+        if self.capped.is_none() {
+            self.capped = stop.cap_reason();
+        }
+    }
+}
+
+/// One piece of a profile set with its segment's index in profile order and
+/// its bounds widened by the set tolerance.
+#[derive(Debug, Clone, Copy)]
+struct SourcedPiece {
+    source: usize,
+    piece: ProfilePiece,
+    bounds: PieceBounds,
+}
+
+impl SourcedPiece {
+    fn new(source: usize, piece: ProfilePiece, tolerance: f64) -> Self {
+        Self {
+            source,
+            piece,
+            bounds: piece.bounds().widened(tolerance),
+        }
+    }
+}
+
+/// The pieces the intersection test compares for every segment of a profile
+/// set, sampling each NURBS segment once.
+///
+/// An unresolved NURBS segment meets every other segment that is not an arc,
+/// so it stops the set unless the other segments are arcs; then it has no
+/// pieces.
+fn profile_set_pieces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    profiles: &[ExtrusionProfile],
+    tolerance: f64,
+) -> Result<Result<Vec<SourcedPiece>, ProfileSamplingStop>, cadmpeg_core::CodecError> {
+    let mut pieces = Vec::new();
+    let mut unresolved = false;
+    for (source, segment) in profiles.iter().flatten().enumerate() {
+        if matches!(segment.geometry, ProfileGeometry::Nurbs { .. }) {
+            match profile_nurbs_polyline(ctx, segment, tolerance)? {
+                Ok(polyline) => pieces.extend(polyline.windows(2).map(|pair| {
+                    SourcedPiece::new(source, ProfilePiece::Line([pair[0], pair[1]]), tolerance)
+                })),
+                Err(ProfileSamplingStop::Unresolved) => unresolved = true,
+                Err(stop) => return Ok(Err(stop)),
+            }
+        } else if let Some(arc) = profile_arc(segment) {
+            pieces.push(SourcedPiece::new(source, ProfilePiece::Arc(arc), tolerance));
+        } else {
+            pieces.push(SourcedPiece::new(
+                source,
+                ProfilePiece::Line([segment.start(), segment.end()]),
+                tolerance,
+            ));
+        }
+    }
+    let unarced = profiles
+        .iter()
+        .flatten()
+        .filter(|segment| profile_arc(segment).is_none())
+        .count();
+    if unresolved && unarced >= 2 {
+        return Ok(Err(ProfileSamplingStop::Unresolved));
+    }
+    Ok(Ok(pieces))
+}
+
+/// The endpoints two segments of a profile set may share: the joint of
+/// consecutive segments and the closing joint of a profile.
+fn segment_contacts(
+    profiles: &[ExtrusionProfile],
+    locations: &[(usize, usize)],
+    first: usize,
+    second: usize,
+) -> [Option<[f64; 2]>; 2] {
+    let ((first_profile, first_index), (second_profile, second_index)) =
+        (locations[first], locations[second]);
+    if first_profile != second_profile {
+        return [None, None];
+    }
+    let profile = &profiles[first_profile];
+    [
+        (second_index == first_index + 1).then_some(profile[first_index].end()),
+        (first_index == 0 && second_index + 1 == profile.len())
+            .then_some(profile[first_index].start()),
+    ]
+}
+
+/// Whether two segments of the set meet away from their shared endpoints, or
+/// the work ran out.
+///
+/// The sweep visits only piece pairs whose widened x ranges overlap and tests
+/// only pairs whose widened bounds overlap; a pair that meets within the
+/// tolerance always has overlapping widened bounds.
+fn profile_set_intersects(
+    profiles: &[ExtrusionProfile],
+    pieces: &mut [SourcedPiece],
+    tolerance: f64,
+    work: &mut ProfileValidationWork,
+) -> bool {
+    let locations = profiles
+        .iter()
+        .enumerate()
+        .flat_map(|(profile, segments)| (0..segments.len()).map(move |index| (profile, index)))
+        .collect::<Vec<_>>();
+    pieces.sort_by(|first, second| first.bounds.min[0].total_cmp(&second.bounds.min[0]));
+    for (position, first) in pieces.iter().enumerate() {
+        for second in &pieces[position + 1..] {
+            if second.bounds.min[0] > first.bounds.max[0] {
+                break;
+            }
+            if !work.charge(1) {
+                return true;
+            }
+            if first.source == second.source || !first.bounds.overlaps(second.bounds) {
+                continue;
+            }
+            let (first, second) = if first.source < second.source {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            let contacts = segment_contacts(profiles, &locations, first.source, second.source);
+            if first.piece.intersects(second.piece, tolerance, contacts) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The one profile that strictly contains the first point of every other
+/// profile, or `None` when there is not exactly one or the work ran out.
+fn sole_outer_profile(
+    first_points: &[[f64; 2]],
+    shapes: &[Option<ContainmentShape>],
+    work: &mut ProfileValidationWork,
+) -> Option<usize> {
+    let mut first_point_bounds = PieceBounds::EMPTY;
+    for point in first_points {
+        first_point_bounds.include(*point);
+    }
+    let mut outer = None;
+    for (candidate, shape) in shapes.iter().enumerate() {
+        // A shape's bounds hold its own first point, so a first point outside
+        // them belongs to another profile that the shape cannot contain.
+        let Some(shape) = shape
+            .as_ref()
+            .filter(|shape| shape.bounds.covers(first_point_bounds))
+        else {
+            continue;
+        };
+        let mut contains_all = true;
+        for (index, point) in first_points.iter().enumerate() {
+            if index == candidate {
+                continue;
+            }
+            if !work.charge(cadmpeg_core::decode::work_units(shape.pieces.len())) {
+                return None;
+            }
+            if !shape.strictly_contains(*point) {
+                contains_all = false;
+                break;
+            }
+        }
+        if contains_all && outer.replace(candidate).is_some() {
+            return None;
+        }
+    }
+    outer
+}
+
+/// Whether a profile other than `outer` strictly contains the first point of
+/// another such profile, or the work ran out.
+fn inner_profiles_nest(
+    first_points: &[[f64; 2]],
+    shapes: &[Option<ContainmentShape>],
+    outer: usize,
+    work: &mut ProfileValidationWork,
+) -> bool {
+    let mut by_x = (0..first_points.len())
+        .filter(|index| *index != outer)
+        .collect::<Vec<_>>();
+    by_x.sort_by(|first, second| first_points[*first][0].total_cmp(&first_points[*second][0]));
+    for (container, shape) in shapes.iter().enumerate() {
+        let Some(shape) = shape.as_ref().filter(|_| container != outer) else {
+            continue;
+        };
+        let from = by_x.partition_point(|index| first_points[*index][0] < shape.bounds.min[0]);
+        for &other in &by_x[from..] {
+            let point = first_points[other];
+            if point[0] > shape.bounds.max[0] {
+                break;
+            }
+            if !work.charge(1) {
+                return true;
+            }
+            if other == container || !shape.bounds.contains(point) {
+                continue;
+            }
+            if !work.charge(cadmpeg_core::decode::work_units(shape.pieces.len())) {
+                return true;
+            }
+            if shape.strictly_contains(point) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Order a profile set as one outer profile followed by its holes, when no
+/// two segments meet away from their shared endpoints, exactly one profile
+/// contains the others, no hole contains another, and every hole winds
+/// against the outer profile.
+///
+/// Validation that stops at a local cap returns `None` and records the cap in
+/// `refusal`.
 pub(in super::super) fn ordered_extrusion_profiles(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     profiles: Vec<ExtrusionProfile>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<Vec<ValidatedProfile>>, cadmpeg_core::CodecError> {
     if profiles.is_empty() || profiles.iter().any(Vec::is_empty) {
         return Ok(None);
@@ -1648,97 +1902,84 @@ pub(in super::super) fn ordered_extrusion_profiles(
         .map(f64::abs)
         .fold(1.0, f64::max);
     let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
-    for profile in &profiles {
-        for first in 0..profile.len() {
-            for second in first + 1..profile.len() {
-                let contacts = [
-                    (second == first + 1).then_some(profile[first].end()),
-                    (first == 0 && second + 1 == profile.len()).then_some(profile[first].start()),
-                ];
-                ctx.charge_work(1, "creo profile self intersection pairs")?;
-                if profile_segments_intersect(
-                    ctx,
-                    &profile[first],
-                    &profile[second],
-                    tolerance,
-                    contacts,
-                )? {
-                    return Ok(None);
-                }
+    let mut pieces = match profile_set_pieces(ctx, &profiles, tolerance)? {
+        Ok(pieces) => pieces,
+        Err(stop) => {
+            if let Some(reason) = stop.cap_reason() {
+                refusal.note("extrusion profile set", &reason);
             }
+            return Ok(None);
         }
-    }
-    for first in 0..profiles.len() {
-        for second in first + 1..profiles.len() {
-            for first_segment in &profiles[first] {
-                for second_segment in &profiles[second] {
-                    ctx.charge_work(1, "creo profile cross intersection pairs")?;
-                    if profile_segments_intersect(
-                        ctx,
-                        first_segment,
-                        second_segment,
-                        tolerance,
-                        [None, None],
-                    )? {
-                        return Ok(None);
-                    }
-                }
-            }
-        }
-    }
-    let mut outer = Vec::new();
-    for (candidate, profile) in profiles.iter().enumerate() {
-        let mut contains_all = true;
-        for (index, inner) in profiles.iter().enumerate() {
-            if index == candidate {
-                continue;
-            }
-            ctx.charge_work(1, "creo outer profile containment pairs")?;
-            if !profile_strictly_contains(ctx, profile, inner[0].start())? {
-                contains_all = false;
-                break;
-            }
-        }
-        if contains_all {
-            ctx.reserve_vec(&mut outer, 1, "creo outer extrusion profile candidates")?;
-            outer.push(candidate);
-        }
-    }
-    let [outer] = outer.as_slice() else {
+    };
+    let Some(mut work) = ProfileValidationWork::new(pieces.len()) else {
+        refusal.note(
+            "extrusion profile set",
+            &format_args!(
+                "{} pieces overflow the profile validation work limit",
+                pieces.len()
+            ),
+        );
         return Ok(None);
     };
-    for first in 0..profiles.len() {
-        if first == *outer {
-            continue;
-        }
-        for second in first + 1..profiles.len() {
-            if second == *outer {
-                continue;
-            }
-            ctx.charge_work(1, "creo hole profile containment pairs")?;
-            if profile_strictly_contains(ctx, &profiles[first], profiles[second][0].start())?
-                || profile_strictly_contains(ctx, &profiles[second], profiles[first][0].start())?
-            {
-                return Ok(None);
-            }
-        }
+    let ordered = order_validated_profiles(ctx, profiles, &mut pieces, tolerance, &mut work)?;
+    if let Some(reason) = work.capped {
+        refusal.note("extrusion profile set", &reason);
+        return Ok(None);
     }
-    let mut validated = Vec::new();
-    for profile in profiles {
-        let Some(profile) = ValidatedProfile::new(ctx, profile)? else {
+    Ok(ordered)
+}
+
+fn order_validated_profiles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    profiles: Vec<ExtrusionProfile>,
+    pieces: &mut [SourcedPiece],
+    tolerance: f64,
+    work: &mut ProfileValidationWork,
+) -> Result<Option<Vec<ValidatedProfile>>, cadmpeg_core::CodecError> {
+    if profile_set_intersects(&profiles, pieces, tolerance, work) {
+        return Ok(None);
+    }
+    let outer = if profiles.len() == 1 {
+        0
+    } else {
+        let mut shapes = Vec::new();
+        for profile in &profiles {
+            shapes.push(match ContainmentShape::new(ctx, profile)? {
+                Ok(shape) => Some(shape),
+                Err(ProfileSamplingStop::Unresolved) => None,
+                Err(stop) => {
+                    work.sampling_stopped(stop);
+                    return Ok(None);
+                }
+            });
+        }
+        let first_points = profiles
+            .iter()
+            .map(|profile| profile[0].start())
+            .collect::<Vec<_>>();
+        let Some(outer) = sole_outer_profile(&first_points, &shapes, work) else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut validated, 1, "creo validated extrusion profiles")?;
+        if inner_profiles_nest(&first_points, &shapes, outer, work) {
+            return Ok(None);
+        }
+        outer
+    };
+    let mut validated = Vec::new();
+    for profile in profiles {
+        let Some(profile) = ValidatedProfile::new(ctx, profile, work)? else {
+            return Ok(None);
+        };
         validated.push(profile);
     }
     let mut profiles = validated;
-    let outer_area = profiles[*outer].area();
+    let outer_area = profiles[outer].area();
     if profiles.iter().enumerate().any(|(index, profile)| {
-        index != *outer && profile.area().is_sign_positive() == outer_area.is_sign_positive()
+        index != outer && profile.area().is_sign_positive() == outer_area.is_sign_positive()
     }) {
         return Ok(None);
     }
-    profiles.swap(0, *outer);
+    profiles.swap(0, outer);
     Ok(Some(profiles))
 }
 

@@ -10,13 +10,9 @@
 use crate::scalar::{decode, decode_in_lane, ScalarCache};
 
 /// Exercise Creo datum plane decoders.
-pub fn datum(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
-    let _probe = crate::datum::planes(ctx, data)?;
-    let _probe = crate::datum::named_plane(ctx, data)?;
-    Ok(())
+pub fn datum(data: &[u8]) {
+    let _probe = crate::datum::planes(data);
+    let _probe = crate::datum::named_plane(data);
 }
 
 /// Exercise Creo curve prototype extraction.
@@ -24,26 +20,19 @@ pub fn curve_prototypes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let _probe = crate::curve::prototypes(ctx, data)?;
+    let _probe = crate::curve::prototypes(data);
     let _probe = crate::curve::expression_records_with_model_name(ctx, data, None)?;
     Ok(())
 }
 
 /// Exercise Creo surface namespace row extraction.
-pub fn surface_rows(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
-    let _probe = crate::surface::rows(ctx, data)?;
-    Ok(())
+pub fn surface_rows(data: &[u8]) {
+    let _probe = crate::surface::rows(data);
 }
 
 /// Exercise Creo PSB scalar decoding.
-pub fn scalar(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
-    let cache = ScalarCache::from_section_checked(ctx, data)?;
+pub fn scalar(data: &[u8]) {
+    let cache = ScalarCache::from_section_checked(data);
     let mut offset = 0usize;
     while offset < data.len() {
         match decode_in_lane(data, offset, &cache) {
@@ -52,7 +41,6 @@ pub fn scalar(
         }
     }
     let _probe = decode(data, 0);
-    Ok(())
 }
 
 /// Exercise Creo compact integer decoding.
@@ -88,74 +76,29 @@ pub fn container_scan(
 mod tests {
     #[test]
     fn wrappers_accept_empty() {
-        crate::decode::with_test_decode_ctx(|ctx| super::datum(ctx, &[]))
-            .expect("datum fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &[]))
+        super::datum(&[]);
+        crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &[]))
             .expect("curve fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &[]))
-            .expect("surface row fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &[]))
-            .expect("scalar fuzz wrapper");
+        super::surface_rows(&[]);
+        super::scalar(&[]);
         super::compact_int(&[]);
         super::psb_tokens(&[]);
         super::short_form_float(&[]);
-        let _probe = crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &[]));
+        let _probe = crate::decode::with_service_context(|ctx| super::container_scan(ctx, &[]));
     }
 
     #[test]
     fn wrappers_accept_fixture() {
         let data = crate::test_support::build_prt("1.0", &[]);
-        crate::decode::with_test_decode_ctx(|ctx| super::datum(ctx, &data))
-            .expect("datum fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &data))
+        super::datum(&data);
+        crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &data))
             .expect("curve fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &data))
-            .expect("surface row fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &data))
-            .expect("scalar fuzz wrapper");
+        super::surface_rows(&data);
+        super::scalar(&data);
         super::compact_int(&data);
         super::psb_tokens(&data);
         super::short_form_float(&data);
-        crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &data))
+        crate::decode::with_service_context(|ctx| super::container_scan(ctx, &data))
             .expect("container fuzz wrapper");
-    }
-
-    #[test]
-    fn scalar_wrapper_refuses_unadmitted_cache_image() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let data = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("scalar input admitted");
-        let error = super::scalar(&ctx, &data).expect_err("cache image exceeds collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo scalar cache unique images")
-        );
-    }
-
-    #[test]
-    fn container_wrapper_propagates_caller_resource_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let data = crate::test_support::build_prt("1.0", &[("VisibGeom", Vec::new())]);
-        crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &data))
-            .expect("service profile admits the container");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
-        let error = super::container_scan(&ctx, &data)
-            .expect_err("the first scanned section needs a collection item");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.limit == refusal.used
-                && refusal.additional > 0)
-        );
     }
 }

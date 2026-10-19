@@ -127,7 +127,7 @@
                     "length": 3,
                     "offset": 21,
                     "raw": "2900e0",
-                    "value": 0.000032193053002450974
+                    "value": 3.2193053002450974e-05
                   }
                 ]
               },
@@ -220,7 +220,7 @@
                 "length": 3,
                 "offset": 21,
                 "raw": "2900e0",
-                "value": 0.000032193053002450974
+                "value": 3.2193053002450974e-05
               },
               {
                 "length": 7,
@@ -413,11 +413,12 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 1e-06
     },
     "units": {
       "length": "millimeter"
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "coverage": {

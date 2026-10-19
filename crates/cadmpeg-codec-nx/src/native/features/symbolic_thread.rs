@@ -2,7 +2,7 @@
 //! Located symbolic-thread construction witness with bounded wire admission.
 
 use crate::om::symbolic_thread::{SymbolicThreadWitness, PARAMETER_CLASS};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -71,7 +71,6 @@ impl SymbolicThreadConstruction {
 }
 
 pub(super) fn read_construction(
-    ctx: &DecodeContext<'_>,
     section: &crate::om::Section<'_>,
     record: crate::om::operation_record::OperationRecord<'_>,
     frames: &[crate::om::OperationPayloadTextFrame<'_>],
@@ -82,10 +81,6 @@ pub(super) fn read_construction(
         .first()
         .and_then(|selector| usize::from(*selector).checked_sub(1))
         .and_then(|index| section.types.get(index));
-    ctx.charge_work(
-        u64_from_index(PARAMETER_CLASS.len() + frames.len()),
-        "NX symbolic thread owner and mode",
-    )?;
     if class.is_none_or(|class| class.name != PARAMETER_CLASS) {
         return Ok(None);
     }
@@ -98,17 +93,26 @@ pub(super) fn read_construction(
     if cuts.next().is_some() {
         return Ok(None);
     }
-    let Some((field, offset)) =
-        SymbolicThreadWitness::read(ctx, record.payload_view(), cut.offset)?
+    let Some((field, offset)) = SymbolicThreadWitness::read(record.payload_view(), cut.offset)?
     else {
         return Ok(None);
     };
     let source_offset = entry_offset
         .checked_add(u64_from_index(offset))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX symbolic thread witness offset", 0, 1))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX symbolic thread witness offset"
+            ))
+        })?;
     SymbolicThreadConstruction::new(field, source_offset)
         .map(Some)
-        .map_err(|_| ctx.refuse_codec_limit("NX symbolic thread witness span", 0, 1))
+        .map_err(|_| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX symbolic thread witness span"
+            ))
+        })
 }
 
 #[cfg(test)]

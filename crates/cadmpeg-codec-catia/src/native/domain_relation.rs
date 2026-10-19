@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-local scalar parameter relations retained before operand resolution.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -61,7 +61,6 @@ impl TryFrom<DomainRelationWire> for CatiaConsolidatedDomainRelation {
 }
 
 pub(super) fn derive(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedDomainRelation>, CodecError> {
@@ -73,10 +72,6 @@ pub(super) fn derive(
         if record.class() == 0x25 && record.flag() != ConsolidatedFrameFlag::Flag03 {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(record.source_range().len()),
-            "catia_domain_relation_parse",
-        )?;
         let Some(payload) = record.payload() else {
             continue;
         };
@@ -90,23 +85,17 @@ pub(super) fn derive(
             continue;
         }
         let source = ConsolidatedEdgeDefinition {
-            frame: ConsolidatedRawFrame::from_record(
-                record,
-                ctx.copy_retained(&bytes[payload], "catia_domain_relation_payload")?,
-            )?,
+            frame: ConsolidatedRawFrame::from_record(record, bytes[payload].to_vec())?,
             class: ConsolidatedEdgeDefinitionClass::try_from(record.class())
                 .map_err(CodecError::malformed)?,
         };
         let relation = CatiaConsolidatedDomainRelation {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:domain-relation#{:00}", relations.len()),
-                "catia_domain_relation_id",
-            )?,
+            id: format!("catia:consolidated:domain-relation#{:00}", relations.len()),
             source_index: u64_from_index(record.source_index()),
             source_offset: u64_from_index(record.source_range().start),
-            definition: CatiaConsolidatedEdgeDefinition::from_source(ctx, source)?,
+            definition: CatiaConsolidatedEdgeDefinition::from_source(source),
         };
-        ctx.push_vec(&mut relations, relation, "catia_domain_relations")?;
+        relations.push(relation);
     }
     Ok(relations)
 }

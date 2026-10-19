@@ -18,8 +18,8 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
-mod collection_limits;
-mod string_limits;
+mod depth_limits;
+mod shared_walks;
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
@@ -100,7 +100,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         } if magnitude.get().value.get() == 0.05 && magnitude.get().quantity == PmiQuantity::Length
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
@@ -920,7 +920,7 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
         .iter()
         .any(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. })));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -981,7 +981,7 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
     assert_eq!(transform.rows()[1][3], 20.0);
     assert_eq!(transform.rows()[2][3], 30.0);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -1127,8 +1127,11 @@ pub(crate) fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
 }
 
 #[test]
-fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
+fn deep_pmi_measure_branches_follow_the_session_depth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::pmi::PmiDefinition;
+    use cadmpeg_ir::DecodeFailure;
 
     let mut records = String::from(
         "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
@@ -1147,13 +1150,24 @@ fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
             .expect("write recursive measure carrier");
     }
     records.push_str("#280=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.4),#1);\n");
+    let decode = |depth: u64| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_recursion_depth = depth;
+        crate::test_support::exchange::decode_inline_with_options(&records, &options)
+    };
 
-    let result = decode_inline(&records);
+    let result = decode(1024).expect("the session admits the measure chain");
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::Dimension(relation)
             if relation.nominal().is_some_and(|value| (value.value.get() - 0.4).abs() < EPS_PMI_NUMERIC)
     )));
+    assert!(matches!(
+        decode(256),
+        Err(DecodeFailure::Codec(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_measure_id_walk"
+    ));
 }
 
 #[test]
@@ -1288,28 +1302,26 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         unreachable!()
     };
     let modifiers = references.as_slice()[0].modifiers.clone();
-    {
-        let replacement = vec![
-            DatumReference {
-                datum: datum_a.id,
-                precedence: std::num::NonZeroU32::MIN,
-                common_group: Some(7),
-                modifiers: modifiers.clone(),
-            },
-            DatumReference {
-                datum: datum_b.id,
-                precedence: std::num::NonZeroU32::MIN,
-                common_group: Some(7),
-                modifiers: vec!["least_material_requirement".into()],
-            },
-        ];
-        edit::replace(references, |_| {
-            cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
-        })
-    }
+    let replacement = vec![
+        DatumReference {
+            datum: datum_a.id,
+            precedence: std::num::NonZeroU32::MIN,
+            common_group: Some(7),
+            modifiers: modifiers.clone(),
+        },
+        DatumReference {
+            datum: datum_b.id,
+            precedence: std::num::NonZeroU32::MIN,
+            common_group: Some(7),
+            modifiers: vec!["least_material_requirement".into()],
+        },
+    ];
+    edit::replace(references, |_| {
+        cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
+    })
     .expect("valid common datum compartment");
     let validation =
-        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();

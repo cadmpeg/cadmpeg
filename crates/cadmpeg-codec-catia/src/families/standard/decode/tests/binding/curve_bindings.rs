@@ -3,13 +3,14 @@
 
 use super::{
     build_standard_edge_curve, circle_parameter_range_from_surface_branch,
-    ensure_native_edge_support_surface, standard_analytic_curve_parameter_range,
-    standard_endpoint_pair_supports_topology, standard_oriented_analytic_curve_parameter_range,
-    standard_pcurve_geometry, unit_square_surface, witness_arc_end, AnnotationBuilder, CadIr,
-    Curve, CurveGeometry, FinitePoint3, HashMap, PcurveGeometry, Point, Point2, Point3, PointId,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, StandardCurveGeometry, StandardCurveSupport,
-    Surface, SurfaceGeometry, SurfaceId, Vector3,
+    standard_analytic_curve_parameter_range, standard_endpoint_pair_supports_topology,
+    standard_oriented_analytic_curve_parameter_range, standard_pcurve_geometry, witness_arc_end,
+    AnnotationBuilder, CadIr, Curve, CurveGeometry, FinitePoint3, HashMap, PcurveGeometry, Point,
+    Point2, Point3, PointId, SolvedCurveGeometry, SolvedSurfaceGeometry, StandardCurveGeometry,
+    StandardCurveSupport, Surface, SurfaceGeometry, SurfaceId, Vector3,
 };
+use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
+use crate::families::standard::decode::tests::binding::unit_square_surface;
 
 #[test]
 fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() {
@@ -498,7 +499,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
             },
         )
     })
-    .expect("circle evaluation resources")
+    .expect("find the circle parameter range from the surface branch")
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
@@ -559,7 +560,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
             },
         )
     })
-    .expect("circle evaluation resources")
+    .expect("find the circle parameter range from the surface branch")
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);
 }
@@ -660,11 +661,8 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
 }
 
 #[test]
-fn native_edge_support_match_refuses_work_limit() {
-    let source = crate::test_support::with_service_context(|ctx| {
-        crate::assemble::cgm_source(ctx, "surface", 42)
-    })
-    .expect("service profile admits source identity");
+fn edge_support_reuses_the_surface_with_matching_source_record() {
+    let source = crate::assemble::cgm_source("surface", 42).expect("build the CGM source object");
     let id = SurfaceId::mint("catia:test:surface#matching".to_owned()).expect("surface identity");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let mut ir = CadIr::empty();
@@ -674,23 +672,6 @@ fn native_edge_support_match_refuses_work_limit() {
         source_object: Some(source),
     });
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
-    let refused = crate::test_support::with_work_limit(
-        cadmpeg_core::decode::u64_from_index(2 * "cgm-surface:00002a".len()),
-        |ctx| {
-            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            ensure_native_edge_support_surface(
-                &mut ir,
-                &mut AnnotationBuilder::new(),
-                42,
-                &carrier,
-                &mut admission,
-            )
-        },
-    );
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_edge_support_source_scan")
-    );
     let matched = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         ensure_native_edge_support_surface(
@@ -701,30 +682,15 @@ fn native_edge_support_match_refuses_work_limit() {
             &mut admission,
         )
     })
-    .expect("service profile admits surface match");
+    .expect("ensure native edge support surface");
     assert_eq!(matched, id);
     assert_eq!(ir.model.surfaces.len(), 1);
 }
 
 #[test]
-fn native_edge_support_nurbs_copy_refuses_collection_limit() {
+fn nurbs_edge_support_adds_one_surface_and_returns_its_id() {
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface())),
-    );
-    let refused = crate::test_support::with_collection_limit(1, |ctx| {
-        let mut ir = CadIr::empty();
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        ensure_native_edge_support_surface(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            42,
-            &carrier,
-            &mut admission,
-        )
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_edge_support_geometry")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut ir = CadIr::empty();
@@ -738,7 +704,7 @@ fn native_edge_support_nurbs_copy_refuses_collection_limit() {
         )?;
         Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
     })
-    .expect("service budget admits native edge support surface");
+    .expect("ensure native edge support surface");
     assert_eq!(admitted.1.len(), 1);
     assert_eq!(admitted.0, admitted.1[0].id);
 }

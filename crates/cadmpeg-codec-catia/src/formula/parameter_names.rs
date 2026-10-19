@@ -1,33 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unique names for document-scoped typed parameters.
 
-use cadmpeg_core::{decode::DecodeContext, CodecError};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::DesignParameter;
 use std::collections::HashSet;
 
 /// Preserve source names and reserve them before suffixing collisions.
-pub(super) fn normalize(
-    ctx: &DecodeContext<'_>,
-    parameters: &mut [DesignParameter],
-) -> Result<(), CodecError> {
+pub(super) fn normalize(parameters: &mut [DesignParameter]) -> Result<(), CodecError> {
     let mut reserved = HashSet::new();
     for parameter in parameters
         .iter()
         .filter(|parameter| !parameter.name.is_empty())
     {
-        let name = ctx.copy_retained_text(&parameter.name, "catia_parameter_reserved_name")?;
-        ctx.insert_hash_set(&mut reserved, name, "catia_parameter_reserved_names")?;
+        let name = parameter.name.clone();
+        reserved.insert(name);
     }
     let mut used = HashSet::new();
     for parameter in parameters {
-        let source_name = ctx.copy_retained_text(&parameter.name, "catia_parameter_source_name")?;
-        if !source_name.is_empty()
-            && ctx.insert_hash_set(
-                &mut used,
-                ctx.copy_retained_text(&source_name, "catia_parameter_used_name")?,
-                "catia_parameter_used_names",
-            )?
-        {
+        let source_name = parameter.name.clone();
+        if !source_name.is_empty() && used.insert(source_name.clone()) {
             continue;
         }
 
@@ -38,31 +29,21 @@ pub(super) fn normalize(
         };
         let mut suffix = 1u32;
         let neutral_name = loop {
-            ctx.charge_work(1, "catia_parameter_name_collision")?;
-            let candidate = ctx.format_retained(
-                format_args!("{base}#{suffix}"),
-                "catia_parameter_neutral_name",
-            )?;
+            let candidate = format!("{base}#{suffix}");
             suffix = suffix.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_parameter_name_collision", u64::MAX, u64::MAX)
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "catia_parameter_name_collision"
+                ))
             })?;
-            if !reserved.contains(&candidate)
-                && ctx.insert_hash_set(
-                    &mut used,
-                    ctx.copy_retained_text(&candidate, "catia_parameter_used_name")?,
-                    "catia_parameter_used_names",
-                )?
-            {
+            if !reserved.contains(&candidate) && used.insert(candidate.clone()) {
                 break candidate;
             }
         };
         parameter.name = neutral_name;
-        ctx.insert_btree_map(
-            &mut parameter.properties,
-            cadmpeg_core::nonblank_literal!("source_name"),
-            source_name,
-            "catia_parameter_source_property",
-        )?;
+        parameter
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("source_name"), source_name);
     }
     Ok(())
 }

@@ -2,6 +2,8 @@
 //! Writes deep topology, NURBS, and format-variant container seeds for
 //! SolidWorks, CATIA, Creo, and NX. Existing F3D seeds remain unchanged.
 
+
+
 use std::fs;
 
 use cadmpeg_fuzz::seed_paths::seed_dir;
@@ -531,7 +533,7 @@ mod sldprt {
                 &DecodePolicy::default(),
             )
             .expect("root");
-            let (material, _storage) = ctx
+            let material = ctx
                 .inflate_probe(root, payload_len, false)
                 .expect("probe")
                 .expect("material block");

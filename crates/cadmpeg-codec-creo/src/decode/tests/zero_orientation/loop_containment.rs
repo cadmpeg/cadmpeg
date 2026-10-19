@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{ordered_face_loops_service, ordered_planar_face_loops_service};
+use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_loops};
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::topology::HalfEdgeId;
 use std::collections::BTreeMap;
@@ -53,9 +53,8 @@ fn planar_loop_containment_selects_one_outer_boundary() {
         normal: [0.0, 0.0, 1.0],
     };
 
-    let ordered =
-        ordered_planar_face_loops_service(vec![&inner, &outer], plane, &incidence, &points)
-            .expect("unique outer loop");
+    let ordered = ordered_planar_face_loops(vec![&inner, &outer], plane, &incidence, &points)
+        .expect("unique outer loop");
     assert_eq!(ordered[0].half_edges()[0].curve_id, 1);
     assert_eq!(ordered[1].half_edges()[0].curve_id, 5);
 
@@ -68,20 +67,15 @@ fn planar_loop_containment_selects_one_outer_boundary() {
             (id, point)
         })
         .collect::<BTreeMap<_, _>>();
-    assert!(ordered_planar_face_loops_service(
-        vec![&outer, &inner],
-        plane,
-        &incidence,
-        &disjoint_points,
-    )
-    .is_none());
+    assert!(
+        ordered_planar_face_loops(vec![&outer, &inner], plane, &incidence, &disjoint_points,)
+            .is_none()
+    );
     assert_eq!(
-        ordered_face_loops_service(&[&outer], None, &incidence, &disjoint_points),
+        ordered_face_loops(&[&outer], None, &incidence, &disjoint_points),
         Some(vec![&outer])
     );
-    assert!(
-        ordered_face_loops_service(&[&outer, &inner], None, &incidence, &disjoint_points).is_none()
-    );
+    assert!(ordered_face_loops(&[&outer, &inner], None, &incidence, &disjoint_points).is_none());
 }
 
 #[test]
@@ -128,7 +122,7 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
         (8, [-1.0, 1.0, 4.0]),
     ]);
 
-    let ordered = ordered_face_loops_service(&[&inner, &outer], None, &incidence, &points)
+    let ordered = ordered_face_loops(&[&inner, &outer], None, &incidence, &points)
         .expect("boundary vertices prove a unique plane");
     assert_eq!(ordered[0].half_edges()[0].curve_id, 1);
     assert_eq!(ordered[1].half_edges()[0].curve_id, 5);
@@ -142,5 +136,5 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
             (id, point)
         })
         .collect::<BTreeMap<_, _>>();
-    assert!(ordered_face_loops_service(&[&outer, &inner], None, &incidence, &non_planar).is_none());
+    assert!(ordered_face_loops(&[&outer, &inner], None, &incidence, &non_planar).is_none());
 }

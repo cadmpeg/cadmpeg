@@ -42,7 +42,6 @@
 
 use crate::chunks::ArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");
@@ -139,29 +138,23 @@ impl ArchiveVersion {
 /// requires is therefore structural: the note charged and the admission
 /// reported come from one value, not from two authors agreeing.
 pub(crate) fn admission_loss(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     matched: &DialectMatch,
-) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
+) -> std::option::Option<cadmpeg_ir::report::loss::LossNote> {
     match matched.admission() {
         Admission::Residual | Admission::Unverified { .. } => {}
-        Admission::Admitted | Admission::Refused => return Ok(None),
+        Admission::Admitted | Admission::Refused => return None,
     }
     let word = matched
         .declared()
         .get(DECLARED_ARCHIVE_VERSION)
         .map_or("absent", String::as_str);
-    let loss = crate::wire::admitted_loss(
-        ctx,
-        crate::loss::RhinoLossCode::SourceDialectUnverified,
-        format_args!(
-            "archive version word {word} has no declared row, so no declared identity or \
-         substituted declared grammar was verified. The document is read by the residual \
-         chunked route, with chunk width and version-conditioned record branches selected \
-         directly from the observed word."
-        ),
-        "Rhino dialect admission loss",
-    )?;
-    Ok(Some(loss))
+    let loss = crate::loss::RhinoLossCode::SourceDialectUnverified.note(format_args!(
+        "archive version word {word} has no declared row, so no declared identity or \
+     substituted declared grammar was verified. The document is read by the residual \
+     chunked route, with chunk width and version-conditioned record branches selected \
+     directly from the observed word."
+    ));
+    Some(loss)
 }
 
 #[cfg(test)]

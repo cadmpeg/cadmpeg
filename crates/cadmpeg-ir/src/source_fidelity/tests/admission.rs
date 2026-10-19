@@ -124,52 +124,6 @@ fn charged_native_unknown_attachment_preserves_product_and_retained_wire() {
     assert_eq!(actual_fidelity, expected_fidelity);
 }
 
-#[test]
-fn charged_native_unknown_attachment_refuses_retained_limit_atomically() {
-    let mut ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let error = fidelity
-        .attach_native_unknown_records(
-            &mut ir,
-            "synthetic",
-            vec![UnknownRecord::retained(id("a"), 0, vec![1], vec![])],
-            &ctx,
-        )
-        .expect_err("retained identity refusal");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-    assert_eq!(ir, CadIr::empty());
-    assert_eq!(fidelity, SourceFidelity::default());
-}
-
-#[test]
-fn native_unknown_identity_copy_refuses_one_byte_below_its_length() {
-    let identity = id("identity");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(identity.as_str().len()).expect("identity length") - 1;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let mut ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
-    let error = fidelity
-        .attach_native_unknown_records(
-            &mut ir,
-            "synthetic",
-            vec![UnknownRecord::retained(identity, 0, vec![1], vec![])],
-            &ctx,
-        )
-        .expect_err("identity copy must be charged before allocation");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-    assert_eq!(ir, CadIr::empty());
-    assert_eq!(fidelity, SourceFidelity::default());
-}
-
 fn charged_unknown_limit_error(
     policy: &cadmpeg_core::decode::DecodePolicy,
 ) -> cadmpeg_core::CodecError {
@@ -199,33 +153,14 @@ fn charged_unknown_limit_error(
 }
 
 #[test]
-fn charged_native_unknown_attachment_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    assert!(matches!(
-        charged_unknown_limit_error(&policy),
-        cadmpeg_core::CodecError::ResourceLimit(_)
-    ));
-}
-
-#[test]
 fn charged_native_unknown_attachment_refuses_nesting_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
-    assert!(matches!(
-        charged_unknown_limit_error(&policy),
-        cadmpeg_core::CodecError::ResourceLimit(_)
-    ));
-}
-
-#[test]
-fn charged_native_unknown_attachment_refuses_work_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    assert!(matches!(
-        charged_unknown_limit_error(&policy),
-        cadmpeg_core::CodecError::ResourceLimit(_)
-    ));
+    let error = charged_unknown_limit_error(&policy);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -539,20 +474,12 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
             .insert_retained_record(id("existing"), record(b"original"))
             .unwrap();
         let mut existing = AnnotationBuilder::new();
-        existing
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                id("annotated"),
-                &StreamHandle::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    crate::stream_name!("original"),
-                    "fixture stream handle",
-                )
-                .unwrap(),
-                7,
-                None,
-            )
-            .unwrap();
+        existing.note(
+            id("annotated"),
+            &StreamHandle::new(crate::stream_name!("original")),
+            7,
+            None,
+        );
         target.annotations = existing.build();
         let before = target.clone();
         let mut incoming = SourceFidelity::default();
@@ -568,24 +495,14 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         } else {
             "annotated"
         });
-        annotations
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                annotation_id,
-                &StreamHandle::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    crate::stream_name!("incoming"),
-                    "fixture stream handle",
-                )
-                .unwrap(),
-                9,
-                None,
-            )
-            .unwrap();
+        annotations.note(
+            annotation_id,
+            &StreamHandle::new(crate::stream_name!("incoming")),
+            9,
+            None,
+        );
         incoming.annotations = annotations.build();
-        let error =
-            crate::test_support::with_service_decode_context(|ctx| target.append(ctx, incoming))
-                .unwrap_err();
+        let error = (target.append(incoming)).unwrap_err();
         let conflicting = id(if record_collision {
             "existing"
         } else {
@@ -594,4 +511,49 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         assert!(error.to_string().contains(conflicting.as_str()), "{error}");
         assert_eq!(target, before);
     }
+}
+
+#[test]
+fn attached_unknown_record_retains_its_native_text_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let link = "synthetic:model:point#target";
+    let incoming = UnknownRecord::retained(id("bytes"), 0, vec![1, 2, 3, 4], vec![link.into()]);
+    let native_text = serde_json::to_vec(&serde_json::json!({
+        "id": id("bytes").as_str(),
+        "links": [link],
+    }))
+    .unwrap();
+    let needed = cadmpeg_core::decode::u64_from_index(native_text.len());
+    let attach = |limit: u64| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let mut fidelity = SourceFidelity::default();
+        let mut ir = CadIr::empty();
+        let result = fidelity.attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            vec![incoming.clone()],
+            &ctx,
+        );
+        (result, fidelity, ir)
+    };
+
+    let (result, fidelity, ir) = attach(needed);
+    result.expect("the record text fits the retained ceiling");
+    assert_eq!(fidelity.retained_records().len(), 1);
+    assert_eq!(ir.native_unknowns("synthetic").unwrap().len(), 1);
+
+    let (result, fidelity, ir) = attach(needed - 1);
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("a ceiling below the record's bytes must refuse");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "attach native unknown record");
+    assert_eq!(limit.additional, needed);
+    assert_eq!(fidelity, SourceFidelity::default());
+    assert_eq!(ir, CadIr::empty());
 }

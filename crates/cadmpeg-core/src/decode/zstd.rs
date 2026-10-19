@@ -1,73 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Window-admitted Zstandard streams with scoped decoder workspace.
+//! Window-admitted Zstandard streams.
 
-use super::{
-    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ScopedReservation, View,
-};
+use super::{DecodeContext, View};
 use crate::CodecError;
 use zstd::zstd_safe::{self, DCtx, DParameter, InBuffer, OutBuffer};
 
-const BLOCK_BYTES: u64 = 128 * 1024;
-const FIXED_STATE_BYTES: u64 = 1024 * 1024;
-const COPY_PADDING_BYTES: u64 = 64;
+/// The largest window the linked decoder can open on this target. A larger
+/// frame is outside the reader, not over a session ceiling.
 const MAX_DECODER_WINDOW: u64 = 1_u64 << if usize::BITS == 32 { 30 } else { 31 };
 
-/// One decoder and its live workspace reservation. The decoder is dropped
-/// before the reservation that admits its allocation.
+/// One Zstandard decoder over an admitted input.
 pub struct ZstdDecoder<'ctx, 'input> {
     decoder: DCtx<'static>,
-    _workspace: ScopedReservation<'ctx>,
     ctx: &'ctx DecodeContext<'input>,
     input: InBuffer<'input>,
     finished: bool,
-    workspace_bytes: u64,
     window_bytes: u64,
 }
 
 impl<'input> DecodeContext<'input> {
-    /// Inspects all frame windows before allocating a decoder. The largest
-    /// frame window must fit the materialized-byte and per-expansion ceilings.
+    /// Inspects all frame windows before allocating a decoder. The output
+    /// each frame's decoder buffers, its window or its declared content size
+    /// when that is smaller, must fit the per-expansion decompression
+    /// allowance, and the declared window must fit the decoder's. Either
+    /// excess is [`CodecError::NotImplemented`] for this stream and leaves the
+    /// session open, since nothing was allocated.
     pub fn open_zstd<'ctx>(
         &'ctx self,
         source: View<'input>,
     ) -> Result<ZstdDecoder<'ctx, 'input>, CodecError> {
-        self.charge_work(
-            u64_from_index(source.window().len()),
-            "inspect Zstandard frames",
-        )?;
-        self.charge_work(
-            u64_from_index(source.window().len()),
-            "Zstandard compressed input",
-        )?;
         let mut offset = 0;
         let mut largest_window = 0_u64;
-        let ceiling = self
-            .policy()
-            .limits
-            .max_materialized_bytes
-            .min(self.policy().limits.max_decompressed_bytes_per_expand)
-            .min(MAX_DECODER_WINDOW);
+        let allowance = self.per_expand_allowance();
         while offset < source.window().len() {
-            self.charge_work(1, "inspect Zstandard frame header")?;
             let frame = source
                 .child(source.start() + offset, source.end())
                 .ok_or_else(|| {
                     CodecError::Malformed("Zstandard frame offset escapes input".into())
                 })?;
-            let window = frame_window(frame)?;
-            if window > ceiling {
-                return Err(self.budget.refuse(
-                    ResourceDimension::MaterializedBytes,
-                    ResourceFailure::BudgetExceeded,
-                    ceiling,
-                    0,
-                    window,
-                    "Zstandard window",
-                ));
+            let FrameWindow { declared, buffered } = frame_window(frame)?;
+            if buffered > allowance {
+                return Err(CodecError::NotImplemented(format!(
+                    "Zstandard window of {buffered} bytes exceeds the \
+                     {allowance}-byte per-expansion allowance"
+                )));
             }
-            largest_window = largest_window.max(window);
+            if declared > MAX_DECODER_WINDOW {
+                return Err(window_unsupported(declared));
+            }
+            largest_window = largest_window.max(declared);
             let size = zstd_safe::find_frame_compressed_size(frame.window())
-                .map_err(|code| zstd_error(self, code, 0, window))?;
+                .map_err(|code| zstd_error(self, code, declared))?;
             if size == 0 || size > frame.window().len() {
                 return Err(CodecError::Malformed("invalid Zstandard frame size".into()));
             }
@@ -76,55 +59,38 @@ impl<'input> DecodeContext<'input> {
         if offset == 0 {
             return Err(CodecError::Malformed("empty Zstandard stream".into()));
         }
-        // ZSTD_estimateDStreamSize in zstd 1.5.7 bounds streaming storage by
-        // DCtx state + window + three 128 KiB blocks + 2*WILDCOPY_OVERLENGTH.
-        // The fixed state, including entropy tables and the literal scratch
-        // buffer, is below 1 MiB. Dictionaries and legacy frames are not opened.
-        let workspace_bytes = largest_window
-            .checked_add(3 * BLOCK_BYTES + FIXED_STATE_BYTES + COPY_PADDING_BYTES)
-            .ok_or_else(|| {
-                CodecError::from(
-                    self.budget
-                        .scoped_size_overflow_limit("Zstandard workspace"),
-                )
-            })?;
-        let workspace = self.reserve_scoped(workspace_bytes, "Zstandard workspace")?;
         let mut decoder = DCtx::try_create().ok_or_else(|| {
             self.budget
-                .scoped_allocation_failed(workspace_bytes, "Zstandard context")
+                .retained_allocation_failed(largest_window, "Zstandard context")
         })?;
         // Round the inspected maximum up to the next permitted log, with the
-        // decoder's format minimum of 1 KiB. Each actual frame was checked
-        // against the exact ceiling above before allocation.
+        // decoder's format minimum of 1 KiB. Each frame's buffered output was
+        // checked against the exact allowance above before allocation.
         let minimum_window = largest_window.max(1024);
         let window_log = u64::BITS - (minimum_window - 1).leading_zeros();
         decoder
             .set_parameter(DParameter::WindowLogMax(window_log))
-            .map_err(|code| zstd_error(self, code, workspace_bytes, largest_window))?;
+            .map_err(|code| zstd_error(self, code, largest_window))?;
         Ok(ZstdDecoder {
             decoder,
-            _workspace: workspace,
             ctx: self,
             input: InBuffer {
                 src: source.window(),
                 pos: 0,
             },
             finished: false,
-            workspace_bytes,
             window_bytes: largest_window,
         })
     }
 }
 
 impl ZstdDecoder<'_, '_> {
-    /// Reads admitted output into caller-owned storage and charges step/copy work.
+    /// Reads decoded output into caller-owned storage.
     pub fn read_chunk(&mut self, bytes: &mut [u8]) -> Result<usize, CodecError> {
         if self.finished || bytes.is_empty() {
             return Ok(0);
         }
         loop {
-            self.ctx
-                .charge_work(u64_from_index(bytes.len()), "Zstandard decode step")?;
             let before = self.input.pos;
             let mut chunk = [0_u8; 16 * 1024];
             let capacity = bytes.len().min(chunk.len());
@@ -132,12 +98,9 @@ impl ZstdDecoder<'_, '_> {
             let remaining = self
                 .decoder
                 .decompress_stream(&mut output, &mut self.input)
-                .map_err(|code| {
-                    zstd_error(self.ctx, code, self.workspace_bytes, self.window_bytes)
-                })?;
+                .map_err(|code| zstd_error(self.ctx, code, self.window_bytes))?;
             let produced = output.pos();
-            self.ctx
-                .charge_work(u64_from_index(produced), "Zstandard output copy")?;
+
             bytes[..produced].copy_from_slice(&chunk[..produced]);
             if remaining == 0 && self.input.pos == self.input.src.len() {
                 self.finished = true;
@@ -152,26 +115,21 @@ impl ZstdDecoder<'_, '_> {
     }
 }
 
-fn zstd_error(ctx: &DecodeContext<'_>, code: usize, bytes: u64, window: u64) -> CodecError {
+fn window_unsupported(window: u64) -> CodecError {
+    CodecError::NotImplemented(format!(
+        "Zstandard window of {window} bytes exceeds the {MAX_DECODER_WINDOW}-byte decoder window"
+    ))
+}
+
+fn zstd_error(ctx: &DecodeContext<'_>, code: usize, window: u64) -> CodecError {
     // SAFETY: the code is the error result returned by the same zstd library.
     let error = unsafe { zstd_safe::zstd_sys::ZSTD_getErrorCode(code) };
     match error {
         zstd_safe::zstd_sys::ZSTD_ErrorCode::ZSTD_error_memory_allocation => ctx
             .budget
-            .scoped_allocation_failed(bytes, "Zstandard decoder allocation"),
+            .retained_allocation_failed(window, "Zstandard decoder allocation"),
         zstd_safe::zstd_sys::ZSTD_ErrorCode::ZSTD_error_frameParameter_windowTooLarge => {
-            ctx.budget.refuse(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                ctx.policy()
-                    .limits
-                    .max_materialized_bytes
-                    .min(ctx.policy().limits.max_decompressed_bytes_per_expand)
-                    .min(MAX_DECODER_WINDOW),
-                0,
-                window,
-                "Zstandard decoder window",
-            )
+            window_unsupported(window)
         }
         _ => CodecError::malformed(format_args!(
             "invalid Zstandard stream: {}",
@@ -180,11 +138,21 @@ fn zstd_error(ctx: &DecodeContext<'_>, code: usize, bytes: u64, window: u64) -> 
     }
 }
 
-fn frame_window(mut frame: View<'_>) -> Result<u64, CodecError> {
+/// One frame's declared window and the output its decoder buffers: the
+/// window, or the declared content size when that is smaller.
+struct FrameWindow {
+    declared: u64,
+    buffered: u64,
+}
+
+fn frame_window(mut frame: View<'_>) -> Result<FrameWindow, CodecError> {
     let magic = frame.req_u32_le()?;
     if (0x184d_2a50..=0x184d_2a5f).contains(&magic) {
         frame.req_u32_le()?;
-        return Ok(0);
+        return Ok(FrameWindow {
+            declared: 0,
+            buffered: 0,
+        });
     }
     if magic != 0xfd2f_b528 {
         return Err(CodecError::Malformed("invalid Zstandard magic".into()));
@@ -197,11 +165,11 @@ fn frame_window(mut frame: View<'_>) -> Result<u64, CodecError> {
     }
     let single_segment = flags & 32 != 0;
     let window = if single_segment {
-        0
+        None
     } else {
         let descriptor = frame.req_u8()?;
         let base = 1_u64 << (10 + u32::from(descriptor >> 3));
-        base + (base / 8) * u64::from(descriptor & 7)
+        Some(base + (base / 8) * u64::from(descriptor & 7))
     };
     let dictionary_bytes = match flags & 3 {
         0 => 0,
@@ -211,20 +179,117 @@ fn frame_window(mut frame: View<'_>) -> Result<u64, CodecError> {
     };
     frame.req_take(dictionary_bytes)?;
     let content_size = match flags >> 6 {
-        0 if single_segment => u64::from(frame.req_u8()?),
-        0 => 0,
-        1 => u64::from(frame.req_u16_le()?) + 256,
-        2 => u64::from(frame.req_u32_le()?),
-        _ => frame.req_u64_le()?,
+        0 if single_segment => Some(u64::from(frame.req_u8()?)),
+        0 => None,
+        1 => Some(u64::from(frame.req_u16_le()?) + 256),
+        2 => Some(u64::from(frame.req_u32_le()?)),
+        _ => Some(frame.req_u64_le()?),
     };
-    Ok(if single_segment { content_size } else { window })
+    let declared = window.or(content_size).unwrap_or(0);
+    Ok(FrameWindow {
+        declared,
+        buffered: content_size.map_or(declared, |size| size.min(declared)),
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BLOCK_BYTES, COPY_PADDING_BYTES, FIXED_STATE_BYTES};
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use super::MAX_DECODER_WINDOW;
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec};
     use crate::CodecError;
+
+    /// A frame header with a non-single-segment window of `window` bytes,
+    /// followed by one empty raw block.
+    fn frame_with_window(window: u64) -> Vec<u8> {
+        let exponent = u8::try_from(window.trailing_zeros() - 10).expect("window exponent");
+        vec![0x28, 0xb5, 0x2f, 0xfd, 0, exponent << 3, 1, 0, 0]
+    }
+
+    #[test]
+    fn zstd_window_past_the_per_expand_allowance_is_unsupported_and_leaves_the_session_open() {
+        let window = 32 << 20;
+        let bytes = frame_with_window(window);
+        let policy = DecodePolicy::service();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let allowance = ctx.per_expand_allowance();
+        assert!(allowance < window);
+        assert!(window < policy.limits.max_decompressed_bytes_per_expand);
+        let Err(CodecError::NotImplemented(message)) = ctx.open_zstd(root) else {
+            panic!("a window above the allowance is unsupported");
+        };
+        assert_eq!(
+            message,
+            format!(
+                "Zstandard window of {window} bytes exceeds the \
+                 {allowance}-byte per-expansion allowance"
+            )
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+        let mut writer = ctx
+            .begin_expand(ExpandSpec::Exact(1))
+            .expect("later expansions are admitted");
+        writer.write(b"x").expect("write");
+        writer.finalize().expect("finalize");
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
+    fn zstd_window_is_admitted_by_a_smaller_declared_content_size() {
+        let window = 32 << 20;
+        let content = [7_u8; 256];
+        // A 32 MiB window descriptor, a two-byte content size of 256 bytes,
+        // and one raw last block holding the content.
+        let mut bytes = vec![
+            0x28,
+            0xb5,
+            0x2f,
+            0xfd,
+            0x40,
+            15 << 3,
+            0,
+            0,
+            0x01,
+            0x08,
+            0x00,
+        ];
+        bytes.extend_from_slice(&content);
+        let policy = DecodePolicy::service();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        assert!(ctx.per_expand_allowance() < window);
+        let mut decoder = ctx.open_zstd(root).expect("the content size fits");
+        let mut output = Vec::new();
+        let mut chunk = [0; 64];
+        loop {
+            let read = decoder.read_chunk(&mut chunk).expect("read");
+            if read == 0 {
+                break;
+            }
+            output.extend_from_slice(&chunk[..read]);
+        }
+        assert_eq!(output, content);
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+
+    #[test]
+    fn zstd_window_above_the_decoder_is_unsupported_and_leaves_the_session_open() {
+        let window = MAX_DECODER_WINDOW * 2;
+        let mut bytes = frame_with_window(window);
+        // Each input byte raises the per-expand allowance by 256 bytes.
+        bytes.resize(usize::try_from(window / 256).expect("padding length"), 0);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_per_expand = window;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        assert!(ctx.per_expand_allowance() >= window);
+        assert!(matches!(
+            ctx.open_zstd(root),
+            Err(CodecError::NotImplemented(message)) if message.contains("decoder window")
+        ));
+        assert_eq!(ctx.resource_refusal(), None);
+        assert!(ctx.finish_session().is_ok());
+    }
 
     #[test]
     fn zstd_checks_each_window_before_decoder_allocation() {
@@ -234,50 +299,20 @@ mod tests {
         let (ctx, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert!(
-            matches!(ctx.open_zstd(root), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "Zstandard window" && limit.additional == 1 << 30)
+            matches!(ctx.open_zstd(root), Err(CodecError::NotImplemented(message)) if message.starts_with(&format!("Zstandard window of {} bytes", 1_u64 << 30)) && message.ends_with("per-expansion allowance"))
         );
+        assert_eq!(ctx.resource_refusal(), None);
     }
 
     #[test]
-    fn zstd_workspace_stays_reserved_until_decoder_drop() {
+    fn zstd_decodes_a_frame() {
         let bytes = zstd::bulk::compress(b"payload", 0).expect("frame");
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            7 + 3 * BLOCK_BYTES + FIXED_STATE_BYTES + COPY_PADDING_BYTES;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         let mut decoder = ctx.open_zstd(root).expect("decoder");
-        assert_eq!(
-            decoder.workspace_bytes,
-            policy.limits.max_materialized_bytes
-        );
         let mut output = [0; 7];
         assert_eq!(decoder.read_chunk(&mut output).expect("read"), 7);
         assert_eq!(&output, b"payload");
-        drop(decoder);
-        ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse workspace")
-            .expect("released workspace");
-    }
-
-    #[test]
-    fn zstd_workspace_and_work_limits_remain_typed() {
-        let bytes = zstd::bulk::compress(b"payload", 0).expect("frame");
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            if dimension == ResourceDimension::MaterializedBytes {
-                policy.limits.max_materialized_bytes = 0;
-            } else {
-                policy.limits.max_work_units = 0;
-            }
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-            assert!(
-                matches!(ctx.open_zstd(root), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-            );
-        }
     }
 }

@@ -18,8 +18,8 @@ fn region() -> Vec<u8> {
 #[test]
 fn region_reads_every_declared_field_and_preserves_statuses_and_scalar_bits() {
     let bytes = region();
-    with_decode_context(|ctx| {
-        let (node, end) = SchemaNode::read(ctx, &bytes, 0).unwrap().unwrap();
+    with_decode_context(|_ctx| {
+        let (node, end) = SchemaNode::read(&bytes, 0).unwrap().unwrap();
         assert_eq!(end, 25);
         assert_eq!(node.kind(), 19);
         let wire = serde_json::to_value(&node).unwrap();
@@ -41,13 +41,11 @@ fn region_reads_every_declared_field_and_preserves_statuses_and_scalar_bits() {
         let mut followed = bytes.clone();
         followed.extend_from_slice(&[0, 19, 0, 3]);
         assert_eq!(
-            SchemaNode::read(ctx, &followed, 0).unwrap(),
+            SchemaNode::read(&followed, 0).unwrap(),
             Some((node.clone(), end))
         );
         for length in 0..bytes.len() {
-            assert!(SchemaNode::read(ctx, &bytes[..length], 0)
-                .unwrap()
-                .is_none());
+            assert!(SchemaNode::read(&bytes[..length], 0).unwrap().is_none());
         }
         assert_eq!(
             serde_json::from_value::<SchemaNode>(wire.clone()).unwrap(),
@@ -87,8 +85,8 @@ fn variable_limit_retains_two_complete_ext11_blocks_without_swallowing_the_succe
     }
     let end = bytes.len();
     bytes.extend_from_slice(&[0, 40, 0, 1]);
-    with_decode_context(|ctx| {
-        let (node, actual_end) = SchemaNode::read(ctx, &bytes, 0).unwrap().unwrap();
+    with_decode_context(|_ctx| {
+        let (node, actual_end) = SchemaNode::read(&bytes, 0).unwrap().unwrap();
         assert_eq!(actual_end, end);
         assert_eq!(node.schema_byte_len, schema_end);
         let wire = serde_json::to_value(&node).unwrap();
@@ -104,16 +102,14 @@ fn variable_limit_retains_two_complete_ext11_blocks_without_swallowing_the_succe
             serde_json::json!([11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21.])
         );
         for length in schema_end..end {
-            assert!(SchemaNode::read(ctx, &bytes[..length], 0)
-                .unwrap()
-                .is_none());
+            assert!(SchemaNode::read(&bytes[..length], 0).unwrap().is_none());
         }
         let mut invalid = bytes.clone();
         invalid[schema_end..schema_end + 4].copy_from_slice(&u32::MAX.to_be_bytes());
-        assert!(SchemaNode::read(ctx, &invalid, 0).unwrap().is_none());
+        assert!(SchemaNode::read(&invalid, 0).unwrap().is_none());
         let mut nonfinite = bytes.clone();
         nonfinite[end - 8..end].copy_from_slice(&f64::NAN.to_be_bytes());
-        assert!(SchemaNode::read(ctx, &nonfinite, 0).unwrap().is_none());
+        assert!(SchemaNode::read(&nonfinite, 0).unwrap().is_none());
         let mut missing = wire.clone();
         missing["values"][2].as_array_mut().unwrap().pop();
         assert!(serde_json::from_value::<SchemaNode>(missing).is_err());
@@ -127,8 +123,8 @@ fn omitted_variable_storage_has_a_length_but_no_values() {
     bytes.extend_from_slice(&[0, 0, 0, 2, 1, b'd', 0, b'Z']);
     bytes.extend_from_slice(&4u32.to_be_bytes());
     bytes.extend_from_slice(&[0, 9, b'T']);
-    with_decode_context(|ctx| {
-        let (node, end) = SchemaNode::read(ctx, &bytes, 0).unwrap().unwrap();
+    with_decode_context(|_ctx| {
+        let (node, end) = SchemaNode::read(&bytes, 0).unwrap().unwrap();
         assert_eq!(end, bytes.len());
         assert_eq!(node.variable_length, Some(4));
         assert!(node.values[1].is_empty());

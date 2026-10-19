@@ -6,6 +6,8 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use cadmpeg_core::CodecError;
+
 use super::assembly_placement::AssemblyPlacement;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
@@ -125,50 +127,35 @@ trait StreamNoted {
 /// `nx:container` note at the record's source offset with the phase's optional tag,
 /// plus the row's exactness.
 fn note_container<T: ContainerNoted>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[T],
     catalogue_row: &CatalogueRow,
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+) {
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for record in records {
         let (id, offset) = record.container_note();
-        a.note(ctx, &id, &stream, offset, tag)?;
-        a.exactness(ctx, id, catalogue_row.exactness)?;
+        a.note(&id, &stream, offset, tag);
+        a.exactness(id, catalogue_row.exactness);
     }
-    Ok(())
 }
 
 /// Emit the standard per-stream note for every record in a family: one note in
 /// the record's own `nx:s{ordinal}` stream at its inflated offset tagged with
 /// the phase's optional tag, plus the row's exactness.
 fn note_per_stream<T: StreamNoted>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[T],
     catalogue_row: &CatalogueRow,
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for record in records {
         let (id, stream_ordinal, offset) = record.stream_note();
-        let stream = StreamHandle::new(
-            ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(
-                ctx,
-                stream_ordinal,
-                "compose annotation stream name",
-            )?,
-            "allocate annotation stream handle",
-        )?;
-        a.note(ctx, id, &stream, offset, tag)?;
-        a.exactness(ctx, id, catalogue_row.exactness)?;
+        let stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("nx:s").with_suffix(stream_ordinal));
+        a.note(id, &stream, offset, tag);
+        a.exactness(id, catalogue_row.exactness);
     }
-    Ok(())
 }
 
 impl ContainerNoted for DisplayJtSegment {
@@ -748,235 +735,170 @@ impl StreamNoted for ParasolidTopologyAttributeListReference {
 }
 
 fn note_display_jt_display_jt_indices(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+) {
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for index in &m.display_jt.indices {
         a.note(
-            ctx,
             &index.id,
             &annotation_stream,
             index.source_offset,
             Some("DISPLAY_JT_INDEX"),
-        )?;
-        a.exactness(ctx, &index.id, Exactness::ByteExact)?;
+        );
+        a.exactness(&index.id, Exactness::ByteExact);
         for row in index.rows() {
             a.note(
-                ctx,
                 &row.id,
                 &annotation_stream,
                 row.source_offset,
                 Some("DISPLAY_JT_INDEX_ROW"),
-            )?;
-            a.exactness(ctx, &row.id, Exactness::ByteExact)?;
+            );
+            a.exactness(&row.id, Exactness::ByteExact);
         }
     }
-    Ok(())
 }
 
 fn note_display_jt_display_jt_documents(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+) {
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for document in m.display_jt.graph.documents() {
         a.note(
-            ctx,
             &document.id,
             &annotation_stream,
             document.source_offset,
             Some("DISPLAY_JT_DOCUMENT"),
-        )?;
-        a.exactness(ctx, &document.id, Exactness::ByteExact)?;
+        );
+        a.exactness(&document.id, Exactness::ByteExact);
         for entry in &document.toc_entries {
             a.note(
-                ctx,
                 &entry.id,
                 &annotation_stream,
                 entry.source_offset,
                 Some("DISPLAY_JT_TOC_ENTRY"),
-            )?;
-            a.exactness(ctx, &entry.id, Exactness::ByteExact)?;
+            );
+            a.exactness(&entry.id, Exactness::ByteExact);
         }
     }
-    Ok(())
 }
 
 fn note_parasolid_parasolid_intersection_records(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for record in &m.parasolid.intersection_records {
-        let source_stream = StreamHandle::new(
-            ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(
-                ctx,
-                record.stream_ordinal,
-                "compose annotation stream name",
-            )?,
-            "allocate annotation stream handle",
-        )?;
+        let source_stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("nx:s").with_suffix(record.stream_ordinal));
         a.note(
-            ctx,
             &record.id,
             &source_stream,
             record.inflated_offset,
             Some("INTERSECTION"),
-        )?;
-        a.exactness(ctx, &record.id, Exactness::ByteExact)?;
+        );
+        a.exactness(&record.id, Exactness::ByteExact);
     }
-    Ok(())
 }
 
 fn note_parasolid_parasolid_attribute_class_uses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for class_use in &m.parasolid.attribute_class_uses {
         let source_stream = StreamHandle::new(
-            ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(
-                ctx,
-                class_use.stream_ordinal,
-                "compose annotation stream name",
-            )?,
-            "allocate annotation stream handle",
-        )?;
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+        );
         a.note(
-            ctx,
             &class_use.id,
             &source_stream,
             class_use.inflated_offset,
             Some("ATTRIBUTE_CLASS_USE"),
-        )?;
-        a.exactness(ctx, &class_use.id, Exactness::Derived)?;
+        );
+        a.exactness(&class_use.id, Exactness::Derived);
     }
-    Ok(())
 }
 
 fn note_parasolid_parasolid_topology_attribute_class_uses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for class_use in &m.parasolid.topology_attribute_class_uses {
         let source_stream = StreamHandle::new(
-            ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(
-                ctx,
-                class_use.stream_ordinal,
-                "compose annotation stream name",
-            )?,
-            "allocate annotation stream handle",
-        )?;
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+        );
         a.note(
-            ctx,
             &class_use.id,
             &source_stream,
             class_use.inflated_offset,
             Some("TOPOLOGY_ATTRIBUTE_CLASS_USE"),
-        )?;
-        a.exactness(ctx, &class_use.id, Exactness::Derived)?;
+        );
+        a.exactness(&class_use.id, Exactness::Derived);
     }
-    Ok(())
 }
 
 fn note_features_feature_sketch_point_uses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+) {
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for point_use in &m.features.feature_sketch_point_uses {
         a.note(
-            ctx,
             &point_use.id,
             &annotation_stream,
             point_use.references[0].source_offset,
             Some("SKETCH_POINT_USE"),
-        )?;
-        a.exactness(ctx, &point_use.id, Exactness::Derived)?;
+        );
+        a.exactness(&point_use.id, Exactness::Derived);
     }
-    Ok(())
 }
 
 fn note_features_feature_input_block_identity_groups(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+) {
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for group in &m.features.feature_input_block_identity_groups {
         a.note(
-            ctx,
             &group.id,
             &annotation_stream,
             group.members[0].source_offset,
             Some("FEATURE_INPUT_BLOCK_IDENTITY_GROUP"),
-        )?;
-        a.exactness(ctx, &group.id, Exactness::ByteExact)?;
+        );
+        a.exactness(&group.id, Exactness::ByteExact);
     }
-    Ok(())
 }
 
 fn note_features_feature_parameter_uses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     m: &NativeModel,
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+) {
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for parameter_use in &m.features.feature_parameter_uses {
         a.note(
-            ctx,
             &parameter_use.id,
             &annotation_stream,
             parameter_use.bindings[0].source_offset,
             Some("FEATURE_PARAMETER_USE"),
-        )?;
-        a.exactness(ctx, &parameter_use.id, Exactness::Derived)?;
+        );
+        a.exactness(&parameter_use.id, Exactness::Derived);
     }
-    Ok(())
 }
 
 /// One row per native record family, note-bearing rows in emission order.
@@ -1008,7 +930,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_SEGMENT"),
-            note: |ctx, m, r, tag, a| note_container(ctx, m.display_jt.graph.segments(), r, tag, a),
+            note: |m, r, tag, a| note_container(m.display_jt.graph.segments(), r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.segments(), r, ns),
         len: |m| m.display_jt.graph.segments().len(),
@@ -1019,9 +941,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_SHAPE_LOD_ELEMENT"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, m.display_jt.graph.shape_lod_elements(), r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(m.display_jt.graph.shape_lod_elements(), r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.shape_lod_elements(), r, ns),
         len: |m| m.display_jt.graph.shape_lod_elements().len(),
@@ -1032,9 +952,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_TRI_STRIP_LOD_HEADER"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.tri_strip_lod_headers, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.tri_strip_lod_headers, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.tri_strip_lod_headers, r, ns),
         len: |m| m.display_jt.tri_strip_lod_headers.len(),
@@ -1045,8 +963,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_INITIAL_FACE_DEGREE_SYMBOLS"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.initial_face_degree_symbols, r, tag, a)
+            note: |m, r, tag, a| {
+                note_container(&m.display_jt.initial_face_degree_symbols, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.initial_face_degree_symbols, r, ns),
@@ -1058,9 +976,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_TOPOLOGY_PACKET_SEQUENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.topology_packet_sequences, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.topology_packet_sequences, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.topology_packet_sequences, r, ns),
         len: |m| m.display_jt.topology_packet_sequences.len(),
@@ -1071,9 +987,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_RECORDS_HEADER"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.vertex_records_headers, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.vertex_records_headers, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_records_headers, r, ns),
         len: |m| m.display_jt.vertex_records_headers.len(),
@@ -1084,9 +998,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_COORDINATE_ARRAY_HEADER"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.coordinate_array_headers, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.coordinate_array_headers, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.coordinate_array_headers, r, ns),
         len: |m| m.display_jt.coordinate_array_headers.len(),
@@ -1097,9 +1009,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_COORDINATES"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.vertex_coordinates, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.vertex_coordinates, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_coordinates, r, ns),
         len: |m| m.display_jt.vertex_coordinates.len(),
@@ -1110,7 +1020,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_NORMALS"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.vertex_normals, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.vertex_normals, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_normals, r, ns),
         len: |m| m.display_jt.vertex_normals.len(),
@@ -1121,7 +1031,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_COLORS"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.vertex_colors, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.vertex_colors, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_colors, r, ns),
         len: |m| m.display_jt.vertex_colors.len(),
@@ -1132,8 +1042,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_TEXTURE_COORDINATES"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.vertex_texture_coordinates, r, tag, a)
+            note: |m, r, tag, a| {
+                note_container(&m.display_jt.vertex_texture_coordinates, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_texture_coordinates, r, ns),
@@ -1145,7 +1055,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_FLAGS"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.vertex_flags, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.vertex_flags, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_flags, r, ns),
         len: |m| m.display_jt.vertex_flags.len(),
@@ -1156,8 +1066,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_GEOMETRIC_TRANSFORM"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.geometric_transform_attributes, r, tag, a)
+            note: |m, r, tag, a| {
+                note_container(&m.display_jt.geometric_transform_attributes, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.geometric_transform_attributes, r, ns),
@@ -1169,9 +1079,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_MATERIAL_ATTRIBUTE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.material_attributes, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.material_attributes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.material_attributes, r, ns),
         len: |m| m.display_jt.material_attributes.len(),
@@ -1182,7 +1090,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_POLYGON_MESH"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.polygon_meshes, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.polygon_meshes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.polygon_meshes, r, ns),
         len: |m| m.display_jt.polygon_meshes.len(),
@@ -1193,14 +1101,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_COMPRESSED_ELEMENT_SEQUENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    m.display_jt.graph.compressed_element_sequences(),
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(m.display_jt.graph.compressed_element_sequences(), r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1219,8 +1121,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_COMPRESSED_ELEMENT"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, m.display_jt.graph.compressed_elements(), r, tag, a)
+            note: |m, r, tag, a| {
+                note_container(m.display_jt.graph.compressed_elements(), r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.compressed_elements(), r, ns),
@@ -1232,9 +1134,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_STRING_PROPERTY_ATOM"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.string_property_atoms, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.string_property_atoms, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.string_property_atoms, r, ns),
         len: |m| m.display_jt.string_property_atoms.len(),
@@ -1245,9 +1145,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_SHAPE_LOD_BINDING"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.shape_lod_bindings, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.shape_lod_bindings, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.shape_lod_bindings, r, ns),
         len: |m| m.display_jt.shape_lod_bindings.len(),
@@ -1258,7 +1156,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_BASE_NODE_DATA"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.base_node_data, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.base_node_data, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.base_node_data, r, ns),
         len: |m| m.display_jt.base_node_data.len(),
@@ -1269,7 +1167,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_GROUP_NODE_DATA"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.group_node_data, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.group_node_data, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.group_node_data, r, ns),
         len: |m| m.display_jt.group_node_data.len(),
@@ -1280,7 +1178,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_INSTANCE_NODE"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.instance_nodes, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.instance_nodes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.instance_nodes, r, ns),
         len: |m| m.display_jt.instance_nodes.len(),
@@ -1291,7 +1189,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_PARTITION_NODE"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.partition_nodes, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.partition_nodes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.partition_nodes, r, ns),
         len: |m| m.display_jt.partition_nodes.len(),
@@ -1302,7 +1200,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_RANGE_LOD_NODE"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.display_jt.range_lod_nodes, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.display_jt.range_lod_nodes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.range_lod_nodes, r, ns),
         len: |m| m.display_jt.range_lod_nodes.len(),
@@ -1313,9 +1211,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_TRI_STRIP_SHAPE_NODE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.display_jt.tri_strip_shape_nodes, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.display_jt.tri_strip_shape_nodes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.tri_strip_shape_nodes, r, ns),
         len: |m| m.display_jt.tri_strip_shape_nodes.len(),
@@ -1326,7 +1222,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("UG_PART_SEGMENT_INDEX_ROW"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.segments.index_rows, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.segments.index_rows, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.index_rows, r, ns),
         len: |m| m.segments.index_rows.len(),
@@ -1337,7 +1233,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("UG_PART_SEGMENT_STREAM_LINK"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.segments.stream_links, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.segments.stream_links, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.stream_links, r, ns),
         len: |m| m.segments.stream_links.len(),
@@ -1348,7 +1244,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("UG_PART_SEGMENT_BODY_BINDING"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.segments.body_bindings, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.segments.body_bindings, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.body_bindings, r, ns),
         len: |m| m.segments.body_bindings.len(),
@@ -1359,9 +1255,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("SEGMENT_BODY_LINEAGE_STATUS"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.segments.body_lineage_statuses, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.segments.body_lineage_statuses, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.body_lineage_statuses, r, ns),
         len: |m| m.segments.body_lineage_statuses.len(),
@@ -1372,7 +1266,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("PARASOLID_GROUP_RECORD"),
-            note: |ctx, m, r, tag, a| note_per_stream(ctx, &m.parasolid.group_records, r, tag, a),
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.group_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.group_records, r, ns),
         len: |m| m.parasolid.group_records.len(),
@@ -1391,9 +1285,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_TRANSMIT_HEADER"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_transmit_headers, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_transmit_headers, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_transmit_headers, r, ns),
         len: |m| m.parasolid.deltas_transmit_headers.len(),
@@ -1404,8 +1296,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_TERMINAL_NULL_REFERENCES"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_terminal_null_references, r, tag, a)
+            note: |m, r, tag, a| {
+                note_per_stream(&m.parasolid.deltas_terminal_null_references, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_terminal_null_references, r, ns),
@@ -1417,7 +1309,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_RECORD"),
-            note: |ctx, m, r, tag, a| note_per_stream(ctx, &m.parasolid.deltas_records, r, tag, a),
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_records, r, ns),
         len: |m| m.parasolid.deltas_records.len(),
@@ -1428,9 +1320,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_TOMBSTONE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_tombstones, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_tombstones, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_tombstones, r, ns),
         len: |m| m.parasolid.deltas_tombstones.len(),
@@ -1441,9 +1331,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_BODY_REVISION"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_body_revisions, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_body_revisions, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_body_revisions, r, ns),
         len: |m| m.parasolid.deltas_body_revisions.len(),
@@ -1454,8 +1342,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_TAGGED_REFERENCES"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_tagged_reference_lanes, r, tag, a)
+            note: |m, r, tag, a| {
+                note_per_stream(&m.parasolid.deltas_tagged_reference_lanes, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_tagged_reference_lanes, r, ns),
@@ -1467,8 +1355,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_REFERENCE_TYPE_MAP"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_reference_type_maps, r, tag, a)
+            note: |m, r, tag, a| {
+                note_per_stream(&m.parasolid.deltas_reference_type_maps, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_reference_type_maps, r, ns),
@@ -1480,9 +1368,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_PMARK"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_pmark_packets, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_pmark_packets, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_pmark_packets, r, ns),
         len: |m| m.parasolid.deltas_pmark_packets.len(),
@@ -1493,9 +1379,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_PARTITION_PREFIX"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_partition_prefixes, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_partition_prefixes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_partition_prefixes, r, ns),
         len: |m| m.parasolid.deltas_partition_prefixes.len(),
@@ -1506,8 +1390,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_REFERENCE_MARKER"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_reference_marker_packets, r, tag, a)
+            note: |m, r, tag, a| {
+                note_per_stream(&m.parasolid.deltas_reference_marker_packets, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_reference_marker_packets, r, ns),
@@ -1519,9 +1403,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_SCHEMA_NODE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_schema_nodes, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_schema_nodes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_schema_nodes, r, ns),
         len: |m| m.parasolid.deltas_schema_nodes.len(),
@@ -1532,9 +1414,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DELTAS_RESIDUAL"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_residual_spans, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.deltas_residual_spans, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_residual_spans, r, ns),
         len: |m| m.parasolid.deltas_residual_spans.len(),
@@ -1545,9 +1425,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("BLEND_SURF"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.blend_surface_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.blend_surface_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.blend_surface_records, r, ns),
         len: |m| m.parasolid.blend_surface_records.len(),
@@ -1558,9 +1436,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("BLEND_BOUND"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.blend_bound_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.blend_bound_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.blend_bound_records, r, ns),
         len: |m| m.parasolid.blend_bound_records.len(),
@@ -1571,9 +1447,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OFFSET_SURF"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.offset_surface_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.offset_surface_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.offset_surface_records, r, ns),
         len: |m| m.parasolid.offset_surface_records.len(),
@@ -1584,9 +1458,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("TRIMMED_CURVE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.trimmed_curve_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.trimmed_curve_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.trimmed_curve_records, r, ns),
         len: |m| m.parasolid.trimmed_curve_records.len(),
@@ -1597,9 +1469,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("SP_CURVE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.surface_curve_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.surface_curve_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.surface_curve_records, r, ns),
         len: |m| m.parasolid.surface_curve_records.len(),
@@ -1621,9 +1491,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("term_use"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.term_use_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.term_use_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.term_use_records, r, ns),
         len: |m| m.parasolid.term_use_records.len(),
@@ -1634,9 +1502,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("values"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.support_uv_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.support_uv_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.support_uv_records, r, ns),
         len: |m| m.parasolid.support_uv_records.len(),
@@ -1647,7 +1513,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("CHART_s"),
-            note: |ctx, m, r, tag, a| note_per_stream(ctx, &m.parasolid.chart_records, r, tag, a),
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.chart_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.chart_records, r, ns),
         len: |m| m.parasolid.chart_records.len(),
@@ -1658,9 +1524,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ATTRIBUTE_DEFINITION"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.attribute_definitions, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.attribute_definitions, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.attribute_definitions, r, ns),
         len: |m| m.parasolid.attribute_definitions.len(),
@@ -1687,9 +1551,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_51"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_51_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_51_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_51_records, r, ns),
         len: |m| m.parasolid.entity_51_records.len(),
@@ -1700,9 +1562,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_52_INTEGERS"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_52_integer_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_52_integer_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_52_integer_records, r, ns),
         len: |m| m.parasolid.entity_52_integer_records.len(),
@@ -1713,9 +1573,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_53_DOUBLES"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_53_double_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_53_double_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_53_double_records, r, ns),
         len: |m| m.parasolid.entity_53_double_records.len(),
@@ -1726,9 +1584,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_54_STRING"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_54_string_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_54_string_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_54_string_records, r, ns),
         len: |m| m.parasolid.entity_54_string_records.len(),
@@ -1739,9 +1595,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ATTRIBUTE_VECTOR_VALUES"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_vector_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_vector_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_vector_records, r, ns),
         len: |m| m.parasolid.entity_vector_records.len(),
@@ -1752,9 +1606,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_57_AXES"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_57_axis_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_57_axis_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_57_axis_records, r, ns),
         len: |m| m.parasolid.entity_57_axis_records.len(),
@@ -1765,9 +1617,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_58_TAGS"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_58_tag_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_58_tag_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_58_tag_records, r, ns),
         len: |m| m.parasolid.entity_58_tag_records.len(),
@@ -1778,9 +1628,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_62_UNICODE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_62_unicode_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_62_unicode_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_62_unicode_records, r, ns),
         len: |m| m.parasolid.entity_62_unicode_records.len(),
@@ -1791,9 +1639,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_51_STRING_USE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_51_string_uses, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_51_string_uses, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_51_string_uses, r, ns),
         len: |m| m.parasolid.entity_51_string_uses.len(),
@@ -1804,9 +1650,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("ENTITY_51_NUMERIC_USE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_51_numeric_uses, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_51_numeric_uses, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_51_numeric_uses, r, ns),
         len: |m| m.parasolid.entity_51_numeric_uses.len(),
@@ -1817,9 +1661,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("ENTITY_51_STRUCTURED_USE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.entity_51_structured_uses, r, tag, a)
-            },
+            note: |m, r, tag, a| note_per_stream(&m.parasolid.entity_51_structured_uses, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_51_structured_uses, r, ns),
         len: |m| m.parasolid.entity_51_structured_uses.len(),
@@ -1849,14 +1691,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("TOPOLOGY_ATTRIBUTE_LIST_REFERENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(
-                    ctx,
-                    &m.parasolid.topology_attribute_list_references,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_per_stream(&m.parasolid.topology_attribute_list_references, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1881,9 +1717,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OFFSET_STORE_OBJECT_FRAME"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.data_block_object_frames, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.data_block_object_frames, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.data_block_object_frames, r, ns),
         len: |m| m.features.data_block_object_frames.len(),
@@ -1894,9 +1728,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OFFSET_STORE_NAMED_POINT"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.offset_store_named_points, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.offset_store_named_points, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.offset_store_named_points, r, ns),
         len: |m| m.features.offset_store_named_points.len(),
@@ -1907,14 +1739,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("SKETCH_NAMED_POINT_BLOCK_USE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_sketch_named_point_block_uses,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_sketch_named_point_block_uses, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1933,14 +1759,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("SKETCH_PRECEDING_NAMED_POINT_USE"),
-            note: |ctx, m, r, tag, a| {
+            note: |m, r, tag, a| {
                 note_container(
-                    ctx,
                     &m.features.feature_sketch_preceding_named_point_uses,
                     r,
                     tag,
                     a,
-                )
+                );
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1970,14 +1795,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("SKETCH_DATUM_CSYS_DEPENDENCY"),
-            note: |ctx, m, r, tag, a| {
+            note: |m, r, tag, a| {
                 note_container(
-                    ctx,
                     &m.features.feature_sketch_datum_csys_dependencies,
                     r,
                     tag,
                     a,
-                )
+                );
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2009,9 +1833,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OFFSET_STORE_ABR_REFERENCE_LANE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.data_block_abr_reference_lanes, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.data_block_abr_reference_lanes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_abr_reference_lanes, r, ns),
         len: |m| m.om.data_block_abr_reference_lanes.len(),
@@ -2022,7 +1844,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("UG_PART_SEGMENT_OM_LINK"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.segments.om_links, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.segments.om_links, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.om_links, r, ns),
         len: |m| m.segments.om_links.len(),
@@ -2033,7 +1855,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_RECORD_AREA"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.om_record_areas, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.om.om_record_areas, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.om_record_areas, r, ns),
         len: |m| m.om.om_record_areas.len(),
@@ -2044,7 +1866,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_AUDIT_TRAIL_ROW"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.audit_trail_rows, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.om.audit_trail_rows, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.audit_trail_rows, r, ns),
         len: |m| m.om.audit_trail_rows.len(),
@@ -2055,9 +1877,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_OPERATION_STATE_JOURNAL_GROUP"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.operation_state_journal_groups, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.operation_state_journal_groups, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_journal_groups, r, ns),
         len: |m| m.om.operation_state_journal_groups.len(),
@@ -2068,9 +1888,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_OPERATION_STATE_COUNTER"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.operation_state_counters, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.operation_state_counters, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_counters, r, ns),
         len: |m| m.om.operation_state_counters.len(),
@@ -2081,26 +1899,27 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
-            note: |ctx, m, r, tag, a| {
+            note: |m, r, tag, a| {
                 for table in &m.om.operation_state_groups {
-                    note_container(ctx, table.groups(), r, tag, a)?;
+                    note_container(table.groups(), r, tag, a);
                 }
-                Ok(())
             },
         },
         emit: |ctx, m, r, ns| {
-            let count =
+            let _count =
                 m.om.operation_state_groups
                     .iter()
                     .try_fold(0usize, |total, table| {
                         total.checked_add(table.groups().len())
                     })
                     .ok_or_else(|| {
-                        ctx.refuse_codec_limit("NX roll-forward catalog group count", 0, 1)
+                        CodecError::malformed(format_args!(
+                            "{} exceeds its local bound",
+                            "NX roll-forward catalog group count"
+                        ))
                     })?;
 
-            let (mut groups, _groups_reservation) =
-                ctx.temporary_vec(count, "NX roll-forward catalog group references")?;
+            let mut groups = Vec::new();
             groups.extend(
                 m.om.operation_state_groups
                     .iter()
@@ -2121,9 +1940,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_OPERATION_STATE_MESSAGE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.operation_state_messages, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.operation_state_messages, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_messages, r, ns),
         len: |m| m.om.operation_state_messages.len(),
@@ -2134,9 +1951,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_OPERATION_STATE_STATUS"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.operation_state_statuses, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.operation_state_statuses, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_statuses, r, ns),
         len: |m| m.om.operation_state_statuses.len(),
@@ -2147,9 +1962,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_OPERATION_STATE_SLOT_LANE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.operation_state_slot_lanes, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.operation_state_slot_lanes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_slot_lanes, r, ns),
         len: |m| m.om.operation_state_slot_lanes.len(),
@@ -2160,9 +1973,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_LABEL"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_operation_labels, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_operation_labels, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_labels, r, ns),
         len: |m| m.features.feature_operation_labels.len(),
@@ -2173,9 +1984,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("FEATURE_SKETCH_RECORD"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_sketch_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_sketch_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_records, r, ns),
         len: |m| m.features.feature_sketch_records.len(),
@@ -2186,14 +1995,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_SKETCH_FIXED_PAIR"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_sketch_payload_fixed_pairs,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_sketch_payload_fixed_pairs, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2207,14 +2010,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_SKETCH_MIXED_PAIR"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_sketch_payload_mixed_pairs,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_sketch_payload_mixed_pairs, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2228,9 +2025,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("FEATURE_SKETCH_FIXED_POINT"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_sketch_fixed_points, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_sketch_fixed_points, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_fixed_points, r, ns),
         len: |m| m.features.feature_sketch_fixed_points.len(),
@@ -2241,9 +2036,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_RECORD"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_operation_records, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_operation_records, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_records, r, ns),
         len: |m| m.features.feature_operation_records.len(),
@@ -2254,14 +2047,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_UNLABELED_OPERATION_RECORD"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_unlabeled_operation_records,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_unlabeled_operation_records, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2275,14 +2062,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_UNLABELED_OPERATION_BODY_WRITE"),
-            note: |ctx, m, r, tag, a| {
+            note: |m, r, tag, a| {
                 note_container(
-                    ctx,
                     &m.features.feature_unlabeled_operation_body_writes,
                     r,
                     tag,
                     a,
-                )
+                );
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2301,8 +2087,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_BODY_WRITE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_operation_body_writes, r, tag, a)
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_operation_body_writes, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_body_writes, r, ns),
@@ -2314,14 +2100,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_TAGGED_REFERENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_operation_tagged_references,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_operation_tagged_references, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2335,14 +2115,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_DATA_BLOCK_REFERENCE"),
-            note: |ctx, m, r, tag, a| {
+            note: |m, r, tag, a| {
                 note_container(
-                    ctx,
                     &m.features.feature_operation_data_block_references,
                     r,
                     tag,
                     a,
-                )
+                );
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2361,8 +2140,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_COMMON_FRAME"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_operation_common_frames, r, tag, a)
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_operation_common_frames, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_common_frames, r, ns),
@@ -2374,14 +2153,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_TERMINAL_FRAME"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_operation_terminal_frames,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_operation_terminal_frames, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_terminal_frames, r, ns),
@@ -2393,14 +2166,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_STATE_JOURNAL_USE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_operation_state_journal_uses,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_operation_state_journal_uses, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2414,9 +2181,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_PAYLOAD_STRING"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_payload_strings, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_payload_strings, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_payload_strings, r, ns),
         len: |m| m.features.feature_payload_strings.len(),
@@ -2427,9 +2192,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_BODY_REFERENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_body_references, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_body_references, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_body_references, r, ns),
         len: |m| m.features.feature_body_references.len(),
@@ -2440,14 +2203,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_BODY_REFERENCE_OCCURRENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(
-                    ctx,
-                    &m.features.feature_body_reference_occurrences,
-                    r,
-                    tag,
-                    a,
-                )
+            note: |m, r, tag, a| {
+                note_container(&m.features.feature_body_reference_occurrences, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2461,9 +2218,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_INPUT_BLOCK"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_input_blocks, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_input_blocks, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_input_blocks, r, ns),
         len: |m| m.features.feature_input_blocks.len(),
@@ -2474,9 +2229,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("FEATURE_BOOLEAN_OPERATION"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_boolean_operations, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_boolean_operations, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_boolean_operations, r, ns),
         len: |m| m.features.feature_boolean_operations.len(),
@@ -2487,7 +2240,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("EXPRESSION_DECLARATION"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.expression_declarations, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.om.expression_declarations, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.expression_declarations, r, ns),
         len: |m| m.om.expression_declarations.len(),
@@ -2498,9 +2251,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_CONTROL_FORM"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.data_block_control_forms, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.data_block_control_forms, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_forms, r, ns),
         len: |m| m.om.data_block_control_forms.len(),
@@ -2511,9 +2262,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_CONTROL_VALUE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.data_block_control_values, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.data_block_control_values, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_values, r, ns),
         len: |m| m.om.data_block_control_values.len(),
@@ -2524,8 +2273,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_CONTROL_CLASS_REFERENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.data_block_control_class_references, r, tag, a)
+            note: |m, r, tag, a| {
+                note_container(&m.om.data_block_control_class_references, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_class_references, r, ns),
@@ -2537,9 +2286,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_CONTROL_INDEX_VALUE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.data_block_control_index_values, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.data_block_control_index_values, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_index_values, r, ns),
         len: |m| m.om.data_block_control_index_values.len(),
@@ -2550,9 +2297,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_CONTROL_REFERENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.data_block_control_references, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.data_block_control_references, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_references, r, ns),
         len: |m| m.om.data_block_control_references.len(),
@@ -2563,9 +2308,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_CONTROL_HANDLE_PAIR"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.data_block_control_handle_pairs, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.data_block_control_handle_pairs, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_handle_pairs, r, ns),
         len: |m| m.om.data_block_control_handle_pairs.len(),
@@ -2576,9 +2319,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_OBJECT_RECORD_HANDLE_PAIR"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.om.object_record_handle_pairs, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.om.object_record_handle_pairs, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.object_record_handle_pairs, r, ns),
         len: |m| m.om.object_record_handle_pairs.len(),
@@ -2589,7 +2330,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_REFERENCE"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.data_block_references, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.om.data_block_references, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_references, r, ns),
         len: |m| m.om.data_block_references.len(),
@@ -2600,9 +2341,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupA {
             tag: Some("FEATURE_PARAMETER_BINDING"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, &m.features.feature_parameter_bindings, r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(&m.features.feature_parameter_bindings, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_parameter_bindings, r, ns),
         len: |m| m.features.feature_parameter_bindings.len(),
@@ -2624,7 +2363,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("OM_STORE_VERSION"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.store_headers, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.om.store_headers, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.store_headers, r, ns),
         len: |m| m.om.store_headers.len(),
@@ -2635,7 +2374,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("EXTREFSTREAM_STRING"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.external_references, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.om.external_references, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_references, r, ns),
         len: |m| m.om.external_references.len(),
@@ -2646,7 +2385,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("FAST_LOAD_COMPONENT_PROTOTYPE"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.structure.prototypes, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.structure.prototypes, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.prototypes, r, ns),
         len: |m| m.structure.prototypes.len(),
@@ -2657,7 +2396,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("ASSEMBLY_PLACEMENT"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.assembly_placements, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.om.assembly_placements, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.assembly_placements, r, ns),
         len: |m| m.om.assembly_placements.len(),
@@ -2668,9 +2407,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("FAST_LOAD_COMPONENT_OCCURRENCE"),
-            note: |ctx, m, r, tag, a| {
-                note_container(ctx, m.structure.occurrences.as_slice(), r, tag, a)
-            },
+            note: |m, r, tag, a| note_container(m.structure.occurrences.as_slice(), r, tag, a),
         },
         emit: |ctx, m, r, ns| {
             if !m.structure.occurrences.as_slice().is_empty() {
@@ -2686,7 +2423,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("FAST_LOAD_COMPONENT_UUID"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.structure.uuids, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.structure.uuids, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.uuids, r, ns),
         len: |m| m.structure.uuids.len(),
@@ -2697,7 +2434,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         phase: Phase::GroupB {
             tag: Some("FAST_LOAD_COMPONENT_OBJECT_GROUP"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.structure.object_groups, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.structure.object_groups, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.object_groups, r, ns),
         len: |m| m.structure.object_groups.len(),
@@ -2708,7 +2445,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("SAVED_TOGGLE_STREAM"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.toggle.streams, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.toggle.streams, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.toggle.streams, r, ns),
         len: |m| m.toggle.streams.len(),
@@ -2719,7 +2456,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("SAVED_TOGGLE_ENTRY"),
-            note: |ctx, m, r, tag, a| note_container(ctx, &m.toggle.entries, r, tag, a),
+            note: |m, r, tag, a| note_container(&m.toggle.entries, r, tag, a),
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.toggle.entries, r, ns),
         len: |m| m.toggle.entries.len(),
@@ -4149,116 +3886,6 @@ pub(super) const NATIVE_CATALOGUE: Catalogue<
 #[cfg(test)]
 mod tests {
     #[test]
-    fn roll_forward_catalog_refuses_scoped_reference_storage() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
-            "/Root/UG_PART/UG_PART",
-            crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
-            ),
-        )]);
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |_| {},
-            |ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&bytes);
-
-                let scan = crate::decode::scan(ctx, root).unwrap();
-                let mut parsed =
-                    crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
-                let model = crate::native::model::NativeModel::extract(
-                    ctx,
-                    &scan.container,
-                    &scan.streams,
-                    &mut parsed,
-                    None,
-                )
-                .unwrap();
-                assert!(!model.om.operation_state_groups.is_empty());
-                let row = super::CATALOGUE
-                    .iter()
-                    .find(|row| row.arena == "om_roll_forward_state_groups")
-                    .expect("roll-forward group family");
-
-                crate::test_support::with_decode_context_over(
-                    &bytes,
-                    |policy| {
-                        policy.limits.max_materialized_bytes = 0;
-                    },
-                    |refusal_ctx| {
-                        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-                        let error =
-                            (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
-                        assert!(
-                            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes)
-                        );
-                    },
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn roll_forward_catalog_refuses_collection_reference_storage() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
-            "/Root/UG_PART/UG_PART",
-            crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
-            ),
-        )]);
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |_| {},
-            |ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&bytes);
-
-                let scan = crate::decode::scan(ctx, root).unwrap();
-                let mut parsed =
-                    crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
-                let model = crate::native::model::NativeModel::extract(
-                    ctx,
-                    &scan.container,
-                    &scan.streams,
-                    &mut parsed,
-                    None,
-                )
-                .unwrap();
-                let count = model
-                    .om
-                    .operation_state_groups
-                    .iter()
-                    .map(|table| table.groups().len())
-                    .sum::<usize>();
-                assert!(count > 0);
-                let row = super::CATALOGUE
-                    .iter()
-                    .find(|row| row.arena == "om_roll_forward_state_groups")
-                    .expect("roll-forward group family");
-
-                crate::test_support::with_decode_context_over(
-                    &bytes,
-                    |policy| {
-                        policy.limits.max_collection_items =
-                            cadmpeg_core::decode::u64_from_index(count - 1);
-                    },
-                    |refusal_ctx| {
-                        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-                        let error =
-                            (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
-                        assert!(
-                            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "NX roll-forward catalog group references")
-                        );
-                    },
-                );
-            },
-        );
-    }
-
-    #[test]
     fn class_use_annotation_survives_absent_entity_record() {
         use cadmpeg_ir::native::catalogue::NotePhase;
         let bytes = crate::test_support::test_prt::prt_with_partition(
@@ -4272,8 +3899,7 @@ mod tests {
                 let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
                 let scan = crate::decode::scan(ctx, root).unwrap();
-                let mut parsed =
-                    crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
+                let mut parsed = crate::native::substrate::ParsedStreams::parse(&scan).unwrap();
                 let mut model = crate::native::model::NativeModel::extract(
                     ctx,
                     &scan.container,
@@ -4286,9 +3912,7 @@ mod tests {
                 let id = model.parasolid.attribute_class_uses[0].id.clone();
                 model.parasolid.entity_51_records = Vec::new();
                 let mut annotations = super::AnnotationBuilder::new();
-                super::NATIVE_CATALOGUE
-                    .note_phase(ctx, NotePhase::GroupA, &model, &mut annotations)
-                    .expect("catalogue annotation admission");
+                super::NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, &model, &mut annotations);
                 assert!(annotations.build().exactness().contains_key(&id));
             },
         );

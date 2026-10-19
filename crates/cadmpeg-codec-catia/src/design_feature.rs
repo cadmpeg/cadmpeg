@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of exact CATIA reference history nodes.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, UnresolvedFamily,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use crate::chain_walk::{ChainStep, ChainStops};
 
 use crate::ids::neutral_history_id;
 use crate::native::{
@@ -43,11 +43,10 @@ impl DesignFeatureTransfer {
     /// invalid neutral history.
     fn assign_feature_parents(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         native: &CatiaNative,
     ) -> Result<(), CodecError> {
-        let parents = self.feature_parents(ctx, ir, native)?;
+        let parents = self.feature_parents(ir, native);
         for feature in &mut ir.model.features {
             feature.dependencies.retain(|dependency| {
                 parents
@@ -56,33 +55,25 @@ impl DesignFeatureTransfer {
             });
         }
         for (child, parent) in parents {
-            ir.model
-                .set_feature_regeneration_parent(ctx, &child, &parent)?;
+            ir.model.set_feature_regeneration_parent(&child, &parent)?;
         }
         Ok(())
     }
 
-    fn feature_parents(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &CadIr,
-        native: &CatiaNative,
-    ) -> Result<HashMap<FeatureId, FeatureId>, CodecError> {
-        let design_objects = ctx.collect_hash_map(
-            native
-                .design_objects
-                .iter()
-                .map(|object| (object.id.as_str(), object)),
-            "catia_feature_parent_objects",
-        )?;
-        let feature_ordinals = ctx.collect_hash_map(
-            ir.model
-                .features
-                .iter()
-                .map(|feature| (&feature.id, feature.ordinal)),
-            "catia_feature_parent_ordinals",
-        )?;
+    fn feature_parents(&self, ir: &CadIr, native: &CatiaNative) -> HashMap<FeatureId, FeatureId> {
+        let design_objects = native
+            .design_objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<std::collections::HashMap<_, _>>();
+        let feature_ordinals = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature.ordinal))
+            .collect::<std::collections::HashMap<_, _>>();
         let mut parents = HashMap::new();
+        let mut nearest = nearest_features(&design_objects, &self.feature_ids);
         for feature in &ir.model.features {
             let Some(native_ref) = feature.native_ref.as_deref() else {
                 continue;
@@ -93,13 +84,7 @@ impl DesignFeatureTransfer {
             let Some(parent_object) = object.owner_design_object.as_deref() else {
                 continue;
             };
-            let Some(parent) = nearest_feature_for_design_object(
-                ctx,
-                parent_object,
-                &design_objects,
-                &self.feature_ids,
-            )?
-            else {
+            let Some(parent) = nearest.of(parent_object) else {
                 continue;
             };
             let Some(parent_ordinal) = feature_ordinals.get(parent) else {
@@ -108,50 +93,34 @@ impl DesignFeatureTransfer {
             if parent == &feature.id || *parent_ordinal >= feature.ordinal {
                 continue;
             }
-            let child = feature
-                .id
-                .try_clone_for_decode(ctx, "catia_feature_parent_child")?;
-            let parent = parent.try_clone_for_decode(ctx, "catia_feature_parent_id")?;
-            ctx.insert_hash_map(&mut parents, child, parent, "catia_feature_parent_map")?;
+            let child = feature.id.clone();
+            let parent = parent.clone();
+            parents.insert(child, parent);
         }
-        let mut cyclic = Vec::new();
-        for feature in parents.keys() {
-            if !feature_parent_chain_is_acyclic(ctx, feature, &parents)? {
-                let id = feature.try_clone_for_decode(ctx, "catia_feature_cyclic_id")?;
-                ctx.push_vec(&mut cyclic, id, "catia_feature_cyclic_ids")?;
-            }
-        }
-        for feature in cyclic {
+        for feature in cyclic_feature_parents(&parents) {
             parents.remove(&feature);
         }
-        Ok(parents)
+        parents
     }
 
     /// Bind exact payload references to earlier transferred features as
     /// structural dependencies. A target may resolve through its complete
     /// owner-design-object chain. Storage selectors, unresolved targets,
     /// self-links, and forward targets do not establish history edges.
-    fn assign_feature_dependencies(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &mut CadIr,
-        native: &CatiaNative,
-    ) -> Result<(), CodecError> {
-        let design_objects = ctx.collect_hash_map(
-            native
-                .design_objects
-                .iter()
-                .map(|object| (object.id.as_str(), object)),
-            "catia_feature_dependency_objects",
-        )?;
-        let feature_ordinals = ctx.collect_hash_map(
-            ir.model
-                .features
-                .iter()
-                .map(|feature| (&feature.id, feature.ordinal)),
-            "catia_feature_dependency_ordinals",
-        )?;
+    fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
+        let design_objects = native
+            .design_objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<std::collections::HashMap<_, _>>();
+        let feature_ordinals = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature.ordinal))
+            .collect::<std::collections::HashMap<_, _>>();
         let mut dependencies_by_feature = HashMap::<FeatureId, Vec<FeatureId>>::new();
+        let mut nearest = nearest_features(&design_objects, &self.feature_ids);
 
         for feature in &ir.model.features {
             let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -160,8 +129,10 @@ impl DesignFeatureTransfer {
             let Some(object) = design_objects.get(native_ref) else {
                 continue;
             };
-            let mut seen =
-                ctx.collect_hash_set(feature.dependencies.iter(), "catia_feature_dependency_seen")?;
+            let mut seen = feature
+                .dependencies
+                .iter()
+                .collect::<std::collections::HashSet<_>>();
             for relation in &object.relations {
                 if !matches!(
                     &relation.source,
@@ -172,13 +143,7 @@ impl DesignFeatureTransfer {
                 let Some(target_object) = relation.target_design_object.as_deref() else {
                     continue;
                 };
-                let Some(target) = nearest_feature_for_design_object(
-                    ctx,
-                    target_object,
-                    &design_objects,
-                    &self.feature_ids,
-                )?
-                else {
+                let Some(target) = nearest.of(target_object) else {
                     continue;
                 };
                 if target == &feature.id || seen.contains(target) {
@@ -190,99 +155,95 @@ impl DesignFeatureTransfer {
                 if *target_ordinal >= feature.ordinal {
                     continue;
                 }
-                ctx.insert_hash_set(&mut seen, target, "catia_feature_dependency_seen")?;
+                seen.insert(target);
                 if !dependencies_by_feature.contains_key(&feature.id) {
-                    let id = feature
-                        .id
-                        .try_clone_for_decode(ctx, "catia_feature_dependency_owner")?;
-                    ctx.insert_hash_map(
-                        &mut dependencies_by_feature,
-                        id,
-                        Vec::new(),
-                        "catia_feature_dependency_map",
-                    )?;
+                    let id = feature.id.clone();
+                    dependencies_by_feature.insert(id, Vec::new());
                 }
-                let target = target.try_clone_for_decode(ctx, "catia_feature_dependency_target")?;
+                let target = target.clone();
                 if let Some(dependencies) = dependencies_by_feature.get_mut(&feature.id) {
-                    ctx.push_vec(dependencies, target, "catia_feature_dependency_values")?;
+                    dependencies.push(target);
                 }
             }
         }
 
         for feature in &mut ir.model.features {
             if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
-                feature.dependencies.reserve_for_decode(
-                    ctx,
-                    dependencies.len(),
-                    "catia_feature_dependency_values",
-                )?;
-                feature.dependencies.append(
-                    ctx,
-                    dependencies,
-                    "catia_feature_dependency_values",
-                )?;
+                feature.dependencies.extend(dependencies);
             }
         }
-        Ok(())
     }
 }
 
-fn feature_parent_chain_is_acyclic(
-    ctx: &DecodeContext<'_>,
-    feature_id: &FeatureId,
-    parents: &HashMap<FeatureId, FeatureId>,
-) -> Result<bool, CodecError> {
-    let mut current = feature_id;
-    let mut traversed = 0usize;
-    while let Some(parent) = parents.get(current) {
-        ctx.charge_work(1, "catia_feature_parent_chain")?;
-        traversed = traversed.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_feature_parent_chain", u64::MAX, u64::MAX)
-        })?;
-        if traversed > parents.len() {
-            return Ok(false);
+/// Features whose parent chain reaches a cycle.
+fn cyclic_feature_parents(parents: &HashMap<FeatureId, FeatureId>) -> Vec<FeatureId> {
+    let mut chain_ends = ChainStops::new(|feature: &FeatureId| {
+        parents
+            .get(feature)
+            .map_or(ChainStep::Stop, ChainStep::Next)
+    });
+    let mut cyclic = Vec::new();
+    for feature in parents.keys() {
+        if chain_ends.stop(feature).is_none() {
+            cyclic.push(feature.clone());
         }
-        current = parent;
     }
-    Ok(true)
+    cyclic
 }
 
-/// Resolve the nearest transferred feature on one exact owner chain.
+/// Walk one exact owner-design-object chain to the first object that
+/// `is_stop` accepts.
+///
+/// A missing object, a chain end or a cycle answers `None`.
+pub(crate) fn owner_chain_step<'a>(
+    id: &'a str,
+    object: Option<&'a CatiaDesignObject>,
+    is_stop: impl FnOnce(&str) -> bool,
+) -> ChainStep<&'a str> {
+    let Some(object) = object else {
+        return ChainStep::End;
+    };
+    if is_stop(id) {
+        return ChainStep::Stop;
+    }
+    object
+        .owner_design_object
+        .as_deref()
+        .filter(|parent| *parent != id)
+        .map_or(ChainStep::End, ChainStep::Next)
+}
+
+/// The nearest transferred feature on each exact owner chain.
 ///
 /// Structural groups may sit between a native feature object and another
 /// feature object. Stop at the first transferred feature so a nested feature
 /// keeps its immediate structural parent. A missing link or a cycle rejects
 /// the chain instead of inferring a relationship from field vocabulary.
-fn nearest_feature_for_design_object<'a>(
-    ctx: &DecodeContext<'_>,
-    start: &str,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
+struct NearestFeatures<'a, F> {
+    stops: ChainStops<&'a str, F>,
     feature_ids: &'a HashMap<String, FeatureId>,
-) -> Result<Option<&'a FeatureId>, CodecError> {
-    let mut current = Some(start);
-    let mut traversed = 0usize;
+}
 
-    while let Some(current_id) = current {
-        ctx.charge_work(1, "catia_feature_owner_chain")?;
-        traversed = traversed.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_feature_owner_chain", u64::MAX, u64::MAX)
-        })?;
-        if traversed > design_objects.len() {
-            return Ok(None);
-        }
-        let Some(object) = design_objects.get(current_id).copied() else {
-            return Ok(None);
-        };
-        if let Some(feature) = feature_ids.get(current_id) {
-            return Ok(Some(feature));
-        }
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
+fn nearest_features<'a>(
+    design_objects: &'a HashMap<&'a str, &'a CatiaDesignObject>,
+    feature_ids: &'a HashMap<String, FeatureId>,
+) -> NearestFeatures<'a, impl FnMut(&'a str) -> ChainStep<&'a str>> {
+    NearestFeatures {
+        stops: ChainStops::new(move |id: &'a str| {
+            owner_chain_step(id, design_objects.get(id).copied(), |id| {
+                feature_ids.contains_key(id)
+            })
+        }),
+        feature_ids,
     }
+}
 
-    Ok(None)
+impl<'a, F: FnMut(&'a str) -> ChainStep<&'a str>> NearestFeatures<'a, F> {
+    fn of(&mut self, design_object: &'a str) -> Option<&'a FeatureId> {
+        self.stops
+            .stop(design_object)
+            .and_then(|object| self.feature_ids.get(object))
+    }
 }
 
 /// Transfer exact owner-bound reference history nodes.
@@ -292,14 +253,12 @@ pub(crate) fn transfer_design_features(
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<DesignFeatureTransfer, cadmpeg_core::CodecError> {
-    let records = ctx.collect_hash_map(
-        native
-            .object_graphs
-            .iter()
-            .flat_map(|graph| &graph.records)
-            .map(|record| (record.id.as_str(), record)),
-        "catia_feature_transfer_records",
-    )?;
+    let records = (native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .map(|record| (record.id.as_str(), record)))
+    .collect::<std::collections::HashMap<_, _>>();
     let mut transfer = DesignFeatureTransfer::default();
 
     for object in native
@@ -307,7 +266,7 @@ pub(crate) fn transfer_design_features(
         .iter()
         .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
-        let plane_candidate = principal_plane_candidate(ctx, object, &records)?;
+        let plane_candidate = principal_plane_candidate(object, &records);
         let sketch_owner = sketch_candidate(object, &records);
         let reference_plane = reference_plane_candidate(object, &records);
         match (plane_candidate, sketch_owner, reference_plane) {
@@ -328,8 +287,8 @@ pub(crate) fn transfer_design_features(
         }
     }
 
-    transfer.assign_feature_parents(ctx, ir, native)?;
-    transfer.assign_feature_dependencies(ctx, ir, native)?;
+    transfer.assign_feature_parents(ir, native)?;
+    transfer.assign_feature_dependencies(ir, native);
     Ok(transfer)
 }
 
@@ -341,51 +300,36 @@ fn transfer_principal_plane(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let object = candidate.object;
     let feature_id = FeatureId::from(neutral_history_id(
-        ctx,
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_principal_feature_map_id")?;
-    let source_tag =
-        ctx.copy_retained_text(candidate.declaration_class, "catia_principal_feature_tag")?;
-    let native_ref = ctx.copy_retained_text(&object.id, "catia_principal_feature_ref")?;
-    ctx.push_vec(
-        &mut ir.model.features,
-        Feature {
-            id: feature_id,
-            ordinal: object.first_field_byte_offset,
-            name: None,
-            suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some(source_tag),
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
+    let map_feature_id = feature_id.clone();
+    let source_tag = candidate.declaration_class.to_owned();
+    let native_ref = object.id.clone();
+    ir.model.features.push(Feature {
+        id: feature_id,
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some(source_tag),
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
-                    plane: candidate.plane,
-                }),
-            ),
-            native_ref: Some(native_ref),
-        },
-        "catia_principal_features",
-    )?;
-    let map_key = ctx.copy_retained_text(&object.id, "catia_principal_feature_key")?;
-    ctx.insert_hash_map(
-        &mut transfer.feature_ids,
-        map_key,
-        map_feature_id,
-        "catia_principal_feature_ids",
-    )?;
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                plane: candidate.plane,
+            }),
+        ),
+        native_ref: Some(native_ref),
+    });
+    let map_key = object.id.clone();
+    transfer.feature_ids.insert(map_key, map_feature_id);
     for record in candidate.declarations {
-        let id = ctx.copy_retained_text(&record.id, "catia_principal_record_id")?;
-        ctx.insert_hash_set(
-            &mut transfer.principal_plane_records,
-            id,
-            "catia_principal_records",
-        )?;
+        let id = record.id.clone();
+        transfer.principal_plane_records.insert(id);
     }
     Ok(())
 }
@@ -398,49 +342,35 @@ fn transfer_reference_plane(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let object = candidate.object;
     let feature_id = FeatureId::from(neutral_history_id(
-        ctx,
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_reference_feature_map_id")?;
-    let source_tag = ctx.copy_retained_text(candidate.kind, "catia_reference_feature_tag")?;
-    let native_ref = ctx.copy_retained_text(&object.id, "catia_reference_feature_ref")?;
-    ctx.push_vec(
-        &mut ir.model.features,
-        Feature {
-            id: feature_id,
-            ordinal: object.first_field_byte_offset,
-            name: None,
-            suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some(source_tag),
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
+    let map_feature_id = feature_id.clone();
+    let source_tag = candidate.kind.to_owned();
+    let native_ref = object.id.clone();
+    ir.model.features.push(Feature {
+        id: feature_id,
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some(source_tag),
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                    family: UnresolvedFamily::DatumPlane,
-                }),
-            ),
-            native_ref: Some(native_ref),
-        },
-        "catia_reference_features",
-    )?;
-    let map_key = ctx.copy_retained_text(&object.id, "catia_reference_feature_key")?;
-    ctx.insert_hash_map(
-        &mut transfer.feature_ids,
-        map_key,
-        map_feature_id,
-        "catia_reference_feature_ids",
-    )?;
-    let record = ctx.copy_retained_text(&candidate.owner_record.id, "catia_reference_record_id")?;
-    ctx.insert_hash_set(
-        &mut transfer.reference_plane_records,
-        record,
-        "catia_reference_records",
-    )?;
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            }),
+        ),
+        native_ref: Some(native_ref),
+    });
+    let map_key = object.id.clone();
+    transfer.feature_ids.insert(map_key, map_feature_id);
+    let record = candidate.owner_record.id.clone();
+    transfer.reference_plane_records.insert(record);
     Ok(())
 }
 
@@ -451,76 +381,54 @@ fn transfer_sketch(
     object: &CatiaDesignObject,
     owner_record: &CatiaObjectRecord,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let sketch_id =
-        match neutral_history_id(ctx, &object.id, &cadmpeg_ir::identity_component!("sketch")) {
-            Ok(id) => SketchId::from(id),
-            Err(CodecError::Malformed(_)) => return Ok(()),
-            Err(error) => return Err(error),
-        };
+    let sketch_id = match neutral_history_id(&object.id, &cadmpeg_ir::identity_component!("sketch"))
+    {
+        Ok(id) => SketchId::from(id),
+        Err(CodecError::Malformed(_)) => return Ok(()),
+        Err(error) => return Err(error),
+    };
     let feature_id = FeatureId::from(neutral_history_id(
-        ctx,
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design sketch")?;
-    let binding_sketch_id =
-        sketch_id.try_clone_for_decode(ctx, "catia_design_sketch_binding_id")?;
-    let sketch_ref = ctx.copy_retained_text(&object.id, "catia_design_sketch_ref")?;
-    ctx.push_vec(
-        &mut ir.model.sketches,
-        Sketch {
-            id: sketch_id,
-            name: None,
-            configuration: None,
-            visible: None,
-            placement: SketchPlacement::Unresolved {},
-            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-            native_ref: Some(sketch_ref),
-        },
-        "catia_design_sketches",
-    )?;
+    let binding_sketch_id = sketch_id.clone();
+    let sketch_ref = object.id.clone();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: Some(sketch_ref),
+    });
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id =
-        feature_id.try_clone_for_decode(ctx, "catia_design_sketch_feature_map_id")?;
-    let feature_ref = ctx.copy_retained_text(&object.id, "catia_design_sketch_feature_ref")?;
-    let source_tag = ctx.copy_retained_text("Sketch", "catia_design_sketch_feature_tag")?;
-    ctx.push_vec(
-        &mut ir.model.features,
-        Feature {
-            id: feature_id,
-            ordinal: object.first_field_byte_offset,
-            name: None,
-            suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some(source_tag),
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
+    let map_feature_id = feature_id.clone();
+    let feature_ref = object.id.clone();
+    let source_tag = "Sketch".to_owned();
+    ir.model.features.push(Feature {
+        id: feature_id,
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some(source_tag),
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                        binding_sketch_id,
-                    )),
-                }),
-            ),
-            native_ref: Some(feature_ref),
-        },
-        "catia_design_sketch_features",
-    )?;
-    let map_key = ctx.copy_retained_text(&object.id, "catia_design_sketch_feature_key")?;
-    ctx.insert_hash_map(
-        &mut transfer.feature_ids,
-        map_key,
-        map_feature_id,
-        "catia_design_sketch_feature_ids",
-    )?;
-    let record = ctx.copy_retained_text(&owner_record.id, "catia_design_sketch_owner_id")?;
-    ctx.insert_hash_set(
-        &mut transfer.sketch_owner_records,
-        record,
-        "catia_design_sketch_owners",
-    )?;
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(binding_sketch_id)),
+            }),
+        ),
+        native_ref: Some(feature_ref),
+    });
+    let map_key = object.id.clone();
+    transfer.feature_ids.insert(map_key, map_feature_id);
+    let record = owner_record.id.clone();
+    transfer.sketch_owner_records.insert(record);
     Ok(())
 }
 
@@ -559,38 +467,21 @@ struct PrincipalPlaneCandidate<'a> {
     plane: PrincipalPlane,
     declaration_class: &'a str,
 }
-
 fn principal_plane_candidate<'a>(
-    ctx: &DecodeContext<'_>,
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
-) -> Result<Option<PrincipalPlaneCandidate<'a>>, CodecError> {
-    if object.owner_record.is_none() {
-        return Ok(None);
-    }
-    let Some(declarations) = ctx.collect_options(
-        object
-            .fields
-            .iter()
-            .map(|field| records.get(field.as_str()).copied()),
-        "catia_principal_plane_declarations",
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some(first) = declarations.first() else {
-        return Ok(None);
-    };
-    let Some(class_name) = first.class_name() else {
-        return Ok(None);
-    };
-    let Some(class_entry) = first.class_entry() else {
-        return Ok(None);
-    };
-    let Some(plane) = principal_plane(class_name) else {
-        return Ok(None);
-    };
-    Ok(declarations
+) -> Option<PrincipalPlaneCandidate<'a>> {
+    object.owner_record.as_ref()?;
+    let declarations = object
+        .fields
+        .iter()
+        .map(|field| records.get(field.as_str()).copied())
+        .collect::<Option<Vec<_>>>()?;
+    let first = declarations.first()?;
+    let class_name = first.class_name()?;
+    let class_entry = first.class_entry()?;
+    let plane = principal_plane(class_name)?;
+    declarations
         .iter()
         .all(|record| {
             record.class_name() == Some(class_name)
@@ -602,7 +493,7 @@ fn principal_plane_candidate<'a>(
             declarations,
             plane,
             declaration_class: class_name,
-        }))
+        })
 }
 
 fn sketch_candidate<'a>(

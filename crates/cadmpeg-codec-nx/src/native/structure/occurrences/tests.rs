@@ -8,7 +8,8 @@ use super::{FastLoadComponentOccurrenceWire, FastLoadOccurrences};
 
 fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::NxCodec::validate_native(ctx, ir).expect("validation fits service policy")
+        crate::NxCodec::validate_native(ctx, ir)
+            .expect("native validation stays within session limits")
     })
 }
 
@@ -76,32 +77,18 @@ fn native_occurrence_admission_preserves_caller_resource_refusals() {
         serde_json::from_value(json!({"fast_load_component_occurrences": rows(0)})).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);
-    for dimension in [
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        // Validation loads the records as temporary storage, so it charges materialized bytes.
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-    ] {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| match dimension {
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = 0;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = 0;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = 0;
-                }
-                _ => unreachable!(),
-            },
-            |ctx| {
-                let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension && Some(limit) == ctx.resource_refusal())
-                );
-            },
-        );
-    }
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_recursion_depth = 0,
+        |ctx| {
+            let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension
+                    == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                    && Some(limit) == ctx.resource_refusal()
+            ));
+        },
+    );
 }

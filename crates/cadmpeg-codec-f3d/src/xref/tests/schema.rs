@@ -15,19 +15,12 @@ fn unsupported_redirections_schema_preserves_error_kind() {
             if message.contains("unsupported schema-version 1"))
         );
     });
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "describe unsupported F3D redirections schema",
-        0,
-        |ctx| super::super::parse(ctx, &bytes),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.operation == "describe unsupported F3D redirections schema")
-    );
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
         let options = DecodeOptions {
-            container_only,
+            depth,
             ..DecodeOptions::default()
         };
         let error = F3dCodec

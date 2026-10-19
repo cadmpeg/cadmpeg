@@ -6,7 +6,7 @@ use crate::container::Container;
 use crate::om::enlarge::{EnlargeEnvelope, PARAMETER_CLASS};
 use crate::om::reference_index::{FeatureReferenceToken, PayloadIndexToken};
 use crate::om::scalar::{PayloadScalarAtom, PayloadScalarEncoding};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
@@ -100,13 +100,11 @@ impl Serialize for FeatureEnlargeConstructionEnvelope {
 }
 
 pub(in crate::native) fn feature_enlarge_construction_envelopes(
-    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureEnlargeConstructionEnvelope>, CodecError> {
     let mut envelopes = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
@@ -116,10 +114,6 @@ pub(in crate::native) fn feature_enlarge_construction_envelopes(
                 return;
             };
             let projected = (|| -> Result<Option<_>, CodecError> {
-                ctx.charge_work(
-                    u64_from_index(PARAMETER_CLASS.len()),
-                    "resolve NX ENLARGE parameter class",
-                )?;
                 if section
                     .types
                     .get(usize::from(field.parameter_class_index.get()) - 1)
@@ -139,23 +133,20 @@ pub(in crate::native) fn feature_enlarge_construction_envelopes(
                 };
                 let envelope = FeatureEnlargeConstructionEnvelope {
                     id: format_feature_history_id(
-                        ctx,
                         "enlarge-construction-envelope",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?,
+                    ),
                     operation_label: format_feature_history_id(
-                        ctx,
                         "operation-label",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?,
+                    ),
                     field,
                     source_offset,
                 };
-                ctx.reserve_vec(&mut envelopes, 1, "NX ENLARGE construction envelopes")?;
                 Ok(Some(envelope))
             })();
             match projected {

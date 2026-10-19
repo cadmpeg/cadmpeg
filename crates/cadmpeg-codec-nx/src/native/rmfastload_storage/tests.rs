@@ -9,7 +9,7 @@ fn rmfastload_storage_retains_entry_relative_spans_and_opaque_terminal_bytes() {
         &bytes,
         |_| {},
         |ctx| {
-            let container = crate::container::scan_bytes(ctx, bytes.clone()).unwrap();
+            let container = crate::container::scan_bytes(bytes.clone()).unwrap();
             let records = collect(ctx, &container, &[]).unwrap();
             assert_eq!(records.len(), 1);
             let wire = &records[0].0;
@@ -48,7 +48,7 @@ fn rmfastload_native_wire_rejects_missing_arrays_and_inconsistent_source_positio
         &bytes,
         |_| {},
         |ctx| {
-            let container = crate::container::scan_bytes(ctx, bytes.clone()).unwrap();
+            let container = crate::container::scan_bytes(bytes.clone()).unwrap();
             let value = serde_json::to_value(&collect(ctx, &container, &[]).unwrap()[0]).unwrap();
             for field in [
                 "boundaries",

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read Siemens NX `.prt` files into [`cadmpeg_ir::document::CadIr`].
 //!
 //! [`NxCodec`] is the normal public decode API. A hidden `fuzz` module
@@ -75,6 +74,8 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 macro_rules! propagate_resource {
     ($result:expr) => {
         match $result {
@@ -92,6 +93,7 @@ mod dialect;
 mod evaluation;
 mod framing;
 mod geometry;
+mod grouping;
 mod immutable_text;
 mod inspect;
 mod intersection;
@@ -140,37 +142,28 @@ impl CodecBackend for NxCodec {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Ok(Vec::new());
         };
-        let admitted = ctx.with_scoped_storage("load NX validation records", || {
-            native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
-                ctx, namespace,
-            )
-            .and_then(|_| {
-                native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
-                    ctx, namespace,
-                )
-            })
-            .and_then(|_| native::admit_construction_records(ctx, namespace))
-            .and_then(|()| native::rmfastload_storage::admit(ctx, namespace))
-            .and_then(|()| {
-                for record in namespace
-                    .arena_iter_as_for_decode::<native::assembly_placement::AssemblyPlacement>(
-                        ctx,
-                        "assembly_placements",
+        let admitted =
+            native::display_jt::admission::DisplayJtGraph::from_namespace(ctx, namespace)
+                .and_then(|_| {
+                    native::structure::occurrences::FastLoadOccurrences::from_namespace(
+                        ctx, namespace,
                     )
-                {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(
-                            native::assembly_placement::MAX_FRAME_BYTES,
-                        ),
-                        "admit NX assembly placement frame",
-                    )?;
-                    record?;
-                }
-                Ok(())
-            })
-        });
+                })
+                .and_then(|_| native::admit_construction_records(ctx, namespace))
+                .and_then(|()| native::rmfastload_storage::admit(ctx, namespace))
+                .and_then(|()| {
+                    for record in namespace
+                        .arena_iter_as_for_decode::<native::assembly_placement::AssemblyPlacement>(
+                            ctx,
+                            "assembly_placements",
+                        )
+                    {
+                        record?;
+                    }
+                    Ok(())
+                });
         Ok(match admitted {
-            Ok(_) => Vec::new(),
+            Ok(()) => Vec::new(),
             Err(error) => {
                 let message = error.to_string();
                 let codec_error = CodecError::from(error);
@@ -178,6 +171,7 @@ impl CodecBackend for NxCodec {
                     return Err(codec_error);
                 }
                 vec![cadmpeg_ir::report::check::Finding {
+                    related: Vec::new(),
                     check: cadmpeg_ir::report::check::Check::NativeLinks,
                     severity: cadmpeg_ir::report::Severity::Error,
                     message,
@@ -186,31 +180,26 @@ impl CodecBackend for NxCodec {
             }
         })
     }
-
     fn detect_impl(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+
         if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(ctx, prefix)? {
             Ok(Confidence::High)
         } else {
             Ok(Confidence::No)
         }
     }
-
     fn inspect_impl(
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = decode::scan(ctx, root)?;
-        inspect::summarize(ctx, &scan)
+        inspect::summarize(&scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

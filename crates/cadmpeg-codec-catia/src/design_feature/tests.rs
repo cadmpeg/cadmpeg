@@ -7,7 +7,7 @@ use super::{transfer_design_features, DesignFeatureTransfer};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Cursor;
 
 use crate::native::{
@@ -253,125 +253,6 @@ fn malformed_compact_root_does_not_promote_an_operation() {
 }
 
 #[test]
-fn principal_and_reference_features_refuse_collection_limit() {
-    let object = design_object("synthetic:test:object#plane", None);
-    let record = object_record("plane-record", None, None, None, None, None);
-    let principal = super::PrincipalPlaneCandidate {
-        object: &object,
-        declarations: vec![&record],
-        plane: cadmpeg_ir::features::PrincipalPlane::Top,
-        declaration_class: "xy-plane",
-    };
-    let mut ir = CadIr::empty();
-    let mut transfer = DesignFeatureTransfer::default();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_principal_features")
-    );
-    let principal = super::PrincipalPlaneCandidate {
-        object: &object,
-        declarations: vec![&record],
-        plane: cadmpeg_ir::features::PrincipalPlane::Top,
-        declaration_class: "xy-plane",
-    };
-    crate::test_support::with_service_context(|ctx| {
-        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
-    })
-    .expect("service profile admits principal plane");
-    assert_eq!(ir.model.features.len(), 1);
-
-    let reference = super::ReferencePlaneCandidate {
-        object: &object,
-        owner_record: &record,
-        kind: "GSMPlaneOffset",
-    };
-    let mut reference_ir = CadIr::empty();
-    let mut reference_transfer = DesignFeatureTransfer::default();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reference_features")
-    );
-    crate::test_support::with_service_context(|ctx| {
-        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
-    })
-    .expect("service profile admits reference plane");
-    assert_eq!(reference_ir.model.features.len(), 1);
-}
-
-#[test]
-fn principal_plane_declaration_list_refuses_collection_limit() {
-    let mut object = design_object("synthetic:test:object#plane", None);
-    object.owner_record = Some("plane-record".to_string());
-    object.fields.push("plane-record".to_string());
-    let record = object_record("plane-record", None, None, None, None, None);
-    let records = HashMap::from([(record.id.as_str(), &record)]);
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::principal_plane_candidate(ctx, &object, &records)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_principal_plane_declarations")
-    );
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::principal_plane_candidate(ctx, &object, &records)
-    })
-    .expect("service profile admits declaration scan");
-    assert!(service.is_none());
-}
-
-#[test]
-fn sketch_feature_rows_refuse_collection_limit() {
-    let native = sketch_owner_native();
-    let sketch_object = &native.design_objects[0];
-    let sketch_record = &native.object_graphs[0].records[0];
-    let mut ir = CadIr::empty();
-    let mut transfer = DesignFeatureTransfer::default();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_design_sketches")
-    );
-    crate::test_support::with_service_context(|ctx| {
-        super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
-    })
-    .expect("service profile admits sketch feature");
-    assert_eq!(ir.model.sketches.len(), 1);
-    assert_eq!(ir.model.features.len(), 1);
-}
-
-#[test]
-fn feature_dependency_lookup_refuses_collection_limit() {
-    let object_id = "synthetic:test:object#owner";
-    let native = CatiaNative {
-        design_objects: vec![design_object(object_id, None)],
-        ..CatiaNative::default()
-    };
-    let transfer = DesignFeatureTransfer::default();
-    let mut ir = CadIr::empty();
-    ir.model.features.push(feature("owner", object_id));
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_feature_dependency_objects")
-    );
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
-    })
-    .expect("service profile admits dependency indexes");
-    assert!(ir.model.features[0].dependencies.is_empty());
-}
-
-#[test]
 fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     let mut source = design_object("synthetic:test:object#source-object", None);
     let mut unresolved = payload_relation("unresolved-object", 6);
@@ -458,10 +339,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         ..DesignFeatureTransfer::default()
     };
 
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
-    })
-    .unwrap();
+    transfer.assign_feature_dependencies(&mut ir, &native);
 
     let source = ir
         .model
@@ -862,3 +740,102 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
 
 mod feature_identity;
 mod parentage;
+
+#[test]
+fn design_object_without_records_transfers_no_feature_ids() {
+    let native = CatiaNative {
+        design_objects: vec![design_object("synthetic:test:object#one", None)],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    let service = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("transfer design features");
+    assert!(service.feature_ids.is_empty());
+}
+
+#[test]
+fn principal_and_reference_planes_each_transfer_one_feature() {
+    let object = design_object("synthetic:test:object#plane", None);
+    let record = object_record("plane-record", None, None, None, None, None);
+
+    let mut ir = CadIr::empty();
+    let mut transfer = DesignFeatureTransfer::default();
+    let principal = super::PrincipalPlaneCandidate {
+        object: &object,
+        declarations: vec![&record],
+        plane: cadmpeg_ir::features::PrincipalPlane::Top,
+        declaration_class: "xy-plane",
+    };
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
+    })
+    .expect("transfer principal plane");
+    assert_eq!(ir.model.features.len(), 1);
+    let reference = super::ReferencePlaneCandidate {
+        object: &object,
+        owner_record: &record,
+        kind: "GSMPlaneOffset",
+    };
+    let mut reference_ir = CadIr::empty();
+    let mut reference_transfer = DesignFeatureTransfer::default();
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
+    })
+    .expect("transfer reference plane");
+    assert_eq!(reference_ir.model.features.len(), 1);
+}
+
+#[test]
+fn plane_record_without_declaration_class_is_not_a_principal_plane() {
+    let mut object = design_object("synthetic:test:object#plane", None);
+    object.owner_record = Some("plane-record".to_string());
+    object.fields.push("plane-record".to_string());
+    let record = object_record("plane-record", None, None, None, None, None);
+    let records = HashMap::from([(record.id.as_str(), &record)]);
+    assert!(super::principal_plane_candidate(&object, &records).is_none());
+}
+
+#[test]
+fn object_without_relations_gets_no_feature_dependencies() {
+    let object_id = "synthetic:test:object#owner";
+    let native = CatiaNative {
+        design_objects: vec![design_object(object_id, None)],
+        ..CatiaNative::default()
+    };
+    let transfer = DesignFeatureTransfer::default();
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature("owner", object_id));
+    transfer.assign_feature_dependencies(&mut ir, &native);
+    assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
+fn feature_parent_cycles_and_their_tails_are_cyclic() {
+    const LENGTH: usize = 4096;
+    let id = |name: &str, index: usize| {
+        FeatureId::mint(format!("synthetic:test:id#{name}-{index}")).expect("identity grammar")
+    };
+    let mut parents = HashMap::new();
+    for index in 0..LENGTH {
+        parents.insert(id("chain", index + 1), id("chain", index));
+        parents.insert(id("cycle", index), id("cycle", (index + 1) % LENGTH));
+        parents.insert(id("tail", index), id("tail", index + 1));
+    }
+    parents.insert(id("tail", LENGTH), id("cycle", 0));
+
+    let cyclic = super::cyclic_feature_parents(&parents)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let expected = (0..LENGTH)
+        .map(|index| id("cycle", index))
+        .chain((0..=LENGTH).map(|index| id("tail", index)))
+        .collect::<HashSet<_>>();
+    assert_eq!(cyclic, expected);
+}

@@ -4,9 +4,8 @@ use super::super::enrich_history_extrusion_terminations;
 use super::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId};
 use std::collections::BTreeMap;
 
-fn extrusion_termination_error(
-    policy: cadmpeg_core::decode::DecodePolicy,
-) -> cadmpeg_core::CodecError {
+#[test]
+fn extrusion_termination_enrichment_projects_through_all() {
     let mut payload = vec![0; 600];
     let anchor = 350;
     payload[anchor..anchor + 2].copy_from_slice(&[0x20, 0x86]);
@@ -32,7 +31,7 @@ fn extrusion_termination_error(
         text: None,
         content: Vec::new(),
     };
-    let mut histories = vec![FeatureHistory {
+    let histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
@@ -102,41 +101,6 @@ fn extrusion_termination_error(
             .get("EndCondition")
             .map(String::as_str),
         Some("ThroughAll")
-    );
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .unwrap();
-    enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane))
-        .unwrap_err()
-}
-
-#[test]
-fn extrusion_termination_enrichment_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    assert!(
-        matches!(extrusion_termination_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn extrusion_termination_enrichment_refuses_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    assert!(
-        matches!(extrusion_termination_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn extrusion_termination_enrichment_refuses_work_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    assert!(
-        matches!(extrusion_termination_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -277,7 +241,7 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
 }
 
 #[test]
-fn extrusion_delimiters_do_not_bill_unvisited_successors() {
+fn extrusion_delimiters_end_every_successor_through_all() {
     let mut payload = vec![0; 64 * 128];
     let mut features = Vec::new();
     let mut names = Vec::new();
@@ -342,8 +306,7 @@ fn extrusion_delimiters_do_not_bill_unvisited_successors() {
         sketch_entities: Vec::new(),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 2_000_000;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     enrich_history_extrusion_terminations(&ctx, &mut histories, &[lane]).unwrap();

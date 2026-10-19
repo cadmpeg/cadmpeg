@@ -20,6 +20,16 @@ cadmpeg_core::named_optional_field!(
     DesignFixedExtrudeScalar,
     "taper_angle"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_against_distance,
+    DesignFixedExtrudeScalar<NonZeroReal>,
+    "against_distance"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_side_two_taper_angle,
+    DesignFixedExtrudeScalar,
+    "side_two_taper_angle"
+);
 /// One exact scalar carrier used by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedExtrudeScalar<T = FiniteReal> {
@@ -135,7 +145,7 @@ mod tests {
 /// Exact fixed scalar lanes carried by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedExtrudeParameters {
-    /// One-sided distance carrier in source centimetres.
+    /// First-side distance carrier in source centimetres.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -149,6 +159,21 @@ pub(crate) struct DesignFixedExtrudeParameters {
         deserialize_with = "deserialize_taper_angle"
     )]
     pub(crate) taper_angle: Option<DesignFixedExtrudeScalar>,
+    /// Signed second-side distance lane of a two-sided Extrude in source
+    /// centimetres.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_against_distance"
+    )]
+    pub(crate) against_distance: Option<DesignFixedExtrudeScalar<NonZeroReal>>,
+    /// Second-side taper-angle lane of a two-sided Extrude in radians.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_side_two_taper_angle"
+    )]
+    pub(crate) side_two_taper_angle: Option<DesignFixedExtrudeScalar>,
 }
 
 /// Exact fixed scalar lanes carried by a Fillet scope.

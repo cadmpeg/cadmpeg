@@ -15,54 +15,6 @@ fn refuse(bytes: &[u8], policy: DecodePolicy, dimension: ResourceDimension, oper
 }
 
 #[test]
-fn configuration_json_array_members_refuse_collection_limit() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    refuse(
-        b"[null,true]",
-        policy,
-        ResourceDimension::CollectionItems,
-        "f3d configuration JSON array member",
-    );
-}
-
-#[test]
-fn configuration_json_object_entries_refuse_collection_limit() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    refuse(
-        br#"{"a":null,"b":true}"#,
-        policy,
-        ResourceDimension::CollectionItems,
-        "f3d configuration JSON object entry",
-    );
-}
-
-#[test]
-fn configuration_json_key_refuses_retained_limit() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    refuse(
-        br#"{"\u00e9":null}"#,
-        policy,
-        ResourceDimension::RetainedBytes,
-        "f3d configuration JSON key",
-    );
-}
-
-#[test]
-fn configuration_json_string_refuses_retained_limit() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    refuse(
-        br#""\u00e9""#,
-        policy,
-        ResourceDimension::RetainedBytes,
-        "f3d configuration JSON text",
-    );
-}
-
-#[test]
 fn configuration_json_nested_values_refuse_depth_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 2;
@@ -71,58 +23,6 @@ fn configuration_json_nested_values_refuse_depth_limit() {
         policy,
         ResourceDimension::RecursionDepth,
         "f3d configuration JSON depth",
-    );
-}
-
-#[test]
-fn configuration_json_values_refuse_work_limit() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 2;
-    refuse(
-        b"[null,true]",
-        policy,
-        ResourceDimension::WorkUnits,
-        "f3d configuration JSON value work",
-    );
-}
-
-#[test]
-fn configuration_json_scratch_refuses_materialized_limit() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 3;
-    refuse(
-        b"null",
-        policy,
-        ResourceDimension::MaterializedBytes,
-        "f3d configuration JSON",
-    );
-}
-
-#[test]
-fn configuration_json_diagnostic_refuses_retained_limit() {
-    let bytes = b"[";
-    let error = serde_json::from_slice::<serde_json::Value>(bytes).unwrap_err();
-    let message = format!("invalid F3D configuration JSON table.dsgcfg: {error}");
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(message.len() - 1).unwrap();
-    refuse(
-        bytes,
-        policy,
-        ResourceDimension::RetainedBytes,
-        "f3d configuration JSON diagnostic",
-    );
-}
-
-#[test]
-fn configuration_json_raw_text_refuses_retained_limit() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        u64::try_from("$serde_json::private::RawValue".len()).unwrap() + 3;
-    refuse(
-        br#"{"$serde_json::private::RawValue":"null"}"#,
-        policy,
-        ResourceDimension::RetainedBytes,
-        "f3d configuration raw JSON text",
     );
 }
 
@@ -174,64 +74,9 @@ fn configuration_json_values_and_diagnostics_match_serde() {
 }
 
 #[test]
-fn configuration_numeric_scalar_text_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 2;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+fn configuration_numeric_scalar_text_formats_the_number() {
     let scalar = crate::records::configuration::ConfigurationScalar::Number(
         serde_json::Number::from_f64(2.5).unwrap(),
     );
-    assert!(
-        matches!(super::super::configuration_scalar_text(&ctx, &scalar),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d configuration scalar text")
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            super::super::configuration_scalar_text(decode_ctx, &scalar)
-        })
-        .unwrap(),
-        "2.5"
-    );
-}
-
-#[test]
-fn configuration_json_array_capacity_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<serde_json::Value>()) - 1;
-    refuse(
-        b"[null]",
-        policy,
-        ResourceDimension::RetainedBytes,
-        "f3d configuration JSON array allocation",
-    );
-}
-
-#[test]
-fn configuration_json_object_node_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    refuse(
-        br#"{"a":null}"#,
-        policy,
-        ResourceDimension::RetainedBytes,
-        "f3d configuration JSON object allocation",
-    );
-}
-
-#[test]
-fn configuration_json_escaped_text_scratch_refuses_capacity_rounding() {
-    let bytes = br#""\naaaaaaaa""#;
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(bytes.len());
-    refuse(
-        bytes,
-        policy,
-        ResourceDimension::MaterializedBytes,
-        "f3d configuration JSON",
-    );
+    assert_eq!(scalar.text(), "2.5");
 }

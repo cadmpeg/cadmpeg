@@ -127,19 +127,16 @@ fn direct_and_physical_thread_cores_require_complete_storage_and_owning_classes(
                 registry_tail: &[],
             })
             .collect();
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             let payload = OperationPayload::new(&bytes, 0, label).unwrap();
             assert_eq!(
-                core_for_decode(ctx, payload, &classes)
-                    .unwrap()
-                    .unwrap()
-                    .byte_len(),
+                core_for_decode(payload, &classes).unwrap().byte_len(),
                 bytes.len()
             );
             for index in 0..classes.len() {
                 let name = classes[index].name;
                 classes[index].name = "UGS::OTHER";
-                assert!(core_for_decode(ctx, payload, &classes).unwrap().is_none());
+                assert!(core_for_decode(payload, &classes).is_none());
                 classes[index].name = name;
             }
         });

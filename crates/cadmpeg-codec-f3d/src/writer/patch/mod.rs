@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 
+use crate::loss::F3dLossCode;
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
@@ -90,6 +91,16 @@ pub(crate) fn write_semantic(
                 "the salvage decode of the source image refused: {other}"
             )),
         })?;
+    if baseline
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D semantic patching refuses a source whose design intent was not decoded".into(),
+        ));
+    }
     let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
@@ -592,7 +603,12 @@ pub(crate) fn write_semantic(
         let mut entry = archive.by_index(index).map_err(|error| {
             CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
         })?;
-        let name = entry.name().to_owned();
+        let name = entry
+            .name()
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+            })?
+            .into_owned();
         let options = crate::zip_write::file_options(entry.compression());
         if entry.is_dir() {
             zip.add_directory(name, options).map_err(|error| {
@@ -607,11 +623,7 @@ pub(crate) fn write_semantic(
             if read == 0 {
                 break;
             }
-            encode_ctx.extend_retained_bytes(
-                &mut bytes,
-                &chunk[..read],
-                "retain F3D patch ZIP entry",
-            )?;
+            bytes.extend_from_slice(&chunk[..read]);
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);

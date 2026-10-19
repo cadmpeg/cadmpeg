@@ -90,12 +90,12 @@ pub(super) fn scan(
     bytes: &[u8],
     carriers: &CarrierIndex,
 ) -> Result<Vec<CurveCarrier>, CodecError> {
+    // A buffer shorter than the two-byte tag holds no wrapper.
+    let Some(scan_end) = bytes.len().checked_sub(2) else {
+        return Ok(Vec::new());
+    };
     let mut out = Vec::new();
-    let scan_len = u64::try_from(bytes.len()).map_err(|_| {
-        ctx.refuse_codec_limit("scan Parasolid subset curves", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(scan_len, "scan Parasolid subset curves")?;
-    for off in 0..bytes.len().checked_sub(2).map_or(0, |end| end) {
+    for off in 0..scan_end {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
         }
@@ -149,9 +149,7 @@ pub(super) fn scan(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        let copied_geometry =
-            geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
-        ctx.reserve_vec(&mut out, 1, "collect Parasolid subset curves")?;
+        let copied_geometry = geometry.clone();
         out.push(CurveCarrier {
             attr,
             offset: off,
@@ -167,7 +165,7 @@ pub(super) fn scan(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Vector3;
 
@@ -198,129 +196,58 @@ mod tests {
 
     fn carriers() -> CarrierIndex {
         let mut carriers = CarrierIndex::default();
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("test carrier fits service policy");
-        carriers
-            .insert(
-                &ctx,
-                super::super::Carrier::Curve(CurveCarrier {
-                    attr: 10,
-                    offset: 100,
-                    end: 120,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                            Point3::new(0.0, 0.0, 0.0),
-                            Vector3::new(0.0, 1.0, 0.0),
-                        )
-                        .expect("valid line fixture"),
-                    )),
-                    parameter_range: None,
-                }),
-            )
-            .expect("test carrier fits service policy");
+        carriers.insert(super::super::Carrier::Curve(CurveCarrier {
+            attr: 10,
+            offset: 100,
+            end: 120,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .expect("valid line fixture"),
+            )),
+            parameter_range: None,
+        }));
         carriers
     }
 
     fn nurbs_carriers() -> CarrierIndex {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 0.005, 0.005],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 5.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid NURBS fixture");
         let mut carriers = CarrierIndex::default();
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("test carrier fits service policy");
-        carriers
-            .insert(
-                &ctx,
-                super::super::Carrier::Curve(CurveCarrier {
-                    attr: 10,
-                    offset: 100,
-                    end: 120,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                    parameter_range: None,
-                }),
-            )
-            .expect("test carrier fits service policy");
+        carriers.insert(super::super::Carrier::Curve(CurveCarrier {
+            attr: 10,
+            offset: 100,
+            end: 120,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            parameter_range: None,
+        }));
         carriers
     }
 
-    fn subset_limit(cap: u64, operation: &'static str) {
+    #[test]
+    fn parasolid_subset_decodes_low_and_high_degree_nurbs_sources() {
         let bytes = wrapper(0.005, false);
         let carriers = nurbs_carriers();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan(&ctx, &bytes, &carriers).expect_err("subset collection exceeds its limit");
-        assert!(
-            matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation),
-            "{error:?}"
-        );
         let arena = DecodeArena::new();
         let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        assert_eq!(
-            scan(&ctx, &bytes, &carriers).expect("service scan").len(),
-            1
-        );
-    }
-
-    #[test]
-    fn parasolid_subset_nurbs_lanes_refuse_before_clone() {
-        subset_limit(5, "copy Parasolid subset curve lanes");
-    }
-
-    #[test]
-    fn parasolid_subset_curves_refuse_before_collection() {
-        subset_limit(6, "collect Parasolid subset curves");
-    }
-
-    #[test]
-    fn parasolid_subset_scan_refuses_work_limit() {
-        let bytes = wrapper(0.005, false);
-        let carriers = carriers();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan(&ctx, &bytes, &carriers).expect_err("scan work exceeds its limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Parasolid subset curves"
-        ));
-    }
-
-    #[test]
-    fn parasolid_subset_nurbs_evaluation_refuses_scoped_limit() {
-        let bytes = wrapper(0.005, false);
-        let carriers = nurbs_carriers();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
 
         // Degree 16 needs a heap basis of 17 `f64` slots; lower degrees
-        // evaluate in inline storage and admit no basis bytes.
+        // evaluate in inline storage.
         let degree = 16_u32;
         let slots = 17_usize;
         let mut knots = vec![0.0; slots];
         knots.extend(vec![0.005; slots]);
         let spline = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots,
             (0..slots)
@@ -335,32 +262,15 @@ mod tests {
             None,
             false,
         )
-        .expect("service storage")
         .expect("degree-16 version of the same line");
         let mut spline_carriers = CarrierIndex::default();
-        spline_carriers
-            .insert(
-                &cadmpeg_test_support::service_decode_context(),
-                super::super::Carrier::Curve(CurveCarrier {
-                    attr: 10,
-                    offset: 100,
-                    end: 120,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spline)),
-                    parameter_range: None,
-                }),
-            )
-            .unwrap();
-        let basis_bytes = u64::try_from(slots * std::mem::size_of::<f64>()).expect("basis bytes");
-        policy.limits.max_materialized_bytes = basis_bytes - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = scan(&ctx, &bytes, &spline_carriers).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "IR B-spline basis")
-        );
-        policy.limits.max_materialized_bytes = basis_bytes;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        spline_carriers.insert(super::super::Carrier::Curve(CurveCarrier {
+            attr: 10,
+            offset: 100,
+            end: 120,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spline)),
+            parameter_range: None,
+        }));
         assert_eq!(scan(&ctx, &bytes, &spline_carriers).unwrap().len(), 1);
     }
 
@@ -424,21 +334,19 @@ mod tests {
     #[test]
     fn evaluates_rational_nurbs_in_homogeneous_coordinates() {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid rational test NURBS");
         let point = point_at(
             &cadmpeg_test_support::service_decode_context(),
             &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             0.5,
         )
-        .expect("evaluation fits resource limits")
+        .expect("evaluate the point")
         .expect("valid NURBS parameter");
         assert!((point.x - 20.0 / 3.0).abs() < 1.0e-12);
     }
@@ -448,14 +356,12 @@ mod tests {
         for (d, w) in [(1., 1.), (1e-16, 1.), (1., 1e-20)] {
             let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0., 0., d, d],
                     vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                     Some(vec![w, w]),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             ));
             assert_eq!(
@@ -464,7 +370,7 @@ mod tests {
                     &curve,
                     0.75 * d
                 )
-                .expect("evaluation fits resource limits"),
+                .expect("evaluate the point"),
                 Some(Point3::new(0.75, 0., 0.))
             );
             assert!(point_at(
@@ -472,7 +378,7 @@ mod tests {
                 &curve,
                 2. * d
             )
-            .expect("evaluation fits resource limits")
+            .expect("evaluate the point")
             .is_none());
         }
     }

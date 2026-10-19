@@ -7,7 +7,6 @@ use crate::om::compact::{
     CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex, RawCompactIndex,
 };
 use crate::om::fset_indices::{FsetIndexLane, FsetIndexValues};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::ser::SerializeSeq;
@@ -147,38 +146,32 @@ impl Serialize for FeatureFsetIndexLane {
 }
 
 pub(in crate::native) fn feature_fset_index_lanes(
-    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureFsetIndexLane>, CodecError> {
     let mut lanes = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
             let result = (|| -> Result<(), CodecError> {
-                let Some(lane) = FsetIndexLane::read(ctx, record.payload_view(), entry_offset)?
-                else {
+                let Some(lane) = FsetIndexLane::read(record.payload_view(), entry_offset)? else {
                     return Ok(());
                 };
                 let id = format_feature_history_id(
-                    ctx,
                     "fset-index-lane",
                     section_key,
                     operation_ordinal,
                     None,
-                )?;
+                );
                 let operation_label = format_feature_history_id(
-                    ctx,
                     "operation-label",
                     section_key,
                     operation_ordinal,
                     None,
-                )?;
-                ctx.reserve_vec(&mut lanes, 1, "NX FSET index lanes")?;
+                );
                 lanes.push(FeatureFsetIndexLane {
                     id,
                     operation_label,

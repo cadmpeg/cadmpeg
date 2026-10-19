@@ -38,7 +38,7 @@ cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
 cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat" }
 cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
 cadmpeg-codec-step = { path = "../cadmpeg-codec-step" }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 flate2 = "1"
 crc32fast = "1"
 

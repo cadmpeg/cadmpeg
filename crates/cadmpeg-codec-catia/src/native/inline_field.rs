@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact inline field incidences and source-closed wide schema paths.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{u64_from_index, View};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -91,72 +90,53 @@ fn word(bytes: &[u8]) -> Option<(u32, &[u8])> {
 }
 
 fn schema_path(
-    ctx: &DecodeContext<'_>,
     entity: &CatiaEntityRecord,
     catalog: Option<&CatiaCatalog>,
     outer: u32,
     field: u32,
-) -> Result<Option<InlineSchemaPath>, CodecError> {
-    let Some(body) = entity.inline_body().and_then(|b| b.strip_prefix(&[3])) else {
-        return Ok(None);
-    };
-    let Some((prefix_field, body)) = word(body) else {
-        return Ok(None);
-    };
-    let Some((member, body)) = word(body) else {
-        return Ok(None);
-    };
-    let Some(body) = body.strip_prefix(&[0xea]) else {
-        return Ok(None);
-    };
+) -> Option<InlineSchemaPath> {
+    let body = entity.inline_body().and_then(|b| b.strip_prefix(&[3]))?;
+    let (prefix_field, body) = word(body)?;
+    let (member, body) = word(body)?;
+    let body = body.strip_prefix(&[0xea])?;
     if View::u32_le_at(body, 0) != Some(entity.entity_id) {
-        return Ok(None);
+        return None;
     }
-    let Some(body) = body
+    let body = body
         .get(std::mem::size_of::<u32>()..)
-        .and_then(|b| b.strip_prefix(&[0x82, 0x81, 0, 0x82]))
-    else {
-        return Ok(None);
-    };
-    let Some((suffix_outer, body)) = word(body) else {
-        return Ok(None);
-    };
-    let Some((suffix_field, _)) = word(body) else {
-        return Ok(None);
-    };
+        .and_then(|b| b.strip_prefix(&[0x82, 0x81, 0, 0x82]))?;
+    let (suffix_outer, body) = word(body)?;
+    let (suffix_field, _) = word(body)?;
     if prefix_field != field || suffix_outer != outer || suffix_field != field {
-        return Ok(None);
+        return None;
     }
-    let Some(catalog) = catalog else {
-        return Ok(None);
-    };
+    let catalog = catalog?;
     let selected = [outer, field, member].map(|ordinal| {
         usize::try_from(ordinal)
             .ok()
             .and_then(|i| catalog.entries.get(i))
     });
     let [Some(outer), Some(field), Some(member)] = selected else {
-        return Ok(None);
+        return None;
     };
     if outer.value != "Projected3DGeometrySet"
         || field.value != "CATEarlySpecBrpLocation"
         || member.value != "data"
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(InlineSchemaPath {
-        outer: ctx.copy_retained_text(&outer.id, "catia_inline_outer_schema")?,
-        field: ctx.copy_retained_text(&field.id, "catia_inline_field_schema")?,
-        member: ctx.copy_retained_text(&member.id, "catia_inline_member_schema")?,
-    }))
+    Some(InlineSchemaPath {
+        outer: outer.id.clone(),
+        field: field.id.clone(),
+        member: member.id.clone(),
+    })
 }
 
 fn incidence(
-    ctx: &DecodeContext<'_>,
     source: FieldReference,
     records: &HashMap<u32, &CatiaObjectRecord>,
     terminal: Option<u32>,
-) -> Result<InlineIncidence, CodecError> {
+) -> InlineIncidence {
     let target = records.get(&source.identity);
     let reference = if terminal == Some(source.identity) {
         CatiaEntityReference::Null {
@@ -167,34 +147,27 @@ fn incidence(
             source.identity,
             target
                 .and_then(|r| r.entity_record())
-                .map(|id| ctx.copy_retained_text(id, "catia_inline_target_entity"))
-                .transpose()?,
+                .map(std::borrow::ToOwned::to_owned),
             target
                 .and_then(|r| r.class.as_ref())
                 .and_then(|c| c.name.as_deref())
-                .map(|name| ctx.copy_retained_text(name, "catia_inline_target_class"))
-                .transpose()?,
+                .map(std::borrow::ToOwned::to_owned),
         )
     };
-    Ok(InlineIncidence {
+    InlineIncidence {
         body_offset: u64_from_index(source.offset),
         reference,
-    })
+    }
 }
 
 /// Bind strict bodies in their complete paired graph; never assign ordinary head roles.
 pub(crate) fn derive(
-    ctx: &DecodeContext<'_>,
     graphs: &[CatiaObjectGraph],
     entities: &[CatiaEntityRecord],
     catalogs: &[CatiaCatalog],
-) -> Result<Vec<CatiaInlineField>, CodecError> {
+) -> Vec<CatiaInlineField> {
     let mut fields = Vec::new();
     for graph in graphs {
-        ctx.charge_work(
-            u64_from_index(graph.records.len()),
-            "catia_inline_candidate_scan",
-        )?;
         let mut candidates = graph
             .records
             .iter()
@@ -203,31 +176,22 @@ pub(crate) fn derive(
         if candidates.peek().is_none() {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(entities.len()),
-            "catia_inline_entity_scope_scan",
-        )?;
-        let entity_by_identity = ctx.collect_hash_map(
-            entities
-                .iter()
-                .filter(|e| e.object_graph == graph.id)
-                .map(|e| (e.entity_id, e)),
-            "catia_inline_entity_index",
-        )?;
-        let records = ctx.collect_hash_map(
-            graph
-                .records
-                .iter()
-                .filter_map(|r| Some((r.entity_id()?, r))),
-            "catia_inline_record_index",
-        )?;
+        let entity_by_identity = (entities
+            .iter()
+            .filter(|e| e.object_graph == graph.id)
+            .map(|e| (e.entity_id, e)))
+        .collect::<std::collections::HashMap<_, _>>();
+        let records = (graph
+            .records
+            .iter()
+            .filter_map(|r| Some((r.entity_id()?, r))))
+        .collect::<std::collections::HashMap<_, _>>();
         let terminal = records.keys().max().and_then(|n| n.checked_add(1));
         let catalog = graph
             .catalog
             .as_ref()
             .and_then(|id| catalogs.iter().find(|c| &c.id == id));
         for (record, parsed) in candidates {
-            ctx.charge_work(1, "catia_inline_field_binding")?;
             if record.entity_id() != Some(parsed.self_field.identity) {
                 continue;
             }
@@ -252,14 +216,6 @@ pub(crate) fn derive(
                 else {
                     continue;
                 };
-                ctx.charge_work(
-                    u64_from_index(value.payload.fields.len()),
-                    "catia_inline_object_value_carrier",
-                )?;
-                ctx.charge_work(
-                    u64_from_index(value_entity.value_payload().len()),
-                    "catia_inline_entity_value_carrier",
-                )?;
                 if value
                     .payload
                     .fields
@@ -278,32 +234,23 @@ pub(crate) fn derive(
                 SchemaTuple::Words { outer, field } => InlineSchema::Words {
                     outer,
                     field,
-                    path: schema_path(ctx, entity, catalog, outer, field)?,
+                    path: schema_path(entity, catalog, outer, field),
                 },
             };
-            ctx.push_vec(
-                &mut fields,
-                CatiaInlineField {
-                    id: ctx.format_retained(
-                        format_args!("catia:outer:inline-field#{:010}", record.byte_offset),
-                        "catia_inline_field_id",
-                    )?,
-                    byte_offset: record.byte_offset,
-                    source_record: ctx
-                        .copy_retained_text(&record.id, "catia_inline_source_record")?,
-                    self_field: incidence(ctx, parsed.self_field, &records, terminal)?,
-                    anchor_field: incidence(ctx, parsed.anchor_field, &records, terminal)?,
-                    value_field: parsed
-                        .value_field
-                        .map(|value| incidence(ctx, value, &records, terminal))
-                        .transpose()?,
-                    schema,
-                },
-                "catia_inline_fields",
-            )?;
+            fields.push(CatiaInlineField {
+                id: format!("catia:outer:inline-field#{:010}", record.byte_offset),
+                byte_offset: record.byte_offset,
+                source_record: record.id.clone(),
+                self_field: incidence(parsed.self_field, &records, terminal),
+                anchor_field: incidence(parsed.anchor_field, &records, terminal),
+                value_field: parsed
+                    .value_field
+                    .map(|value| incidence(value, &records, terminal)),
+                schema,
+            });
         }
     }
-    Ok(fields)
+    fields
 }
 
 #[cfg(test)]

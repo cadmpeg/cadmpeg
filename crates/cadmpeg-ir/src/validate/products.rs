@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product graph and placement validation.
 
-use super::orders::Orders;
 use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -16,86 +15,75 @@ pub(super) fn check_products(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let definitions = BorrowedIdentities::build(ctx, |add| {
+    let definitions = BorrowedIdentities::build(|add| {
         for definition in &ir.model.product_definitions {
-            add(definition.id.as_str(), ())?;
+            add(definition.id.as_str(), ());
         }
-        Ok(())
-    })?;
-    let occurrences = BorrowedIdentities::build(ctx, |add| {
+    });
+    let occurrences = BorrowedIdentities::build(|add| {
         for occurrence in &ir.model.occurrences {
-            add(occurrence.id.as_str(), ())?;
+            add(occurrence.id.as_str(), ());
         }
-        Ok(())
-    })?;
-    let bodies = BorrowedIdentities::build(ctx, |add| {
+    });
+    let bodies = BorrowedIdentities::build(|add| {
         for body in &ir.model.bodies {
-            add(body.id.as_str(), ())?;
+            add(body.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     for definition in &ir.model.product_definitions {
-        ctx.charge_work(1, "product definition row")?;
         for body in &definition.bodies {
-            ctx.charge_work(1, "product body reference")?;
-            if !bodies.contains(ctx, body.as_str())? {
+            if !bodies.contains(body.as_str()) {
                 record_finding(
-                    ctx,
                     findings,
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(definition.id.as_str()),
                     format_args!("invalid product body reference"),
-                )?;
+                );
                 break;
             }
         }
     }
     if !crate::products::assembly_graph::validate(ctx, &ir.model.occurrences)? {
         record_finding(
-            ctx,
             findings,
             Check::ReferentialIntegrity,
             crate::report::Severity::Error,
             Some("model:assembly"),
             format_args!("invalid occurrence parent graph"),
-        )?;
+        );
     }
-    let mut root_ordinals = Orders::new(ctx)?;
-    let mut sibling_ordinals: BorrowedIdentities<'_, '_, Orders<'_, '_>> =
-        BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    let mut root_ordinals = std::collections::BTreeSet::new();
+    let mut sibling_ordinals: BorrowedIdentities<'_, std::collections::BTreeSet<u32>> =
+        BorrowedIdentities::new();
     for occurrence in &ir.model.occurrences {
-        ctx.charge_work(1, "product occurrence row")?;
         let valid_prototype = match &occurrence.prototype {
-            PrototypeReference::Local { definition } => {
-                definitions.contains(ctx, definition.as_str())?
-            }
+            PrototypeReference::Local { definition } => definitions.contains(definition.as_str()),
             PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => true,
         };
         let valid_parent = match &occurrence.parent {
             OccurrenceParent::Root {} => true,
             OccurrenceParent::Occurrence { occurrence } => {
-                occurrences.contains(ctx, occurrence.as_str())?
+                occurrences.contains(occurrence.as_str())
             }
         };
         let ordinal_unique = match &occurrence.parent {
-            OccurrenceParent::Root {} => root_ordinals.insert(occurrence.ordinal)?,
+            OccurrenceParent::Root {} => root_ordinals.insert(occurrence.ordinal),
             OccurrenceParent::Occurrence { occurrence: parent } => {
-                if let Some(orders) = sibling_ordinals.get_mut(ctx, parent.as_str())? {
-                    orders.insert(occurrence.ordinal)?
+                if let Some(orders) = sibling_ordinals.get_mut(parent.as_str()) {
+                    orders.insert(occurrence.ordinal)
                 } else {
-                    let mut orders = Orders::new(ctx)?;
-                    let unique = orders.insert(occurrence.ordinal)?;
-                    sibling_ordinals.insert_unique(parent.as_str(), orders)?;
+                    let mut orders = std::collections::BTreeSet::new();
+                    let unique = orders.insert(occurrence.ordinal);
+                    sibling_ordinals.insert_unique(parent.as_str(), orders);
                     unique
                 }
             }
         };
         let mut auxiliary_definitions = true;
         if let Some(link) = &occurrence.link {
-            ctx.charge_work(1, "product occurrence link")?;
             let element_valid = match link.element_component() {
-                Some(definition) => definitions.contains(ctx, definition.as_str())?,
+                Some(definition) => definitions.contains(definition.as_str()),
                 None => true,
             };
             let mut copy_targets_valid = true;
@@ -104,9 +92,8 @@ pub(super) fn check_products(
                     .into_iter()
                     .flatten()
                 {
-                    ctx.charge_work(1, "product copy target")?;
                     if let PrototypeReference::Local { definition } = reference {
-                        if !definitions.contains(ctx, definition.as_str())? {
+                        if !definitions.contains(definition.as_str()) {
                             copy_targets_valid = false;
                             break;
                         }
@@ -117,29 +104,25 @@ pub(super) fn check_products(
         }
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
             record_finding(
-                ctx,
                 findings,
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(occurrence.id.as_str()),
                 format_args!("invalid occurrence reference, ordinal, or affine transform"),
-            )?;
+            );
         }
     }
     for joint in &ir.model.assembly_joints {
-        ctx.charge_work(1, "assembly joint row")?;
         for connector in joint.connectors() {
-            ctx.charge_work(1, "assembly joint connector")?;
             if let OperandContainer::Occurrence { occurrence } = &connector.operand.container {
-                if !occurrences.contains(ctx, occurrence.as_str())? {
+                if !occurrences.contains(occurrence.as_str()) {
                     record_finding(
-                        ctx,
                         findings,
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(joint.id.as_str()),
                         format_args!("invalid assembly joint operands, frames, or limits"),
-                    )?;
+                    );
                     break;
                 }
             }

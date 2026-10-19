@@ -47,11 +47,10 @@ fn metadata_digest_preserves_source_order_and_excludes_unit_code() {
 }
 
 #[test]
-fn metadata_digest_views_use_scoped_storage_and_retain_only_the_digest() {
+fn metadata_digest_retains_only_the_digest() {
     let ir = metadata_document();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 64;
-    policy.limits.max_materialized_bytes = 16384;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
@@ -60,43 +59,23 @@ fn metadata_digest_views_use_scoped_storage_and_retain_only_the_digest() {
             .len(),
         64
     );
-    let storage = ctx
-        .reserve_scoped(
-            policy.limits.max_materialized_bytes,
-            "metadata digest views released",
-        )
-        .unwrap();
-    drop(storage);
     ctx.finish_session().unwrap();
 }
 
 #[test]
-fn metadata_digest_preserves_each_resource_refusal() {
+fn metadata_digest_preserves_recursion_refusal() {
     let ir = metadata_document();
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => panic!("metadata digest refusal dimensions"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let CodecError::ResourceLimit(limit) =
-            crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap_err()
-        else {
-            panic!("metadata digest must preserve refusal");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
-        );
-    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let CodecError::ResourceLimit(limit) =
+        crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap_err()
+    else {
+        panic!("metadata digest must preserve refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }

@@ -4,8 +4,6 @@
 use super::{
     ParasolidAttributeDefinition, ParasolidEntity51Record, ParasolidEntity52IntegerRecord,
 };
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 pub(in crate::native) struct BodyIdMatch<'a> {
     pub(in crate::native) stream: u32,
@@ -24,33 +22,25 @@ pub(in crate::native) enum BodyIdEncoding {
 
 /// Duplicate definitions, instances, values, or matching streams are unresolved.
 pub(in crate::native) fn resolve<'a>(
-    ctx: &DecodeContext<'_>,
     identity: u8,
     encoding: BodyIdEncoding,
     definitions: &'a [ParasolidAttributeDefinition],
     entities: &'a [ParasolidEntity51Record],
     integers: &'a [ParasolidEntity52IntegerRecord],
-) -> Result<Option<BodyIdMatch<'a>>, CodecError> {
+) -> Option<BodyIdMatch<'a>> {
     let (field, value) = match encoding {
         BodyIdEncoding::CurveMeshIgnored => (super::AttributeField::Ignored, u32::from(identity)),
         BodyIdEncoding::BrepInteger => {
-            let Some(value) = identity.checked_sub(1) else {
-                return Ok(None);
-            };
+            let value = identity.checked_sub(1)?;
             (super::AttributeField::Integer, u32::from(value))
         }
     };
     let mut found = None;
     for definition in definitions {
-        ctx.charge_work(1, "NX named body_id definition")?;
         if definition.name.as_str() != "body_id" {
             continue;
         }
         let stream = definition.stream_ordinal;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(definitions.len()),
-            "NX body_id definition uniqueness",
-        )?;
         if definitions
             .iter()
             .filter(|d| {
@@ -64,10 +54,6 @@ pub(in crate::native) fn resolve<'a>(
         {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-            "NX body_id attribute instances",
-        )?;
         let mut instances = entities.iter().filter(|e| {
             e.stream_ordinal == stream && e.definition_xmt == u32::from(definition.xmt)
         });
@@ -77,10 +63,6 @@ pub(in crate::native) fn resolve<'a>(
         if instances.next().is_some() {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-            "NX body_id instance identity uniqueness",
-        )?;
         if entities
             .iter()
             .filter(|e| e.stream_ordinal == stream && e.xmt == entity.xmt)
@@ -92,10 +74,6 @@ pub(in crate::native) fn resolve<'a>(
         let [target] = entity.trailing_references.values() else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(integers.len()),
-            "NX body_id scalar storage",
-        )?;
         let mut storage = integers
             .iter()
             .filter(|r| r.stream_ordinal == stream && u32::from(r.xmt) == *target);
@@ -116,7 +94,7 @@ pub(in crate::native) fn resolve<'a>(
             continue;
         }
         if found.is_some() {
-            return Ok(None);
+            return None;
         }
         found = Some(BodyIdMatch {
             stream,
@@ -126,7 +104,7 @@ pub(in crate::native) fn resolve<'a>(
             value_record: &integer.id,
         });
     }
-    Ok(found)
+    found
 }
 
 #[cfg(test)]

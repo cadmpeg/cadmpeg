@@ -79,6 +79,7 @@ macro_rules! procedural_curve {
 
 mod helix;
 mod law_sweep;
+mod model_index;
 mod overflowing_arms;
 mod overflowing_curve_arms;
 mod pcurves;
@@ -116,7 +117,6 @@ fn law_operand(value: f64, derivative: f64) -> crate::eval::sweep_law::ScalarSwe
 
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -128,7 +128,6 @@ fn bilinear_surface() -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -139,7 +138,6 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
         let replacement = true;
         edit::replace(&mut surface, |previous| {
             NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -153,7 +151,6 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -187,7 +184,6 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
         let replacement = false;
         edit::replace(&mut surface, |previous| {
             NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -201,7 +197,6 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -264,9 +259,7 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
                     },
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
 
@@ -324,9 +317,7 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                     },
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
 
@@ -393,7 +384,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
             0.25,
             0.75
         ))
-        .is_err_and(|failure| failure == crate::eval::EvaluationFailure::NoValue));
+        .is_err_and(|failure| failure == crate::eval::EvaluationFailure::WorkExhausted));
     assert!(budget.exhausted());
     let budget = WorkBudget::new(13);
     assert_eq!(
@@ -421,14 +412,12 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         )),
         source_object: None,
@@ -439,9 +428,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
                     crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
@@ -452,17 +439,15 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
                 ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+            }).unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = WorkBudget::new(5);
     assert_eq!(
         crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(
             &budget,
             |admission| model_surface_point_by_id(admission, &index, &surface_id, 0.25, 2.0)
         ),
-        Err(crate::eval::EvaluationFailure::NoValue)
+        Err(crate::eval::EvaluationFailure::WorkExhausted)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(6);
@@ -484,13 +469,11 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceLanes::new(vec![vec![Point3::new(1.0, 2.0, 3.0)]], None),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let point = Point3::new(1.0, 2.0, 3.0);
     assert_eq!(
@@ -510,7 +493,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
     )
-    .expect("resource allocation did not fail")
+    .expect("bound the NURBS surface segment's chord deviation")
     .expect("degree-zero surface bound");
     assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
 }
@@ -518,7 +501,6 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -530,7 +512,6 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
     for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
@@ -540,7 +521,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
         )
-        .expect("resource allocation did not fail")
+        .expect("bound the NURBS surface segment's chord deviation")
         .expect("degree-zero patch span bound");
         assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
     }
@@ -549,7 +530,6 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -563,7 +543,6 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let parameters = [Point2::new(0.1, 0.2), Point2::new(0.9, 0.8)];
     let endpoints = parameters.map(|point| {
@@ -582,7 +561,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
         parameters,
         endpoints,
     )
-    .expect("resource allocation did not fail")
+    .expect("bound the NURBS surface segment's chord deviation")
     .expect("multi-span rational Bézier residual bound");
 
     for index in 0..=100 {
@@ -684,12 +663,12 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
         });
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+            &crate::index::ModelIndex::build(&ir),
             &id,
             point.get(),
             parameter,
         )
-        .expect("resource allocation did not fail")
+        .expect("find the model curve parameter near the point")
         .expect("direct analytic inverse")
         .get();
         assert!((inverse - parameter).abs() < 1.0e-12);
@@ -712,9 +691,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(0.5, 0.0, 0.0),
@@ -738,9 +715,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(1.0, 0.5, 0.0),
@@ -764,9 +739,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(2.0, 3.0, 4.0),
@@ -786,12 +759,12 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
         });
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+            &crate::index::ModelIndex::build(&ir),
             &id,
             point,
             seed,
         )
-        .expect("resource allocation did not fail")
+        .expect("find the model curve parameter near the point")
         .expect("polyline inverse")
         .get();
         assert!((inverse - expected).abs() < 1.0e-12);
@@ -814,7 +787,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
         )),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
     assert!(super::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
@@ -823,7 +796,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
         point,
         0.5
     )
-    .expect("resource allocation did not fail")
+    .expect("find the model curve parameter near the point")
     .is_none());
     let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
         &cadmpeg_test_support::service_decode_context(),
@@ -833,7 +806,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
         0.5,
         0.01,
     )
-    .expect("resource allocation did not fail")
+    .expect("find the model curve parameter near the point")
     .expect("caller tolerance admits the bounded residual")
     .get();
     assert!((inverse - 0.5).abs() < 1.0e-12);
@@ -877,12 +850,12 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     });
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &id,
         point.get(),
         parameter,
     )
-    .expect("resource allocation did not fail")
+    .expect("find the model curve parameter near the point")
     .expect("transformed inverse")
     .get();
     assert!((inverse - parameter).abs() < 1.0e-10);
@@ -901,12 +874,12 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     ));
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(0.0, 0.0, 0.0),
         0.0
     )
-    .expect("resource allocation did not fail")
+    .expect("find the model curve parameter near the point")
     .is_none());
 }
 
@@ -927,23 +900,23 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     assert_eq!(
         crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+            &crate::index::ModelIndex::build(&ir),
             &id,
             point,
             seed
         )
-        .expect("resource allocation did not fail")
+        .expect("find the model curve parameter near the point")
         .map(crate::scalar::FiniteReal::get),
         Some(seed)
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(2.0, 3.0, 5.0),
         seed
     )
-    .expect("resource allocation did not fail")
+    .expect("find the model curve parameter near the point")
     .is_none());
 }
 
@@ -952,7 +925,6 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
         NurbsSurfaceLanes::new(
@@ -966,7 +938,6 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
 
     for (direction, at, samples) in [
@@ -979,7 +950,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             direction,
             at,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface isoline")
         .expect("isoline");
         for sample in samples {
             let (u, v) = match direction {
@@ -1064,7 +1035,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             record_bounds: None,
         },
     ];
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1082,7 +1053,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             .within_work_slice(&budget, |admission| model_surface_point_by_id(
                 admission, &index, &second_id, 1.0e16, -1.0e16
             )),
-        Err(crate::eval::EvaluationFailure::NoValue)
+        Err(crate::eval::EvaluationFailure::WorkExhausted)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(3);
@@ -1120,7 +1091,6 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                     NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
                     NurbsSurfaceLanes::new(
@@ -1137,7 +1107,6 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
                     ),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -1157,7 +1126,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1185,7 +1154,6 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
         let replacement = true;
         edit::replace(&mut support, |previous| {
             NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1199,7 +1167,6 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
                 previous.pole_grid().clone(),
                 replacement,
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -1228,7 +1195,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
 
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &offset_id,
         0.2,
         0.3,
@@ -1279,28 +1246,22 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         },
     ];
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &subset_id,
-            procedural_surface! {
+        .add_procedural_surface(&subset_id, procedural_surface! {
                 id: subset_construction,
                 definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true), None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
+            })
         .expect("subset surface exists and has no procedural construction");
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &offset_id,
-            procedural_surface! {
+        .add_procedural_surface(&offset_id, procedural_surface! {
                 id: offset_construction,
                 definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
+            })
         .expect("offset surface exists and has no procedural construction");
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1351,9 +1312,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         },
     ];
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &bounded_id,
-            procedural_surface! {
+        .add_procedural_surface(&bounded_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::CurveBounded {
                     support: support_id,
@@ -1363,10 +1322,8 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
                 },
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+            }).unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1425,9 +1382,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
                     crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
@@ -1438,10 +1393,8 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
                 ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+            }).unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1491,14 +1444,12 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         )),
         source_object: None,
@@ -1529,7 +1480,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let partials = model_surface_partials_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1548,7 +1499,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     let (ir, surface_id) = law_sweep::law_sweep_model(LawExpression::Text {
         value: cadmpeg_core::nonblank_literal!("2.0*X"),
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let expected = Point3::new(0.5, -0.5, 0.25);
     assert_eq!(
         model_surface_point_by_id(
@@ -1614,9 +1565,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::AxisRevolution(
                     crate::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
@@ -1628,10 +1577,8 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
                 ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+            }).unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1692,17 +1639,13 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+            }).unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
     let partials = model_surface_second_partials_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1746,9 +1689,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model.add_procedural_surface(&crate::document::admission::StandardAdmission,
-        &surface_id,
-        procedural_surface! {
+    ir.model.add_procedural_surface(&surface_id, procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
             definition: ProceduralSurfaceDefinition::Revolution(
                 crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -1763,9 +1704,8 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             ),
             cache_fit_tolerance: None,
             record_bounds: None,
-        },
-    ).unwrap().unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+        }).unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1847,9 +1787,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
@@ -1860,10 +1798,8 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
                     None,
                 ])
                 .expect("finite record bounds")),
-            },
-        ).unwrap()
-        .unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+            }).unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1888,7 +1824,6 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
 #[test]
 fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
         vec![
@@ -1899,7 +1834,6 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
@@ -1910,7 +1844,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
             EPS_CURVE_INVERSE_WITNESS,
             0.1
         )
-        .expect("resource allocation did not fail")
+        .expect("find the NURBS curve parameter near the point")
         .map(crate::scalar::FiniteReal::get),
         Some(0.25)
     );
@@ -1922,7 +1856,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
             EPS_CURVE_INVERSE_WITNESS,
             0.9
         )
-        .expect("resource allocation did not fail")
+        .expect("find the NURBS curve parameter near the point")
         .map(crate::scalar::FiniteReal::get),
         Some(0.75)
     );
@@ -1934,14 +1868,10 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
             EPS_CURVE_INVERSE_WITNESS,
             0.5,
         )
-        .expect("resource allocation did not fail"),
+        .expect("find the NURBS curve parameter near the point"),
         None
     );
-    assert!(
-        nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve)
-            .expect("speed bound admission")
-            .is_some_and(|bound| bound.get() >= 2.0)
-    );
+    assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));
 }
 
 mod bounded_nurbs;

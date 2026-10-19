@@ -138,13 +138,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         sketch,
         definition: crate::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Polygon {
-                polygon: crate::sketches::SketchPolygon::try_new(
-                    members.clone(),
-                    &cadmpeg_test_support::service_decode_context(),
-                    "sketch polygon uniqueness",
-                )
-                .expect("fixture collection admission")
-                .unwrap(),
+                polygon: crate::sketches::SketchPolygon::try_new(members.clone()).unwrap(),
             },
         )
         .unwrap(),
@@ -159,10 +153,9 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
@@ -382,9 +375,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    ir.finalize();
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
@@ -393,7 +385,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         cadmpeg_core::text::NonBlankString::new("center-bearing-curve")
             .expect("nonempty source identity"),
     );
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
@@ -489,9 +481,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             metadata: None,
             native_ref: None,
         }));
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    ir.finalize();
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(!report.findings.iter().any(|finding| {
         finding
             .entity
@@ -514,7 +505,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
         position: Point2::new(3.0, 1.0),
     })
     .unwrap();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some("synthetic:test:constraint#point-coordinates")
             && finding.check == Check::Counts
@@ -530,20 +521,8 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
     let profile = PlanarProfileRef::sketch_regions(
         SketchId::mint("synthetic:test:sketch#region").unwrap(),
         vec![
-            SketchProfileRegion::loops(
-                2,
-                vec![3, 5],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("fixture loop-region admission")
-            .unwrap(),
-            SketchProfileRegion::loops(
-                8,
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("fixture loop-region admission")
-            .unwrap(),
+            SketchProfileRegion::loops(2, vec![3, 5]).unwrap(),
+            SketchProfileRegion::loops(8, Vec::new()).unwrap(),
             SketchProfileRegion::trimmed(
                 vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),
@@ -1222,25 +1201,13 @@ fn polygon_membership_is_checked_at_admission() {
         members[..2].to_vec(),
         vec![members[0].clone(), members[1].clone(), members[0].clone()],
     ] {
-        assert!(SketchPolygon::try_new(
-            entities.clone(),
-            &cadmpeg_test_support::service_decode_context(),
-            "sketch polygon uniqueness"
-        )
-        .expect("fixture collection admission")
-        .is_err());
+        assert!(SketchPolygon::try_new(entities.clone()).is_err());
         let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": entities}});
         assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire).is_err());
     }
     let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": members}});
     let definition = SketchConstraintDefinitionInput::Polygon {
-        polygon: SketchPolygon::try_new(
-            members,
-            &cadmpeg_test_support::service_decode_context(),
-            "sketch polygon uniqueness",
-        )
-        .expect("fixture collection admission")
-        .unwrap(),
+        polygon: SketchPolygon::try_new(members).unwrap(),
     };
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
@@ -1515,14 +1482,6 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
 fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() {
     use crate::sketches::{SketchEntityId, SketchEntityUse, SketchProfiles};
 
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-
     let usage = SketchEntityUse {
         entity: SketchEntityId::mint("synthetic:test:sketch-entity#profile").unwrap(),
         reversed: false,
@@ -1550,22 +1509,20 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
         .edit(|chains| chains.push(vec![usage.clone()]))
         .unwrap();
     assert_eq!(profiles.len(), 2);
-    profiles.push_single(&resource_ctx, usage).unwrap();
+    profiles.push_single(usage);
     assert_eq!(profiles.len(), 3);
     let before_filter = profiles.clone();
     let mut calls = 0;
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        profiles
-            .retain_uses(&resource_ctx, |_| {
-                calls += 1;
-                assert_ne!(calls, 2, "filter interruption");
-                false
-            })
-            .unwrap();
+        profiles.retain_uses(|_| {
+            calls += 1;
+            assert_ne!(calls, 2, "filter interruption");
+            false
+        });
     }))
     .is_err());
     assert_eq!(profiles, before_filter);
-    profiles.retain_uses(&resource_ctx, |_| false).unwrap();
+    profiles.retain_uses(|_| false);
     assert!(profiles.is_empty());
 }
 
@@ -1970,7 +1927,6 @@ fn native_constraint_kind_rejects_empty_text_at_input_admission() {
 }
 
 mod admitted_records;
-mod allocation;
 mod frames;
 mod spatial;
 

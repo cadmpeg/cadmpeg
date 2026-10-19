@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent zero-entity allocation graph references.
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -37,19 +36,14 @@ pub(crate) struct CatiaZeroEntityAllocationEdge {
     uses: [CatiaZeroEntityAllocationUse; 2],
 }
 
-fn record_id(
-    ctx: &DecodeContext<'_>,
-    records: &[CatiaZeroEntityRecord],
-    ordinal: u32,
-) -> Result<String, CodecError> {
+fn record_id(records: &[CatiaZeroEntityRecord], ordinal: u32) -> Result<String, CodecError> {
     let record = zero_entity_record(records, ordinal).ok_or_else(|| {
         CodecError::malformed("allocation target is absent from its source inventory")
     })?;
-    ctx.copy_retained_text(&record.id, "catia_native_zero_allocation_target")
+    Ok(record.id.clone())
 }
 
 pub(crate) fn derive(
-    ctx: &DecodeContext<'_>,
     topology: Option<AllocationTopology>,
     records: &[CatiaZeroEntityRecord],
 ) -> Result<Vec<CatiaZeroEntityAllocationEdge>, CodecError> {
@@ -60,27 +54,20 @@ pub(crate) fn derive(
     for edge in topology.edges {
         let [first, second] = edge.uses.map(|side| -> Result<_, CodecError> {
             Ok(CatiaZeroEntityAllocationUse {
-                oriented_use: record_id(ctx, records, side.use_record_ordinal)?,
-                support_record: record_id(ctx, records, side.support_record_ordinal)?,
-                face_record: record_id(ctx, records, side.face_record_ordinal)?,
-                incidence_record: record_id(ctx, records, side.incidence_record_ordinal)?,
-                vertex_record: record_id(ctx, records, side.vertex_record_ordinal)?,
+                oriented_use: record_id(records, side.use_record_ordinal)?,
+                support_record: record_id(records, side.support_record_ordinal)?,
+                face_record: record_id(records, side.face_record_ordinal)?,
+                incidence_record: record_id(records, side.incidence_record_ordinal)?,
+                vertex_record: record_id(records, side.vertex_record_ordinal)?,
             })
         });
         let uses = [first?, second?];
-        ctx.push_vec(
-            &mut output,
-            CatiaZeroEntityAllocationEdge {
-                id: ctx.format_retained(
-                    format_args!("catia:zero-entity:allocation-edge#{}", edge.record_ordinal),
-                    "catia_native_zero_allocation_edge_id",
-                )?,
-                edge_record: record_id(ctx, records, edge.record_ordinal)?,
-                header_record: record_id(ctx, records, edge.header_record_ordinal)?,
-                uses,
-            },
-            "catia_native_zero_allocation_edges",
-        )?;
+        output.push(CatiaZeroEntityAllocationEdge {
+            id: format!("catia:zero-entity:allocation-edge#{}", edge.record_ordinal),
+            edge_record: record_id(records, edge.record_ordinal)?,
+            header_record: record_id(records, edge.header_record_ordinal)?,
+            uses,
+        });
     }
     Ok(output)
 }

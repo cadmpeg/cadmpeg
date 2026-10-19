@@ -36,8 +36,7 @@ fn sampled() -> Vec<u8> {
 }
 
 fn admit(bytes: &[u8]) -> Option<E5CurveSupport> {
-    crate::test_support::with_service_context(|ctx| parse(ctx, 0xc1, bytes))
-        .expect("service budget")
+    parse(0xc1, bytes)
 }
 
 #[test]
@@ -117,13 +116,4 @@ fn incomplete_or_inconsistent_programs_are_rejected() {
     let mut bytes = affine();
     bytes[22 + 24..22 + 32].copy_from_slice(&0.0_f64.to_le_bytes());
     assert!(admit(&bytes).is_none());
-}
-
-#[test]
-fn sampled_arrays_refuse_before_collection_growth() {
-    let result = crate::test_support::with_collection_limit(0, |ctx| parse(ctx, 0xc1, &sampled()));
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_e5_map_samples")
-    );
 }

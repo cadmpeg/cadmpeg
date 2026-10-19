@@ -96,25 +96,18 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     .unwrap();
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Membership maps are fixed; each ambiguous query admits four candidate-set slots.
-    policy.limits.max_collection_items = 4_100;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut candidates =
         crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[]);
     for _ in 0..1_000 {
-        assert_eq!(candidates.external(&ctx, &operand, None).unwrap(), None);
+        assert_eq!(candidates.external(&operand, None), None);
     }
     ctx.finish_session().unwrap();
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(
-                &cadmpeg_test_support::service_decode_context(),
-                &operand,
-                None
-            )
-            .unwrap(),
+            .external(&operand, None),
         None
     );
 
@@ -137,7 +130,6 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     };
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         &scope,
         &inputs,
@@ -148,8 +140,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )
-    .unwrap();
+    );
     assert_eq!(
         selection,
         BodySelection::NativeSet(vec![native].try_into().unwrap())

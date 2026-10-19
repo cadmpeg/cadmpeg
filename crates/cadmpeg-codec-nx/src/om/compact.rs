@@ -202,35 +202,6 @@ impl NullableCompactIndex {
 pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>, u8);
 
 impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
-    pub(crate) fn map_charged<U>(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut map: impl FnMut(T) -> Result<U, cadmpeg_core::CodecError>,
-    ) -> Result<CountedIndexMembers<U, RESERVED>, cadmpeg_core::CodecError> {
-        let count = self.0.len();
-        let operation = "NX mapped counted index members";
-        let mut mapped = ctx.collection_vec(count, operation)?;
-        for member in self.0 {
-            mapped.push(map(member)?);
-        }
-        Ok(CountedIndexMembers(mapped, self.1))
-    }
-    pub(super) fn try_map_charged<U>(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut map: impl FnMut(T) -> Result<Option<U>, cadmpeg_core::CodecError>,
-    ) -> Result<Option<CountedIndexMembers<U, RESERVED>>, cadmpeg_core::CodecError> {
-        let count = self.0.len();
-        let operation = "NX resolved counted index members";
-        let mut mapped = ctx.collection_vec(count, operation)?;
-        for member in self.0 {
-            let Some(value) = map(member)? else {
-                return Ok(None);
-            };
-            mapped.push(value);
-        }
-        Ok(Some(CountedIndexMembers(mapped, self.1)))
-    }
     pub(crate) fn new(members: Vec<T>) -> Result<Self, &'static str> {
         if !(1..=usize::from(u8::MAX - RESERVED)).contains(&members.len()) {
             return Err("members: must be nonempty and fit the declared byte count");
@@ -248,7 +219,6 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         &self.0
     }
 
-    #[cfg(test)]
     pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U, RESERVED> {
         CountedIndexMembers(self.0.into_iter().map(f).collect(), self.1)
     }

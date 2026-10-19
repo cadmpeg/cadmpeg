@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compact class-`3b` chamfer records and contextual contact bounds.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
 use super::records::{b2_parameter_points_from_records, B2ParameterPoint};
 use crate::families::chamfer::{ChamferContactOrder, ChamferParameters, ChamferResultKind};
 use crate::wire::bytes::read_f64_array;
@@ -20,14 +17,10 @@ pub(crate) struct B2Chamfer {
     pub(crate) parameters: ChamferParameters,
 }
 
-pub(crate) fn records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<B2Chamfer>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "catia_b2_chamfer_scan",
-    )?;
+pub(crate) fn records(bytes: &[u8]) -> Vec<B2Chamfer> {
     let mut records = Vec::new();
     let Some(last) = bytes.len().checked_sub(5) else {
-        return Ok(records);
+        return records;
     };
     for pos in 0..last {
         let Some(width) = bytes[pos]
@@ -80,19 +73,15 @@ pub(crate) fn records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<B2Cha
         })() else {
             continue;
         };
-        ctx.push_vec(
-            &mut records,
-            B2Chamfer {
-                pos,
-                end,
-                support_surfaces: decoded.0,
-                support_pcurves: decoded.1,
-                parameters: decoded.2,
-            },
-            "catia_b2_chamfer_records",
-        )?;
+        records.push(B2Chamfer {
+            pos,
+            end,
+            support_surfaces: decoded.0,
+            support_pcurves: decoded.1,
+            parameters: decoded.2,
+        });
     }
-    Ok(records)
+    records
 }
 
 fn direct_line(point: &B2ParameterPoint) -> Option<(u8, [f64; 3])> {
@@ -154,23 +143,22 @@ fn close(left: [f64; 2], right: [f64; 2]) -> bool {
 
 /// The first two contacts, plus only independently closed connector sides.
 pub(crate) fn parameter_positions(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     inventory: &[ConsolidatedRecord],
     construction: &B2Chamfer,
-) -> Result<Vec<usize>, CodecError> {
+) -> Vec<usize> {
     let mut output = Vec::new();
     let Some(index) = inventory
         .iter()
         .position(|record| record.byte_offset() == construction.pos)
     else {
-        return Ok(output);
+        return output;
     };
     if index == 0 {
-        return Ok(output);
+        return output;
     }
     let Some(window) = inventory.get(index - 1..index + 3) else {
-        return Ok(output);
+        return output;
     };
     let result_class = match construction.parameters.result_kind {
         ChamferResultKind::Cone => 0x29,
@@ -185,18 +173,18 @@ pub(crate) fn parameter_positions(
         || window[2].class() != 0x18
         || window[3].class() != 0x18
     {
-        return Ok(output);
+        return output;
     }
     let mut contacts = b2_parameter_points_from_records(bytes, &window[2..]);
     let (Some(first), Some(second)) = (contacts.next(), contacts.next()) else {
-        return Ok(output);
+        return output;
     };
     if [first.operand.value(), second.operand.value()] != [1, 2] {
-        return Ok(output);
+        return output;
     }
     let (Some((axis, a)), Some((other_axis, b))) = (direct_line(&first), direct_line(&second))
     else {
-        return Ok(output);
+        return output;
     };
     if axis != other_axis
         || a[1..] != b[1..]
@@ -206,38 +194,38 @@ pub(crate) fn parameter_positions(
             ChamferContactOrder::UpperLower => a[0] <= b[0],
         }
     {
-        return Ok(output);
+        return output;
     }
-    ctx.push_vec(&mut output, first.pos, "catia_chamfer_contact_positions")?;
-    ctx.push_vec(&mut output, second.pos, "catia_chamfer_contact_positions")?;
+    output.push(first.pos);
+    output.push(second.pos);
     let Some(connectors) = inventory.get(index + 3..index + 5) else {
-        return Ok(output);
+        return output;
     };
     if !records_are_contiguous(connectors)
         || connectors
             .iter()
             .any(|record| record.family() != ConsolidatedFamily::B || record.class() != 0x18)
     {
-        return Ok(output);
+        return output;
     }
     let Some(full) = inventory.get(index - 1..index + 5) else {
-        return Ok(output);
+        return output;
     };
     if !records_are_contiguous(full) {
-        return Ok(output);
+        return output;
     }
     let mut parsed = b2_parameter_points_from_records(bytes, connectors);
     let (Some(third), Some(fourth)) = (parsed.next(), parsed.next()) else {
-        return Ok(output);
+        return output;
     };
     if [third.operand.value(), fourth.operand.value()] != [3, 4] {
-        return Ok(output);
+        return output;
     }
     let lo = a[0].min(b[0]);
     let hi = a[0].max(b[0]);
     for (point, bound) in [&third, &fourth].into_iter().zip([a[1], a[2]]) {
         let Some(actual) = endpoints(point) else {
-            return Ok(output);
+            return output;
         };
         let expected = if axis == 1 {
             [[lo, bound], [hi, bound]]
@@ -247,12 +235,12 @@ pub(crate) fn parameter_positions(
         if !(close(actual[0], expected[0]) && close(actual[1], expected[1])
             || close(actual[0], expected[1]) && close(actual[1], expected[0]))
         {
-            return Ok(output);
+            return output;
         }
     }
-    ctx.push_vec(&mut output, third.pos, "catia_chamfer_connector_positions")?;
-    ctx.push_vec(&mut output, fourth.pos, "catia_chamfer_connector_positions")?;
-    Ok(output)
+    output.push(third.pos);
+    output.push(fourth.pos);
+    output
 }
 
 #[cfg(test)]

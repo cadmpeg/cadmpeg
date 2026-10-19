@@ -31,7 +31,7 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("typed unresolved face graph");
     assert_eq!(graph.face_records.len(), 2);
     assert_eq!(graph.faces.len(), 1);
@@ -86,7 +86,7 @@ fn decode_reports_typed_distinct_surface_b5_faces() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("typed multi-surface graph");
     assert_eq!(graph.face_records.len(), 2);
     assert_eq!(graph.faces.len(), 1);
@@ -150,7 +150,7 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
             &stream,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget")
+        .expect("parse the graph")
         .is_none()
     );
     assert_eq!(

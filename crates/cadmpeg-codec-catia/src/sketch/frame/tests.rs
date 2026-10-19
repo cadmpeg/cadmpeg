@@ -6,7 +6,7 @@ use crate::native::{
     CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
 };
 use crate::object_graph::{ObjectPayload, PayloadField};
-use crate::test_support::{with_collection_limit, with_service_context};
+use crate::test_support::with_service_context;
 use crate::unique_index::UniqueIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchPlacement;
@@ -111,27 +111,11 @@ impl Fixture {
     }
 
     fn placement(&self) -> Option<SketchPlacement> {
-        with_service_context(|ctx| {
-            let records = UniqueIndex::collect(
-                ctx,
-                self.fields.iter().map(|v| (v.id.as_str(), v)),
-                "test_records",
-            )
-            .expect("records");
-            let entities = UniqueIndex::collect(
-                ctx,
-                self.entities.iter().map(|v| (v.id.as_str(), v)),
-                "test_entities",
-            )
-            .expect("entities");
-            let objects = UniqueIndex::collect(
-                ctx,
-                self.groups.iter().map(|v| (v.id.as_str(), v)),
-                "test_objects",
-            )
-            .expect("objects");
-            placement(ctx, &self.declaration, &records, &entities, &objects)
-                .expect("placement resources")
+        with_service_context(|_ctx| {
+            let records = UniqueIndex::collect(self.fields.iter().map(|v| (v.id.as_str(), v)));
+            let entities = UniqueIndex::collect(self.entities.iter().map(|v| (v.id.as_str(), v)));
+            let objects = UniqueIndex::collect(self.groups.iter().map(|v| (v.id.as_str(), v)));
+            placement(&self.declaration, &records, &entities, &objects)
         })
     }
 }
@@ -220,9 +204,7 @@ fn conflicting_frame_copies_and_nonorthogonal_axes_remain_unresolved() {
 #[test]
 fn frame_program_requires_exact_tokens_and_nine_controls() {
     let controls = [0xe8, 0xe7, 0xe8, 0xe8, 0xe8, 0xe7, 0xe8, 0xe8, 0xe8];
-    let parse = |bytes: &[u8]| {
-        with_service_context(|ctx| frame_program(ctx, &entity(bytes, 20)).expect("tokens"))
-    };
+    let parse = |bytes: &[u8]| with_service_context(|_ctx| frame_program(&entity(bytes, 20)));
     assert_eq!(parse(&PROGRAM), FrameProgram::Controls(controls));
     for position in 0..PROGRAM.len() {
         let mut altered = PROGRAM;
@@ -247,16 +229,6 @@ fn frame_program_requires_exact_tokens_and_nine_controls() {
 fn frame_prefix_inside_binary64_packet_is_not_a_placement() {
     let mut payload = vec![0x91, 0x85, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
     payload.extend(PROGRAM);
-    let result = with_service_context(|ctx| frame_program(ctx, &entity(&payload, 20)))
-        .expect("numeric packet boundary");
+    let result = with_service_context(|_ctx| frame_program(&entity(&payload, 20)));
     assert_eq!(result, FrameProgram::Absent);
-}
-
-#[test]
-fn frame_tokenization_refuses_before_unadmitted_allocation() {
-    let result = with_collection_limit(0, |ctx| frame_program(ctx, &entity(&PROGRAM, 20)));
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
 }

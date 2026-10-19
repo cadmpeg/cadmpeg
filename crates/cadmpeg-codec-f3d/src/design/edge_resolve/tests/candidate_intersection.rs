@@ -114,56 +114,36 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[], &[17, 18])],
-                [&[17][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::edge_assignment_candidates(
+            &[selector_with_counts(0, &[], &[17, 18])],
+            [&[17][..]]
+        ),
         Some(vec![17])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17, 18][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::edge_assignment_candidates(
+            &[selector_with_counts(0, &[18], &[17, 18])],
+            [&[17, 18][..]]
+        ),
         Some(vec![18])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::edge_assignment_candidates(
+            &[selector_with_counts(0, &[18], &[17, 18])],
+            [&[17][..]]
+        ),
         None
     );
     let assignment_candidates = [
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[], &[17, 18])],
-                [&[17, 18][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap()
+        crate::design::edge_resolve::edge_assignment_candidates(
+            &[selector_with_counts(0, &[], &[17, 18])],
+            [&[17, 18][..]],
+        )
         .unwrap(),
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17, 18][..]],
-                decode_ctx,
-            )
-        })
-        .unwrap()
+        crate::design::edge_resolve::edge_assignment_candidates(
+            &[selector_with_counts(0, &[18], &[17, 18])],
+            [&[17, 18][..]],
+        )
         .unwrap(),
     ];
     assert_eq!(

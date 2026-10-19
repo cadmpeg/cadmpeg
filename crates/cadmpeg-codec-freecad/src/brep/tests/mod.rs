@@ -35,416 +35,16 @@ fn in_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     f(&ctx)
 }
 
-fn with_collection_limit<T>(
-    bytes: &[u8],
-    limit: u64,
-    f: impl FnOnce(&DecodeContext<'_>) -> T,
-) -> T {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("input is within the root limit");
-    f(&ctx)
-}
-
-#[test]
-fn bezier_knot_vector_refuses_at_caller_limit() {
-    let result = with_collection_limit(&[], 3, |ctx| super::clamped_bezier_knots(ctx, 1));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD Bezier knots"));
-}
-
-#[test]
-fn surface_grid_rows_refuse_at_caller_limit() {
-    let result = with_collection_limit(&[], 3, |ctx| super::grid_rows(ctx, vec![1_u8, 2, 3, 4], 2));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD B-rep surface row values"));
-}
-
-#[test]
-fn periodic_curve_pole_padding_refuses_at_caller_limit() {
-    let result = with_collection_limit(&[], 0, |ctx| {
-        let mut poles = vec![1_u8];
-        super::append_periodic_curve_poles(ctx, &mut poles, None, 1)
-    });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD periodic B-rep curve poles"));
-}
-
-#[test]
-fn binary_brep_location_capacity_refuses_on_collection_limit() {
-    let mut bytes = b"Open CASCADE Topology V1\nLocations 1\n".to_vec();
-    bytes.push(1);
-    let result = with_collection_limit(&bytes, 0, |ctx| parse_binary_prefix(ctx, &bytes));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD B-rep parse_binary_prefix"
-    ));
-}
-
-#[test]
-fn text_brep_location_capacity_refuses_on_collection_limit() {
-    let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 1 1 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0";
-    let token_count = cadmpeg_core::decode::u64_from_index(
-        std::str::from_utf8(bytes)
-            .expect("ASCII fixture")
-            .split_ascii_whitespace()
-            .count(),
-    );
-    let result = with_collection_limit(bytes, token_count, |ctx| parse_text(ctx, bytes));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD B-rep parse_locations"
-    ));
-}
-
-#[test]
-fn text_brep_token_capacity_refuses_on_collection_limit() {
-    let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 1 1 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0";
-    let token_count = cadmpeg_core::decode::u64_from_index(
-        std::str::from_utf8(bytes)
-            .expect("ASCII fixture")
-            .split_ascii_whitespace()
-            .count(),
-    );
-    let result = with_collection_limit(bytes, token_count - 1, |ctx| parse_text(ctx, bytes));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD text B-rep tokens"
-    ));
-}
-
-#[test]
-fn periodic_brep_knot_capacity_refuses_on_collection_limit() {
-    let knots = [0.0, 0.0, 0.5, 1.0, 1.0]
-        .into_iter()
-        .map(|value| FiniteReal::new(value).expect("finite knot"))
-        .collect();
-    let result = with_collection_limit(&[], 0, |ctx| {
-        super::normalize_periodic_knots(ctx, knots, 2, true)
-    });
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD periodic B-rep knots"
-    ));
-}
-
-fn one_curve_payload() -> ShapePayloadRecord {
-    ShapePayloadRecord {
-        id: "fcstd:test:shape-payload#one".to_owned(),
-        property: "fcstd:test:property#one".to_owned(),
-        entry: "fcstd:test:entry#one".to_owned(),
-        payload: ShapePayload::Text {
-            version: super::TextTopologyVersion::V1,
-            facts: super::ShapeSet {
-                locations: Vec::new(),
-                curve2ds: Vec::new(),
-                curves: vec![TextCurve::Line {
-                    origin: FinitePoint3::ZERO,
-                    direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
-                        .expect("finite direction"),
-                }],
-                polygons3d: Vec::new(),
-                polygons_on_triangulations: Vec::new(),
-                surfaces: Vec::new(),
-                triangulations: Vec::new(),
-                tshapes: Vec::new().into(),
-                roots: Vec::new(),
-            },
-        },
-    }
-}
-
-#[test]
-fn carrier_census_record_capacity_refuses_on_collection_limit() {
-    let payload = one_curve_payload();
-    let result = with_collection_limit(&[], 0, |ctx| super::carrier_census(ctx, &[payload]));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD carrier census records"
-    ));
-}
-
-#[test]
-fn carrier_census_family_insert_refuses_on_collection_limit() {
-    let payload = one_curve_payload();
-    let result = with_collection_limit(&[], 1, |ctx| super::carrier_census(ctx, &[payload]));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD carrier census families"
-    ));
-}
-
-#[test]
-fn carrier_census_identity_refuses_at_retained_limit() {
-    let payload = one_curve_payload();
-    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| {
-        super::carrier_census(ctx, std::slice::from_ref(&payload))
-    });
-}
-
-#[test]
-fn shape_payload_identity_refuses_at_retained_limit() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "Shape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Geometry,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
-            dynamic: None,
-        },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            "<Property><Part file=\"empty.brp\"/></Property>".into(),
-            0,
-        )
-        .expect("valid test XML"),
-    };
-    let entry = crate::test_support::entry_record(
-        crate::native::native_id("entry", "empty.brp"),
-        "empty.brp".into(),
-        cadmpeg_core::container::ContainerRole::Brep,
-        Vec::new(),
-        Vec::new(),
-    );
-    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| {
-        parse_payloads(
-            ctx,
-            std::slice::from_ref(&property),
-            std::slice::from_ref(&entry),
-        )
-    });
-}
-
-#[test]
-fn shape_payload_record_refuses_on_collection_limit() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "Shape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Geometry,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["empty.brp".into()],
-            dynamic: None,
-        },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            "<Property><Part file=\"empty.brp\"/></Property>".into(),
-            0,
-        )
-        .expect("valid test XML"),
-    };
-    let entry = crate::test_support::entry_record(
-        crate::native::native_id("entry", "empty.brp"),
-        "empty.brp".into(),
-        cadmpeg_core::container::ContainerRole::Brep,
-        vec![property.id.clone()],
-        Vec::new(),
-    );
-    crate::test_support::assert_collection_refusal_at(
-        &[],
-        "FreeCAD shape payload records",
-        |ctx| {
-            parse_payloads(
-                ctx,
-                std::slice::from_ref(&property),
-                std::slice::from_ref(&entry),
-            )
-        },
-    );
-}
-
-#[test]
-fn shape_entry_index_refuses_on_collection_limit() {
-    let entry = crate::test_support::entry_record(
-        crate::native::native_id("entry", "empty.brp"),
-        "empty.brp".into(),
-        cadmpeg_core::container::ContainerRole::Brep,
-        Vec::new(),
-        Vec::new(),
-    );
-    let result = with_collection_limit(&[], 0, |ctx| parse_payloads(ctx, &[], &[entry]));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD shape entry index"));
-}
-
-#[test]
-fn shape_entry_name_refuses_on_retained_limit() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "Shape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Geometry,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
-            dynamic: None,
-        },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            "<Property><Part file=\"empty.brp\"/></Property>".into(),
-            0,
-        )
-        .expect("valid test XML"),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(matches!(super::direct_shape_entry(&ctx, &property),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD shape entry name"));
-}
-
-#[test]
-fn transferred_curve_refuses_at_caller_limit() {
-    let curve = TextCurve::Line {
-        origin: FinitePoint3::ZERO,
-        direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
-            .expect("finite direction"),
-    };
-    let association = cadmpeg_ir::SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
-        instance_path: Vec::new(),
-    };
-    let result = with_collection_limit(&[], 0, |ctx| {
-        let mut transfer = super::CurveTransfer::default();
-        super::append_text_curve(
-            ctx,
-            &curve,
-            cadmpeg_ir::ids::CurveId::mint("fcstd:test:curve#limit").expect("identity grammar"),
-            &association,
-            &mut transfer,
-        )
-    });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD transferred curves"));
-}
-
-#[test]
-fn transferred_surface_refuses_at_caller_limit() {
-    let surface = TextSurface::Plane {
-        origin: FinitePoint3::ZERO,
-        axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
-            .expect("finite normal"),
-        u_axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
-            .expect("finite u axis"),
-        v_reversed: false,
-    };
-    let association = cadmpeg_ir::SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
-        instance_path: Vec::new(),
-    };
-    let result = with_collection_limit(&[], 0, |ctx| {
-        let mut curves = super::CurveTransfer::default();
-        let mut surfaces = super::SurfaceTransfer::default();
-        super::append_text_surface(
-            ctx,
-            &surface,
-            cadmpeg_ir::ids::SurfaceId::mint("fcstd:test:surface#limit").expect("identity grammar"),
-            &association,
-            &mut curves,
-            &mut surfaces,
-        )
-    });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD transferred surfaces"));
-}
-
-#[test]
-fn nurbs_curve_copy_refuses_at_caller_limit() {
-    let knots = vec![
-        FiniteReal::ZERO,
-        FiniteReal::ZERO,
-        FiniteReal::ONE,
-        FiniteReal::ONE,
-    ];
-    let points = vec![FinitePoint3::ZERO, FinitePoint3::ZERO];
-    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        knots,
-        points,
-        None,
-        false,
-    )
-    .expect("fixture pole pairing admission")
-    .expect("valid curve lanes");
-    let result = with_collection_limit(&[], 5, |ctx| {
-        nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")
-    });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD NURBS curve copy"));
-}
-
-#[test]
-fn nurbs_surface_copy_refuses_at_caller_limit() {
-    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    let knots = vec![
-        FiniteReal::ZERO,
-        FiniteReal::ZERO,
-        FiniteReal::ONE,
-        FiniteReal::ONE,
-    ];
-    let axis = || NurbsSurfaceAxis::new(1, knots.clone(), false);
-    let nurbs = NurbsSurface::from_finite_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        axis(),
-        axis(),
-        NurbsSurfaceLanes::new(vec![vec![FinitePoint3::ZERO; 2]; 2], None),
-        false,
-    )
-    .expect("fixture pole pairing admission")
-    .expect("valid surface lanes");
-    let result = with_collection_limit(&[], 13, |ctx| {
-        nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")
-    });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD NURBS surface copy"));
-}
-
 fn test_parse_text(
     bytes: &[u8],
 ) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {
-    in_decode_context(|ctx| parse_text(ctx, bytes))
+    parse_text(bytes)
 }
 
 fn test_parse_binary_prefix(
     bytes: &[u8],
 ) -> Result<(super::ShapeSet, super::BinaryTopologyVersion), CodecError> {
-    in_decode_context(|ctx| parse_binary_prefix(ctx, bytes))
+    parse_binary_prefix(bytes)
 }
 
 fn test_parse_payloads(
@@ -766,62 +366,59 @@ fn face_table_references_preserve_wire_absence_and_reject_zero_triangulation() {
 
 #[test]
 fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
-    in_decode_context(|ctx| {
-        let normalized = normalize_periodic_surface(
-            ctx,
-            [3, 1],
-            [
-                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
-                    .into_iter()
-                    .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(),
-                vec![0.0, 0.0, 1.0, 1.0]
-                    .into_iter()
-                    .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(),
-            ],
-            [6, 2],
-            (0..6)
-                .flat_map(|u| {
-                    [
-                        Point3::new(f64::from(u), 0.0, 0.0),
-                        Point3::new(f64::from(u), 1.0, 0.0),
-                    ]
-                })
-                .map(|point| FinitePoint3::new(point).unwrap())
+    let normalized = normalize_periodic_surface(
+        [3, 1],
+        [
+            vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
                 .collect(),
-            None,
-            [true, false],
-        )
-        .expect("valid periodic surface");
+            vec![0.0, 0.0, 1.0, 1.0]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
+                .collect(),
+        ],
+        [6, 2],
+        (0..6)
+            .flat_map(|u| {
+                [
+                    Point3::new(f64::from(u), 0.0, 0.0),
+                    Point3::new(f64::from(u), 1.0, 0.0),
+                ]
+            })
+            .map(|point| FinitePoint3::new(point).unwrap())
+            .collect(),
+        None,
+        [true, false],
+    )
+    .expect("valid periodic surface");
 
-        assert_eq!(normalized.u_count(), 7);
-        assert_eq!(
-            normalized.u_knots().as_slice(),
-            [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
-        );
-        let poles = normalized.poles();
-        assert_eq!(poles.len(), 14);
-        assert_eq!(poles[12], poles[0]);
-        assert_eq!(poles[13], poles[1]);
-        let start = cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &normalized,
-            0.0,
-            0.5,
-        )
-        .expect("periodic start point");
-        let end = cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &normalized,
-            1.0,
-            0.5,
-        )
-        .expect("periodic end point");
-        assert!((start.x - end.x).abs() <= 1.0e-12);
-        assert!((start.y - end.y).abs() <= 1.0e-12);
-        assert!((start.z - end.z).abs() <= 1.0e-12);
-    });
+    assert_eq!(normalized.u_count(), 7);
+    assert_eq!(
+        normalized.u_knots().as_slice(),
+        [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
+    );
+    let poles = normalized.poles();
+    assert_eq!(poles.len(), 14);
+    assert_eq!(poles[12], poles[0]);
+    assert_eq!(poles[13], poles[1]);
+    let start = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &normalized,
+        0.0,
+        0.5,
+    )
+    .expect("periodic start point");
+    let end = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &normalized,
+        1.0,
+        0.5,
+    )
+    .expect("periodic end point");
+    assert!((start.x - end.x).abs() <= 1.0e-12);
+    assert!((start.y - end.y).abs() <= 1.0e-12);
+    assert!((start.z - end.z).abs() <= 1.0e-12);
 }
 
 fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> String {
@@ -832,126 +429,120 @@ fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: us
 
 #[test]
 fn binary_edge_continuity_retains_decimal_byte_spelling() {
-    in_decode_context(|ctx| {
-        for (byte, spelling) in [(0, "0"), (2, "2")] {
-            for kind in [3, 4] {
-                let mut bytes = Vec::new();
-                if kind == 3 {
-                    bytes.extend_from_slice(&1_i32.to_le_bytes());
-                    bytes.extend_from_slice(&2_i32.to_le_bytes());
-                }
-                bytes.push(byte);
+    for (byte, spelling) in [(0, "0"), (2, "2")] {
+        for kind in [3, 4] {
+            let mut bytes = Vec::new();
+            if kind == 3 {
+                bytes.extend_from_slice(&1_i32.to_le_bytes());
+                bytes.extend_from_slice(&2_i32.to_le_bytes());
+            }
+            bytes.push(byte);
+            bytes.extend_from_slice(&1_i32.to_le_bytes());
+            bytes.extend_from_slice(&0_i32.to_le_bytes());
+            if kind == 3 {
+                bytes.extend_from_slice(&0_f64.to_le_bytes());
+                bytes.extend_from_slice(&1_f64.to_le_bytes());
+            } else {
                 bytes.extend_from_slice(&1_i32.to_le_bytes());
                 bytes.extend_from_slice(&0_i32.to_le_bytes());
-                if kind == 3 {
-                    bytes.extend_from_slice(&0_f64.to_le_bytes());
-                    bytes.extend_from_slice(&1_f64.to_le_bytes());
-                } else {
-                    bytes.extend_from_slice(&1_i32.to_le_bytes());
-                    bytes.extend_from_slice(&0_i32.to_le_bytes());
-                }
-                let mut cursor = BinaryCursor::new(ctx, &bytes);
-                let record = parse_binary_edge_representation(
-                    &mut cursor,
-                    1,
-                    kind,
-                    super::BinaryGeometryCounts {
-                        curves: 0,
-                        curves2d: 2,
-                        surfaces: 1,
-                        locations: 0,
-                        polygons3d: 0,
-                        indexed_polygons: 0,
-                        triangulations: 0,
-                    },
-                )
-                .unwrap();
-                let (TextEdgeRepresentation::PcurvePair { continuity, .. }
-                | TextEdgeRepresentation::Regularity { continuity, .. }) = record
-                else {
-                    panic!("expected continuity representation");
-                };
-                assert_eq!(continuity, spelling);
-                assert_eq!(cursor.remaining(), 0);
             }
+            let mut cursor = BinaryCursor::new(&bytes);
+            let record = parse_binary_edge_representation(
+                &mut cursor,
+                1,
+                kind,
+                super::BinaryGeometryCounts {
+                    curves: 0,
+                    curves2d: 2,
+                    surfaces: 1,
+                    locations: 0,
+                    polygons3d: 0,
+                    indexed_polygons: 0,
+                    triangulations: 0,
+                },
+            )
+            .unwrap();
+            let (TextEdgeRepresentation::PcurvePair { continuity, .. }
+            | TextEdgeRepresentation::Regularity { continuity, .. }) = record
+            else {
+                panic!("expected continuity representation");
+            };
+            assert_eq!(continuity, spelling);
+            assert_eq!(cursor.remaining(), 0);
         }
-    });
+    }
 }
 
 #[test]
 fn parses_joined_seam_pcurve_continuity_token() {
-    in_decode_context(|ctx| {
-        let tokens = ["1", "2CN", "1", "0", "0", "10"];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let counts = BTreeMap::from([
-            ("Curve2ds".to_owned(), 2),
-            ("Surfaces".to_owned(), 1),
-            ("Locations".to_owned(), 0),
-        ]);
-        let record = parse_edge_representation(3, &mut cursor, &counts, 1)
-            .expect("joined pcurve continuity");
-        let TextEdgeRepresentation::PcurvePair {
-            curves, continuity, ..
-        } = record
-        else {
-            panic!("expected pcurve pair");
-        };
-        assert_eq!(curves, [1, 2]);
-        assert_eq!(continuity, "CN");
-        assert!(cursor.is_empty());
-    });
+    let tokens = ["1", "2CN", "1", "0", "0", "10"];
+    let mut cursor = TokenCursor::new(&tokens);
+    let counts = BTreeMap::from([
+        ("Curve2ds".to_owned(), 2),
+        ("Surfaces".to_owned(), 1),
+        ("Locations".to_owned(), 0),
+    ]);
+    let record =
+        parse_edge_representation(3, &mut cursor, &counts, 1).expect("joined pcurve continuity");
+    let TextEdgeRepresentation::PcurvePair {
+        curves, continuity, ..
+    } = record
+    else {
+        panic!("expected pcurve pair");
+    };
+    assert_eq!(curves, [1, 2]);
+    assert_eq!(continuity, "CN");
+    assert!(cursor.is_empty());
 }
 
 #[test]
 fn retains_indirect_analytic_surface_parameter_frames() {
-    in_decode_context(|ctx| {
-        let tokens = [
-            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
-        ];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let cone =
-            parse_analytic_surface(AnalyticSurfaceKind::Cone, &mut cursor).expect("indirect cone");
-        assert!(matches!(
-            cone,
-            TextSurface::Cone {
-                radius,
-                half_angle,
-                u_reversed: true,
-                ..
-            } if radius.get() == 2.0 && half_angle.get() == 0.5
-        ));
+    let tokens = [
+        "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
+    ];
+    let mut cursor = TokenCursor::new(&tokens);
+    let cone =
+        parse_analytic_surface(AnalyticSurfaceKind::Cone, &mut cursor).expect("indirect cone");
+    assert!(matches!(
+        cone,
+        TextSurface::Cone {
+            radius,
+            half_angle,
+            u_reversed: true,
+            ..
+        } if radius.get() == 2.0 && half_angle.get() == 0.5
+    ));
 
-        let tokens = [
-            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
-        ];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let sphere = parse_analytic_surface(AnalyticSurfaceKind::Sphere, &mut cursor)
-            .expect("indirect sphere");
-        assert!(matches!(
-            sphere,
-            TextSurface::Sphere {
-                radius,
-                u_reversed: true,
-                ..
-            } if radius.get() == 2.0
-        ));
+    let tokens = [
+        "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
+    ];
+    let mut cursor = TokenCursor::new(&tokens);
+    let sphere =
+        parse_analytic_surface(AnalyticSurfaceKind::Sphere, &mut cursor).expect("indirect sphere");
+    assert!(matches!(
+        sphere,
+        TextSurface::Sphere {
+            radius,
+            u_reversed: true,
+            ..
+        } if radius.get() == 2.0
+    ));
 
-        let tokens = [
-            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
-        ];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let torus = parse_analytic_surface(AnalyticSurfaceKind::Torus, &mut cursor)
-            .expect("indirect torus");
-        assert!(matches!(
-            torus,
-            TextSurface::Torus {
-                major_radius,
-                minor_radius,
-                u_reversed: true,
-                ..
-            } if major_radius.get() == 4.0 && minor_radius.get() == 1.0
-        ));
-    });
+    let tokens = [
+        "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
+    ];
+    let mut cursor = TokenCursor::new(&tokens);
+    let torus =
+        parse_analytic_surface(AnalyticSurfaceKind::Torus, &mut cursor).expect("indirect torus");
+    assert!(matches!(
+        torus,
+        TextSurface::Torus {
+            major_radius,
+            minor_radius,
+            u_reversed: true,
+            ..
+        } if major_radius.get() == 4.0 && minor_radius.get() == 1.0
+    ));
 }
 
 #[test]
@@ -1908,29 +1499,25 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
 
 #[test]
 fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
-    in_decode_context(|ctx| {
-        let (knots, padding) = super::normalize_periodic_knots(
-            ctx,
-            vec![-1e308, -9e307, 9e307, 1e308]
-                .into_iter()
-                .map(|value| FiniteReal::new(value).unwrap())
-                .collect(),
-            1,
-            true,
-        )
-        .unwrap();
-        assert_eq!(padding, 1);
-        assert!((knots[0].get() / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!((knots[5].get() / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!(super::normalize_periodic_knots(
-            ctx,
-            vec![-1e308, 0.0, 1e308]
-                .into_iter()
-                .map(|value| FiniteReal::new(value).unwrap())
-                .collect(),
-            1,
-            true
-        )
-        .is_err());
-    });
+    let (knots, padding) = super::normalize_periodic_knots(
+        vec![-1e308, -9e307, 9e307, 1e308]
+            .into_iter()
+            .map(|value| FiniteReal::new(value).unwrap())
+            .collect(),
+        1,
+        true,
+    )
+    .unwrap();
+    assert_eq!(padding, 1);
+    assert!((knots[0].get() / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
+    assert!((knots[5].get() / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
+    assert!(super::normalize_periodic_knots(
+        vec![-1e308, 0.0, 1e308]
+            .into_iter()
+            .map(|value| FiniteReal::new(value).unwrap())
+            .collect(),
+        1,
+        true
+    )
+    .is_err());
 }

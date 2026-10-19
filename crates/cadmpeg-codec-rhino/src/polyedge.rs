@@ -2,10 +2,9 @@
 //! Persistent polyedge-reference construction decoding.
 
 use crate::loss::Diagnostics;
-use std::io::{self, Write};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
@@ -227,9 +226,7 @@ pub(crate) fn decode(
         .ok_or_else(|| FramingError::structural(body.position(), "polyedge record truncated"))?;
     let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
 
-    let mut reserved =
-        ExactVec::<FiniteReal>::new(expand.ctx(), parameter_bound, "Rhino polyedge parameters")
-            .map_err(|error| refused(body.position(), &error))?;
+    let mut reserved = ExactVec::<FiniteReal>::new(parameter_bound);
     let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
         let offset = body.position();
@@ -255,17 +252,12 @@ pub(crate) fn decode(
         .finish()
         .map_err(|error| refused(body.position(), &error))?;
 
-    let mut segments = ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(
-        expand.ctx(),
-        segment_bound,
-        "Rhino polyedge segments",
-    )
-    .map_err(|error| refused(body.position(), &error))?;
+    let mut segments =
+        ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(segment_bound);
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
         let class = parse_class_wrapper(
-            expand.ctx(),
             data,
             start..wrapper.next_offset(),
             archive,
@@ -301,8 +293,6 @@ pub(crate) fn decode(
         segments,
     })
 }
-
-const SEMANTIC_JSON_OPERATION: &str = "Rhino polyedge semantic JSON";
 
 struct SemanticJson<'a>(&'a PersistentPolyEdge);
 
@@ -352,45 +342,8 @@ impl Serialize for SemanticUuid {
     }
 }
 
-struct SemanticJsonWriter<'a, 'b> {
-    ctx: &'a DecodeContext<'b>,
-    bytes: Vec<u8>,
-    refusal: Option<CodecError>,
-}
-
-impl Write for SemanticJsonWriter<'_, '_> {
-    fn write(&mut self, chunk: &[u8]) -> io::Result<usize> {
-        let result =
-            self.ctx
-                .extend_retained_bytes(&mut self.bytes, chunk, SEMANTIC_JSON_OPERATION);
-        if let Err(error) = result {
-            self.refusal = Some(error);
-            return Err(io::ErrorKind::Other.into());
-        }
-        Ok(chunk.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-pub(crate) fn semantic_json(
-    ctx: &DecodeContext<'_>,
-    polyedge: &PersistentPolyEdge,
-) -> Result<Option<String>, CodecError> {
-    let mut writer = SemanticJsonWriter {
-        ctx,
-        bytes: Vec::new(),
-        refusal: None,
-    };
-    let serialized = serde_json::to_writer(&mut writer, &SemanticJson(polyedge));
-    if let Some(refusal) = writer.refusal {
-        return Err(refusal);
-    }
-    Ok(serialized
-        .ok()
-        .and_then(|()| String::from_utf8(writer.bytes).ok()))
+pub(crate) fn semantic_json(polyedge: &PersistentPolyEdge) -> Option<String> {
+    serde_json::to_string(&SemanticJson(polyedge)).ok()
 }
 
 #[cfg(test)]

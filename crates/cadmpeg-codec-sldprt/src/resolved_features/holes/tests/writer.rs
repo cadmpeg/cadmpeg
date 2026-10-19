@@ -33,7 +33,6 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             face: None,
             ref placements,
             shape,
-
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),
@@ -101,7 +100,6 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: Some(LinearTermination::ThroughAll {}),
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -111,7 +109,6 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: Some(LinearTermination::ThroughAll {}),
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -124,7 +121,6 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             ref placements,
             shape,
-
             extent: None,
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {

@@ -42,7 +42,6 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 #[test]
 fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
     let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -52,19 +51,16 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("linear NURBS fixture");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01)
-            .map(|line| line.map(|line| line.points)))
-        .expect("service profile resources"),
-        Some(vec![[0.0, 0.0], [1.0, 0.0]])
+        crate::decode::with_service_context(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01))
+            .expect("compute the NURBS profile polyline"),
+        Ok(vec![[0.0, 0.0], [1.0, 0.0]])
     );
 }
 
 fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -74,56 +70,17 @@ fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("linear NURBS fixture")
 }
 
 fn linear_profile_polyline_with_policy(
     policy: cadmpeg_core::decode::DecodePolicy,
-) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
+) -> Result<Result<Vec<[f64; 2]>, super::ProfileSamplingStop>, cadmpeg_core::CodecError> {
     let curve = linear_profile_curve();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    super::nurbs_profile_polyline(&ctx, &curve, 0.01).map(|line| line.map(|line| line.points))
-}
-
-#[test]
-fn nurbs_profile_polyline_first_point_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error =
-        linear_profile_polyline_with_policy(policy).expect_err("first point exceeds zero items");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo NURBS profile polyline points")
-    );
-    assert_eq!(
-        linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"),
-        Some(vec![[0.0, 0.0], [1.0, 0.0]])
-    );
-}
-
-#[test]
-fn nurbs_profile_polyline_next_point_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let error =
-        linear_profile_polyline_with_policy(policy).expect_err("second point exceeds one item");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo NURBS profile polyline points")
-    );
-    assert_eq!(
-        linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"),
-        Some(vec![[0.0, 0.0], [1.0, 0.0]])
-    );
+    super::nurbs_profile_polyline(&ctx, &curve, 0.01)
 }
 
 #[test]
@@ -140,113 +97,10 @@ fn nurbs_profile_polyline_depth_refuses_before_recursive_span() {
             && refusal.operation == "creo NURBS profile sampling depth")
     );
     assert_eq!(
-        linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"),
-        Some(vec![[0.0, 0.0], [1.0, 0.0]])
+        linear_profile_polyline_with_policy(DecodePolicy::service())
+            .expect("build the linear profile polyline"),
+        Ok(vec![[0.0, 0.0], [1.0, 0.0]])
     );
-}
-
-#[test]
-fn nurbs_profile_polyline_work_refuses_before_span_evaluation() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let error =
-        linear_profile_polyline_with_policy(policy).expect_err("first span exceeds zero work");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::WorkUnits
-            && refusal.operation == "creo NURBS profile sampling spans")
-    );
-    assert_eq!(
-        linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"),
-        Some(vec![[0.0, 0.0], [1.0, 0.0]])
-    );
-}
-
-fn profile_sketch_copy_with_limit(
-    limit: u64,
-) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-    let geometry = super::ProfileGeometry::Nurbs {
-        curve: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .expect("linear pcurve fixture"),
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    geometry.to_sketch(&ctx)
-}
-
-#[test]
-fn profile_sketch_copy_knots_refuse_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let error = profile_sketch_copy_with_limit(0).expect_err("four knots exceed zero items");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo profile sketch NURBS knots")
-    );
-    assert!(profile_sketch_copy_with_limit(6)
-        .expect("service sized copy")
-        .is_some());
-}
-
-#[test]
-fn profile_sketch_copy_poles_refuse_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let error = profile_sketch_copy_with_limit(4).expect_err("two poles exceed four knot items");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo profile sketch NURBS poles")
-    );
-    assert!(profile_sketch_copy_with_limit(6)
-        .expect("service sized copy")
-        .is_some());
-}
-
-fn ordered_circle_with_limit(
-    limit: u64,
-) -> Result<Option<Vec<super::ValidatedProfile>>, cadmpeg_core::CodecError> {
-    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-        center: Point2::new(0.0, 0.0),
-        radius: cadmpeg_ir::scalar::Length::new(1.0).expect("positive radius"),
-    })
-    .expect("valid circle fixture");
-    let entity =
-        crate::decode::with_test_decode_ctx(|ctx| super::ProfileEntity::new(ctx, geometry, false))
-            .expect("service entity resources")
-            .expect("circle profile entity");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    super::ordered_extrusion_profiles(&ctx, vec![vec![entity]])
-}
-
-fn under_work_limit<T>(
-    limit: u64,
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> Result<T, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    run(&ctx)
 }
 
 fn profile_circle(center: [f64; 2], radius: f64, reversed: bool) -> super::ProfileEntity {
@@ -263,217 +117,26 @@ fn profile_circle(center: [f64; 2], radius: f64, reversed: bool) -> super::Profi
     }
 }
 
-fn profile_line(start: [f64; 2], end: [f64; 2]) -> super::ProfileEntity {
-    super::ProfileEntity {
-        geometry: super::ProfileGeometry::Line {
-            start: Point2::new(start[0], start[1]),
-            end: Point2::new(end[0], end[1]),
-        },
-        reversed: false,
-        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(start[0], start[1]))
-            .expect("finite"),
-        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(end[0], end[1])).expect("finite"),
-    }
-}
-
-fn profile_nurbs_line() -> super::ProfileEntity {
-    let curve = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        None,
-        false,
-    )
-    .expect("fixture pcurve construction admission")
-    .expect("linear profile pcurve");
-    super::ProfileEntity {
-        geometry: super::ProfileGeometry::Nurbs { curve },
-        reversed: false,
-        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(0.0, 0.0)).expect("finite"),
-        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite"),
-    }
-}
-
-fn assert_work(error: &cadmpeg_core::CodecError, operation: &str) {
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == operation)
-    );
-}
-
 #[test]
-fn profile_polyline_pairs_refuse_work_limit() {
-    let error = under_work_limit(0, |ctx| {
-        super::polylines_intersect(
-            ctx,
-            &[[0.0, 0.0], [1.0, 0.0]],
-            &[[0.0, 1.0], [1.0, 1.0]],
-            0.0,
-            [None, None],
-        )
-    })
-    .expect_err("one segment pair exceeds zero work");
-    assert_work(&error, "creo profile polyline intersection pairs");
-}
-
-#[test]
-fn profile_segment_intersection_refuses_work_limit() {
-    let first = profile_line([0.0, 0.0], [1.0, 0.0]);
-    let second = profile_line([0.0, 1.0], [1.0, 1.0]);
-    let error = under_work_limit(0, |ctx| {
-        super::profile_segments_intersect(ctx, &first, &second, 0.0, [None, None])
-    })
-    .expect_err("one geometry pair exceeds zero work");
-    assert_work(&error, "creo profile segment intersection");
-}
-
-#[test]
-fn profile_nurbs_arc_intersection_refuses_segment_work() {
-    let first = profile_nurbs_line();
-    let second = profile_circle([10.0, 10.0], 1.0, false);
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo profile NURBS arc intersection segments",
-        |limit| {
-            under_work_limit(limit, |ctx| {
-                super::profile_segments_intersect(ctx, &first, &second, 0.01, [None, None])
-            })
-        },
-    );
-    assert_work(&error, "creo profile NURBS arc intersection segments");
-}
-
-#[test]
-fn profile_nurbs_winding_refuses_segment_work() {
-    let profile = vec![profile_nurbs_line()];
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo profile NURBS winding segments",
-        |limit| {
-            under_work_limit(limit, |ctx| {
-                super::profile_strictly_contains(ctx, &profile, [0.5, 0.5])
-            })
-        },
-    );
-    assert_work(&error, "creo profile NURBS winding segments");
-}
-
-#[test]
-fn profile_line_winding_refuses_work_limit() {
-    let profile = vec![profile_line([0.0, 0.0], [1.0, 0.0])];
-    let error = under_work_limit(0, |ctx| {
-        super::profile_strictly_contains(ctx, &profile, [0.5, 0.5])
-    })
-    .expect_err("one line exceeds zero work");
-    assert_work(&error, "creo profile line winding segments");
-}
-
-#[test]
-fn profile_arc_winding_refuses_work_limit() {
-    let profile = vec![profile_circle([0.0, 0.0], 1.0, false)];
-    let error = under_work_limit(3, |ctx| {
-        super::profile_strictly_contains(ctx, &profile, [0.0, 0.0])
-    })
-    .expect_err("four arc pieces exceed three work units");
-    assert_work(&error, "creo profile arc winding pieces");
-}
-
-#[test]
-fn profile_self_pairs_refuse_work_limit() {
-    let profile = vec![
-        profile_line([0.0, 0.0], [1.0, 0.0]),
-        profile_line([1.0, 0.0], [1.0, 1.0]),
-        profile_line([1.0, 1.0], [0.0, 1.0]),
-        profile_line([0.0, 1.0], [0.0, 0.0]),
-    ];
-    let error = under_work_limit(0, |ctx| {
-        super::ordered_extrusion_profiles(ctx, vec![profile])
-    })
-    .expect_err("one nonadjacent pair exceeds zero work");
-    assert_work(&error, "creo profile self intersection pairs");
-}
-
-#[test]
-fn profile_cross_pairs_refuse_work_limit() {
+fn hole_profiles_inside_outer_profile_are_ordered() {
     let profiles = vec![
         vec![profile_circle([0.0, 0.0], 5.0, false)],
+        vec![profile_circle([-2.0, 0.0], 1.0, true)],
         vec![profile_circle([2.0, 0.0], 1.0, true)],
     ];
-    let error = under_work_limit(0, |ctx| super::ordered_extrusion_profiles(ctx, profiles))
-        .expect_err("one cross-profile pair exceeds zero work");
-    assert_work(&error, "creo profile cross intersection pairs");
-}
-
-#[test]
-fn outer_profile_containment_pairs_refuse_work_limit() {
-    let profiles = vec![
-        vec![profile_circle([0.0, 0.0], 5.0, false)],
-        vec![profile_circle([2.0, 0.0], 1.0, true)],
-    ];
-    let error = under_work_limit(2, |ctx| super::ordered_extrusion_profiles(ctx, profiles))
-        .expect_err("containment pair exceeds prior cross-pair work");
-    assert_work(&error, "creo outer profile containment pairs");
-}
-
-#[test]
-fn hole_profile_containment_pairs_refuse_work_limit() {
-    let profiles = || {
-        vec![
-            vec![profile_circle([0.0, 0.0], 5.0, false)],
-            vec![profile_circle([-2.0, 0.0], 1.0, true)],
-            vec![profile_circle([2.0, 0.0], 1.0, true)],
-        ]
-    };
-    let error = under_work_limit(26, |ctx| super::ordered_extrusion_profiles(ctx, profiles()))
-        .expect_err("hole containment pair exceeds 26 prior work units");
-    assert_work(&error, "creo hole profile containment pairs");
     assert!(
-        under_work_limit(100, |ctx| super::ordered_extrusion_profiles(
+        crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(
             ctx,
-            profiles()
+            profiles,
+            &mut crate::lane_refusal::LaneRefusals::new()
         ))
-        .expect("service work budget")
+        .expect("order the extrusion profiles")
         .is_some()
     );
 }
 
 #[test]
-fn outer_extrusion_candidate_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let error = ordered_circle_with_limit(0).expect_err("one outer candidate exceeds zero items");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo outer extrusion profile candidates")
-    );
-    assert!(ordered_circle_with_limit(2)
-        .expect("service ordering")
-        .is_some());
-}
-
-#[test]
-fn validated_extrusion_profile_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let error =
-        ordered_circle_with_limit(1).expect_err("validation exceeds the outer candidate item");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo validated extrusion profiles")
-    );
-    assert!(ordered_circle_with_limit(2)
-        .expect("service ordering")
-        .is_some());
-}
-
-#[test]
-fn connected_profile_vertices_refuse_each_collection_boundary() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
+fn connected_profile_vertices_read_line_endpoints() {
     let sketch_id = SketchId::mint("creo:model:sketch#71").expect("identity grammar");
     let entity_id =
         SketchEntityId::mint("creo:featdefs:sketch_entity#71:1").expect("identity grammar");
@@ -483,32 +146,12 @@ fn connected_profile_vertices_refuse_each_collection_boundary() {
         .sketch_entities
         .push(line_entity(&entity_id, &sketch_id, [1.0, 0.0]));
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let arena = DecodeArena::new();
-    for (limit, operation) in [
-        (0, "creo connected profile uses"),
-        (1, "creo connected profile vertices"),
-        (2, "creo connected profile vertices"),
-        (3, "creo connected profile rows"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::connected_sketch_profile_vertices(&ctx, &ir, &carriers, &sketch_id)
-            .map(std::iter::Iterator::collect::<Vec<_>>)
-            .expect_err("collection limit refuses profile vertices");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
-    }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
                 .map(std::iter::Iterator::collect::<Vec<_>>)
         })
-        .expect("service profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 }
@@ -523,9 +166,8 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
-        carriers.admit_sketch_entities(
-            ctx,
+    carriers
+        .admit_sketch_entities(
             &mut ir,
             vec![SketchEntity::new(
                 entity_id,
@@ -537,8 +179,7 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
                 .expect("source circle"),
             )],
         )
-    })
-    .expect("entity admission");
+        .expect("entity admission");
     let SketchGeometryDefinition::Circle { center, radius } =
         ir.model.sketch_entities[0].geometry.definition()
     else {
@@ -547,17 +188,17 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     assert_eq!(center.u, 25.4);
     assert_eq!(radius.get(), 50.8);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| super::connected_sketch_profile_vertices(
             ctx, &ir, &carriers, &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[3.0, 0.0]])]
     );
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("resource admission")
+    .expect("resolve the sketch profiles")
     .expect("source profile");
     let super::ProfileGeometry::Circle { center, radius } = profiles[0][0].geometry() else {
         panic!("source profile changed family");
@@ -567,14 +208,11 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
 }
 
 #[test]
-fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
+fn resolved_nurbs_profile_keeps_closed_source_geometry() {
     let sketch_id = SketchId::mint("creo:model:sketch#74").expect("identity grammar");
     let entity_id =
         SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("identity grammar");
     let nurbs = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -585,7 +223,6 @@ fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
         None,
         false,
     )
-    .expect("fixture pcurve construction admission")
     .expect("closed source NURBS");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(sketch(&sketch_id, &entity_id));
@@ -595,22 +232,10 @@ fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
         SketchGeometry::nurbs(nurbs),
     ));
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 8;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::resolved_sketch_profiles(&ctx, &ir, &carriers, &sketch_id, 1)
-        .expect_err("nine knot and pole values exceed the limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo resolved profile NURBS copy"),
-        "{error:?}"
-    );
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("service allocation")
+    .expect("resolve the sketch profiles")
     .expect("closed source profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -618,9 +243,7 @@ fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
 }
 
 #[test]
-fn resolved_profile_refuses_entity_and_row_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
+fn resolved_profile_reads_closed_circle() {
     let sketch_id = SketchId::mint("creo:model:sketch#73").expect("identity grammar");
     let entity_id =
         SketchEntityId::mint("creo:featdefs:sketch_entity#73:1").expect("identity grammar");
@@ -635,27 +258,10 @@ fn resolved_profile_refuses_entity_and_row_collection_limits() {
         .sketch_entities
         .push(SketchEntity::new(entity_id, sketch_id.clone(), geometry));
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let arena = DecodeArena::new();
-    for (limit, operation) in [
-        (0, "creo resolved profile entities"),
-        (1, "creo resolved profile rows"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::resolved_sketch_profiles(&ctx, &ir, &carriers, &sketch_id, 1)
-            .expect_err("profile collection exceeds its limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
-    }
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("service allocation")
+    .expect("resolve the sketch profiles")
     .expect("closed circle profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -674,20 +280,18 @@ fn forward_arc_sweep_reduces_a_wide_finite_angle_interval() {
 fn nurbs_profile_area_uses_finite_gauss_samples_on_a_wide_domain() {
     let geometry = SketchGeometry::nurbs(
         PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
             vec![Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("wide finite sketch NURBS"),
     );
-    let area = crate::decode::with_test_decode_ctx(|ctx| {
+    let area = crate::decode::with_service_context(|ctx| {
         super::nurbs_profile_signed_area_twice(ctx, &geometry, false)
     })
-    .expect("service area resources")
+    .expect("compute the NURBS profile signed area twice")
     .expect("finite wide-domain area");
     assert!((area - 1.0).abs() <= EPS_WIDE_NURBS_AREA);
 }
@@ -707,25 +311,25 @@ fn profile_joins_reject_duplicate_sketch_ids() {
         .push(line_entity(&entity_id, &sketch_id, [1.0, 0.0]));
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| super::connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::resolved_sketch_profiles(
+        crate::decode::with_service_context(|ctx| super::resolved_sketch_profiles(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
             1
         ))
-        .expect("resource admission")
+        .expect("resolve the sketch profiles")
         .is_none()
     );
 }
@@ -743,72 +347,40 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
     ]);
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| super::connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::resolved_sketch_profiles(
+        crate::decode::with_service_context(|ctx| super::resolved_sketch_profiles(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
             1
         ))
-        .expect("resource admission")
+        .expect("resolve the sketch profiles")
         .is_none()
     );
 }
 
 #[test]
-fn circular_pcurve_refuses_each_counted_lane_before_allocation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    for (limit, operation) in [
-        (2, "creo circular pcurve controls"),
-        (5, "creo circular pcurve weights"),
-        (11, "creo circular pcurve knots"),
-        (12, "creo circular pcurve weighted poles"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::circular_pcurve(
-            &ctx,
-            [0.0, 0.0],
-            1.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            &"quarter circle",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .expect_err("counted circular lane exceeds its limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
-    }
-    let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [0.0, 0.0],
-            1.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            &"quarter circle",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service allocation")
+fn circular_pcurve_quarter_circle_spans_quarter_turn() {
+    let pcurve = super::circular_pcurve(
+        [0.0, 0.0],
+        1.0,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+        &"quarter circle",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("compute the circular pcurve")
     .expect("quarter-circle geometry");
     assert_eq!(
         cadmpeg_ir::eval::decode::pcurve_uv(
@@ -830,24 +402,56 @@ fn circular_pcurve_refuses_each_counted_lane_before_allocation() {
 }
 
 #[test]
-fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
+fn extrusion_cap_pcurve_wraps_an_arc_stored_beyond_one_turn() {
+    use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, TAU};
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: Point2::new(0.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(1.0).expect("finite length fixture"),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: cadmpeg_ir::scalar::Angle::new(TAU + FRAC_PI_2).expect("finite angle fixture"),
+    })
+    .expect("valid test fixture");
+    for (reversed, start, end) in [
+        (false, [1.0, 0.0], [0.0, 1.0]),
+        (true, [0.0, 1.0], [1.0, 0.0]),
+    ] {
+        let pcurve = super::extrusion_cap_pcurve(
+            &arc,
+            reversed,
+            start,
+            end,
+            &"wrapped arc cap",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect("compute the extrusion cap pcurve")
+        .expect("quarter-turn cap geometry");
+        // One quarter turn: the curve midpoint is the angular midpoint.
+        for (parameter, expected) in [
+            (0.0, start),
+            (0.5, [FRAC_1_SQRT_2, FRAC_1_SQRT_2]),
+            (1.0, end),
+        ] {
+            let point = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve,
+                parameter,
+            )
+            .expect("finite pcurve point");
+            assert!(
+                (point.u - expected[0]).abs() < EPS_QUARTER_CIRCLE_SEAM
+                    && (point.v - expected[1]).abs() < EPS_QUARTER_CIRCLE_SEAM,
+                "reversed {reversed} parameter {parameter}: {point:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn overflowing_circular_pcurve_records_refusal_text() {
     const REASON: &str = "control_points contains a non-finite point";
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-
-    let output_slots = cadmpeg_core::decode::u64_from_index(
-        12 * std::mem::size_of::<f64>()
-            + 9 * std::mem::size_of::<cadmpeg_ir::geometry::pcurve::WeightedPole2>(),
-    );
-    policy.limits.max_retained_bytes =
-        output_slots + u64::try_from(REASON.len()).expect("reason length") - 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let error = super::circular_pcurve(
-        &ctx,
+    let absent = super::circular_pcurve(
         [f64::MAX, f64::MAX],
         f64::MAX,
         0.0,
@@ -855,27 +459,7 @@ fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
         &"extrusion feature 11 cap",
         &mut refusal,
     )
-    .expect_err("need minus one refuses before error text");
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-        panic!("retained refusal expected");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "creo circular pcurve refusal text");
-    assert_eq!(limit.used, output_slots);
-    assert_eq!(limit.limit + 1, limit.used + limit.additional);
-    assert!(refusal.take_records().is_empty());
-    let absent = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [f64::MAX, f64::MAX],
-            f64::MAX,
-            0.0,
-            std::f64::consts::TAU,
-            &"extrusion feature 11 cap",
-            &mut refusal,
-        )
-    })
-    .expect("service refusal text is admitted");
+    .expect("build the circular pcurve");
     assert!(absent.is_none());
     assert_eq!(
         refusal.take_records(),
@@ -888,30 +472,24 @@ fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
 #[test]
 fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let first = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [f64::MAX, f64::MAX],
-            f64::MAX,
-            0.0,
-            std::f64::consts::TAU,
-            &"extrusion feature 11 cap",
-            &mut refusal,
-        )
-    })
-    .expect("resource admission");
-    let second = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [f64::MAX, f64::MAX],
-            f64::MAX,
-            0.0,
-            std::f64::consts::TAU,
-            &"extrusion feature 12 cap",
-            &mut refusal,
-        )
-    })
-    .expect("resource admission");
+    let first = super::circular_pcurve(
+        [f64::MAX, f64::MAX],
+        f64::MAX,
+        0.0,
+        std::f64::consts::TAU,
+        &"extrusion feature 11 cap",
+        &mut refusal,
+    )
+    .expect("compute the circular pcurve");
+    let second = super::circular_pcurve(
+        [f64::MAX, f64::MAX],
+        f64::MAX,
+        0.0,
+        std::f64::consts::TAU,
+        &"extrusion feature 12 cap",
+        &mut refusal,
+    )
+    .expect("compute the circular pcurve");
     assert!(first.is_none(), "the refused arc states no pcurve");
     assert!(second.is_none(), "the refused arc states no pcurve");
     let records = refusal.take_records();
@@ -929,132 +507,32 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
 }
 
 #[test]
-fn circular_pcurve_refuses_unbounded_span_before_allocation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn circular_pcurve_skips_unbounded_span_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    for (start, end, requested) in [
-        (0.0, 100_001.0 * std::f64::consts::FRAC_PI_2, 100_001),
-        (0.0, 1.0e20, u64::MAX),
-        (0.0, f64::INFINITY, u64::MAX),
-        (-f64::MAX, f64::MAX, u64::MAX),
+    for (start, end) in [
+        (0.0, 100_001.0 * std::f64::consts::FRAC_PI_2),
+        (0.0, 1.0e20),
+        (0.0, f64::INFINITY),
+        (-f64::MAX, f64::MAX),
     ] {
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let error = super::circular_pcurve(
-            &ctx,
-            [0.0, 0.0],
-            1.0,
-            start,
-            end,
-            &"oversized arc",
-            &mut refusal,
-        )
-        .expect_err("segment ceiling refuses before allocation");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("segment resource refusal expected");
-        };
-        assert_eq!(
-            limit.dimension,
-            ResourceDimension::Codec("creo circular pcurve segments")
+        let pcurve =
+            super::circular_pcurve([0.0, 0.0], 1.0, start, end, &"oversized arc", &mut refusal)
+                .expect("the segment ceiling skips the arc before allocation");
+        assert!(pcurve.is_none());
+        assert!(ctx.resource_refusal().is_none());
+        let records = refusal.take_records();
+        assert_eq!(records.len(), 1);
+        assert!(
+            records[0].starts_with("creo circular pcurve record for oversized arc: ")
+                && records[0].contains("100000 quarter-turn segments"),
+            "{}",
+            records[0]
         );
-        assert_eq!(limit.operation, "creo circular pcurve segments");
-        assert_eq!(limit.limit, 100_000);
-        assert_eq!(limit.used + limit.additional, requested);
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(refusal.take_records().is_empty());
-    }
-}
-
-#[test]
-fn circular_pcurve_refuses_projection_work_before_each_pass() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    // Six finite knots and five adjacent comparisons are admitted one item at a time.
-    for (budget, used, additional, operation) in [
-        (2, 0, 3, "creo circular pcurve pole projection"),
-        (8, 3, 6, "creo circular pcurve knot projection"),
-        (11, 9, 3, "creo circular pcurve weight scan"),
-        (14, 12, 3, "creo circular pcurve weighted pole projection"),
-        (15, 15, 1, "IR NURBS knot finiteness"),
-        (21, 21, 1, "IR NURBS knot order"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = budget;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let error = super::circular_pcurve(
-            &ctx,
-            [0.0, 0.0],
-            1.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            &"quarter circle",
-            &mut refusal,
-        )
-        .expect_err("work refuses before the projection pass");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("work resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert_eq!(limit.used, used);
-        assert_eq!(limit.additional, additional);
-        assert_eq!(limit.limit, budget);
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(refusal.take_records().is_empty());
-    }
-    let expected = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [0.0, 0.0],
-            1.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            &"quarter circle",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service resources")
-    .expect("quarter circle");
-    for prior_work in [0, 1] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 26;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        ctx.charge_work(prior_work, "caller work")
-            .expect("caller work admitted");
-        let result = super::circular_pcurve(
-            &ctx,
-            [0.0, 0.0],
-            1.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            &"quarter circle",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        );
-        if prior_work == 0 {
-            assert_eq!(
-                result
-                    .expect("exact projection allowance")
-                    .expect("quarter circle"),
-                expected
-            );
-            ctx.charge_work(0, "projection complete")
-                .expect("allowance admitted");
-            assert!(matches!(
-                ctx.charge_work(1, "after projection"),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-        } else {
-            assert!(
-                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "IR NURBS knot order" && limit.used == 26)
-            );
-        }
     }
 }
 
@@ -1074,7 +552,7 @@ fn overflowing_profile_area_is_not_validated() {
             .expect("finite sketch line"),
             false,
         )
-        .expect("service profile resources")
+        .expect("construct the profile entity")
         .expect("profile entity")
     };
     let origin = [0.0, 0.0];
@@ -1083,11 +561,15 @@ fn overflowing_profile_area_is_not_validated() {
     let circuit = [edge(origin, right), edge(right, upper), edge(upper, origin)];
     let profile: Vec<_> = circuit.clone().into_iter().chain(circuit).collect();
     assert!(super::extrusion_profile_signed_area(&ctx, &profile)
-        .expect("service area resources")
+        .expect("compute the extrusion profile signed area")
         .is_none());
-    assert!(super::ValidatedProfile::new(&ctx, profile)
-        .expect("service validation resources")
-        .is_none());
+    assert!(super::ValidatedProfile::new(
+        &ctx,
+        profile,
+        &mut super::ProfileValidationWork::new(1).expect("work")
+    )
+    .expect("construct the validated profile")
+    .is_none());
 }
 
 #[test]
@@ -1180,13 +662,11 @@ fn audit_regression_line_arc_endpoint_tolerance_has_length_units() {
 }
 
 #[test]
-fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn resolved_profile_nurbs_copy_keeps_knots_and_poles() {
     for rational in [false, true] {
         let sketch_id = SketchId::mint("creo:model:sketch#74").expect("ID");
         let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("ID");
         let curve = PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1197,7 +677,6 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
             rational.then(|| vec![1.0, 2.0, 1.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("curve");
         let mut ir = CadIr::empty();
         ir.model.sketches.push(sketch(&sketch_id, &entity_id));
@@ -1207,17 +686,7 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
             SketchGeometry::nurbs(curve.clone()),
         ));
         let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-        for cap in [5, 8] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            assert!(
-                matches!(super::resolved_sketch_profiles(&ctx, &ir, &carriers, &sketch_id, 1),
-                Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo resolved profile NURBS copy")
-            );
-        }
-        let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        let profiles = crate::decode::with_service_context(|ctx| {
             super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
         })
         .expect("service")
@@ -1229,9 +698,8 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
 }
 
 #[test]
-fn nurbs_profile_local_depth_ceiling_refuses() {
+fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
     let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1242,14 +710,11 @@ fn nurbs_profile_local_depth_ceiling_refuses() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("curved fixture");
-    crate::decode::with_test_decode_ctx(|ctx| {
-        let mut evaluator =
-            cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
+    crate::decode::with_service_context(|ctx| {
+        let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&curve);
         let mut points = Vec::new();
-        let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
-        let error = super::append_nurbs_profile_span(
+        let sampled = super::append_nurbs_profile_span(
             ctx,
             &mut evaluator,
             &curve,
@@ -1262,24 +727,27 @@ fn nurbs_profile_local_depth_ceiling_refuses() {
                 depth: 24,
             },
             &mut points,
-            &mut storage,
         )
-        .expect_err("local depth must refuse");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile sampling ceiling")
+        .expect("the local depth ceiling is not a decode failure");
+        assert_eq!(
+            sampled,
+            Err(super::ProfileSamplingStop::Capped {
+                bound: "MAX_DEPTH",
+                value: 24
+            })
         );
+        assert!(points.is_empty());
+        assert!(ctx.resource_refusal().is_none());
     });
 }
 
 #[test]
-fn nurbs_profile_local_point_ceiling_refuses() {
+fn nurbs_profile_local_point_ceiling_leaves_the_span_unsampled() {
     let curve = linear_profile_curve();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        let mut evaluator =
-            cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
+    crate::decode::with_service_context(|ctx| {
+        let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&curve);
         let mut points = vec![[0.0, 0.0]; 262_145];
-        let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
-        let error = super::append_nurbs_profile_span(
+        let sampled = super::append_nurbs_profile_span(
             ctx,
             &mut evaluator,
             &curve,
@@ -1292,42 +760,37 @@ fn nurbs_profile_local_point_ceiling_refuses() {
                 depth: 0,
             },
             &mut points,
-            &mut storage,
         )
-        .expect_err("local points must refuse");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile point ceiling")
+        .expect("the local point ceiling is not a decode failure");
+        assert_eq!(
+            sampled,
+            Err(super::ProfileSamplingStop::Capped {
+                bound: "MAX_NURBS_PROFILE_POINTS",
+                value: super::MAX_NURBS_PROFILE_POINTS
+            })
         );
         assert_eq!(points.len(), 262_145);
+        assert!(ctx.resource_refusal().is_none());
     });
 }
 
 #[test]
-fn nurbs_profile_polyline_refuses_temporary_bytes() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 15;
-    let error = linear_profile_polyline_with_policy(policy)
-        .expect_err("one planar point needs sixteen bytes");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile polyline points")
-    );
-}
-
-#[test]
-fn nurbs_profile_point_append_refuses_before_growth_at_the_common_ceiling() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+fn nurbs_profile_point_append_stops_before_growth_at_the_common_ceiling() {
+    crate::decode::with_service_context(|ctx| {
         let mut points = vec![[0.0; 2]; super::MAX_NURBS_PROFILE_POINTS];
-        let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
-        let error = super::append_nurbs_profile_point(ctx, &mut storage, &mut points, [1.0; 2])
-            .expect_err("all point append paths share the ceiling");
-        let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
-            panic!("point ceiling refusal");
-        };
-        assert_eq!(resource.operation, "creo NURBS profile point ceiling");
-        assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+        let appended = super::append_nurbs_profile_point(&mut points, [1.0; 2]);
+        assert_eq!(
+            appended,
+            Err(super::ProfileSamplingStop::Capped {
+                bound: "MAX_NURBS_PROFILE_POINTS",
+                value: super::MAX_NURBS_PROFILE_POINTS
+            })
+        );
+        assert!(ctx.resource_refusal().is_none());
         assert_eq!(points.len(), super::MAX_NURBS_PROFILE_POINTS);
         assert_eq!(points.last(), Some(&[0.0; 2]));
     });
 }
 
-mod work_admission;
+mod circle_sketch;
+mod set_validation;

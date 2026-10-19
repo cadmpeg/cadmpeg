@@ -36,15 +36,7 @@ impl TryFrom<ParameterMapWire> for CatiaSampledParameterMap {
     type Error = String;
 
     fn try_from(wire: ParameterMapWire) -> Result<Self, Self::Error> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .map_err(|error| error.to_string())?;
-        let derived = parameter_map::parse(&ctx, &wire.payload)
-            .map_err(|error| error.to_string())?
+        let derived = parameter_map::parse(&wire.payload)
             .ok_or("native sampled-map payload is not complete")?;
         if serde_json::to_vec(&wire.data).map_err(|error| error.to_string())?
             != serde_json::to_vec(&derived).map_err(|error| error.to_string())?
@@ -64,7 +56,7 @@ impl TryFrom<ParameterMapWire> for CatiaSampledParameterMap {
 }
 
 pub(super) fn derive(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     bytes: &[u8],
     sources: &[Vec<SourceExtent>],
     consolidated: &[ConsolidatedRecord],
@@ -79,10 +71,12 @@ pub(super) fn derive(
                 .checked_add(range.len())
                 .ok_or_else(|| CodecError::malformed("A8 parameter-map source length overflows"))?;
             let data = &bytes[range.clone()];
-            let work = u64_from_index(data.len()).checked_mul(4).ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_a8_map_frame_scan", u64::MAX - 1, u64::MAX)
+            let _work = u64_from_index(data.len()).checked_mul(4).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "catia_a8_map_frame_scan"
+                ))
             })?;
-            ctx.charge_work(work, "catia_a8_map_frame_scan")?;
             let mut position = if spanning_end > logical_start {
                 (spanning_end - logical_start).min(data.len())
             } else {
@@ -95,28 +89,17 @@ pub(super) fn derive(
                 {
                     if family == 0xa8 && class == 0x25 && data[position + 1] == 0x03 {
                         let payload = &data[position + 11..end];
-                        let (parsed, reservation) = ctx
-                            .with_scoped_storage("catia_a8_map_candidate", || {
-                                parameter_map::parse(ctx, payload)
-                            })?;
-                        if let Some(map) = parsed {
-                            reservation.commit()?;
+                        if let Some(map) = parameter_map::parse(payload) {
                             let record = CatiaSampledParameterMap {
-                                id: ctx.format_retained(
-                                    format_args!(
-                                        "catia:a8:sampled-parameter-map#{:00}",
-                                        output.len()
-                                    ),
-                                    "catia_native_a8_parameter_map_id",
-                                )?,
+                                id: format!("catia:a8:sampled-parameter-map#{:00}", output.len()),
                                 source_index: u64_from_index(source_index),
                                 source_offset: u64_from_index(source_offset),
                                 byte_offset: u64_from_index(range.start + position),
                                 object_id,
-                                payload: ctx.copy_retained(payload, "catia_a8_map_payload")?.into(),
+                                payload: (payload).to_vec().into(),
                                 data: map,
                             };
-                            ctx.push_vec(&mut output, record, "catia_native_a8_parameter_maps")?;
+                            output.push(record);
                         }
                     }
                     position = end;
@@ -133,10 +116,6 @@ pub(super) fn derive(
                 // A consolidated frame may continue in the next physical extent.
                 // Only a frame starting at this peer position can suppress it.
                 if matches!(data[position], 0xa5..=0xa7 | 0xb2..=0xb4) {
-                    ctx.charge_work(
-                        u64::from(usize::BITS - consolidated.len().leading_zeros()),
-                        "catia_a8_map_spanning_lookup",
-                    )?;
                     let index = consolidated.partition_point(|record| {
                         (record.source_index(), record.source_range().start)
                             < (source_index, source_offset)

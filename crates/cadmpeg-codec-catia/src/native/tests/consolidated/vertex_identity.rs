@@ -6,8 +6,7 @@
 use super::{
     a5_native_edge_identity_stream, a5_native_edge_run_stream, a5_sphere_bound_edge_stream,
     a5_torus_bound_edge_stream, b2_chamfer_contact_stream, b2_chamfer_stream, b2_cylinder_stream,
-    b2_edge_node_stream, b2_owner_chart_stream, b2_plane_carrier_stream,
-    grouped_surface_alias_stream,
+    b2_edge_node_stream, b2_plane_carrier_stream,
 };
 
 #[test]
@@ -134,47 +133,6 @@ fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
         native.vertex_identity_ids(&native.consolidated_edge_nodes[1])[1],
         native.vertex_identity_ids(&native.consolidated_edge_nodes[2])[0]
     );
-}
-
-#[test]
-fn native_edge_node_storage_refuses_collection_and_retained_limits() {
-    let bytes = b2_edge_node_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..128 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
-            operations.insert(refusal.operation);
-        }
-    }
-    for operation in [
-        "catia_native_edge_frames",
-        "catia_native_consolidated_edge_nodes",
-    ] {
-        assert!(
-            operations.contains(operation),
-            "missing charge for {operation}"
-        );
-    }
-    // Vector growth admits four slots up to 1024 bytes per record, otherwise one.
-    let record_size = std::mem::size_of::<crate::native::CatiaConsolidatedEdgeNode>();
-    let record_storage = record_size * if record_size <= 1024 { 4 } else { 1 };
-    let limited = crate::test_support::with_retained_limit(
-        u64::try_from(record_storage).expect("record storage fits"),
-        |ctx| super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[]),
-    );
-    assert!(
-        matches!(&limited, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-        if refusal.operation == "catia_native_edge_node_id"),
-        "{limited:?}"
-    );
-    let nodes = crate::test_support::with_service_context(|ctx| {
-        super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
-    })
-    .expect("service context admits the edge node");
-    assert_eq!(nodes.len(), 1);
 }
 
 #[test]
@@ -432,9 +390,8 @@ fn chamfer_followed_by_spanning_parameter_point_terminates() {
         &bytes,
         [[0..split, split..bytes.len()]],
     );
-    let faces = crate::test_support::with_service_context(|ctx| {
-        crate::native::chamfer::consolidated_chamfers(ctx, &bytes, &records, &[])
-            .expect("service decode")
+    let faces = crate::test_support::with_service_context(|_ctx| {
+        crate::native::chamfer::consolidated_chamfers(&bytes, &records, &[])
     });
     assert_eq!(faces.len(), 1);
     assert!(faces[0].parameter_points.is_empty());
@@ -458,47 +415,4 @@ fn a_loaded_plane_carrier_direction_is_admitted_unit() {
             .contains("direction is not a finite unit vector"),
         "{error}"
     );
-}
-
-#[test]
-fn owner_chart_alias_binding_refuses_retained_limit() {
-    let mut bytes = b2_owner_chart_stream(0x2b);
-    bytes.extend(grouped_surface_alias_stream(0, 100, 0x148));
-    bytes.extend(grouped_surface_alias_stream(1, 200, 0x148));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut packets = native.consolidated_owner_packets.clone();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("owner chart fixture fits the input limit");
-    assert!(matches!(
-        super::super::super::projection::resolve_owner_chart_support_aliases(
-            &ctx,
-            &mut packets,
-            &native.alias_rows
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-}
-
-#[test]
-fn owner_chart_alias_index_refuses_collection_limit() {
-    let mut bytes = b2_owner_chart_stream(0x2b);
-    bytes.extend(grouped_surface_alias_stream(0, 100, 0x148));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut packets = native.consolidated_owner_packets.clone();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("owner chart fixture fits the input limit");
-    assert!(matches!(
-        super::super::super::projection::resolve_owner_chart_support_aliases(
-            &ctx,
-            &mut packets,
-            &native.alias_rows
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
 }

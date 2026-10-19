@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{AnchorResolver, BTreeMap, Value};
+use super::super::{AnchorResolver, BTreeMap, Value, EXPANDED_PAYLOAD_BASE};
 
 #[test]
 fn entity_index_is_not_part_of_exchange_equality() {
@@ -84,10 +84,10 @@ fn entity_union_queries_remain_ordered_across_repeated_queries() {
 }
 
 #[test]
-fn anchor_budget_charges_only_resource_expansion() {
+fn anchor_node_limit_counts_only_resource_expansion() {
     crate::test_support::with_service_context(b"", |_, ctx| {
         let anchors = BTreeMap::new();
-        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 0;
 
         let ordinary = Value::List((0..1024).map(Value::Integer).collect());
@@ -100,13 +100,13 @@ fn anchor_budget_charges_only_resource_expansion() {
 }
 
 #[test]
-fn anchor_budget_still_bounds_resource_materialization() {
+fn anchor_node_limit_bounds_resource_expansion() {
     crate::test_support::with_service_context(b"", |_, ctx| {
         let anchors = BTreeMap::from([(
             "a".to_string(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 2;
 
         assert!(resolver
@@ -116,8 +116,7 @@ fn anchor_budget_still_bounds_resource_materialization() {
 }
 
 #[test]
-fn data_population_uses_source_extent_without_a_second_id_collection() {
-    use cadmpeg_core::decode::{u64_from_index, DecodePolicy};
+fn data_records_lie_within_their_section_extent() {
     use std::fmt::Write as _;
 
     let count = 10_000;
@@ -126,12 +125,8 @@ fn data_population_uses_source_extent_without_a_second_id_collection() {
         write!(source, "#{id}=ITEM();").expect("authored record");
     }
     source.push_str("ENDSEC;END-ISO-10303-21;");
-    let mut policy = DecodePolicy::service();
-    // Each record has one graph entry and one entity-index member. The
-    // fixed allowance covers the header, schema, diagnostics and DATA node.
-    policy.limits.max_collection_items = u64_from_index(count) * 2 + 128;
-    crate::test_support::with_policy_context(source.as_bytes(), &policy, |source, ctx| {
-        let (exchange, _) = crate::parse::parse_inner(source, ctx).expect("two record indexes fit");
+    crate::test_support::with_service_context(source.as_bytes(), |source, ctx| {
+        let (exchange, _) = crate::parse::parse_inner(source, ctx).expect("authored records");
         assert_eq!(exchange.records().len(), count);
         assert_eq!(exchange.data().len(), 1);
         assert!(exchange

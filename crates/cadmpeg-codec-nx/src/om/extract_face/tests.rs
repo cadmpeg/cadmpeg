@@ -17,15 +17,11 @@ fn prefix() -> Vec<u8> {
 #[test]
 fn extract_face_prefix_preserves_duplicate_order_zero_endpoints_and_utf8_width() {
     let bytes = prefix();
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         let read = |bytes: &[u8]| {
-            ExtractFaceEnvelope::read(
-                ctx,
-                OperationPayload::new(bytes, 100, "EXTRACT_FACE").unwrap(),
-            )
-            .unwrap()
+            ExtractFaceEnvelope::read(OperationPayload::new(bytes, 100, "EXTRACT_FACE").unwrap())
         };
-        let field = read(&bytes).unwrap();
+        let field = read(&bytes).expect("complete extraction fixture");
         assert_eq!(field.control_words, [1, 256, 65536, u32::MAX]);
         assert_eq!(field.byte_len(), bytes.len());
         assert_eq!(field.navigator_text(), "é");
@@ -43,43 +39,9 @@ fn extract_face_prefix_preserves_duplicate_order_zero_endpoints_and_utf8_width()
             invalid[at] = value;
             assert!(read(&invalid).is_none());
         }
-        assert!(ExtractFaceEnvelope::read(
-            ctx,
-            OperationPayload::new(&bytes, 0, "ENLARGE").unwrap()
-        )
-        .unwrap()
-        .is_none());
-    });
-}
-
-#[test]
-fn extract_face_counted_lanes_obey_work_collection_and_retained_limits() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let bytes = prefix();
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::RetainedBytes,
-    ] {
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| match dimension {
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                _ => unreachable!(),
-            },
-            |ctx| {
-                let error = ExtractFaceEnvelope::read(
-                    ctx,
-                    OperationPayload::new(&bytes, 0, "EXTRACT_FACE").unwrap(),
-                )
-                .unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
-                );
-            },
+        assert!(
+            ExtractFaceEnvelope::read(OperationPayload::new(&bytes, 0, "ENLARGE").unwrap())
+                .is_none()
         );
-    }
+    });
 }

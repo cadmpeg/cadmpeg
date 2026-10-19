@@ -121,83 +121,145 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
-    .expect("service profile admits three legacy candidates");
+    .expect("transfer parameters");
     assert_eq!(ir.model.parameters.len(), 3);
 }
 
 #[test]
-fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
-    let native = legacy_values();
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..=256 {
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            crate::formula::transfer_parameters(
-                ctx,
-                &mut CadIr::empty(),
-                &native,
-                &mut cadmpeg_ir::Annotations::default(),
-                &crate::decode::ModelingGraphScope::Unscoped,
-            )
-        });
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(_) => {}
-            Err(error) => panic!("unexpected legacy transfer error: {error}"),
+fn legacy_types_follow_unique_selector_chains() {
+    let descriptor = |entity_id: u32, value: serde_json::Value| {
+        serde_json::from_value::<crate::native::CatiaLegacyTypeDescriptor>(serde_json::json!({
+            "byte_offset": 0,
+            "entity_id": entity_id,
+            "value": value,
+        }))
+        .expect("descriptor wire")
+    };
+    let name = |value: &str| serde_json::json!({ "Name": { "value": value } });
+    let selector = |value: u32| serde_json::json!({ "Selector": { "value": value } });
+    let descriptors = [
+        descriptor(1, name("Length")),
+        descriptor(2, selector(1)),
+        descriptor(3, selector(2)),
+        descriptor(4, selector(5)),
+        descriptor(5, selector(4)),
+        descriptor(6, selector(9)),
+        descriptor(7, name("Real")),
+        descriptor(7, name("Angle")),
+        descriptor(8, selector(7)),
+    ];
+    let types = super::super::LegacyTypes::new(&descriptors);
+    assert_eq!(types.resolved(1), Some(("Length", false)));
+    assert_eq!(types.resolved(2), Some(("Length", true)));
+    assert_eq!(types.resolved(3), Some(("Length", true)));
+    // A selector cycle, a missing target, a repeated descriptor and a chain
+    // into a repeated descriptor resolve nothing.
+    assert_eq!(types.resolved(4), None);
+    assert_eq!(types.resolved(5), None);
+    assert_eq!(types.resolved(6), None);
+    assert_eq!(types.resolved(7), None);
+    assert_eq!(types.resolved(8), None);
+    assert_eq!(types.resolved(9), None);
+    assert!(types.descriptors.contains_key(&7));
+    assert!(!types.descriptors.contains_key(&9));
+}
+
+/// Every input name `symbol` binds, listed one whitespace prefix at a time.
+fn materialised_symbol_input_forms(symbol: &str) -> Vec<&str> {
+    let mut forms = Vec::new();
+    let mut push_whitespace_prefixes = |end: usize| {
+        let start = symbol[..end]
+            .trim_end_matches(|character: char| character.is_ascii_whitespace())
+            .len();
+        for form_end in start..=end {
+            forms.push(&symbol[..form_end]);
+        }
+    };
+    push_whitespace_prefixes(symbol.len());
+    if let Some(slash) = symbol.rfind('/') {
+        let ordinal = &symbol[slash + 1..];
+        if !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit()) {
+            push_whitespace_prefixes(slash);
         }
     }
-    for operation in [
-        "catia_legacy_parameter_candidates",
-        "catia_legacy_parameter_entity_index",
-        "catia_legacy_parameter_entity_members",
-        "catia_legacy_parameter_name_index",
-        "catia_legacy_parameter_name_members",
-        "catia_legacy_relation_index",
-        "catia_legacy_relation_members",
+    forms
+}
+
+#[test]
+fn relation_symbol_binds_inputs_up_to_its_ordinal() {
+    for (symbol, forms) in [
+        ("#1_", &["#1_"][..]),
+        ("#1_/2", &["#1_/2", "#1_"]),
+        ("#1_  /23", &["#1_  /23", "#1_", "#1_ ", "#1_  "]),
+        ("#1_ ", &["#1_", "#1_ "]),
+        ("#1_ /", &["#1_ /"]),
+        ("#1_ /2a", &["#1_ /2a"]),
     ] {
-        assert!(
-            refused.contains(operation),
-            "no low-limit refusal at {operation}"
-        );
+        let heads = super::super::LegacySymbolHeads::new([symbol]);
+        let extended = format!("{symbol} ");
+        for end in 0..=extended.len() {
+            let input = &extended[..end];
+            assert_eq!(
+                heads.binds(input),
+                forms.contains(&input),
+                "{symbol:?} binding {input:?}"
+            );
+        }
     }
 }
 
 #[test]
-fn formula_legacy_parameter_identity_refuses_retained_limit() {
-    let native = legacy_values();
-    let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        crate::formula::transfer_parameters(
-            ctx,
-            &mut CadIr::empty(),
-            &native,
-            &mut cadmpeg_ir::Annotations::default(),
-            &crate::decode::ModelingGraphScope::Unscoped,
-        )
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_parameter_id")
-    );
+fn symbol_heads_bind_across_a_long_whitespace_run() {
+    const SPACES: usize = 1 << 20;
+    let spaces = " ".repeat(SPACES);
+    let symbol = format!("#1_{spaces}/1");
+    let heads = super::super::LegacySymbolHeads::new([symbol.as_str()]);
+    assert!(heads.binds("#1_"));
+    assert!(heads.binds("#1_ "));
+    assert!(heads.binds(&format!("#1_{spaces}")));
+    assert!(heads.binds(&symbol));
+    assert!(!heads.binds("#1_\t"));
+    assert!(!heads.binds(&format!("#1_{spaces} ")));
+    assert!(!heads.binds("#2_"));
 }
 
 #[test]
-fn formula_legacy_selector_chain_refuses_work_limit() {
-    let native = legacy_values();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits input limit");
-    let refused = crate::formula::transfer_parameters(
-        &ctx,
-        &mut CadIr::empty(),
-        &native,
-        &mut cadmpeg_ir::Annotations::default(),
-        &crate::decode::ModelingGraphScope::Unscoped,
-    );
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_type_selector_chain")
-    );
+fn symbol_heads_bind_exactly_the_materialised_input_forms() {
+    let words = |max_len: usize| {
+        let mut words = vec![String::new()];
+        let mut layer = vec![String::new()];
+        for _ in 0..max_len {
+            layer = layer
+                .iter()
+                .flat_map(|word| ['a', ' ', '\t', '/', '1'].map(|next| format!("{word}{next}")))
+                .collect();
+            words.extend(layer.iter().cloned());
+        }
+        words
+    };
+    let inputs = words(4);
+    for symbol in &inputs {
+        let heads = super::super::LegacySymbolHeads::new([symbol.as_str()]);
+        let forms = materialised_symbol_input_forms(symbol);
+        for input in &inputs {
+            assert_eq!(
+                heads.binds(input),
+                forms.contains(&input.as_str()),
+                "{symbol:?} binding {input:?}"
+            );
+        }
+    }
+    let symbols = words(3);
+    let heads = super::super::LegacySymbolHeads::new(symbols.iter().map(String::as_str));
+    let forms = symbols
+        .iter()
+        .flat_map(|symbol| materialised_symbol_input_forms(symbol))
+        .collect::<std::collections::HashSet<_>>();
+    for input in &inputs {
+        assert_eq!(
+            heads.binds(input),
+            forms.contains(input.as_str()),
+            "binding {input:?}"
+        );
+    }
 }

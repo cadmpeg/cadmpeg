@@ -329,7 +329,7 @@
               "base_parameter": 0.0,
               "base_scale": 1.0,
               "chart_count": 2,
-              "chordal_error": 0.00001,
+              "chordal_error": 1e-05,
               "count": 2,
               "ext_support_uv": [
                 null,
@@ -496,11 +496,12 @@
       },
       "tolerances": {
         "angular": 1e-10,
-        "linear": 1e-6
+        "linear": 1e-06
       },
       "units": {
         "length": "millimeter"
-      }
+      },
+      "decode_depth": "full"
     },
     "report": {
       "identity": {

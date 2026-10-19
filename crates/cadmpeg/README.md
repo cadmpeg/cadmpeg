@@ -86,10 +86,18 @@ output, because that spelling is nearly always `--input-format` (alias
 `--from`) written as `--format`; pass `-o FILE` or, for a deliberate binary
 pipe, `--binary-stdout`.
 
-Conversion stops before export if the check finds errors. It also refuses
+Conversion stops before export if the check finds errors in what the output
+writes. An error in data the output format does not carry, for example
+feature history in a STEP export, stays in the report and does not stop the
+write. Conversion also refuses
 geometry output when decoding transfers no geometry. `--allow-errors` and
 `--allow-empty` write the current result anyway. They leave model data
 unchanged.
+
+`convert` decodes a native source only as deeply as the output needs: STEP,
+IGES, and Rhino output decodes geometry and skips design intent, so the decode
+report lists no loss in sketches, features, or history. `--full-decode`, and
+every `--reject-lossy` scope, decode the whole source whatever the output.
 
 ## Inspect, dump, and check
 
@@ -117,9 +125,10 @@ cadmpeg check bracket.cadir.json
 cadmpeg check bracket.f3d --json
 ```
 
-`--container-only` stops native decoding before geometry. It is useful for
-container diagnostics and normally requires `--allow-empty` when followed by a
-geometry export.
+`--container-only` stops native decoding before geometry and records container
+depth. It is useful for container diagnostics. `convert` writes such a document
+to CADIR only: every other output refuses it (`insufficient_depth`, exit 1),
+and `--allow-empty` does not override that.
 
 ## Read raw bytes
 

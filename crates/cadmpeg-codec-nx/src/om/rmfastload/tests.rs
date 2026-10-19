@@ -8,8 +8,8 @@ fn rmfastload_physical_boundaries_cross_logical_records() {
     with_decode_context_over(
         &bytes,
         |_| {},
-        |ctx| {
-            let storage = Storage::read(ctx, &bytes, 0).unwrap().unwrap();
+        |_ctx| {
+            let storage = Storage::read(&bytes, 0).unwrap();
             assert_eq!(
                 (
                     storage.header_offset,
@@ -31,7 +31,7 @@ fn rmfastload_physical_boundaries_cross_logical_records() {
             assert_eq!(rows[1].atoms[0].bytes(), [0xc0, 0, 0, 0]);
             assert_eq!(&bytes[109..117], b"\x04\x01\x06NX x\0");
             assert_eq!(&bytes[117..122], b"\x01\xc0\x44\x04\0");
-            assert!(Storage::read(ctx, &bytes, 1).unwrap().is_none());
+            assert!(Storage::read(&bytes, 1).is_none());
         },
     );
 }
@@ -47,11 +47,8 @@ fn rmfastload_storage_rejects_incomplete_or_inconsistent_framing() {
         with_decode_context_over(
             &bytes,
             |_| {},
-            |ctx| {
-                assert!(
-                    Storage::read(ctx, &bytes, 0).unwrap().is_none(),
-                    "offset{offset}"
-                );
+            |_ctx| {
+                assert!(Storage::read(&bytes, 0).is_none(), "offset{offset}");
             },
         );
     }
@@ -59,8 +56,8 @@ fn rmfastload_storage_rejects_incomplete_or_inconsistent_framing() {
         with_decode_context_over(
             &source[..len],
             |_| {},
-            |ctx| {
-                assert!(Storage::read(ctx, &source[..len], 0).unwrap().is_none());
+            |_ctx| {
+                assert!(Storage::read(&source[..len], 0).is_none());
             },
         );
     }
@@ -78,18 +75,4 @@ fn rmfastload_terminal_token_serde_preserves_width_without_numeric_meaning() {
     ] {
         assert!(serde_json::from_str::<TerminalAtom>(&format!("\"{text}\"")).is_err());
     }
-}
-
-#[test]
-fn rmfastload_boundary_scan_honors_work_limit() {
-    let bytes = payload();
-    with_decode_context_over(
-        &bytes,
-        |p| p.limits.max_work_units = 1,
-        |ctx| {
-            let error = Storage::read(ctx, &bytes, 0).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-            assert!(ctx.resource_refusal().is_some());
-        },
-    );
 }

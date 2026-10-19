@@ -7,10 +7,6 @@
 
 use std::fmt;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::loss::LossNote;
-
 use crate::loss::StepLossCode;
 
 /// Number of admitted relations that the document admission warning names.
@@ -30,25 +26,12 @@ pub(super) struct PcurveAdmission {
 /// relations in decode order, and gives the number it does not name.
 pub(super) fn pcurve_admission_note(
     admissions: &[PcurveAdmission],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<LossNote>, CodecError> {
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
     if admissions.is_empty() {
-        return Ok(None);
+        return None;
     }
-    let named = admissions.iter().take(PCURVE_UNPROVED_NOTE_EXEMPLARS).len();
-    ctx.charge_work(
-        u64_from_index(named).checked_mul(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("step_pcurve_admission_note", u64::MAX, u64::MAX)
-        })?,
-        "step_pcurve_admission_note",
-    )?;
-    let message = ctx.format_retained(
-        format_args!("{}", AdmissionWarning(admissions)),
-        "step_pcurve_admission_note",
-    )?;
-    Ok(Some(
-        StepLossCode::PcurveGlobalFidelityUnproved.note(message),
-    ))
+    let message = format!("{}", AdmissionWarning(admissions));
+    Some(StepLossCode::PcurveGlobalFidelityUnproved.note(message))
 }
 
 struct AdmissionWarning<'a>(&'a [PcurveAdmission]);

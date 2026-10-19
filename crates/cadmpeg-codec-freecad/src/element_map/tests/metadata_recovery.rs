@@ -53,31 +53,7 @@ fn malformed_naming_metadata_keeps_geometry_and_valid_native_state() {
 }
 
 #[test]
-fn naming_metadata_recovery_preserves_resource_refusals() {
-    crate::test_support::assert_retained_refusal_at(
-        &[],
-        "FreeCAD naming metadata diagnostic",
-        |ctx| {
-            super::super::recover_metadata::<()>(
-                ctx,
-                Err(CodecError::Malformed("unreadable".into())),
-                &mut Vec::new(),
-                "StringHasher payload",
-            )
-        },
-    );
-    crate::test_support::assert_collection_refusal_at(
-        &[],
-        "FreeCAD naming metadata losses",
-        |ctx| {
-            super::super::recover_metadata::<()>(
-                ctx,
-                Err(CodecError::Malformed("unreadable".into())),
-                &mut Vec::new(),
-                "StringHasher payload",
-            )
-        },
-    );
+fn string_table_count_above_the_bound_becomes_a_naming_loss() {
     let source = rewrite_entry(GEOMETRY, "Document.xml", |data| {
         std::str::from_utf8(data)
             .unwrap()
@@ -88,12 +64,13 @@ fn naming_metadata_recovery_preserves_resource_refusals() {
             )
             .into_bytes()
     });
-    assert!(matches!(
-        FcstdCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()),
-        Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(
-            _
-        )))
-    ));
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("an oversized naming table stays source-only");
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("remains source-only")
+            && loss.message.contains("10000001 exceeds 10000000")
+    }));
 }
 
 #[test]

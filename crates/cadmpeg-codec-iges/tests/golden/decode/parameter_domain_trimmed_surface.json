@@ -791,7 +791,8 @@
     },
     "units": {
       "length": "millimeter"
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

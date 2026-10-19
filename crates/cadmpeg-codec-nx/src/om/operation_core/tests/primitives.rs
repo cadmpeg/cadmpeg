@@ -101,13 +101,13 @@ fn primitive_cores_require_complete_wire_and_owning_classes() {
                 registry_tail: &[],
             })
             .collect();
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             let record = OperationPayload::new(&bytes, 0, label).unwrap();
-            assert!(core_for_decode(ctx, record, &classes).unwrap().is_some());
+            assert!(core_for_decode(record, &classes).is_some());
             for index in [0, 2] {
                 let name = classes[index].name;
                 classes[index].name = "UGS::OTHER";
-                assert!(core_for_decode(ctx, record, &classes).unwrap().is_none());
+                assert!(core_for_decode(record, &classes).is_none());
                 classes[index].name = name;
             }
         });

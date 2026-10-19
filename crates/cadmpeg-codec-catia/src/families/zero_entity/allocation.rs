@@ -4,7 +4,6 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use super::records::{self, ZeroEntityRecordIdentity, ZeroEntitySupportRun};
@@ -57,7 +56,6 @@ fn record(records: &[ZeroEntityRecordIdentity], ordinal: u32) -> Option<&ZeroEnt
 
 /// Admit only a complete bijection between loop members, side uses, and incidences.
 pub(crate) fn parse(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     runs: &[ZeroEntitySupportRun],
@@ -70,20 +68,18 @@ pub(crate) fn parse(
             }
         };
     }
-    let strides = records::zero_entity_edge_strides_in_range(ctx, data, range.clone())?;
+    let strides = records::zero_entity_edge_strides_in_range(data, range.clone());
     if strides.is_empty() {
         return Ok(None);
     }
-    let inventory = records::zero_entity_record_inventory_in_range(ctx, data, range.clone())?;
-    let pairs = records::zero_entity_oriented_use_pairs_in_range(ctx, data, range.clone())?;
-    let incidences = records::zero_entity_vertex_incidences_in_range(ctx, data, range)?;
+    let inventory = records::zero_entity_record_inventory_in_range(data, range.clone());
+    let pairs = records::zero_entity_oriented_use_pairs_in_range(data, range.clone());
+    let incidences = records::zero_entity_vertex_incidences_in_range(data, range);
     if pairs.len() != strides.len() || incidences.is_empty() {
         return Ok(None);
     }
-    let pair_by_header = ctx.collect_hash_map(
-        pairs.iter().map(|p| (p.header_record_ordinal, p)),
-        "catia_zero_allocation_pair_index",
-    )?;
+    let pair_by_header = (pairs.iter().map(|p| (p.header_record_ordinal, p)))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut incidence_by_use = HashMap::new();
     let mut vertices = Vec::new();
     for incidence in &incidences {
@@ -93,25 +89,15 @@ pub(crate) fn parse(
         if source.pos != incidence.pos || source.end != owner.pos || owner.tag != [0x5d, 0x06] {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut vertices,
-            AllocationVertex {
-                record_ordinal: owner.record_ordinal,
-                pos: owner.pos,
-            },
-            "catia_zero_allocation_vertices",
-        )?;
+        vertices.push(AllocationVertex {
+            record_ordinal: owner.record_ordinal,
+            pos: owner.pos,
+        });
         for &distance in incidence.allocations.as_slice() {
-            ctx.charge_work(1, "catia_zero_allocation_incidence_binding")?;
             let use_ordinal = exact!(incidence_ordinal.checked_sub(distance));
             if exact!(record(&inventory, use_ordinal)).tag != [0x06, 0x38]
-                || ctx
-                    .insert_hash_map(
-                        &mut incidence_by_use,
-                        use_ordinal,
-                        (incidence_ordinal, owner.record_ordinal),
-                        "catia_zero_allocation_incidence_index",
-                    )?
+                || incidence_by_use
+                    .insert(use_ordinal, (incidence_ordinal, owner.record_ordinal))
                     .is_some()
             {
                 return Ok(None);
@@ -135,22 +121,19 @@ pub(crate) fn parse(
                 .zip(&loop_record.edge_stride_distances)
                 .zip(&loop_record.support_record_ordinals)
             {
-                ctx.charge_work(1, "catia_zero_allocation_member_binding")?;
                 let edge = exact!(loop_record.record_ordinal.checked_sub(edge_distance));
                 if exact!(record(&inventory, edge)).tag != [0x5e, 0x1a] {
                     return Ok(None);
                 }
                 let key = exact!(member_ordinal.checked_sub(edge_distance));
-                if ctx
-                    .insert_hash_map(
-                        &mut members,
+                if members
+                    .insert(
                         (edge, key),
                         Member {
                             support,
                             face: face.record_ordinal,
                         },
-                        "catia_zero_allocation_member_index",
-                    )?
+                    )
                     .is_some()
                 {
                     return Ok(None);
@@ -166,18 +149,13 @@ pub(crate) fn parse(
     let mut selected_supports = HashSet::new();
     let mut selected_headers = HashSet::new();
     for stride in strides {
-        ctx.charge_work(1, "catia_zero_allocation_edge_binding")?;
         let edge_ordinal = stride.record_ordinal;
         let source = exact!(record(&inventory, edge_ordinal));
         let [header_distance, first_vertex_distance, second_vertex_distance, _, _] =
             stride.allocations;
         let header_ordinal = exact!(edge_ordinal.checked_sub(header_distance));
         let pair = exact!(pair_by_header.get(&header_ordinal));
-        if !ctx.insert_hash_set(
-            &mut selected_headers,
-            header_ordinal,
-            "catia_zero_allocation_selected_headers",
-        )? {
+        if !selected_headers.insert(header_ordinal) {
             return Ok(None);
         }
         let header = exact!(record(&inventory, header_ordinal));
@@ -207,11 +185,7 @@ pub(crate) fn parse(
             }
             let key = exact!(header_distance.checked_add(pair.base_columns()[index]));
             let member = exact!(members.get(&(edge_ordinal, key)));
-            if !ctx.insert_hash_set(
-                &mut selected_supports,
-                member.support,
-                "catia_zero_allocation_selected_supports",
-            )? {
+            if !selected_supports.insert(member.support) {
                 return Ok(None);
             }
             bound[index] = Some(AllocationUse {
@@ -229,21 +203,13 @@ pub(crate) fn parse(
         if first.vertex_record_ordinal == second.vertex_record_ordinal {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut edges,
-            AllocationEdge {
-                pos: source.pos,
-                record_ordinal: edge_ordinal,
-                header_record_ordinal: header_ordinal,
-                uses: [first, second],
-            },
-            "catia_zero_allocation_edges",
-        )?;
+        edges.push(AllocationEdge {
+            pos: source.pos,
+            record_ordinal: edge_ordinal,
+            header_record_ordinal: header_ordinal,
+            uses: [first, second],
+        });
     }
-    ctx.charge_work(
-        u64_from_index(selected_supports.len()),
-        "catia_zero_allocation_complete_roster",
-    )?;
     if selected_supports.len() != expected_uses {
         return Ok(None);
     }

@@ -1,20 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #[test]
 fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
     let compact = [0, 29, 0, 11, 0, 1];
     let extended = [0, 29, 0xe3, 0xbf, 0, 1];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &compact))
-            .unwrap()
-            .tombstones[0]
-            .xmt,
+        crate::deltas::census::walk(&compact).unwrap().tombstones[0].xmt,
         11
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &extended))
-            .unwrap()
-            .tombstones[0]
-            .xmt,
+        crate::deltas::census::walk(&extended).unwrap().tombstones[0].xmt,
         40_000
     );
 }
@@ -24,17 +20,12 @@ fn deltas_tombstone_is_self_delimiting_before_opaque_bytes() {
     let mut stream = vec![0, 29, 0, 11, 0, 1];
     stream.extend_from_slice(&[0xfe, 0xdc]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     assert_eq!(census.tombstones.len(), 1);
     assert_eq!(census.tombstones[0].xmt, 11);
     assert_eq!(census.bytes_decoded(), 6);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual(
-            ctx, &stream
-        ))
-        .unwrap(),
+        crate::deltas::semantic_residual(&stream).unwrap(),
         vec![0xff; 6]
             .into_iter()
             .chain([0xfe, 0xdc])
@@ -53,9 +44,7 @@ fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
     }
     bytes.extend_from_slice(&[0x40, 0x8f, 0x40, 0, 0, 0, 0, 0]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &bytes))
-            .unwrap();
+    let census = crate::deltas::census::walk(&bytes).unwrap();
 
     assert!(census.records.is_empty());
     assert_eq!(census.body_revisions.len(), 1);
@@ -81,7 +70,7 @@ fn deltas_pmark_packets_decode_primary_fields_with_partition_context() {
     let mut bytes = prefix.clone();
     bytes.extend(test_pmarks::packet());
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &bytes))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&bytes))
             .unwrap();
     assert_eq!(census.pmark_packets.len(), 1);
     let packet = &census.pmark_packets[0];
@@ -96,8 +85,8 @@ fn deltas_pmark_packets_decode_primary_fields_with_partition_context() {
     assert_eq!(packet.end, bytes.len());
     assert_eq!(census.bytes_decoded(), bytes.len());
     for malformed in [test_pmarks::packet(), bytes[..bytes.len() - 1].to_vec()] {
-        let census = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, &malformed)
+        let census = crate::test_support::with_decode_context(|_ctx| {
+            crate::deltas::census::walk(&malformed)
         })
         .unwrap();
         assert!(census.pmark_packets.is_empty());
@@ -113,9 +102,7 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
         0x00, 0x01, 0x01, // null reference, status
     ];
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &packet))
-            .unwrap();
+    let census = crate::deltas::census::walk(&packet).unwrap();
 
     assert_eq!(census.reference_marker_packets.len(), 1);
     assert_eq!(
@@ -134,14 +121,10 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
     ]
     .to_vec();
     for malformed in [&truncated, &trailing_byte, &unknown_marker] {
-        assert!(
-            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-                ctx, malformed
-            ))
+        assert!(crate::deltas::census::walk(malformed)
             .unwrap()
             .reference_marker_packets
-            .is_empty()
-        );
+            .is_empty());
     }
 }
 
@@ -167,9 +150,7 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     let declaration_end = bytes.len();
     bytes.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &bytes))
-            .unwrap();
+    let census = crate::deltas::census::walk(&bytes).unwrap();
 
     assert_eq!(census.schema_nodes.len(), 1);
     let declaration = &census.schema_nodes[0];
@@ -197,12 +178,10 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     // the genuinely incomplete input, without supplying replacement storage.
     let truncated = bytes[..declaration_end - 1].to_vec();
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx, &truncated
-        ))
-        .unwrap()
-        .schema_nodes
-        .is_empty()
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&truncated))
+            .unwrap()
+            .schema_nodes
+            .is_empty()
     );
 }
 
@@ -218,9 +197,7 @@ fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     bytes.extend_from_slice(&29u16.to_be_bytes());
     bytes.extend_from_slice(&10u16.to_be_bytes());
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &bytes))
-            .unwrap();
+    let census = crate::deltas::census::walk(&bytes).unwrap();
 
     assert_eq!(census.body_revisions.len(), 1);
     assert_eq!(

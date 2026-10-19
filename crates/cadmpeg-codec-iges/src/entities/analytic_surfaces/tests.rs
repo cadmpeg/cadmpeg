@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-use cadmpeg_core::decode::ResourceDimension;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -73,47 +72,6 @@ fn analytic_direction_refusals_render_without_intermediate_strings() {
         AnalyticDirectionError::SphereAxisCollapse.to_string(),
         "sphere axis collapses under its transformation"
     );
-}
-
-fn assert_analytic_refusal(bytes: &[u8], operation: &str, retained: bool) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: cadmpeg_core::decode::DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        if retained {
-            ResourceDimension::RetainedBytes
-        } else {
-            ResourceDimension::CollectionItems
-        },
-        operation,
-        0,
-    );
-}
-
-#[test]
-fn analytic_surface_indexes_and_losses_refuse_limits() {
-    let valid = pointer_defined_surface_file(190, 0);
-    for operation in [
-        "iges analytic-surface parameter index",
-        "iges analytic-surface directory index",
-        "iges analytic-surface slots",
-        "iges analytic-surface decoded sequences",
-    ] {
-        assert_analytic_refusal(&valid, operation, false);
-    }
-
-    let invalid = owned_test_file(&[OwnedTestEntity {
-        entity_type: 190,
-        form: 0,
-        label: "PLANE".into(),
-        status: "00010000",
-        parameters: "190,999,0;".into(),
-    }]);
-    assert_analytic_refusal(&invalid, "iges entity loss slots", false);
-    assert_analytic_refusal(&invalid, "iges entity loss message", true);
 }
 
 #[test]
@@ -209,7 +167,7 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 result.report().losses
             );
             let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail");
+                .expect("validate the neutral model");
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         }
     }

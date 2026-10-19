@@ -3,8 +3,6 @@
 
 use super::reference_index::CanonicalFeatureReferenceToken;
 use crate::om::operation_record::OperationPayload;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use std::ops::Add;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,10 +95,9 @@ positioned_frame!(u64);
 
 /// Retain fields with their exact suffix; assign no endpoint or operation role.
 pub(crate) fn operation_reference_fields(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
     kind: ReferenceFieldKind,
-) -> Result<Vec<DirectReferenceFrame<usize>>, CodecError> {
+) -> Vec<DirectReferenceFrame<usize>> {
     let prefix = kind.prefix();
     let mut fields = Vec::new();
     for (marker, window) in record.payload().windows(prefix.len()).enumerate() {
@@ -133,10 +130,9 @@ pub(crate) fn operation_reference_fields(
         else {
             continue;
         };
-        ctx.reserve_vec(&mut fields, 1, "nx direct reference fields")?;
         fields.push(frame);
     }
-    Ok(fields)
+    fields
 }
 
 #[cfg(test)]
@@ -186,51 +182,5 @@ mod tests {
             )
             .is_none());
         }
-    }
-
-    #[test]
-    fn direct_reference_fields_refuse_collection_limit() {
-        let bytes = [1, 2, 3, 7, 1, 0, 0, 0, 0, 0];
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let error = super::operation_reference_fields(
-                    ctx,
-                    record(&bytes, 0),
-                    ReferenceFieldKind::DataBlock03,
-                )
-                .unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn direct_reference_fields_refuse_retained_limit() {
-        let bytes = [1, 2, 3, 7, 1, 0, 0, 0, 0, 0];
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let error = super::operation_reference_fields(
-                    ctx,
-                    record(&bytes, 0),
-                    ReferenceFieldKind::DataBlock03,
-                )
-                .unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
-            },
-        );
     }
 }

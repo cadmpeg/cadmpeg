@@ -105,10 +105,6 @@ impl<A: Admission> FiniteGuard<A> {
         self.admit(self.admission.enter())
     }
 
-    fn text<E: serde::ser::Error>(&self, bytes: usize) -> Result<(), E> {
-        self.admit(self.admission.text(bytes))
-    }
-
     /// Returns a guard that has refused nothing.
     fn new(admission: A) -> Self {
         Self {
@@ -278,13 +274,11 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
 
     fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
-        self.guard.text::<S::Error>(value.len())?;
         self.inner.serialize_str(value)
     }
 
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
-        self.guard.text::<S::Error>(value.len())?;
         self.inner.serialize_bytes(value)
     }
 
@@ -423,8 +417,7 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
 
     fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
-        self.guard
-            .admit(self.guard.admission.collect_str(self.inner, value))?
+        self.inner.collect_str(value)
     }
 
     fn is_human_readable(&self) -> bool {
@@ -516,7 +509,6 @@ impl<C: SerializeStruct, A: Admission> SerializeStruct for FiniteCompound<'_, C,
         name: &'static str,
         value: &T,
     ) -> Result<(), Self::Error> {
-        self.guard.text::<C::Error>(name.len())?;
         let wrapped = self.wrap(value);
         self.inner.serialize_field(name, &wrapped)
     }
@@ -539,7 +531,6 @@ impl<C: SerializeStructVariant, A: Admission> SerializeStructVariant for FiniteC
         name: &'static str,
         value: &T,
     ) -> Result<(), Self::Error> {
-        self.guard.text::<C::Error>(name.len())?;
         let wrapped = self.wrap(value);
         self.inner.serialize_field(name, &wrapped)
     }

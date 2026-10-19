@@ -4,7 +4,6 @@
 use super::body_write::{BodyWriteFrame, BODY_IMAGE_CLASS};
 use super::core_reader::Reader;
 use super::operation_record::OperationPayload;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
@@ -52,14 +51,14 @@ pub(crate) struct CoreView<'a> {
     zero_terminated: bool,
 }
 impl<'a> CoreView<'a> {
-    pub(crate) fn retain(&self, ctx: &DecodeContext<'_>) -> Result<MoveFaceCore, CodecError> {
-        let bytes = self
-            .bytes
-            .get(..self.byte_len)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX move-face core span", 0, 1))?;
-        Ok(MoveFaceCore(
-            ctx.copy_slice(bytes, "NX bounded move-face core")?.into(),
-        ))
+    pub(crate) fn retain(&self) -> Result<MoveFaceCore, CodecError> {
+        let bytes = self.bytes.get(..self.byte_len).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX move-face core span"
+            ))
+        })?;
+        Ok(MoveFaceCore((bytes).to_vec().into()))
     }
     fn parse(bytes: &'a [u8]) -> Option<Self> {
         let mut r = Reader { bytes, at: 0 };
@@ -162,11 +161,7 @@ impl<'a> CoreView<'a> {
         }
         Some(core)
     }
-    pub(crate) fn writes(
-        &self,
-        ctx: &DecodeContext<'_>,
-        base: usize,
-    ) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
+    pub(crate) fn writes(&self, base: usize) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
         let mut groups = Reader {
             bytes: self.bytes,
             at: self.groups_start,
@@ -202,9 +197,12 @@ impl<'a> CoreView<'a> {
                     )
                 }
             })();
-            let write = parsed
-                .ok_or_else(|| ctx.refuse_codec_limit("NX move-face result positions", 0, 1))?;
-            ctx.reserve_vec(&mut writes, 1, "NX ordered move-face body writes")?;
+            let write = parsed.ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "NX move-face result positions"
+                ))
+            })?;
             writes.push(write);
         }
         Ok(writes)
@@ -212,18 +210,13 @@ impl<'a> CoreView<'a> {
 }
 
 pub(crate) fn core_for_decode<'a>(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'a>,
     classes: &[super::TypeDefinition<'_>],
-) -> Result<Option<CoreView<'a>>, CodecError> {
+) -> Option<CoreView<'a>> {
     if record.name() != "MOVE_FACE" {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "NX move-face complete core",
-    )?;
-    Ok(CoreView::read(record, classes))
+    CoreView::read(record, classes)
 }
 
 #[cfg(test)]

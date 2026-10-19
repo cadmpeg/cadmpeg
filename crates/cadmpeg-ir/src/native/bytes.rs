@@ -244,27 +244,26 @@ impl<'de, T: TryFrom<Vec<u8>>> Deserialize<'de> for NativeBytes<T> {
 
 impl<T> crate::schema::rewrite::typed::RewriteIdentities for NativeBytes<T> {
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _value: &mut serde_json::Value,
         _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "walk native identity scalar")
+        Ok(())
     }
 
     fn visit_identity_references(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "walk typed reference scalar")
+        Ok(())
     }
 
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
         self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "identity rewrite scalar")?;
         Ok(self)
     }
 }

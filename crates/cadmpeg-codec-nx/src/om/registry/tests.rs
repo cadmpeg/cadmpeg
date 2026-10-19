@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::om::registry::RegistryTokenForm;
 use crate::om::FieldDefinition;
 use crate::om::TypeDefinition;
@@ -181,10 +183,7 @@ fn separates_complete_reference_class_and_member_regions() {
     append_declaration(&mut bytes, b"m_second", &[0x10, 0x02]);
     append_declaration(&mut bytes, b"m_tail", &[0x11, 0x03]);
 
-    let registry = crate::test_support::with_decode_context(|ctx| {
-        crate::om::registry::type_registry(ctx, &bytes, 0, bytes.len())
-    })
-    .unwrap();
+    let registry = crate::om::registry::type_registry(&bytes, 0, bytes.len());
     assert_eq!(registry.definitions.len(), 2);
     assert_eq!(registry.field_owner_count, std::num::NonZeroUsize::new(2));
     assert_eq!(registry.definitions[0].name, "UGS::OM::RootObject");
@@ -205,16 +204,14 @@ fn separates_complete_reference_class_and_member_regions() {
     );
     assert_eq!(registry.field_start, member_start);
 
-    let fields = crate::test_support::with_decode_context(|ctx| {
+    let fields = crate::test_support::with_decode_context(|_ctx| {
         crate::om::registry::all_field_definitions(
-            ctx,
             &bytes,
             registry.field_start,
             bytes.len(),
             registry.field_owner_count,
         )
-    })
-    .unwrap();
+    });
     assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].name, "m_first");
     assert_eq!(
@@ -237,19 +234,16 @@ fn separates_complete_reference_class_and_member_regions() {
 
     let mut one_byte_gap = bytes;
     one_byte_gap[member_start - 1] = 0x28;
-    let variant = crate::test_support::with_decode_context(|ctx| {
-        crate::om::registry::type_registry(ctx, &one_byte_gap, 0, one_byte_gap.len())
-    })
-    .unwrap();
+    let variant = crate::om::registry::type_registry(&one_byte_gap, 0, one_byte_gap.len());
     assert_eq!(variant.definitions.len(), 2);
     assert_eq!(variant.field_start, first_member_start);
 }
 
 #[test]
 fn field_search_offset_overflow_refuses_record() {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         assert!(matches!(
-            super::field_definitions(ctx, &[], usize::MAX, 0, None),
+            super::field_definitions(&[], usize::MAX, 0, None),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     });
@@ -264,16 +258,9 @@ fn splits_bounded_plain_declaration_with_a_different_owner() {
     append_declaration(&mut bytes, b"first_record_area", &[0x80, 0xcf, 0x16]);
     let next_start = bytes.len();
     append_declaration(&mut bytes, b"m_next", &[0x01, 0x01]);
-    let fields = crate::test_support::with_decode_context(|ctx| {
-        super::all_field_definitions(
-            ctx,
-            &bytes,
-            0,
-            bytes.len(),
-            std::num::NonZeroUsize::new(206),
-        )
-    })
-    .unwrap();
+    let fields = crate::test_support::with_decode_context(|_ctx| {
+        super::all_field_definitions(&bytes, 0, bytes.len(), std::num::NonZeroUsize::new(206))
+    });
     assert_eq!(
         fields.iter().map(|field| field.name).collect::<Vec<_>>(),
         ["m_displayMarker", "first_record_area", "m_next"]
@@ -295,10 +282,9 @@ fn splits_bounded_plain_declaration_with_a_different_owner() {
             .get(),
         22
     );
-    let unproven = crate::test_support::with_decode_context(|ctx| {
-        super::all_field_definitions(ctx, &bytes, 0, bytes.len(), None)
-    })
-    .unwrap();
+    let unproven = crate::test_support::with_decode_context(|_ctx| {
+        super::all_field_definitions(&bytes, 0, bytes.len(), None)
+    });
     assert_eq!(unproven.len(), 2);
     assert_eq!(
         unproven[0].registry_tail,
@@ -320,14 +306,8 @@ fn final_member_head_ends_after_complete_owner_without_a_pointer() {
         append_declaration(&mut bytes, b"m_final", tail);
         let end = bytes.len();
         append_declaration(&mut bytes, b"first_record_area", &[0x80, 0xcf, 0x02]);
-        let fields = crate::test_support::with_decode_context(|ctx| {
-            super::field_definitions(
-                ctx,
-                &bytes,
-                0,
-                bytes.len(),
-                std::num::NonZeroUsize::new(206),
-            )
+        let fields = crate::test_support::with_decode_context(|_ctx| {
+            super::field_definitions(&bytes, 0, bytes.len(), std::num::NonZeroUsize::new(206))
         })
         .unwrap();
         assert_eq!(fields.len(), 1);
@@ -339,9 +319,8 @@ fn final_member_head_ends_after_complete_owner_without_a_pointer() {
         // The later plain-name frame lacks an independently bounded lane.
         let mut changed_bytes = bytes.clone();
         changed_bytes[end] ^= 1;
-        let changed = crate::test_support::with_decode_context(|ctx| {
+        let changed = crate::test_support::with_decode_context(|_ctx| {
             super::field_definitions(
-                ctx,
                 &changed_bytes,
                 0,
                 changed_bytes.len(),
@@ -367,16 +346,9 @@ fn member_admission_requires_complete_nonnull_tokens_and_scoped_owner() {
     ] {
         let mut bytes = Vec::new();
         append_declaration(&mut bytes, b"m_unowned", tail);
-        let fields = crate::test_support::with_decode_context(|ctx| {
-            super::all_field_definitions(
-                ctx,
-                &bytes,
-                0,
-                bytes.len(),
-                std::num::NonZeroUsize::new(2),
-            )
-        })
-        .unwrap();
+        let fields = crate::test_support::with_decode_context(|_ctx| {
+            super::all_field_definitions(&bytes, 0, bytes.len(), std::num::NonZeroUsize::new(2))
+        });
         assert!(fields.is_empty(), "invalid member head: {tail:02x?}");
     }
 }
@@ -386,43 +358,21 @@ fn plain_registry_lane_requires_complete_frames_and_owner_joins() {
     let mut bytes = Vec::new();
     append_declaration(&mut bytes, b"arbitrary_plain_name", &[0x80, 0xcf, 0x16]);
     append_declaration(&mut bytes, b"another_name", &[0xa0, 0x27, 0x10, 0x80, 0xa5]);
-    crate::test_support::with_decode_context(|ctx| {
-        assert!(
-            super::following_field_definitions(ctx, &[1, 1, 1], 0, 3, 206)
-                .unwrap()
-                .is_none()
-        );
-        let fields = super::following_field_definitions(ctx, &bytes, 0, bytes.len(), 206)
-            .unwrap()
-            .unwrap();
+    crate::test_support::with_decode_context(|_ctx| {
+        assert!(super::following_field_definitions(&[1, 1, 1], 0, 3, 206).is_none());
+        let fields = super::following_field_definitions(&bytes, 0, bytes.len(), 206).unwrap();
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].name, "arbitrary_plain_name");
         assert_eq!(fields[1].name, "another_name");
-        assert!(
-            super::following_field_definitions(ctx, &bytes, 0, bytes.len(), 165)
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            super::following_field_definitions(ctx, &bytes, 0, bytes.len() - 1, 206)
-                .unwrap()
-                .is_none()
-        );
+        assert!(super::following_field_definitions(&bytes, 0, bytes.len(), 165).is_none());
+        assert!(super::following_field_definitions(&bytes, 0, bytes.len() - 1, 206).is_none());
         let mut invalid = bytes.clone();
         invalid[0] -= 1;
-        assert!(
-            super::following_field_definitions(ctx, &invalid, 0, invalid.len(), 206)
-                .unwrap()
-                .is_none()
-        );
+        assert!(super::following_field_definitions(&invalid, 0, invalid.len(), 206).is_none());
         invalid = bytes.clone();
         let first_owner = 1 + b"arbitrary_plain_name".len() + 2;
         invalid[first_owner] = 0;
-        assert!(
-            super::following_field_definitions(ctx, &invalid, 0, invalid.len(), 206)
-                .unwrap()
-                .is_none()
-        );
+        assert!(super::following_field_definitions(&invalid, 0, invalid.len(), 206).is_none());
     });
 }
 
@@ -433,10 +383,9 @@ fn failed_plain_split_preserves_the_original_bounded_bytes() {
     append_declaration(&mut bytes, b"unowned_name", &[0x80, 0xcf, 0x03]);
     let next = bytes.len();
     append_declaration(&mut bytes, b"m_next", &[0x01, 0x01]);
-    let fields = crate::test_support::with_decode_context(|ctx| {
-        super::all_field_definitions(ctx, &bytes, 0, bytes.len(), std::num::NonZeroUsize::new(2))
-    })
-    .unwrap();
+    let fields = crate::test_support::with_decode_context(|_ctx| {
+        super::all_field_definitions(&bytes, 0, bytes.len(), std::num::NonZeroUsize::new(2))
+    });
     assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].registry_tail, &bytes[1 + b"m_first".len()..next]);
     assert_eq!(fields[1].name, "m_next");
@@ -453,8 +402,8 @@ fn reference_run_keeps_raw_codes_separate_from_ordinals() {
         &[0x05],
     );
     bytes.push(0x01);
-    crate::test_support::with_decode_context(|ctx| {
-        let references = super::reference_declarations(ctx, &bytes).unwrap().unwrap();
+    crate::test_support::with_decode_context(|_ctx| {
+        let references = super::reference_declarations(&bytes).unwrap();
         assert_eq!(references.len(), 3);
         assert_eq!(references[0].offset, 3);
         assert_eq!(references[0].name, "UGS::OM::Meta");
@@ -463,10 +412,17 @@ fn reference_run_keeps_raw_codes_separate_from_ordinals() {
         assert_eq!(references[1].code, 7);
         assert_eq!(references[2].code, 5);
         bytes.pop();
-        assert!(super::reference_declarations(ctx, &bytes)
-            .unwrap()
-            .is_none());
-        assert!(super::reference_declarations(ctx, &[]).unwrap().is_none());
-        assert!(super::reference_declarations(ctx, &[1]).unwrap().is_none());
+        assert!(super::reference_declarations(&bytes).is_none());
+        assert!(super::reference_declarations(&[]).is_none());
+        assert!(super::reference_declarations(&[1]).is_none());
     });
+}
+
+#[test]
+fn inverted_type_registry_range_yields_an_empty_registry() {
+    let mut bytes = Vec::new();
+    append_declaration(&mut bytes, b"UGS::OM::RootObject", &[0]);
+    let registry = crate::om::registry::type_registry(&bytes, 8, 4);
+    assert!(registry.definitions.is_empty());
+    assert_eq!(registry.field_start, 8);
 }

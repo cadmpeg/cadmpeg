@@ -12,9 +12,8 @@
 )]
 
 use crate::history::bind_feature_face_selections;
-use crate::history_records::{
-    AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
-};
+use crate::history_records::AsmHistory;
+use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
 struct StitchFixture {
@@ -162,43 +161,35 @@ fn surface_stitch_fixture() -> StitchFixture {
         .unwrap()
     };
     let operands = vec![operand(100, 200, 30), operand(110, 210, 31)];
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("{history_id}:state#{state_id}"),
-        parent: history_id.clone(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("{history_id}:state#{state_id}"),
+                parent: history_id.clone(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        id: history_id.clone(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                2,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
+    let history = crate::test_support::history::history(
+        history_id.clone(),
+        0,
+        None,
+        false,
+        vec![state(2, Some(1)), state(1, None)],
+    );
     let feature_id = FeatureId::mint("f3d:model:feature#42").expect("identity grammar");
     let mut feature = Feature {
         id: feature_id.clone(),
@@ -224,26 +215,10 @@ fn surface_stitch_fixture() -> StitchFixture {
     let input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         native_ref: None,
     }];
     StitchFixture {
@@ -259,33 +234,6 @@ fn surface_stitch_fixture() -> StitchFixture {
 }
 
 #[test]
-fn surface_stitch_group_collection_refuses_limit() {
-    let mut fixture = surface_stitch_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = bind_feature_face_selections(
-        &ctx,
-        std::slice::from_mut(&mut fixture.feature),
-        &mut fixture.input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
-            scopes: std::slice::from_ref(&fixture.scope),
-            groups: &fixture.groups,
-            operands: &[],
-            entity_operands: &fixture.operands,
-            body_recipe_operands: &[],
-            histories: std::slice::from_ref(&fixture.history),
-        },
-    );
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
-    ));
-}
-
-#[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
     use crate::records::topology::{
         body_recipe::AsmHistoricalEntityKind, entity_selection::DesignEntitySelectionFaceCandidate,
@@ -297,7 +245,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         scope,
         groups,
         operands,
-        history,
+        mut history,
         mut feature,
         mut input_topologies,
     } = surface_stitch_fixture();
@@ -317,7 +265,6 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut ambiguous_topologies = input_topologies.clone();
 
     bind_feature_face_selections(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         crate::history::FeatureFaceSelectionInputs {
@@ -326,10 +273,9 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             operands: &[],
             entity_operands: &operands,
             body_recipe_operands: &[],
-            histories: std::slice::from_ref(&history),
+            histories: std::slice::from_mut(&mut history),
         },
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces:
@@ -359,7 +305,6 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut ambiguous_feature),
         &mut ambiguous_topologies,
         crate::history::FeatureFaceSelectionInputs {
@@ -368,10 +313,9 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             operands: &[],
             entity_operands: &ambiguous_operands,
             body_recipe_operands: &[],
-            histories: std::slice::from_ref(&history),
+            histories: std::slice::from_mut(&mut history),
         },
-    )
-    .unwrap();
+    );
     assert!(matches!(
         ambiguous_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {

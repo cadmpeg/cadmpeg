@@ -843,12 +843,17 @@ fn semantic_writer_round_trips_typed_combine() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
-
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "body:1" && tools == "body:2,body:3")));
+        }) if matches!(
+            (operands.target(), operands.tools()),
+            (BodySelection::Native(target), BodySelection::Native(tools))
+                if target == "body:1" && tools == "body:2,body:3"
+        )
+    ));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -883,12 +888,17 @@ fn semantic_writer_round_trips_typed_combine() {
     assert_eq!(feature.properties["Tools"], "body:5,body:6");
     assert_eq!(feature.properties["Operation"], "Intersect");
     assert!(matches!(
-        regenerated.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
-
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "body:4" && tools == "body:5,body:6")));
+        }) if matches!(
+            (operands.target(), operands.tools()),
+            (BodySelection::Native(target), BodySelection::Native(tools))
+                if target == "body:4" && tools == "body:5,body:6"
+        )
+    ));
 }
 
 #[test]
@@ -1134,10 +1144,13 @@ fn semantic_writer_round_trips_typed_replace_face() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands,
-
-        }) if matches!((operands.targets(), operands.replacements(),), (FaceSelection::Native(targets), FaceSelection::Native(replacements),) if targets == "face:4,face:5" && replacements == "face:8")));
+    decoded.ir().model.features[0].evaluation.definition(),
+    FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands })
+        if matches!(
+            (operands.targets(), operands.replacements(),),
+            (FaceSelection::Native(targets), FaceSelection::Native(replacements),)
+                if targets == "face:4,face:5" && replacements == "face:8"
+        )));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -1170,10 +1183,13 @@ fn semantic_writer_round_trips_typed_replace_face() {
     assert_eq!(feature.properties["Faces"], "face:6");
     assert_eq!(feature.properties["ReplacementFaces"], "face:9,face:10");
     assert!(matches!(
-        regenerated.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands,
-
-        }) if matches!((operands.targets(), operands.replacements(),), (FaceSelection::Native(targets), FaceSelection::Native(replacements),) if targets == "face:6" && replacements == "face:9,face:10")));
+    regenerated.ir().model.features[0].evaluation.definition(),
+    FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands })
+        if matches!(
+            (operands.targets(), operands.replacements(),),
+            (FaceSelection::Native(targets), FaceSelection::Native(replacements),)
+                if targets == "face:6" && replacements == "face:9,face:10"
+        )));
 }
 
 #[test]
@@ -1226,7 +1242,9 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 angle: value,
             },
             ..
-        }) if ( (value.get() - 15f64.to_radians()).abs() < 1.0e-12) && matches!(geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(geometry_2.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+        }) if ( (value.get() - 15f64.to_radians()).abs() < 1.0e-12)
+        && matches!(geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
+        && matches!(geometry_2.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {

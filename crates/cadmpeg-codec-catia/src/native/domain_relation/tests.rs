@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native retention, exact wire validation, and unresolved operand behavior.
 
-use super::{derive, CatiaConsolidatedDomainRelation};
+use super::CatiaConsolidatedDomainRelation;
 use crate::native::CatiaNative;
-use crate::wire::records::consolidated_records;
 
 fn stream() -> Vec<u8> {
     let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
@@ -62,30 +61,6 @@ fn native_class24_domain_relation_retains_exact_frame_and_wire() {
     assert_eq!(
         CatiaNative::load(&namespace).expect("load native namespace"),
         native
-    );
-}
-
-#[test]
-fn native_class24_domain_relation_refuses_retention_and_collection_limits() {
-    let bytes = stream();
-    let records = consolidated_records(&bytes);
-    let error = crate::test_support::with_collection_limit(0, |ctx| derive(ctx, &bytes, &records))
-        .expect_err("relation output is charged");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "catia_domain_relations")
-    );
-    let error =
-        crate::test_support::with_retained_refusal(&[], "catia_domain_relation_payload", |ctx| {
-            derive(ctx, &bytes, &records)
-        })
-        .expect_err("frame bytes are charged");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "catia_domain_relation_payload")
-    );
-    let error = crate::test_support::with_work_limit(0, |ctx| derive(ctx, &bytes, &records))
-        .expect_err("parse work is charged");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "catia_domain_relation_parse")
     );
 }
 

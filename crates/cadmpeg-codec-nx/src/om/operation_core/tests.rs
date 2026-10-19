@@ -133,14 +133,12 @@ fn object_motion_null_terminal_bounds_the_following_lane_and_checks_registry() {
         .collect();
         let mut following = bytes.clone();
         following.extend([4, 48, 222]);
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             let read = |classes: &[_]| {
                 core_for_decode(
-                    ctx,
                     OperationPayload::new(&following, 0, "MOVE_OBJECT").unwrap(),
                     classes,
                 )
-                .unwrap()
             };
             assert_eq!(
                 read(&classes).map(|v| v.byte_len()),
@@ -154,11 +152,9 @@ fn object_motion_null_terminal_bounds_the_following_lane_and_checks_registry() {
             classes[3].name = "UGS::OM::MethodicObject";
             classes[1].name = "UGS::OTHER";
             assert!(core_for_decode(
-                ctx,
                 OperationPayload::new(&bytes, 0, "MOVE_OBJECT").unwrap(),
                 &classes
             )
-            .unwrap()
             .is_none());
         });
         for end in 0..bytes.len() {

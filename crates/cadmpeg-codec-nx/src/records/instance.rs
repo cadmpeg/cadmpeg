@@ -3,7 +3,7 @@
 use super::{DataType, EmbeddedSchema};
 use crate::framing::read_and_advance;
 use crate::framing::xmt_reference::NonNullXmt;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
@@ -155,12 +155,8 @@ impl SchemaNode {
         &self.definition
     }
 
-    pub(crate) fn read(
-        ctx: &DecodeContext<'_>,
-        stream: &[u8],
-        offset: usize,
-    ) -> Result<Option<(Self, usize)>, CodecError> {
-        let Some((definition, schema_end)) = super::read(ctx, stream, offset)? else {
+    pub(crate) fn read(stream: &[u8], offset: usize) -> Result<Option<(Self, usize)>, CodecError> {
+        let Some((definition, schema_end)) = super::read(stream, offset)? else {
             return Ok(None);
         };
         let mut view = View::over_retained(stream);
@@ -201,13 +197,12 @@ impl SchemaNode {
             }
             let mut elements = Vec::new();
             for _ in 0..count {
-                ctx.charge_work(1, "read NX schema node field")?;
                 let Some(value) = FieldValue::read(field.data_type, stream, &mut view) else {
                     return Ok(None);
                 };
-                ctx.push_vec(&mut elements, value, "NX schema node field elements")?;
+                elements.push(value);
             }
-            ctx.push_vec(&mut values, elements, "NX schema node values")?;
+            values.push(elements);
         }
         Ok(Some((
             Self {

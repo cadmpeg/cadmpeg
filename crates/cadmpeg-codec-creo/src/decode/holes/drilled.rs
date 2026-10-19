@@ -3,8 +3,6 @@
 
 use crate::axis::Axis;
 use crate::vecmath::unit_length;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::holes::HoleForm;
@@ -27,24 +25,23 @@ const EPS_DIAMETER_NONZERO: f64 = 1.0e-12;
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 
 pub(in crate::decode) fn stepped_hole_form(
-    ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> Result<Option<HoleForm>, CodecError> {
+) -> Option<HoleForm> {
     let mut candidates = 0;
     for table in tables
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
     {
-        let paired = paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows)?
+        let paired = paired_hole_replay_surfaces_by_source(feature_id, table, rows)
             .as_ref()
             .is_some_and(paired_hole_replay_is_counterbore);
-        if paired || split_patch_table_is_counterbore(ctx, feature_id, table, rows)? {
+        if paired || split_patch_table_is_counterbore(feature_id, table, rows) {
             candidates += 1;
         }
     }
-    Ok((candidates == 1).then_some(HoleForm::Counterbore))
+    (candidates == 1).then_some(HoleForm::Counterbore)
 }
 
 fn paired_hole_replay_is_counterbore(
@@ -83,11 +80,10 @@ fn paired_hole_replay_is_counterbore(
 }
 
 fn split_patch_table_is_counterbore(
-    ctx: &DecodeContext<'_>,
     feature_id: u32,
     table: &crate::feature::entity::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
-) -> Result<bool, CodecError> {
+) -> bool {
     let mut surface_count = 0;
     let mut cylinder_count = 0;
     let mut plane_count = 0;
@@ -95,7 +91,7 @@ fn split_patch_table_is_counterbore(
         let Some(row) = crate::surface::unique_surface_row(rows, surface_id)
             .filter(|row| row.feature_id == feature_id)
         else {
-            return Ok(false);
+            return false;
         };
         surface_count += 1;
         cylinder_count += usize::from(row.kind == crate::surface::SurfaceKind::Cylinder);
@@ -103,7 +99,7 @@ fn split_patch_table_is_counterbore(
     }
     let unique_surface_count = table.unique_surface_ids().len();
     if surface_count != 5 || unique_surface_count != 5 || cylinder_count != 4 || plane_count != 1 {
-        return Ok(false);
+        return false;
     }
     let is_rowless = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         table.contains_non_surface_entity_id(entry.entity_id)
@@ -115,7 +111,7 @@ fn split_patch_table_is_counterbore(
             && is_rowless(&entries[0])
             && is_rowless(&entries[1])
     }) {
-        return Ok(false);
+        return false;
     }
 
     let surface_ids = table.unique_surface_ids();
@@ -127,20 +123,15 @@ fn split_patch_table_is_counterbore(
         let materialized = table.contains_surface_id(entry.entity_id);
         let rowless = is_rowless(entry);
         if !materialized && !rowless {
-            return Ok(false);
+            return false;
         }
         let Some(source_id) = entry.source_entity_id() else {
             continue;
         };
         if source_id == 0 && materialized {
-            return Ok(false);
+            return false;
         }
         if rowless {
-            ctx.admit_btree_entry(
-                &rowless_counts_by_source,
-                &source_id,
-                "creo split-patch rowless source nodes",
-            )?;
             match rowless_counts_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -152,44 +143,28 @@ fn split_patch_table_is_counterbore(
         let Some(row) = crate::surface::unique_surface_row(rows, entry.entity_id)
             .filter(|row| row.feature_id == feature_id)
         else {
-            return Ok(false);
+            return false;
         };
         if materialized_surface_ids.contains(&entry.entity_id) {
-            return Ok(false);
+            return false;
         }
-        ctx.insert_btree_set(
-            &mut materialized_surface_ids,
-            entry.entity_id,
-            "creo split-patch materialized surface ID nodes",
-        )?;
+        materialized_surface_ids.insert(entry.entity_id);
         if row.kind == crate::surface::SurfaceKind::Cylinder {
-            ctx.admit_btree_entry(
-                &cylinder_ids_by_source,
-                &source_id,
-                "creo split-patch cylinder source nodes",
-            )?;
             let group = match cylinder_ids_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
-            ctx.reserve_vec(group, 1, "creo split-patch cylinder IDs")?;
             group.push(entry.entity_id);
         } else if row.kind == crate::surface::SurfaceKind::Plane {
-            ctx.admit_btree_entry(
-                &plane_ids_by_source,
-                &source_id,
-                "creo split-patch plane source nodes",
-            )?;
             let group = match plane_ids_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
-            ctx.reserve_vec(group, 1, "creo split-patch plane IDs")?;
             group.push(entry.entity_id);
         }
     }
     if &materialized_surface_ids != surface_ids {
-        return Ok(false);
+        return false;
     }
     let cylinder_id_count = cylinder_ids_by_source.values().map(Vec::len).sum::<usize>();
     let cylinder_ids = || cylinder_ids_by_source.values().flatten();
@@ -198,12 +173,12 @@ fn split_patch_table_is_counterbore(
         .filter(|(index, id)| cylinder_ids().take(*index).all(|previous| previous != *id))
         .count();
     if plane_ids_by_source.len() != 1 {
-        return Ok(false);
+        return false;
     }
     let Some(&plane_source) = plane_ids_by_source.keys().next() else {
-        return Ok(false);
+        return false;
     };
-    Ok(cylinder_ids_by_source.len() == 2
+    cylinder_ids_by_source.len() == 2
         && cylinder_id_count == 4
         && unique_cylinder_id_count == 4
         && plane_ids_by_source[&plane_source].len() == 1
@@ -211,7 +186,7 @@ fn split_patch_table_is_counterbore(
         && rowless_counts_by_source.get(&plane_source) == Some(&1)
         && cylinder_ids_by_source
             .values()
-            .all(|surface_ids| surface_ids.len() == 2 && surface_ids[0] != surface_ids[1]))
+            .all(|surface_ids| surface_ids.len() == 2 && surface_ids[0] != surface_ids[1])
 }
 
 struct ReplaySurfacePair {
@@ -220,11 +195,10 @@ struct ReplaySurfacePair {
 }
 
 fn paired_hole_replay_surfaces_by_source(
-    ctx: &DecodeContext<'_>,
     feature_id: u32,
     table: &crate::feature::entity::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
-) -> Result<Option<BTreeMap<u32, ReplaySurfacePair>>, CodecError> {
+) -> Option<BTreeMap<u32, ReplaySurfacePair>> {
     let entry_kind = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         if table.contains_surface_id(entry.entity_id) {
             Some(Some(
@@ -254,7 +228,7 @@ fn paired_hole_replay_surfaces_by_source(
         if !matches!(entry_kind(class_204), Some(None))
             || !matches!(entry_kind(class_203), Some(None))
         {
-            return Ok(None);
+            return None;
         }
         index += 2;
         let mut run = BTreeMap::new();
@@ -264,33 +238,25 @@ fn paired_hole_replay_surfaces_by_source(
             .filter(|entry| entry.class_id() == 200)
         {
             framed_class_200_count += 1;
-            let Some(kind) = entry_kind(entry) else {
-                return Ok(None);
-            };
+            let kind = entry_kind(entry)?;
             match entry.source_entity_id() {
                 Some(0) => {
                     if kind.is_some() {
-                        return Ok(None);
+                        return None;
                     }
                     source_zero_count += 1;
                 }
                 Some(source_id) => {
                     if run.contains_key(&source_id) {
-                        return Ok(None);
+                        return None;
                     }
-                    ctx.insert_btree_map(
-                        &mut run,
-                        source_id,
-                        kind,
-                        "creo paired-hole run source nodes",
-                    )?;
+                    run.insert(source_id, kind);
                 }
-                None if kind.is_some() => return Ok(None),
+                None if kind.is_some() => return None,
                 None => {}
             }
             index += 1;
         }
-        ctx.reserve_vec(&mut runs, 1, "creo paired-hole runs")?;
         runs.push(run);
     }
     if !(source_zero_count <= 1
@@ -301,34 +267,26 @@ fn paired_hole_replay_surfaces_by_source(
                 .filter(|entry| entry.class_id() == 200)
                 .count())
     {
-        return Ok(None);
+        return None;
     }
     let mut materialized = runs.iter().filter(|run| run.values().any(Option::is_some));
-    let Some(first) = materialized.next() else {
-        return Ok(None);
-    };
-    let Some(second) = materialized.next() else {
-        return Ok(None);
-    };
+    let first = materialized.next()?;
+    let second = materialized.next()?;
     if materialized.next().is_some() || !first.keys().eq(second.keys()) {
-        return Ok(None);
+        return None;
     }
     let mut paired_by_source = BTreeMap::new();
     for (source_id, first_kind) in first {
-        let Some(second_kind) = second.get(source_id) else {
-            return Ok(None);
-        };
-        ctx.insert_btree_map(
-            &mut paired_by_source,
+        let second_kind = second.get(source_id)?;
+        paired_by_source.insert(
             *source_id,
             ReplaySurfacePair {
                 first: *first_kind,
                 second: *second_kind,
             },
-            "creo paired-hole result source nodes",
-        )?;
+        );
     }
-    Ok(Some(paired_by_source))
+    Some(paired_by_source)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -353,18 +311,17 @@ pub(in crate::decode) struct SimpleDrilledHoleRecipe<'a> {
 }
 
 pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
-    ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &'a [crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> Result<Option<SimpleDrilledHoleRecipe<'a>>, CodecError> {
+) -> Option<SimpleDrilledHoleRecipe<'a>> {
     let mut candidate = None;
     for table in tables
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
     {
         let Some(generated_by_source) =
-            paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows)?
+            paired_hole_replay_surfaces_by_source(feature_id, table, rows)
         else {
             continue;
         };
@@ -390,7 +347,7 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
             && generated_by_source.len() == rowless + 2
         {
             if candidate.is_some() {
-                return Ok(None);
+                return None;
             }
             candidate = Some(SimpleDrilledHoleRecipe {
                 table,
@@ -398,7 +355,7 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
             });
         }
     }
-    Ok(candidate)
+    candidate
 }
 
 pub(in crate::decode) fn simple_drilled_hole_envelope_spans(
@@ -479,11 +436,10 @@ pub(in crate::decode) fn simple_drilled_hole_placement(
 }
 
 pub(in crate::decode) fn simple_drilled_hole_axis_placement(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
     diameter: f64,
-) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
+) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let feature_id = table.feature_id;
     let mut cylinder_ids = BTreeSet::new();
     for surface_id in table.surface_ids_iter().filter(|surface_id| {
@@ -491,28 +447,16 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
-        ctx.insert_btree_set(
-            &mut cylinder_ids,
-            surface_id,
-            "creo drilled cylinder ID nodes",
-        )?;
+        cylinder_ids.insert(surface_id);
     }
-    let Some(frame_records) = unique_available_positional_cylinder_frame_records(
-        ctx,
+    let frame_records = unique_available_positional_cylinder_frame_records(
         &cylinder_ids,
         &scan.surfaces.parameters,
-    )?
-    else {
-        return Ok(None);
-    };
-    let mut frames = Vec::new();
-    ctx.reserve_vec(
-        &mut frames,
-        frame_records.len(),
-        "creo drilled cylinder frame copies",
     )?;
+    let mut frames = Vec::new();
+
     frames.extend(frame_records.into_iter().map(|(_, frame)| frame));
-    Ok(simple_drilled_axis_placement_from_frames(&frames, diameter))
+    simple_drilled_axis_placement_from_frames(&frames, diameter)
 }
 
 pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
@@ -985,12 +929,10 @@ pub(in crate::decode) fn dimension_pair_matches_envelope_spans(
 }
 
 #[cfg(test)]
-mod resource_tests {
+mod tests {
     use super::*;
 
-    fn axis_placement_with_limit(
-        limit: u64,
-    ) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
+    fn axis_placement() -> Option<cadmpeg_ir::features::holes::HolePlacement> {
         let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id: 1,
@@ -1035,50 +977,14 @@ mod resource_tests {
             0,
         )
         .with_surface_ids([1]);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        simple_drilled_hole_axis_placement(&ctx, &scan, &table, 1.5)
-    }
-
-    fn axis_placement_limit_error(limit: u64) -> CodecError {
-        axis_placement_with_limit(limit).expect_err("next collection exceeds limit")
+        simple_drilled_hole_axis_placement(&scan, &table, 1.5)
     }
 
     #[test]
     fn drilled_axis_placement_preserves_service_carrier() {
         assert!(matches!(
-            axis_placement_with_limit(3).expect("service resources"),
+            axis_placement(),
             Some(cadmpeg_ir::features::holes::HolePlacement::Axis { .. })
         ));
-    }
-
-    #[test]
-    fn drilled_cylinder_id_nodes_refuse_collection_limit() {
-        assert!(
-            matches!(axis_placement_limit_error(0), CodecError::ResourceLimit(resource)
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "creo drilled cylinder ID nodes")
-        );
-    }
-
-    #[test]
-    fn drilled_available_frames_refuse_collection_limit() {
-        assert!(
-            matches!(axis_placement_limit_error(1), CodecError::ResourceLimit(resource)
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "creo available positional cylinder frames")
-        );
-    }
-
-    #[test]
-    fn drilled_frame_copies_refuse_collection_limit() {
-        assert!(
-            matches!(axis_placement_limit_error(2), CodecError::ResourceLimit(resource)
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "creo drilled cylinder frame copies")
-        );
     }
 }

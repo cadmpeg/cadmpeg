@@ -722,7 +722,9 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     let opaque = namespace.arenas().get("opaque_records");
     let generated_comment = opaque.is_some_and(|records| {
         records.iter().any(|record| {
-            let fields = record.fields();
+            let Ok(fields) = record.fields() else {
+                return false;
+            };
             record.id() == "rhino:source:opaque#comment"
                 && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
                 && fields.get("data").and_then(serde_json::Value::as_str)
@@ -789,7 +791,10 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
 }
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let fields = record.fields();
+    let Ok(fields) = record.fields() else {
+        return false;
+    };
+    let fields = &fields;
     json_i64(fields, "archive_index") == Some(0)
         && json_i64(fields, "linetype_index") == Some(-1)
         && json_i64(fields, "material_index") == Some(-1)
@@ -801,7 +806,10 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let fields = record.fields();
+    let Ok(fields) = record.fields() else {
+        return false;
+    };
+    let fields = &fields;
     json_i64(fields, "layer_index") == Some(0)
         && json_i64(fields, "material_index") == Some(-1)
         && json_i64(fields, "linetype_index") == Some(-1)
@@ -1167,10 +1175,6 @@ fn generated_projected_brep_c2_curve(
     v_axis: cadmpeg_ir::math::Vector3,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     use cadmpeg_ir::topology::Sense;
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
 
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
@@ -1194,31 +1198,28 @@ fn generated_projected_brep_c2_curve(
         WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
-                .try_map_control_points(
-                    |_, point| {
-                        let mut point = point.get();
-                        let uv = plane_uv(point, origin, u_axis, v_axis);
-                        point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                                "control_points contains a non-finite point".into(),
-                            )
-                        })
-                    },
-                    &writer_ctx,
-                )?
+                .try_map_control_points(|_, point| {
+                    let mut point = point.get();
+                    let uv = plane_uv(point, origin, u_axis, v_axis);
+                    point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                })
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
                     CodecError::Malformed("Rhino count exceeds address space".into())
                 })?] + projected.knots()[projected.pole_count()];
-                projected.reverse_parameterization(&writer_ctx)?;
+                projected.reverse_parameterization();
                 projected
-                    .edit_knots(&writer_ctx, |knots| {
+                    .edit_knots(|knots| {
                         for knot in knots {
                             *knot += sum;
                         }
-                    })?
+                    })
                     .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
                 canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
@@ -1234,25 +1235,15 @@ fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
 ) -> Result<(), CodecError> {
-    // Native-canonical writer checks state an independent construction policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let order = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
         + 1;
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
-    let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, &stored, order, count)
-        .map_err(|error| match error {
-            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
-                CodecError::ResourceLimit(limit)
-            }
-            error => CodecError::NotImplemented(format!("curve {id}: {error}")),
-        })?;
+    let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
+        .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     curve
-        .edit_knots(&writer_ctx, |knots| knots.copy_from_slice(&reconstructed))?
+        .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
         .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     Ok(())
 }
@@ -1537,14 +1528,20 @@ fn computed(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
     })
 }
 
+/// A count the native field cannot store.
+fn native_count_limit(limit: u64, count: u64) -> CodecError {
+    CodecError::NotImplemented(format!(
+        "Rhino native count {count} exceeds the format limit {limit}"
+    ))
+}
+
 fn polymorphic_array<'a>(
     children: impl ExactSizeIterator<Item = &'a ([u8; 16], Vec<u8>)>,
 ) -> Result<Vec<u8>, CodecError> {
     let mut body = vec![0x10];
     body.extend(
         (i32::try_from(children.len()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(children.len()),
             )
@@ -1564,8 +1561,7 @@ fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
     let mut body = vec![0x10];
     body.extend(
         (i32::try_from(records.len()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(records.len()),
             )
@@ -1586,8 +1582,7 @@ fn face_array(
     let mut body = vec![0x10 | minor];
     body.extend(
         (i32::try_from(records.len()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(records.len()),
             )
@@ -1937,25 +1932,20 @@ fn check_knot_roundtrip(
     count: usize,
     declared_periodic: bool,
 ) -> Result<(), CodecError> {
-    // Native-canonical writer checks state an independent construction policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
         return Err(CodecError::NotImplemented(format!(
             "{direction} {id} has a non-increasing native NURBS domain"
         )));
     }
-    let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, stored, order, count)
-        .map_err(|error| match error {
+    let reconstructed =
+        crate::surfaces::reconstruct_knots(stored, order, count).map_err(|error| match error {
             crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
                 CodecError::ResourceLimit(limit)
             }
             error => CodecError::NotImplemented(format!("{direction} {id}: {error}")),
         })?;
-    let periodic = crate::surfaces::periodic_knots(&writer_ctx, stored, order, count)?;
+    let periodic = crate::surfaces::periodic_knots(stored, order, count);
     if reconstructed != full || periodic != declared_periodic {
         return Err(CodecError::NotImplemented(format!(
             "{direction} {id} knot endpoints or periodic flag are not native-canonical"
@@ -1976,8 +1966,7 @@ fn long_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     bytes.extend(
         (i64::try_from(body.len()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 9_223_372_036_854_775_807,
                 cadmpeg_core::decode::u64_from_index(body.len()),
             )
@@ -2034,8 +2023,7 @@ fn point_cloud_payload(points: &[cadmpeg_ir::math::Point3]) -> Result<Vec<u8>, C
     let mut payload = vec![0x10];
     payload.extend(
         (i32::try_from(points.len()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(points.len()),
             )
@@ -2131,16 +2119,10 @@ fn nurbs_curve_payload_dimension(
     dimension: i32,
 ) -> Result<Vec<u8>, CodecError> {
     let rational = i32::from(curve.weights().is_some());
-    let order = i32::try_from(curve.degree() + 1).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit(
-            "Rhino writer native count",
-            2_147_483_647,
-            u64::from(curve.degree() + 1),
-        )
-    })?;
+    let order = i32::try_from(curve.degree() + 1)
+        .map_err(|_| native_count_limit(2_147_483_647, u64::from(curve.degree() + 1)))?;
     let count = i32::try_from(curve.control_points().len()).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit(
-            "Rhino writer native count",
+        native_count_limit(
             2_147_483_647,
             cadmpeg_core::decode::u64_from_index(curve.control_points().len()),
         )
@@ -2166,8 +2148,7 @@ fn nurbs_curve_payload_dimension(
     }
     payload.extend(
         (i32::try_from(curve.knots().len() - 2).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(curve.knots().len() - 2),
             )
@@ -2244,30 +2225,18 @@ fn nurbs_surface_payload(
     for value in [
         3,
         rational,
-        i32::try_from(surface.u_degree() + 1).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
-                2_147_483_647,
-                u64::from(surface.u_degree() + 1),
-            )
-        })?,
-        i32::try_from(surface.v_degree() + 1).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
-                2_147_483_647,
-                u64::from(surface.v_degree() + 1),
-            )
-        })?,
+        i32::try_from(surface.u_degree() + 1)
+            .map_err(|_| native_count_limit(2_147_483_647, u64::from(surface.u_degree() + 1)))?,
+        i32::try_from(surface.v_degree() + 1)
+            .map_err(|_| native_count_limit(2_147_483_647, u64::from(surface.v_degree() + 1)))?,
         i32::try_from(surface.u_count()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(surface.u_count()),
             )
         })?,
         i32::try_from(surface.v_count()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(surface.v_count()),
             )
@@ -2290,8 +2259,7 @@ fn nurbs_surface_payload(
     for knots in [surface.u_knots(), surface.v_knots()] {
         payload.extend(
             (i32::try_from(knots.len() - 2).map_err(|_| {
-                cadmpeg_core::decode::refuse_local_limit(
-                    "Rhino writer native count",
+                native_count_limit(
                     2_147_483_647,
                     cadmpeg_core::decode::u64_from_index(knots.len() - 2),
                 )
@@ -2333,8 +2301,7 @@ fn mesh_payload(
     let mut payload = vec![payload_version];
     payload.extend(
         (i32::try_from(mesh.vertices().len()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
             )
@@ -2343,8 +2310,7 @@ fn mesh_payload(
     );
     payload.extend(
         (i32::try_from(mesh.triangles().len()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(mesh.triangles().len()),
             )
@@ -2369,8 +2335,7 @@ fn mesh_payload(
     };
     payload.extend(
         (i32::try_from(width.bytes()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino writer native count",
+            native_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(width.bytes()),
             )
@@ -2444,8 +2409,7 @@ fn mesh_payload(
         body.extend(0_i32.to_le_bytes());
         body.extend(
             (u32::try_from(mesh.vertices().len()).map_err(|_| {
-                cadmpeg_core::decode::refuse_local_limit(
-                    "Rhino writer native count",
+                native_count_limit(
                     4_294_967_295,
                     cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
                 )
@@ -2499,8 +2463,7 @@ fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u
 
 fn mesh_buffer(data: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut result = (u32::try_from(data.len()).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit(
-            "Rhino writer native count",
+        native_count_limit(
             4_294_967_295,
             cadmpeg_core::decode::u64_from_index(data.len()),
         )
@@ -2664,8 +2627,7 @@ fn utf16(value: &str) -> Result<Vec<u8>, CodecError> {
         units.push(0);
     }
     let mut bytes = (u32::try_from(units.len()).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit(
-            "Rhino writer native count",
+        native_count_limit(
             4_294_967_295,
             cadmpeg_core::decode::u64_from_index(units.len()),
         )

@@ -15,10 +15,10 @@ fn owner_incidence_preserves_reversed_physical_extents() {
         &bytes,
         [vec![node_start..bytes.len(), 0..node_start]],
     );
-    let packets = crate::test_support::with_service_context(|ctx| {
-        crate::native::projection::consolidated_owner_packets(ctx, &bytes, &records)
-    })
-    .expect("owner frames fit service limits");
+    let packets = crate::test_support::with_service_context(|_ctx| {
+        crate::native::projection::consolidated_owner_packets(&bytes, &records)
+            .expect("valid source fixture")
+    });
     let [packet] = packets.as_slice() else {
         panic!("one owner")
     };
@@ -66,10 +66,10 @@ fn owner_incidence_refuses_unframed_gaps_and_other_sources() {
         ),
     ];
     for (bytes, records) in cases {
-        let packets = crate::test_support::with_service_context(|ctx| {
-            crate::native::projection::consolidated_owner_packets(ctx, &bytes, &records)
-        })
-        .expect("owner frames fit service limits");
+        let packets = crate::test_support::with_service_context(|_ctx| {
+            crate::native::projection::consolidated_owner_packets(&bytes, &records)
+                .expect("valid source fixture")
+        });
         assert_eq!(packets.len(), 1);
         assert!(packets[0].face_node.is_none());
     }
@@ -126,10 +126,10 @@ fn counted_incidence_requires_two_pairs_and_one_final_reference() {
         ]);
         stream.extend_from_slice(&payload);
         let records = crate::wire::records::consolidated_records(&stream);
-        let packets = crate::test_support::with_service_context(|ctx| {
-            crate::native::projection::consolidated_owner_packets(ctx, &stream, &records)
-        })
-        .expect("counted owner frames fit service limits");
+        let packets = crate::test_support::with_service_context(|_ctx| {
+            crate::native::projection::consolidated_owner_packets(&stream, &records)
+                .expect("valid source fixture")
+        });
         assert_eq!(
             packets.len(),
             1,

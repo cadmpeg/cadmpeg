@@ -80,21 +80,16 @@ fn linked_face_cache_requires_each_class_in_its_owning_registry() {
             registry_tail: &[],
         })
         .collect();
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         let payload = OperationPayload::new(&bytes, 0, "LINKED_FACE").unwrap();
         assert_eq!(
-            payload_for_decode(ctx, payload, &classes)
-                .unwrap()
-                .unwrap()
-                .as_bytes(),
+            payload_for_decode(payload, &classes).unwrap().as_bytes(),
             bytes
         );
         for index in 0..classes.len() {
             let name = classes[index].name;
             classes[index].name = "UGS::OTHER";
-            assert!(payload_for_decode(ctx, payload, &classes)
-                .unwrap()
-                .is_none());
+            assert!(payload_for_decode(payload, &classes).is_none());
             classes[index].name = name;
         }
     });

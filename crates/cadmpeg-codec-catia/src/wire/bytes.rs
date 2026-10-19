@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Free-function byte readers shared across CATIA record families.
 //!
 //! Absolute-offset scalar and reference readers used by the per-family scan
@@ -6,33 +7,10 @@
 //! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
-
-/// Read a finite lane retained by a decoded record after charging its bytes
-/// and collection slots to the active decode.
-pub(crate) fn finite_f64_lane_charged(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<Option<Vec<FiniteReal>>, CodecError> {
-    if !bytes.len().is_multiple_of(8) {
-        return Ok(None);
-    }
-    let mut values = ctx.collection_vec(bytes.len() / 8, operation)?;
-    let mut view = View::over_retained(bytes);
-    while !view.is_empty() {
-        let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
-            return Ok(None);
-        };
-        values.push(value);
-    }
-    Ok(Some(values))
-}
 
 /// Read `N` consecutive little-endian `f64` values, each finite.
 pub(crate) fn read_f64_array<const N: usize>(data: &[u8], start: usize) -> Option<[FiniteReal; N]> {
@@ -158,6 +136,19 @@ pub(crate) fn allocation_reference(bytes: &[u8], at: &mut usize) -> Option<Alloc
         }
         _ => None,
     }
+}
+
+/// Read a complete lane of finite little-endian scalars.
+pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
+    if !bytes.len().is_multiple_of(8) {
+        return None;
+    }
+    let mut view = View::over_retained(bytes);
+    let mut values = Vec::new();
+    while !view.is_empty() {
+        values.push(FiniteReal::new(view.f64_le()?)?);
+    }
+    Some(values)
 }
 
 #[cfg(test)]

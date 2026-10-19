@@ -9,8 +9,7 @@ fn parameter_records(payload: &[u8]) -> Vec<crate::surface::SurfaceParameterReco
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("cylinder fixture is admitted");
-    crate::surface::parameter_records(&ctx, payload)
-        .expect("cylinder fixture stays within resource limits")
+    crate::surface::parameter_records(&ctx, payload).expect("parse the parameter records")
 }
 use crate::surface::PositionalCylinderFrame;
 use crate::surface::SurfaceBodyBoundary;

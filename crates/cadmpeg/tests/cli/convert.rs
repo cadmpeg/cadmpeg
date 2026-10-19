@@ -32,7 +32,7 @@ fn validation_budgets_follow_loaded_native_and_cadir_input_sizes() {
         let mut entry = source.by_index(index).unwrap();
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).unwrap();
-        if entry.name() == "Document.xml" {
+        if entry.name().expect("entry name") == "Document.xml" {
             let text = std::str::from_utf8(&bytes).unwrap();
             assert!(text.contains("<Properties Count=\"17\""));
             let mut extra = String::new();
@@ -48,7 +48,9 @@ fn validation_budgets_follow_loaded_native_and_cadir_input_sizes() {
                 .replacen("</Properties>", &format!("{extra}</Properties>"), 1)
                 .into_bytes();
         }
-        writer.start_file(entry.name(), options).unwrap();
+        writer
+            .start_file(entry.name().expect("entry name"), options)
+            .unwrap();
         writer.write_all(&bytes).unwrap();
     }
     writer.finish().unwrap();
@@ -100,6 +102,133 @@ fn convert_stdout_contains_only_json_artifact() {
     assert!(output.status.success());
     serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
     assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
+}
+
+/// The decode report line names the depth the codec delivered. A codec with
+/// no geometry-depth cut delivers `full` for STEP's geometry request, with or
+/// without `--full-decode`, which excludes `--container-only`.
+#[test]
+fn convert_reports_the_delivered_depth() {
+    let dir = tempdir().unwrap();
+    let input = geometryless_creo(dir.path(), "empty.prt");
+    for extra in [None, Some("--full-decode")] {
+        let mut args = vec![
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+        ];
+        args.extend(extra);
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(args)
+            .assert()
+            .success()
+            .stderr(predicate::str::contains(
+                "depth=full, geometry_transferred=false",
+            ));
+    }
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--full-decode",
+            "--container-only",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+/// A `FreeCAD` part converted to STEP decodes at geometry depth by default and
+/// writes the same bytes as a `--full-decode` conversion.
+#[cfg(feature = "fcstd")]
+#[test]
+fn a_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
+    assert_geometry_depth_step_writes_the_full_decode_bytes(
+        "design_history.FCStd",
+        include_bytes!("../../../../corpus/freecad_fcstd/fixtures/design_history.FCStd"),
+    );
+}
+
+/// An F3D design converted to STEP decodes at geometry depth by default and
+/// writes the same bytes as a `--full-decode` conversion.
+#[cfg(feature = "f3d")]
+#[test]
+fn an_f3d_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
+    assert_geometry_depth_step_writes_the_full_decode_bytes(
+        "design_sketch_constraints.f3d",
+        include_bytes!(
+            "../../../cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d"
+        ),
+    );
+}
+
+/// A loss policy judges the whole source, so every `--reject-lossy` scope
+/// decodes at full depth. A geometry-depth decode of this part holds none of
+/// its design history, so STEP export would report none of it lost.
+#[cfg(feature = "fcstd")]
+#[test]
+fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("design_history.FCStd");
+    fs::write(
+        &input,
+        include_bytes!("../../../../corpus/freecad_fcstd/fixtures/design_history.FCStd"),
+    )
+    .unwrap();
+    let report = dir.path().join("report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--reject-lossy=export",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "parametric/design record(s) were not represented in STEP",
+        ));
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(report["decode_report"]["transfer"]["transfer"], "full");
+}
+
+#[cfg(any(feature = "fcstd", feature = "f3d"))]
+fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[u8]) {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join(name);
+    fs::write(&input, bytes).unwrap();
+    let mut written = Vec::new();
+    for (extra, depth) in [(None, "geometry"), (Some("--full-decode"), "full")] {
+        let output = dir.path().join(format!("{depth}.step"));
+        let mut args = vec![
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ];
+        args.extend(extra);
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(args)
+            .assert()
+            .success()
+            .stderr(predicate::str::contains(format!("depth={depth},")));
+        written.push(fs::read(&output).unwrap());
+    }
+    assert!(
+        written[0] == written[1],
+        "the geometry-depth STEP differs from the full-decode STEP"
+    );
 }
 
 /// `--to` names the schema, in both spellings the grammar admits.

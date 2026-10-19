@@ -4,7 +4,6 @@
 use super::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
 use super::operation_record::OperationPayload;
 use crate::layout::fset_parameter_prefix as prefix;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::num::NonZeroU8;
 
@@ -75,7 +74,6 @@ impl FsetIndexLane {
     }
 
     pub(crate) fn read(
-        ctx: &DecodeContext<'_>,
         record: OperationPayload<'_>,
         entry_offset: u64,
     ) -> Result<Option<Self>, CodecError> {
@@ -83,10 +81,6 @@ impl FsetIndexLane {
             return Ok(None);
         }
         let bytes = record.payload();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "NX FSET index lane",
-        )?;
         let Some(class) = bytes
             .get(prefix::CLASS_INDEX)
             .copied()
@@ -127,7 +121,7 @@ impl FsetIndexLane {
         if bytes.get(at..at + 3) != Some(&SUFFIX) {
             return Ok(None);
         }
-        let mut members = ctx.collection_vec(usize::from(count - 1), "NX FSET compact indices")?;
+        let mut members = Vec::new();
         at = INDEX_START;
         for _ in 1..count {
             let Some(atom) = bytes.get(at..).and_then(CompactIndexAtom::read) else {
@@ -162,9 +156,9 @@ mod tests {
     #[test]
     fn fset_counted_lane_keeps_compact_width_and_absolute_positions() {
         let bytes = payload(&[1, 3, 0x85, 0x17, 94, 0, 3, 0]);
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             let record = OperationPayload::new(&bytes, 100, "FSET").unwrap();
-            let lane = FsetIndexLane::read(ctx, record, 200).unwrap().unwrap();
+            let lane = FsetIndexLane::read(record, 200).unwrap().unwrap();
             let FsetIndexValues::Counted(members) = lane.values() else {
                 panic!("counted lane");
             };
@@ -182,9 +176,9 @@ mod tests {
     #[test]
     fn fset_empty_spelling_has_no_declared_count() {
         let bytes = payload(&[0, 0, 3, 0]);
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             let record = OperationPayload::new(&bytes, 100, "FSET").unwrap();
-            let lane = FsetIndexLane::read(ctx, record, 200).unwrap().unwrap();
+            let lane = FsetIndexLane::read(record, 200).unwrap().unwrap();
             assert_eq!(lane.values(), &FsetIndexValues::Empty);
         });
     }
@@ -192,31 +186,15 @@ mod tests {
     #[test]
     fn fset_lane_rejects_bad_count_null_indices_suffix_and_prefix() {
         let good = payload(&[1, 3, 0x85, 0x17, 94, 0, 3, 0]);
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             for (offset, value) in [(0, 0), (1, 1), (22, 4), (23, 0xff), (28, 1)] {
                 let mut bytes = good.clone();
                 bytes[offset] = value;
                 let record = OperationPayload::new(&bytes, 100, "FSET").unwrap();
-                assert!(FsetIndexLane::read(ctx, record, 200).unwrap().is_none());
+                assert!(FsetIndexLane::read(record, 200).unwrap().is_none());
             }
             let record = OperationPayload::new(&good[..28], 100, "FSET").unwrap();
-            assert!(FsetIndexLane::read(ctx, record, 200).unwrap().is_none());
+            assert!(FsetIndexLane::read(record, 200).unwrap().is_none());
         });
-    }
-
-    #[test]
-    fn fset_counted_lane_propagates_collection_refusal() {
-        let bytes = payload(&[1, 3, 0x85, 0x17, 94, 0, 3, 0]);
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_collection_items = 0,
-            |ctx| {
-                let record = OperationPayload::new(&bytes, 100, "FSET").unwrap();
-                assert!(matches!(
-                    FsetIndexLane::read(ctx, record, 200),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
-                ));
-            },
-        );
     }
 }

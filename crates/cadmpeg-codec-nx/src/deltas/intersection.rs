@@ -70,25 +70,21 @@ mod tests {
 
     #[test]
     fn primary_base_and_declared_data_pointer_select_different_cardinalities() {
-        with_decode_context(|ctx| {
-            let (base, _) = crate::records::read(ctx, &[0, 38, 255], 0)
-                .unwrap()
-                .unwrap();
+        with_decode_context(|_ctx| {
+            let (base, _) = crate::records::read(&[0, 38, 255], 0).unwrap().unwrap();
             assert!(matches!(
                 IntersectionLayout::from_schema(&base),
                 IntersectionLayout::Base
             ));
-            let (modern, _) = crate::records::read(ctx, crate::topology::TYPE_38_SCHEMA_HEADER, 0)
+            let (modern, _) = crate::records::read(crate::topology::TYPE_38_SCHEMA_HEADER, 0)
                 .unwrap()
                 .unwrap();
             assert!(matches!(
                 IntersectionLayout::from_schema(&modern),
                 IntersectionLayout::WithData
             ));
-            let wrong_kind: EmbeddedSchema = crate::records::read(ctx, &[0, 19, 255], 0)
-                .unwrap()
-                .unwrap()
-                .0;
+            let wrong_kind: EmbeddedSchema =
+                crate::records::read(&[0, 19, 255], 0).unwrap().unwrap().0;
             assert!(matches!(
                 IntersectionLayout::from_schema(&wrong_kind),
                 IntersectionLayout::Unsupported

@@ -2,27 +2,16 @@
 
 use super::{DataType, PrimaryRecord, PrimaryRecords};
 use crate::records::group::{GroupSelector, MembershipKind, MembershipRecord};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 
 impl PrimaryRecords<'_> {
-    pub(crate) fn membership_records(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<MembershipRecord>, CodecError> {
-        ctx.charge_work(
-            u64_from_index(self.records.len()),
-            "NX primary GROUP membership projection",
-        )?;
-        ctx.collect_retained_vec(
-            self.records.iter().map(|record| MembershipRecord {
-                xmt: record.xmt,
-                kind: self
-                    .membership_kind(record)
-                    .unwrap_or(MembershipKind::Other),
-            }),
-            "NX primary GROUP membership records",
-        )
+    pub(crate) fn membership_records(&self) -> Vec<MembershipRecord> {
+        (self.records.iter().map(|record| MembershipRecord {
+            xmt: record.xmt,
+            kind: self
+                .membership_kind(record)
+                .unwrap_or(MembershipKind::Other),
+        }))
+        .collect::<Vec<_>>()
     }
 
     fn membership_kind(&self, record: &PrimaryRecord) -> Option<MembershipKind> {

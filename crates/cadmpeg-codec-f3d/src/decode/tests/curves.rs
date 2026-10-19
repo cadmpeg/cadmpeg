@@ -212,23 +212,19 @@ fn decode_retains_generated_helix_construction() {
         panic!("expected helix NURBS cache")
     };
     edited_cache
-        .try_map_control_points(
-            |index, point| {
-                let mut point = point.get();
-                if index == 1 {
-                    point.x = 17.0;
-                    point.z = -2.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
+                point.x = 17.0;
+                point.z = -2.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
+        .expect("pole edit admission");
     *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);
     let edited_definition = edited.model.procedural_curves[0].definition().clone();
     let edited_cache = solved_curve.geometry.clone();
@@ -317,7 +313,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
         Some(CurveGeometry::Procedural { construction, .. }) if *construction == procedural.id
     ));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",
@@ -537,7 +533,6 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .expect("vector-offset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-2.0, -2.0, 5.0, 5.0],
             vec![
@@ -547,7 +542,6 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ));
     let mut encoded = Vec::new();
@@ -695,7 +689,6 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .expect("subset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-1.5, -1.5, 3.5, 3.5],
             vec![
@@ -705,7 +698,6 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ));
     let mut encoded = Vec::new();
@@ -742,7 +734,6 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         source_curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-1.5, -1.5, 3.5, 3.5],
                 vec![
@@ -752,7 +743,6 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid subset source curve")
         ))
     );
@@ -1582,7 +1572,6 @@ fn generated_mixed_offset_supports_write_source_less() {
         Some(
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -1592,7 +1581,6 @@ fn generated_mixed_offset_supports_write_source_less() {
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             }
             .into()

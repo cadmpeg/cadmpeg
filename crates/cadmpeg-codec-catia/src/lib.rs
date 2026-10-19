@@ -43,6 +43,7 @@ mod appearance;
 mod assemble;
 mod boundary_roles;
 mod catalog;
+mod chain_walk;
 mod checked;
 mod container;
 mod coverage;
@@ -101,31 +102,26 @@ pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
-
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+
         if container::looks_like_catia(prefix) {
             Ok(Confidence::High)
         } else {
             Ok(Confidence::No)
         }
     }
-
     fn inspect_impl(
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(ctx, root.window())?;
-        container::summarize(ctx, &scan)
+        container::summarize(&scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete counted class-0x61 allocation rosters and occurrence bits.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -138,7 +138,6 @@ impl TryFrom<Class61Wire> for CatiaConsolidatedClass61Record {
 }
 
 pub(super) fn records(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedClass61Record>, CodecError> {
@@ -154,7 +153,6 @@ pub(super) fn records(
         let Some(roster) = packed_roster(payload) else {
             continue;
         };
-        ctx.charge_work(u64_from_index(roster.count), "catia_class61_reference_work")?;
         let mut members = Vec::new();
         let mut at = 1;
         for index in 0..roster.count {
@@ -163,25 +161,15 @@ pub(super) fn records(
                     "validated class-0x61 reference disappeared",
                 ));
             };
-            ctx.push_vec(
-                &mut members,
-                Class61Member {
-                    value: reference.value,
-                    encoding: native_allocation_reference_encoding(reference.encoding),
-                    orientation_bit: roster.member_bit(index),
-                },
-                "catia_class61_members",
-            )?;
+            members.push(Class61Member {
+                value: reference.value,
+                encoding: native_allocation_reference_encoding(reference.encoding),
+                orientation_bit: roster.member_bit(index),
+            });
         }
-        let frame = ConsolidatedRawFrame::from_record(
-            record,
-            ctx.copy_slice(payload, "catia_class61_payload")?,
-        )?;
+        let frame = ConsolidatedRawFrame::from_record(record, (payload).to_vec())?;
         let value = CatiaConsolidatedClass61Record {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:class61-record#{}", output.len()),
-                "catia_class61_id",
-            )?,
+            id: format!("catia:consolidated:class61-record#{}", output.len()),
             source_index: u64_from_index(record.source_index()),
             source_offset: u64_from_index(record.source_range().start),
             frame: frame.into(),
@@ -189,7 +177,7 @@ pub(super) fn records(
             roster_control: roster.control(),
             members,
         };
-        ctx.push_vec(&mut output, value, "catia_class61_records")?;
+        output.push(value);
     }
     Ok(output)
 }

@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -13,75 +12,6 @@ use crate::test_support::test_owned::{
     owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
 };
 use crate::IgesCodec;
-
-fn assert_conic_refusal(bytes: &[u8], operation: &str, retained: bool) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        if retained {
-            ResourceDimension::RetainedBytes
-        } else {
-            ResourceDimension::CollectionItems
-        },
-        operation,
-        0,
-    );
-}
-
-#[test]
-fn conic_identity_copies_refuse_retained_byte_limit() {
-    let bytes = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
-    IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_conic_refusal(&bytes, "iges conics identity copy", true);
-}
-
-#[test]
-fn conic_generated_identity_refuses_before_minting() {
-    let bytes = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
-    IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_conic_refusal(&bytes, "iges generated identity", true);
-}
-
-#[test]
-fn conic_indexes_neutral_records_and_wire_edges_refuse_limits() {
-    let valid = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
-    for operation in [
-        "iges conic parameter index",
-        "iges conic directory index",
-        "iges source point sequences",
-        "iges source curve sequences",
-        "iges conic neutral points",
-        "iges conic neutral vertices",
-        "iges conic neutral curves",
-        "iges conic neutral edges",
-        "iges conic wire edges",
-        "iges conic decoded sequences",
-    ] {
-        assert_conic_refusal(&valid, operation, false);
-    }
-
-    let invalid = owned_test_file_with_global_and_line_fonts(
-        &[OwnedTestEntity {
-            entity_type: 104,
-            form: 0,
-            label: "CONIC".into(),
-            status: "00000000",
-            parameters: "104,0;".into(),
-        }],
-        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;",
-        &[(1, 1)],
-    );
-    assert_conic_refusal(&invalid, "iges entity loss slots", false);
-    assert_conic_refusal(&invalid, "iges entity loss message", true);
-}
 
 #[test]
 fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
@@ -215,7 +145,7 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
         }
         assert!(result.report().losses.is_empty(), "form {form}");
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "form {form}: {:#?}",
@@ -401,8 +331,8 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
         Some(0.0)
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -458,7 +388,7 @@ fn parabola_projection_preserves_common_large_coefficient_scale() {
         assert_eq!(parabola.focal_distance().get(), 0.25);
         assert!(result.report().losses.is_empty());
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
     }
 }

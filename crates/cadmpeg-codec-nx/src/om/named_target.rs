@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete named-target envelopes in reconstructed construction payloads.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use super::reference_index::FeatureReferenceToken;
@@ -90,24 +88,16 @@ impl<'a> NamedTarget<'a> {
     }
 }
 
-pub(crate) fn named_targets<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Vec<NamedTarget<'a>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX named targets",
-    )?;
+pub(crate) fn named_targets(bytes: &[u8]) -> Vec<NamedTarget<'_>> {
     let mut targets = Vec::new();
     for (offset, window) in bytes.windows(PREFIX.len()).enumerate() {
         if window == PREFIX {
             if let Some(target) = NamedTarget::read(bytes, offset) {
-                ctx.reserve_vec(&mut targets, 1, "NX named targets")?;
                 targets.push(target);
             }
         }
     }
-    Ok(targets)
+    targets
 }
 
 #[cfg(test)]

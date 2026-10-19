@@ -42,7 +42,7 @@
       "length": "millimeter"
     },
     "tolerances": {
-      "linear": 9.999999999999999e-6,
+      "linear": 9.999999999999999e-06,
       "angular": 1e-10
     },
     "model": {
@@ -340,11 +340,11 @@
                     "form": "polynomial",
                     "points": [
                       {
-                        "u": 0.5,
+                        "u": -0.5,
                         "v": -2.7063293868263703
                       },
                       {
-                        "u": 1.5,
+                        "u": -1.5,
                         "v": -8.11898816047911
                       }
                     ]
@@ -365,12 +365,12 @@
                   "form": "polynomial",
                   "points": [
                     {
-                      "u": 0.25,
-                      "v": 0.5
+                      "u": 0.5,
+                      "v": 0.25
                     },
                     {
-                      "u": 0.75,
-                      "v": 1.5
+                      "u": 1.5,
+                      "v": 0.75
                     }
                   ]
                 },
@@ -575,9 +575,12 @@
         ],
         "wire_topologies": [],
         "xref_designs": [],
-        "xref_references": []
+        "xref_references": [],
+        "asm_face_boundaries": [],
+        "design_intent_failures": []
       }
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

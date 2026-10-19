@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::framing::xmt_reference::XmtTarget;
 use crate::native::parasolid::ParasolidOffsetSurfaceRecord;
 use crate::test_support::test_bytes::put_ref;
@@ -25,125 +27,100 @@ use std::io::Cursor;
 
 #[test]
 fn parasolid_attribute_definition_requires_declared_printable_name_and_field_record() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut bytes = vec![0xaa, 0x00, 0x4f, 0xff];
-        bytes.extend_from_slice(&16u32.to_be_bytes());
-        bytes.extend_from_slice(&0x012au16.to_be_bytes());
-        bytes.extend_from_slice(b"SDL/TYSA_DENSITY");
-        bytes.extend_from_slice(&[0x00, 0x50, 0x00, 0x00, 0x00, 0x01]);
-        bytes.extend_from_slice(&0x012bu16.to_be_bytes());
-        bytes.extend_from_slice(&1u16.to_be_bytes());
-        bytes.extend_from_slice(&0x012au16.to_be_bytes());
-        bytes.extend_from_slice(&9000u32.to_be_bytes());
-        bytes.extend_from_slice(&[0, 1, 2, 3, 4, 5, 6, 0]);
-        bytes.extend_from_slice(&0x0030u16.to_be_bytes());
-        bytes.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
-        bytes.push(2);
-        let definitions = crate::parasolid::attribute_definitions(ctx, &bytes)
-            .unwrap()
-            .records;
-        assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].offset, 26);
-        assert_eq!(u32::from(definitions[0].xmt), 0x12b);
-        assert_eq!(u32::from(definitions[0].identifier_xmt), 0x12a);
-        assert_eq!(definitions[0].identifier_offset, 1);
-        assert_eq!(definitions[0].name.as_str(), "SDL/TYSA_DENSITY");
-        assert_eq!(XmtTarget::to_wire(definitions[0].next_definition_xmt), 1);
-        assert_eq!(definitions[0].type_id.get(), 9000);
-        assert_eq!(
-            definitions[0]
-                .action_codes
-                .map(crate::parasolid::attribute_action::AttributeAction::code),
-            [0, 1, 2, 3, 4, 5, 6, 0]
-        );
-        assert_eq!(XmtTarget::to_wire(definitions[0].field_names_xmt), 0x30);
-        assert_eq!(definitions[0].legal_owner_flags.padded()[4], 1);
-        assert_eq!(definitions[0].legal_owner_flags.padded()[12], 1);
-        assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 16);
-        assert_eq!(definitions[0].field_codes.len(), 1);
-        assert_eq!(
-            definitions[0]
-                .field_codes
-                .iter()
-                .map(|field| field.code())
-                .collect::<Vec<_>>(),
-            [2]
-        );
+    let mut bytes = vec![0xaa, 0x00, 0x4f, 0xff];
+    bytes.extend_from_slice(&16u32.to_be_bytes());
+    bytes.extend_from_slice(&0x012au16.to_be_bytes());
+    bytes.extend_from_slice(b"SDL/TYSA_DENSITY");
+    bytes.extend_from_slice(&[0x00, 0x50, 0x00, 0x00, 0x00, 0x01]);
+    bytes.extend_from_slice(&0x012bu16.to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&0x012au16.to_be_bytes());
+    bytes.extend_from_slice(&9000u32.to_be_bytes());
+    bytes.extend_from_slice(&[0, 1, 2, 3, 4, 5, 6, 0]);
+    bytes.extend_from_slice(&0x0030u16.to_be_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+    bytes.push(2);
+    let definitions = crate::parasolid::attribute_definitions(&bytes);
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].offset, 26);
+    assert_eq!(u32::from(definitions[0].xmt), 0x12b);
+    assert_eq!(u32::from(definitions[0].identifier_xmt), 0x12a);
+    assert_eq!(definitions[0].identifier_offset, 1);
+    assert_eq!(definitions[0].name.as_str(), "SDL/TYSA_DENSITY");
+    assert_eq!(XmtTarget::to_wire(definitions[0].next_definition_xmt), 1);
+    assert_eq!(definitions[0].type_id.get(), 9000);
+    assert_eq!(
+        definitions[0]
+            .action_codes
+            .map(crate::parasolid::attribute_action::AttributeAction::code),
+        [0, 1, 2, 3, 4, 5, 6, 0]
+    );
+    assert_eq!(XmtTarget::to_wire(definitions[0].field_names_xmt), 0x30);
+    assert_eq!(definitions[0].legal_owner_flags.padded()[4], 1);
+    assert_eq!(definitions[0].legal_owner_flags.padded()[12], 1);
+    assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 16);
+    assert_eq!(definitions[0].field_codes.len(), 1);
+    assert_eq!(
+        definitions[0]
+            .field_codes
+            .iter()
+            .map(|field| field.code())
+            .collect::<Vec<_>>(),
+        [2]
+    );
 
-        let truncated = &bytes[..bytes.len() - 1];
-        assert!(crate::parasolid::attribute_definitions(ctx, truncated)
-            .unwrap()
-            .records
-            .is_empty());
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
 
-        let mut duplicate_identifier = bytes.clone();
-        duplicate_identifier.splice(26..26, bytes[1..26].iter().copied());
-        assert!(
-            crate::parasolid::attribute_definitions(ctx, &duplicate_identifier)
-                .unwrap()
-                .records
-                .is_empty()
-        );
+    let mut duplicate_identifier = bytes.clone();
+    duplicate_identifier.splice(26..26, bytes[1..26].iter().copied());
+    assert!(crate::parasolid::attribute_definitions(&duplicate_identifier).is_empty());
 
-        bytes[42] = 7;
-        assert!(crate::parasolid::attribute_definitions(ctx, &bytes)
-            .unwrap()
-            .records
-            .is_empty());
-        bytes[42] = 0;
-        bytes[52] = 2;
-        assert!(crate::parasolid::attribute_definitions(ctx, &bytes)
-            .unwrap()
-            .records
-            .is_empty());
-        bytes[52] = 0;
-        bytes[20] = 0;
-        assert!(crate::parasolid::attribute_definitions(ctx, &bytes)
-            .unwrap()
-            .records
-            .is_empty());
-    });
+    bytes[42] = 7;
+    assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+    bytes[42] = 0;
+    bytes[52] = 2;
+    assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+    bytes[52] = 0;
+    bytes[20] = 0;
+    assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
 }
 
 #[test]
 fn parasolid_attribute_definition_accepts_fourteen_legal_owner_flags() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut bytes = vec![0, 0x4f];
-        bytes.extend_from_slice(&5u32.to_be_bytes());
-        bytes.extend_from_slice(&10u16.to_be_bytes());
-        bytes.extend_from_slice(b"CLASS");
-        bytes.extend_from_slice(&[0, 0x50]);
-        bytes.extend_from_slice(&2u32.to_be_bytes());
-        bytes.extend_from_slice(&20u16.to_be_bytes());
-        bytes.extend_from_slice(&1u16.to_be_bytes());
-        bytes.extend_from_slice(&10u16.to_be_bytes());
-        bytes.extend_from_slice(&8000u32.to_be_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&1u16.to_be_bytes());
-        bytes.extend_from_slice(&[0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
-        bytes.extend_from_slice(&[2, 3]);
-        bytes.extend_from_slice(&[0, 0x4f]);
+    let mut bytes = vec![0, 0x4f];
+    bytes.extend_from_slice(&5u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(b"CLASS");
+    bytes.extend_from_slice(&[0, 0x50]);
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&20u16.to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&8000u32.to_be_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&[0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
+    bytes.extend_from_slice(&[2, 3]);
+    bytes.extend_from_slice(&[0, 0x4f]);
 
-        let definitions = crate::parasolid::attribute_definitions(ctx, &bytes)
-            .unwrap()
-            .records;
-        assert_eq!(definitions.len(), 1);
-        assert_eq!(u32::from(definitions[0].xmt), 20);
-        assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 14);
-        assert_eq!(
-            &definitions[0].legal_owner_flags.padded()[..14],
-            [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]
-        );
-        assert_eq!(&definitions[0].legal_owner_flags.padded()[14..], [0, 0]);
-        assert_eq!(
-            definitions[0]
-                .field_codes
-                .iter()
-                .map(|field| field.code())
-                .collect::<Vec<_>>(),
-            [2, 3]
-        );
-    });
+    let definitions = crate::parasolid::attribute_definitions(&bytes);
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(u32::from(definitions[0].xmt), 20);
+    assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 14);
+    assert_eq!(
+        &definitions[0].legal_owner_flags.padded()[..14],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]
+    );
+    assert_eq!(&definitions[0].legal_owner_flags.padded()[14..], [0, 0]);
+    assert_eq!(
+        definitions[0]
+            .field_codes
+            .iter()
+            .map(|field| field.code())
+            .collect::<Vec<_>>(),
+        [2, 3]
+    );
 }
 
 #[test]
@@ -226,7 +203,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             ));
             assert!(
                 cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                    .expect("resource allocation did not fail")
+                    .expect("validate the neutral model")
                     .is_ok()
             );
         }
@@ -260,7 +237,7 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -328,7 +305,7 @@ fn decode_emits_rolling_ball_blend_surface() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -384,7 +361,7 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
     }));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -533,7 +510,7 @@ fn decode_emits_charted_surface_intersection_construction() {
             && loss.message.contains("surface-intersection record(s)")
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -600,7 +577,7 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

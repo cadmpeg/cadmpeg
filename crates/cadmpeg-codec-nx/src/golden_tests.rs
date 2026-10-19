@@ -2,6 +2,7 @@
 //! Golden serialized decode/inspect snapshots. NX snapshots are code-built and
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
 //! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
+
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
@@ -1150,4 +1151,13 @@ fn catalogue_arenas_match_known_arenas() {
         known_not_catalogue.is_empty(),
         "KNOWN_ARENAS entries absent from CATALOGUE: {known_not_catalogue:?}"
     );
+}
+
+/// A geometry-depth decode agrees with the full decode outside the design
+/// arenas. This codec has no geometry-depth cut, so every input delivers full.
+#[test]
+fn geometry_depth_agrees_with_full_depth() {
+    let summary =
+        cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&NxCodec, &inputs());
+    assert_eq!(summary.cut, 0, "{summary:?}");
 }

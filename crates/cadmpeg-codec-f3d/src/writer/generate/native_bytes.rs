@@ -228,7 +228,7 @@ pub(super) fn native_history_tail(
     let history = &histories[0];
     if let Some(preamble) = history.preamble {
         if history
-            .states
+            .states()
             .first()
             .is_none_or(|state| state.state_id != preamble.stream_size)
             || preamble.history_entry_count < 0
@@ -252,7 +252,7 @@ pub(super) fn native_history_tail(
         }
         bytes.push(0x11);
     }
-    for state in &history.states {
+    for state in history.states() {
         native_ident(bytes, "delta_state")?;
         native_i64(bytes, state.state_id);
         native_i64(bytes, state.version_flag);

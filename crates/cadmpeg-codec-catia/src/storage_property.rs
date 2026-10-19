@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded storage-property member rows, separate from surface aliases.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
@@ -63,49 +63,33 @@ struct MemberSource {
     label: Option<Range<usize>>,
 }
 
-fn numbered_label(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    lower: usize,
-    end: usize,
-) -> Result<Option<Range<usize>>, CodecError> {
-    let Some(digits_end) = end.checked_sub(2) else {
-        return Ok(None);
-    };
+fn numbered_label(data: &[u8], lower: usize, end: usize) -> Option<Range<usize>> {
+    let digits_end = end.checked_sub(2)?;
     if digits_end < lower || data.get(digits_end..end) != Some(&[0, 0]) {
-        return Ok(None);
+        return None;
     }
     let mut start = digits_end;
     while start > lower && data[start - 1].is_ascii_digit() {
-        ctx.charge_work(1, "catia_storage_property_label_digits")?;
         start -= 1;
     }
     if start == digits_end {
-        return Ok(None);
+        return None;
     }
-    let Some(frame) = start
+    let frame = start
         .checked_sub(number::LEN)
-        .filter(|frame| *frame >= lower)
-    else {
-        return Ok(None);
-    };
+        .filter(|frame| *frame >= lower)?;
     let length = digits_end - start;
     if View::u32_le_at(data, frame + number::DIGIT_COUNT).and_then(|n| usize::try_from(n).ok())
         != Some(length)
         || View::u16_le_at(data, frame + number::INCLUSIVE_LENGTH).map(usize::from)
             != length.checked_add(4)
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(start..digits_end))
+    Some(start..digits_end)
 }
 
-fn member_source(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    marker: usize,
-    segment: &FinjplSegment,
-) -> Result<Option<MemberSource>, CodecError> {
+fn member_source(data: &[u8], marker: usize, segment: &FinjplSegment) -> Option<MemberSource> {
     if segment.type_word != 0x8e
         || marker < segment.range.start
         || marker
@@ -113,7 +97,7 @@ fn member_source(
             .is_none_or(|end| end > segment.range.end)
         || data.get(marker..marker + core::TAG) != Some(&[1, 0, 4, 0])
     {
-        return Ok(None);
+        return None;
     }
     if let Some(start) = marker
         .checked_sub(nullable::LEN)
@@ -123,12 +107,12 @@ fn member_source(
             let state = match View::u32_le_at(data, start + nullable::STATE) {
                 Some(0x0001_0001) => MemberState::Present,
                 Some(0x0001_0000) => MemberState::Absent,
-                _ => return Ok(None),
+                _ => return None,
             };
-            return Ok(Some(MemberSource {
+            return Some(MemberSource {
                 state,
-                label: numbered_label(ctx, data, segment.range.start, start)?,
-            }));
+                label: numbered_label(data, segment.range.start, start),
+            });
         }
     }
     if let Some(start) = marker
@@ -136,34 +120,28 @@ fn member_source(
         .filter(|start| *start >= segment.range.start)
     {
         if View::u32_le_at(data, start + direct::LEAD) == Some(1) {
-            if let Some(label) = numbered_label(ctx, data, segment.range.start, start)? {
-                return Ok(Some(MemberSource {
+            if let Some(label) = numbered_label(data, segment.range.start, start) {
+                return Some(MemberSource {
                     state: MemberState::Direct,
                     label: Some(label),
-                }));
+                });
             }
         }
     }
-    Ok(None)
+    None
 }
 
 /// Exclude a source-closed storage member from alias admission.
-pub(crate) fn is_member(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    marker: usize,
-    segments: &[FinjplSegment],
-) -> Result<bool, CodecError> {
+pub(crate) fn is_member(data: &[u8], marker: usize, segments: &[FinjplSegment]) -> bool {
     let index = segments.partition_point(|segment| segment.range.start <= marker);
     let Some(segment) = index.checked_sub(1).and_then(|index| segments.get(index)) else {
-        return Ok(false);
+        return false;
     };
-    Ok(member_source(ctx, data, marker, segment)?.is_some())
+    member_source(data, marker, segment).is_some()
 }
 
 /// Preserve complete members in their containing storage segments.
 pub(crate) fn parse(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     segments: &[FinjplSegment],
 ) -> Result<Vec<CatiaStoragePropertyMember>, CodecError> {
@@ -173,13 +151,9 @@ pub(crate) fn parse(
         .enumerate()
         .filter(|(_, segment)| segment.type_word == 0x8e)
     {
-        ctx.charge_work(
-            u64_from_index(segment.range.len()),
-            "catia_storage_property_members_scan",
-        )?;
         for offset in memchr::memmem::find_iter(&data[segment.range.clone()], &[1, 0, 4, 0]) {
             let marker = segment.range.start + offset;
-            let Some(source) = member_source(ctx, data, marker, segment)? else {
+            let Some(source) = member_source(data, marker, segment) else {
                 continue;
             };
             let (Some(tag_raw), Some(slot)) = (
@@ -197,33 +171,23 @@ pub(crate) fn parse(
                 .map(|range| {
                     let text = std::str::from_utf8(&data[range])
                         .map_err(|_| CodecError::malformed("CATIA numbered storage label"))?;
-                    ctx.copy_retained_text(text, "catia_storage_property_label")
+                    Ok::<_, CodecError>(text.to_owned())
                 })
                 .transpose()?;
-            let id = ctx.format_retained(
-                format_args!("catia:outer:storage-member#{marker:010}"),
-                "catia_storage_property_member_id",
-            )?;
-            let segment_id = ctx.format_retained(
-                format_args!("catia:outer:finjpl#{index}"),
-                "catia_storage_property_member_segment",
-            )?;
-            ctx.push_vec(
-                &mut members,
-                CatiaStoragePropertyMember {
-                    id,
-                    byte_offset: u64_from_index(marker),
-                    segment: segment_id,
-                    state: source.state,
-                    tag_raw,
-                    flag: data[marker + core::FLAG],
-                    prefix: prefix.into(),
-                    slot,
-                    tail: tail.into(),
-                    label,
-                },
-                "catia_storage_property_members",
-            )?;
+            let id = format!("catia:outer:storage-member#{marker:010}");
+            let segment_id = format!("catia:outer:finjpl#{index}");
+            members.push(CatiaStoragePropertyMember {
+                id,
+                byte_offset: u64_from_index(marker),
+                segment: segment_id,
+                state: source.state,
+                tag_raw,
+                flag: data[marker + core::FLAG],
+                prefix: prefix.into(),
+                slot,
+                tail: tail.into(),
+                label,
+            });
         }
     }
     Ok(members)

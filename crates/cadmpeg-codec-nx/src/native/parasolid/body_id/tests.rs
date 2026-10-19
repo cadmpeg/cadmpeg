@@ -15,19 +15,17 @@ fn integer() -> ParasolidEntity52IntegerRecord {
 }
 #[test]
 fn mesh_body_id_requires_unique_complete_same_stream_scalar_storage() {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         let definitions = [definition()];
         let entities = [entity()];
         let integers = [integer()];
         let join = resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &entities,
             &integers,
         )
-        .unwrap()
         .unwrap();
         assert_eq!(
             (
@@ -40,147 +38,121 @@ fn mesh_body_id_requires_unique_complete_same_stream_scalar_storage() {
             (0, 2, "definition", "entity", "value")
         );
         assert!(resolve(
-            ctx,
             12,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &entities,
             &integers
         )
-        .unwrap()
         .is_none());
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &[],
             &entities,
             &integers
         )
-        .unwrap()
         .is_none());
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &[],
             &integers
         )
-        .unwrap()
         .is_none());
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &entities,
             &[]
         )
-        .unwrap()
         .is_none());
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &[definition(), definition()],
             &entities,
             &integers
         )
-        .unwrap()
         .is_none());
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &[entity(), entity()],
             &integers
         )
-        .unwrap()
         .is_none());
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &entities,
             &[integer(), integer()]
         )
-        .unwrap()
         .is_none());
         let mut aliased = definition();
         aliased.name = crate::printable_string::PrintableString::new("other".to_string()).unwrap();
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &[definition(), aliased],
             &entities,
             &integers
         )
-        .unwrap()
         .is_none());
         let mut aliased = entity();
         aliased.definition_xmt = 99;
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &[entity(), aliased],
             &integers
         )
-        .unwrap()
         .is_none());
         let mut changed = integer();
         changed.stream_ordinal = 1;
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &entities,
             &[changed]
         )
-        .unwrap()
         .is_none());
         let mut changed = integer();
         changed.values =
             crate::parasolid::counted_values::CountedValues::new(vec![11, 12]).unwrap();
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &entities,
             &[changed]
         )
-        .unwrap()
         .is_none());
         let mut changed = definition();
         changed.field_codes = vec![crate::parasolid::attribute_field::AttributeField::Integer];
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &[changed],
             &entities,
             &integers
         )
-        .unwrap()
         .is_none());
         let mut changed = entity();
         changed.leading_references[0] = 1;
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &definitions,
             &[changed],
             &integers
         )
-        .unwrap()
         .is_none());
         let mut d = definition();
         d.stream_ordinal = 1;
@@ -189,21 +161,19 @@ fn mesh_body_id_requires_unique_complete_same_stream_scalar_storage() {
         let mut i = integer();
         i.stream_ordinal = 1;
         assert!(resolve(
-            ctx,
             11,
             BodyIdEncoding::CurveMeshIgnored,
             &[definition(), d],
             &[entity(), e],
             &[integer(), i]
         )
-        .unwrap()
         .is_none());
     });
 }
 
 #[test]
 fn brep_body_id_uses_declared_integer_predecessor_and_abstains_on_ambiguity() {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         let mut d = definition();
         d.field_codes = vec![crate::parasolid::attribute_field::AttributeField::Integer];
         let mut i = integer();
@@ -211,14 +181,12 @@ fn brep_body_id_uses_declared_integer_predecessor_and_abstains_on_ambiguity() {
         let e = entity();
         let check = |identity, definitions: &[_], entities: &[_], integers: &[_]| {
             resolve(
-                ctx,
                 identity,
                 BodyIdEncoding::BrepInteger,
                 definitions,
                 entities,
                 integers,
             )
-            .unwrap()
             .map(|m| (m.stream, m.body_xmt))
         };
         assert_eq!(

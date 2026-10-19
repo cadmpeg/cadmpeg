@@ -140,7 +140,7 @@ fn strict_decode_refuses_recovered_framing_that_salvage_admits() {
             .decode(
                 &mut Cursor::new(bytes.clone()),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

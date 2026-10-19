@@ -19,7 +19,6 @@ pub(crate) fn attributes(
     let mut out = Vec::new();
     for section in scan.sections() {
         scan_vectors(
-            ctx,
             section,
             &VectorScan {
                 token: b"moBBoxCenterData_c",
@@ -32,7 +31,6 @@ pub(crate) fn attributes(
             annotations,
         )?;
         scan_vectors(
-            ctx,
             section,
             &VectorScan {
                 token: b"moDefaultRefPlnData_c",
@@ -44,9 +42,9 @@ pub(crate) fn attributes(
             &mut out,
             annotations,
         )?;
-        scan_part(ctx, section, &mut out, annotations)?;
-        scan_configuration_manager(ctx, section, &mut out, annotations)?;
-        scan_transformed_reference_plane(ctx, section, &mut out, annotations)?;
+        scan_part(section, &mut out, annotations)?;
+        scan_configuration_manager(section, &mut out, annotations)?;
+        scan_transformed_reference_plane(section, &mut out, annotations)?;
         scan_units_xml(ctx, section, &mut out, annotations)?;
         scan_length_user_units(ctx, section, &mut out, annotations)?;
     }
@@ -54,7 +52,6 @@ pub(crate) fn attributes(
 }
 
 fn scan_transformed_reference_plane(
-    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
@@ -94,9 +91,7 @@ fn scan_transformed_reference_plane(
         ) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
-            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("transformed_reference_plane"),
@@ -117,10 +112,6 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "scan SLDPRT linear unit names",
-    )?;
     for offset in payload
         .windows(TOKEN.len())
         .enumerate()
@@ -147,10 +138,6 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(bytes.len() / 2),
-            "validate SLDPRT linear unit name",
-        )?;
         let scalars = || {
             char::decode_utf16(
                 (0..bytes.len() / 2).filter_map(|index| View::u16_le_at(bytes, index * 2)),
@@ -166,9 +153,7 @@ fn scan_length_user_units(
             false,
             "retain SLDPRT linear unit name",
         )?;
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
-            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("source_linear_unit_name"),
@@ -186,22 +171,16 @@ fn scan_units_xml(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
-    let Some(text) = crate::container::xml_text_charged(
-        ctx,
-        section.payload(),
-        "materialize SLDPRT document metadata XML",
-    )?
-    else {
+    let Some(text) = crate::container::xml_text(section.payload()) else {
         return Ok(());
     };
-    let admitted_document = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+    let document = match ctx.parse_xml(text.as_str(), "decode XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(());
         }
     };
-    let document = admitted_document.document();
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         let value = if node.tag_name().name() == "SW_UnitsLinear" {
             node.text()
@@ -213,9 +192,7 @@ fn scan_units_xml(
         let Some(code) = value.and_then(|value| value.trim().parse::<i64>().ok()) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
-            ctx,
             section,
             node.range().start,
             &cadmpeg_ir::identity_component!("source_linear_unit_code"),
@@ -237,7 +214,6 @@ struct VectorScan<'a> {
 }
 
 fn scan_vectors(
-    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     scan: &VectorScan<'_>,
     out: &mut Vec<SourceAttribute>,
@@ -275,9 +251,7 @@ fn scan_vectors(
         let Some(values) = values else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
-            ctx,
             section,
             offset,
             name,
@@ -290,7 +264,6 @@ fn scan_vectors(
 }
 
 fn scan_part(
-    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
@@ -309,9 +282,7 @@ fn scan_part(
         ) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
-            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("part_record"),
@@ -327,7 +298,6 @@ fn scan_part(
 }
 
 fn scan_configuration_manager(
-    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
@@ -350,9 +320,7 @@ fn scan_configuration_manager(
         let Ok(filetime) = i64::try_from(filetime) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
-            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("configuration_manager"),
@@ -375,7 +343,6 @@ fn millimetres(values: &[f64]) -> Option<AttributeValue> {
 }
 
 fn attribute(
-    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     offset: usize,
     name: &cadmpeg_ir::ids::IdentityComponent,
@@ -392,7 +359,6 @@ fn attribute(
         cadmpeg_ir::ids::IdentityKey::from(section.ordinal()).colon(offset),
     );
     crate::annotations::note(
-        ctx,
         annotations,
         id.as_str(),
         section.source_stream(),

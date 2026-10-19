@@ -193,7 +193,6 @@ fn settings_decoder_skips_unregistered_bulk_without_requesting_a_metastream() {
     zip.write_all(&[]).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&bytes, |scan| {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        assert!(super::decode_settings(&ctx, scan).unwrap().is_empty());
+        assert!(super::decode_settings(scan).unwrap().is_empty());
     });
 }

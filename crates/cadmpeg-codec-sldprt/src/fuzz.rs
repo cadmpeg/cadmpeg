@@ -24,43 +24,29 @@ pub fn parasolid(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 }
 
 /// Exercise spline-curve carrier scanning.
-pub fn spline_curves(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+pub fn spline_curves(data: &[u8]) {
     drop(crate::brep::spline::scan_curve_carriers(
-        &ctx,
         data,
         &mut Vec::new(),
-    )?);
-    Ok(())
+    ));
 }
 
 /// Exercise spline-surface carrier scanning.
-pub fn spline_surfaces(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+pub fn spline_surfaces(data: &[u8]) {
     drop(crate::brep::spline::scan_surface_carriers(
-        &ctx,
         data,
         &mut Vec::new(),
-    )?);
-    Ok(())
+    ));
 }
 
 /// Exercise topology record scanning.
-pub fn topology(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
-    drop(crate::brep::topology::scan(&ctx, data)?);
-    Ok(())
+pub fn topology(data: &[u8]) {
+    drop(crate::brep::topology::scan(data));
 }
 
 /// Exercise entity record scanning.
-pub fn entity(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
-    drop(crate::brep::entity::scan_metadata(&ctx, data, false)?);
-    Ok(())
+pub fn entity(data: &[u8]) {
+    drop(crate::brep::entity::scan_metadata(data, false));
 }
 
 /// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.
@@ -85,19 +71,7 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         if data.get(start..end).is_none() {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len()),
-            "patch SLDPRT PMI fuzz payload",
-        )?;
-        let _patched_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(data.len()),
-            "patch SLDPRT PMI fuzz payload",
-        )?;
-        let mut patched = Vec::new();
-        patched.try_reserve_exact(data.len()).map_err(|_| {
-            ctx.refuse_codec_limit("patch SLDPRT PMI fuzz payload", u64::MAX - 1, u64::MAX)
-        })?;
-        patched.extend_from_slice(data);
+        let mut patched = data.to_vec();
         let edited = f64::from_bits(record.value.get().to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
         let mut again_losses = Vec::new();
@@ -119,11 +93,18 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 mod tests {
     use std::io::Write;
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     #[test]
-    fn parasolid_fuzz_wrapper_returns_declared_expansion_refusal() {
+    fn parasolid_fuzz_wrapper_skips_frame_above_local_cap() {
         let mut encoder =
             flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(b"x").expect("compressed frame fixture");
+        encoder
+            .write_all(&crate::test_support::parasolid::parasolid_payload(
+                "partition body",
+                "SCH_SW_33103_11000",
+            ))
+            .expect("compressed frame fixture");
         let member = encoder.finish().expect("finish compressed frame fixture");
         let mut payload = vec![
             0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89,
@@ -136,15 +117,13 @@ mod tests {
                 .to_le_bytes(),
         );
         payload.extend_from_slice(&member);
-        let error =
-            super::parasolid(&payload).expect_err("declared expansion exceeds the local frame cap");
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::Codec("inflate Parasolid frame")
-                    && limit.operation == "inflate Parasolid frame"
-                    && limit.limit == 512 * 1024 * 1024
-                    && limit.used == 512 * 1024 * 1024
-                    && limit.additional == 1
-        ));
+        super::parasolid(&payload).expect("a frame above the local cap is skipped");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
+            .expect("root");
+        let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+            .expect("a frame above the local cap is skipped");
+        assert!(streams.streams.is_empty());
+        assert!(!streams.probe_capped);
     }
 }

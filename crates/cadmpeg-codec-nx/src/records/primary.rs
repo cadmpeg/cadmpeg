@@ -2,7 +2,7 @@
 
 use super::{base, own_definition, positive, read_definition, BaseVersion, DataType, SchemaPlan};
 use crate::framing::xmt_reference::NonNullXmt;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -122,15 +122,11 @@ impl<'a> PrimaryRecords<'a> {
         &self.records
     }
 
-    pub(crate) fn read(
-        ctx: &DecodeContext<'_>,
-        stream: &'a [u8],
-    ) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn read(stream: &'a [u8]) -> Result<Option<Self>, CodecError> {
         let mut view = View::over_retained(stream);
         let Some(header) = header(&mut view) else {
             return Ok(None);
         };
-        ctx.charge_work(u64_from_index(view.position()), "read NX primary header")?;
         let mut schemas = BTreeMap::<u16, Rc<SchemaPlan>>::new();
         let mut records = Vec::new();
         let end = loop {
@@ -141,7 +137,6 @@ impl<'a> PrimaryRecords<'a> {
                     reason: StopReason::MissingTerminator,
                 };
             };
-            ctx.charge_work(1, "read NX primary record")?;
             if kind == 1 {
                 if positive(&mut view) != Some(0) {
                     break PrimaryEnd::Stopped {
@@ -170,10 +165,10 @@ impl<'a> PrimaryRecords<'a> {
                             reason: StopReason::InvalidDefinition,
                         };
                     };
-                    read_definition(ctx, &mut view, header.version, kind, count)?
+                    read_definition(&mut view, header.version, kind, count)?
                 } else {
                     base::fields(header.version, kind)
-                        .map(|fields| own_definition(ctx, kind, fields))
+                        .map(|fields| own_definition(kind, fields))
                         .transpose()?
                 };
                 let Some(definition) = definition else {
@@ -182,17 +177,8 @@ impl<'a> PrimaryRecords<'a> {
                         reason: StopReason::InvalidDefinition,
                     };
                 };
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<SchemaPlan>()),
-                    "NX primary schema plan",
-                )?;
                 let definition = Rc::new(definition);
-                ctx.insert_btree_map(
-                    &mut schemas,
-                    kind,
-                    Rc::clone(&definition),
-                    "NX primary schema plans",
-                )?;
+                schemas.insert(kind, Rc::clone(&definition));
                 definition
             };
             let variable_length = if definition.fields.iter().any(|field| field.n_elements == 1) {
@@ -226,7 +212,7 @@ impl<'a> PrimaryRecords<'a> {
                     } else {
                         field.n_elements.max(1)
                     };
-                    match consume_field(ctx, &mut view, field.data_type, count)? {
+                    match consume_field(&mut view, field.data_type, count) {
                         Ok(()) => (),
                         Err(reason) => {
                             failure = Some(reason);
@@ -234,11 +220,7 @@ impl<'a> PrimaryRecords<'a> {
                         }
                     }
                 }
-                ctx.push_vec(
-                    &mut fields,
-                    field_start..view.position(),
-                    "NX primary field spans",
-                )?;
+                fields.push(field_start..view.position());
             }
             if let Some(reason) = failure {
                 break PrimaryEnd::Stopped {
@@ -246,18 +228,14 @@ impl<'a> PrimaryRecords<'a> {
                     reason,
                 };
             }
-            ctx.push_vec(
-                &mut records,
-                PrimaryRecord {
-                    definition,
-                    xmt,
-                    range: start..view.position(),
-                    identity_at,
-                    variable_length,
-                    fields,
-                },
-                "NX primary records",
-            )?;
+            records.push(PrimaryRecord {
+                definition,
+                xmt,
+                range: start..view.position(),
+                identity_at,
+                variable_length,
+                fields,
+            });
         };
         Ok(Some(Self {
             source: stream,
@@ -268,30 +246,24 @@ impl<'a> PrimaryRecords<'a> {
     }
 }
 
-fn consume_field(
-    ctx: &DecodeContext<'_>,
-    view: &mut View<'_>,
-    data_type: DataType,
-    count: u32,
-) -> Result<Result<(), StopReason>, CodecError> {
+fn consume_field(view: &mut View<'_>, data_type: DataType, count: u32) -> Result<(), StopReason> {
     let Some(count) = usize::try_from(count)
         .ok()
         .filter(|count| *count <= view.remaining())
     else {
-        return Ok(Err(StopReason::IncompleteField));
+        return Err(StopReason::IncompleteField);
     };
-    ctx.charge_work(u64_from_index(count), "read NX primary field")?;
     if count == 0 {
-        return Ok(Ok(()));
+        return Ok(());
     }
     let width = match data_type {
         DataType::Pointer => {
             for _ in 0..count {
                 if positive(view).is_none() {
-                    return Ok(Err(StopReason::IncompleteField));
+                    return Err(StopReason::IncompleteField);
                 }
             }
-            return Ok(Ok(()));
+            return Ok(());
         }
         DataType::Byte | DataType::Char | DataType::Logical => 1,
         DataType::Short | DataType::Word => 2,
@@ -300,19 +272,17 @@ fn consume_field(
         DataType::Interval => 16,
         DataType::Vector | DataType::Hvec => 24,
         DataType::Box => 48,
-        DataType::Unestablished(_) => return Ok(Err(StopReason::UnsupportedScalar)),
+        DataType::Unestablished(_) => return Err(StopReason::UnsupportedScalar),
     };
-    Ok(
-        if count
-            .checked_mul(width)
-            .and_then(|length| view.take(length))
-            .is_some()
-        {
-            Ok(())
-        } else {
-            Err(StopReason::IncompleteField)
-        },
-    )
+    if count
+        .checked_mul(width)
+        .and_then(|length| view.take(length))
+        .is_some()
+    {
+        Ok(())
+    } else {
+        Err(StopReason::IncompleteField)
+    }
 }
 
 #[cfg(test)]

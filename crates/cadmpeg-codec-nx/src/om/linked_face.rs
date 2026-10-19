@@ -3,8 +3,6 @@
 
 use super::core_reader::Reader;
 use super::operation_record::OperationPayload;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
@@ -129,20 +127,13 @@ fn read(bytes: &[u8]) -> Option<CacheView<'_>> {
 }
 
 pub(crate) fn payload_for_decode(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
     classes: &[super::TypeDefinition<'_>],
-) -> Result<Option<LinkedFacePayload>, CodecError> {
+) -> Option<LinkedFacePayload> {
     if record.name() != "LINKED_FACE" {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "NX linked-face named cache",
-    )?;
-    let Some(view) = read(record.payload()) else {
-        return Ok(None);
-    };
+    let view = read(record.payload())?;
     if !view
         .selectors
         .into_iter()
@@ -153,12 +144,9 @@ pub(crate) fn payload_for_decode(
                 .is_some_and(|class| class.name == expected)
         })
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(LinkedFacePayload(
-        ctx.copy_slice(record.payload(), "NX linked-face payload and named cache")?
-            .into(),
-    )))
+    Some(LinkedFacePayload((record.payload()).to_vec().into()))
 }
 
 #[cfg(test)]

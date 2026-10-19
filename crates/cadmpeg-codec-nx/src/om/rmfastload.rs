@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entry-relative `RMFastLoad` physical storage and opaque terminal triples.
 
-use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{bounded_len, index_from_u32, View};
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 
@@ -129,11 +128,7 @@ pub(crate) struct Storage<'a> {
 
 impl<'a> Storage<'a> {
     /// Require complete framing and the independently parsed owning class count.
-    pub(crate) fn read(
-        ctx: &DecodeContext<'_>,
-        bytes: &'a [u8],
-        class_count: usize,
-    ) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn read(bytes: &'a [u8], class_count: usize) -> Option<Self> {
         let head = (|| {
             if bytes.get(..8)? != prefix::SIGNATURE_VALUE
                 || bytes.get(prefix::MARKER..prefix::MARKER + 4)? != prefix::MARKER_VALUE
@@ -167,19 +162,12 @@ impl<'a> Storage<'a> {
             }
             Some((header_offset, words, terminal))
         })();
-        let Some((header_offset, header_words, terminal_offset)) = head else {
-            return Ok(None);
-        };
+        let (header_offset, header_words, terminal_offset) = head?;
         let count = index_from_u32(header_words[0]);
-        let Some(index_len) = count.checked_add(1).and_then(|n| n.checked_mul(4)) else {
-            return Ok(None);
-        };
+        let index_len = count.checked_add(1).and_then(|n| n.checked_mul(4))?;
         let mut selected = None;
-        let Some(scan_end) = bytes.len().checked_sub(3) else {
-            return Ok(None);
-        };
+        let scan_end = bytes.len().checked_sub(3)?;
         for at in 0..scan_end {
-            ctx.charge_work(1, "scan NX RMFastLoad boundary count")?;
             if View::u32_le_at(bytes, at) != Some(header_words[0]) {
                 continue;
             }
@@ -199,10 +187,6 @@ impl<'a> Storage<'a> {
             {
                 continue;
             }
-            ctx.charge_work(
-                u64_from_index(count + 1),
-                "check NX RMFastLoad physical boundaries",
-            )?;
             let mut previous = 0;
             let monotone = (0..=count).all(|i| {
                 let Some(value) = View::u32_le_at(bytes, start + i * 4) else {
@@ -216,42 +200,33 @@ impl<'a> Storage<'a> {
                 continue;
             }
             if selected.replace((start, at, end)).is_some() {
-                return Ok(None);
+                return None;
             }
         }
-        let Some((boundary_offset, count_offset, table_end)) = selected else {
-            return Ok(None);
-        };
+        let (boundary_offset, count_offset, table_end) = selected?;
         let row_count = index_from_u32(header_words[4]);
-        if bounded_len(
+        bounded_len(
             u64::from(header_words[4]),
             6,
             bytes.len() - terminal_offset - 24,
-        )
-        .is_none()
-        {
-            return Ok(None);
-        }
+        )?;
         let row_start = terminal_offset + 12;
         let mut view = View::over_retained(&bytes[row_start..]);
         for _ in 0..row_count {
-            ctx.charge_work(15, "check NX RMFastLoad terminal triple")?;
             if view.take(2) != Some(&[0x05, 0x00]) {
-                return Ok(None);
+                return None;
             }
             for _ in 0..3 {
-                if TerminalAtom::read(&mut view).is_none() {
-                    return Ok(None);
-                }
+                TerminalAtom::read(&mut view)?;
             }
             if view.u8() != Some(0x4e) {
-                return Ok(None);
+                return None;
             }
         }
         if view.remaining() != 12 {
-            return Ok(None);
+            return None;
         }
-        Ok(Some(Self {
+        Some(Self {
             bytes,
             header_offset,
             header_words,
@@ -260,7 +235,7 @@ impl<'a> Storage<'a> {
             table_end,
             terminal_offset,
             trailer_offset: bytes.len() - 12,
-        }))
+        })
     }
 
     pub(crate) fn boundaries(self) -> impl Iterator<Item = u32> + 'a {

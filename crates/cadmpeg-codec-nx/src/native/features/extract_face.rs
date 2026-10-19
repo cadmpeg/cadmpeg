@@ -5,7 +5,7 @@ use super::{format_feature_history_id, visit_feature_history_operation_records};
 use crate::container::Container;
 use crate::om::extract_face::{ExtractFaceEnvelope, ExtractFaceLane, PARAMETER_CLASS};
 use crate::om::reference_index::FeatureReferenceToken;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
@@ -89,26 +89,20 @@ impl Serialize for FeatureExtractFaceConstructionEnvelope {
 }
 
 pub(in crate::native) fn feature_extract_face_construction_envelopes(
-    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureExtractFaceConstructionEnvelope>, CodecError> {
     let mut envelopes = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
             let projected = (|| -> Result<Option<_>, CodecError> {
-                let Some(field) = ExtractFaceEnvelope::read(ctx, record.payload_view())? else {
+                let Some(field) = ExtractFaceEnvelope::read(record.payload_view()) else {
                     return Ok(None);
                 };
-                ctx.charge_work(
-                    u64_from_index(PARAMETER_CLASS.len()),
-                    "resolve NX EXTRACT_FACE parameter class",
-                )?;
                 if section
                     .types
                     .get(usize::from(field.parameter_class_index.get()) - 1)
@@ -128,23 +122,20 @@ pub(in crate::native) fn feature_extract_face_construction_envelopes(
                 };
                 let envelope = FeatureExtractFaceConstructionEnvelope {
                     id: format_feature_history_id(
-                        ctx,
                         "extract-face-construction-envelope",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?,
+                    ),
                     operation_label: format_feature_history_id(
-                        ctx,
                         "operation-label",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?,
+                    ),
                     field,
                     source_offset,
                 };
-                ctx.reserve_vec(&mut envelopes, 1, "NX EXTRACT_FACE construction envelopes")?;
                 Ok(Some(envelope))
             })();
             match projected {

@@ -65,7 +65,10 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
+            },
+            ..
         }])
     ));
 
@@ -139,7 +142,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -191,7 +194,7 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -325,17 +328,17 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let definitions = &namespace.arenas()["feature_definitions"];
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");
-    assert_eq!(definitions[0].fields()["definition_id"], 40);
+    assert_eq!(definitions[0].fields().unwrap()["definition_id"], 40);
     assert_eq!(
-        crate::test_support::native_bytes(&definitions[0].fields()["body"]).len(),
+        crate::test_support::native_bytes(&definitions[0].fields().unwrap()["body"]).len(),
         definition_length
     );
     let sketches = &namespace.arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].id(), "creo:featdefs:sketch#40");
-    assert_eq!(sketches[0].fields()["definition_id"], 40);
-    assert!(sketches[0].fields()["owner_feature_id"].is_null());
-    let sketch_fields = sketches[0].fields();
+    assert_eq!(sketches[0].fields().unwrap()["definition_id"], 40);
+    assert!(sketches[0].fields().unwrap()["owner_feature_id"].is_null());
+    let sketch_fields = sketches[0].fields().unwrap();
     let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
@@ -518,7 +521,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         ]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -784,7 +787,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(parameters[2].properties["value_token"], "0104fef2");
 
     let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
-    let sketch_fields = sketches[0].fields();
+    let sketch_fields = sketches[0].fields().unwrap();
     let dimensions = sketch_fields["dimensions"]
         .as_array()
         .expect("native dimensions");
@@ -871,7 +874,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
             )
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -940,7 +943,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
             ))
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1129,13 +1132,13 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .expect("recipe feature");
     let rows = &result.ir().native.namespace("creo").unwrap().arenas()["depdb_recipe_rows"];
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].fields()["owner_feature_id"], 8053);
+    assert_eq!(rows[0].fields().unwrap()["owner_feature_id"], 8053);
     assert_eq!(
-        crate::test_support::native_bytes(&rows[0].fields()["header"])[0],
+        crate::test_support::native_bytes(&rows[0].fields().unwrap()["header"])[0],
         0
     );
     assert_eq!(
-        Some(crate::test_support::native_bytes(&rows[0].fields()["body"]).len()),
+        Some(crate::test_support::native_bytes(&rows[0].fields().unwrap()["body"]).len()),
         Some(scan.features.depdb_recipe_rows[0].body.len())
     );
     assert_eq!(feature.name, None);
@@ -1216,7 +1219,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
     assert_eq!(operation_states.len(), 2);
     assert!(operation_states
         .iter()
-        .all(|state| state.fields()["recipe_conflict"] == true));
+        .all(|state| state.fields().unwrap()["recipe_conflict"] == true));
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete class-0x60 counted allocation-reference vectors.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -80,7 +80,6 @@ fn valid_payload(payload: &[u8], references: &[Class60Reference]) -> bool {
 }
 
 pub(super) fn records(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedClass60Record>, CodecError> {
@@ -104,33 +103,23 @@ pub(super) fn records(
             let Some(reference) = allocation_reference(payload, &mut at) else {
                 break;
             };
-            ctx.push_vec(
-                &mut references,
-                Class60Reference {
-                    value: reference.value,
-                    encoding: native_allocation_reference_encoding(reference.encoding),
-                },
-                "catia_class60_references",
-            )?;
+            references.push(Class60Reference {
+                value: reference.value,
+                encoding: native_allocation_reference_encoding(reference.encoding),
+            });
         }
         if !valid_payload(payload, &references) {
             continue;
         }
-        let frame = ConsolidatedRawFrame::from_record(
-            record,
-            ctx.copy_slice(payload, "catia_class60_payload")?,
-        )?;
+        let frame = ConsolidatedRawFrame::from_record(record, (payload).to_vec())?;
         let value = CatiaConsolidatedClass60Record {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:class60-record#{}", output.len()),
-                "catia_class60_id",
-            )?,
+            id: format!("catia:consolidated:class60-record#{}", output.len()),
             source_index: u64_from_index(record.source_index()),
             source_offset: u64_from_index(record.source_range().start),
             frame: frame.into(),
             references,
         };
-        ctx.push_vec(&mut output, value, "catia_class60_records")?;
+        output.push(value);
     }
     Ok(output)
 }

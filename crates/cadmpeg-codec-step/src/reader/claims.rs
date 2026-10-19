@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Source claims retain their admitted stage storage.
+//! Source claims collected by decode stages.
 
 use std::collections::HashSet;
-
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 pub(super) trait SourceClaims {
     fn contains(&self, id: u64) -> bool;
@@ -30,16 +27,10 @@ pub(super) struct ClaimSets {
 }
 
 impl ClaimSets {
-    pub(super) fn admit(
-        &mut self,
-        claims: HashSet<u64>,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
-        ctx.charge_work(1, "step_stage_claims")?;
+    pub(super) fn admit(&mut self, claims: HashSet<u64>) {
         if !claims.is_empty() {
-            ctx.push_vec(&mut self.sets, claims, "step_stage_claims")?;
+            self.sets.push(claims);
         }
-        Ok(())
     }
 }
 
@@ -64,32 +55,23 @@ impl SourceClaims for ClaimSets {
 #[cfg(test)]
 mod tests {
     use super::{ClaimSets, SourceClaims};
-    use cadmpeg_core::decode::DecodePolicy;
 
     #[test]
     fn stage_storage_transfers_without_copying_claims_and_withdraws_every_copy() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2002;
-        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-            let first = ctx
-                .collect_hash_set(0..1000, "fixture claims")
-                .expect("first admitted set");
-            let second = ctx
-                .collect_hash_set(500..1500, "fixture claims")
-                .expect("second admitted set");
-            let mut claims = ClaimSets::default();
-            claims.admit(first, ctx).expect("first owned set");
-            claims.admit(second, ctx).expect("second owned set");
-            for id in 0..1500 {
-                assert!(claims.contains(id));
-            }
-            assert!(!claims.contains(1500));
-            assert!(claims.remove(750));
-            assert!(!claims.contains(750));
-            claims.retain(&mut |id| id % 2 == 0);
-            assert!(claims.contains(748));
-            assert!(!claims.contains(749));
-            assert!(!claims.contains(750));
-        });
+        let first = (0..1000).collect();
+        let second = (500..1500).collect();
+        let mut claims = ClaimSets::default();
+        claims.admit(first);
+        claims.admit(second);
+        for id in 0..1500 {
+            assert!(claims.contains(id));
+        }
+        assert!(!claims.contains(1500));
+        assert!(claims.remove(750));
+        assert!(!claims.contains(750));
+        claims.retain(&mut |id| id % 2 == 0);
+        assert!(claims.contains(748));
+        assert!(!claims.contains(749));
+        assert!(!claims.contains(750));
     }
 }

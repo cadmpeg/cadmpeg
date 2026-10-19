@@ -227,34 +227,24 @@ fn terminal_references(frame: &CatiaObjectRecord) -> Option<[u32; 14]> {
 }
 
 fn origin(
-    ctx: &DecodeContext<'_>,
     frame: &CatiaObjectRecord,
     records: &UniqueIndex<&str, &CatiaObjectRecord>,
     entities: &UniqueIndex<(&str, u32), &CatiaEntityRecord>,
-) -> Result<Option<[f64; 3]>, CodecError> {
+) -> Option<[f64; 3]> {
     // Parse only the terminal 14-reference production, not arbitrary payload references.
-    let Some(ids) = terminal_references(frame) else {
-        return Ok(None);
-    };
+    let ids = terminal_references(frame)?;
     let mut values = [0.0; 12];
     for (position, id) in ids.into_iter().enumerate() {
-        ctx.charge_work(1, "catia_project_frame_reference")?;
-        let Some(entity) = entities.get(&(frame.parent.as_str(), id)).copied() else {
-            return Ok(None);
-        };
-        let Some(record) = records.get(entity.object_record.as_str()).copied() else {
-            return Ok(None);
-        };
+        let entity = entities.get(&(frame.parent.as_str(), id)).copied()?;
+        let record = records.get(entity.object_record.as_str()).copied()?;
         if record.parent != frame.parent
             || record.entity_record() != Some(entity.id.as_str())
             || record.entity_id() != Some(id)
         {
-            return Ok(None);
+            return None;
         }
         if position < 12 {
-            let Some(value) = scalar(entity, position) else {
-                return Ok(None);
-            };
+            let value = scalar(entity, position)?;
             values[position] = value;
         }
     }
@@ -267,26 +257,25 @@ fn origin(
         for j in 0..3 {
             let residual = (dot(matrix[i], matrix[j]) - f64::from(i == j)).abs();
             if !residual.is_finite() || residual > FRAME_TOLERANCE {
-                return Ok(None);
+                return None;
             }
         }
     }
     let residual = (dot(matrix[0], cross(matrix[1], matrix[2])) - 1.0).abs();
     if !residual.is_finite() || residual > FRAME_TOLERANCE {
-        return Ok(None);
+        return None;
     }
-    Ok(Some([values[0], values[1], values[2]]))
+    Some([values[0], values[1], values[2]])
 }
 
 fn faces(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     model: &Model,
     origin: [f64; 3],
     diameter: f64,
-) -> Result<Option<[FaceId; 2]>, CodecError> {
+) -> Option<[FaceId; 2]> {
     let mut carriers = Vec::new();
     for surface in &model.surfaces {
-        ctx.charge_work(1, "catia_project_cylinder_search")?;
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = &surface.geometry
         else {
             continue;
@@ -305,54 +294,40 @@ fn faces(
             continue;
         }
         if carriers.len() == 2 {
-            return Ok(None);
+            return None;
         }
-        ctx.push_vec(
-            &mut carriers,
-            (&surface.id, axis, point),
-            "catia_project_cylinders",
-        )?;
+        carriers.push((&surface.id, axis, point));
     }
     let [first, second] = carriers.as_slice() else {
-        return Ok(None);
+        return None;
     };
     if first.0 == second.0 || (dot(first.1, second.1).abs() - 1.0).abs() > FRAME_TOLERANCE {
-        return Ok(None);
+        return None;
     }
     let separation = cross(std::array::from_fn(|i| second.2[i] - first.2[i]), first.1);
     let distance = separation[0].hypot(separation[1]).hypot(separation[2]);
     if !distance.is_finite() || distance > AXIS_TOLERANCE_MM {
-        return Ok(None);
+        return None;
     }
     let mut selected = Vec::new();
     let mut used = [0_u8; 2];
     for face in &model.faces {
-        ctx.charge_work(1, "catia_project_face_search")?;
         if &face.surface == first.0 || &face.surface == second.0 {
             if selected.len() == 2 {
-                return Ok(None);
+                return None;
             }
             used[usize::from(&face.surface == second.0)] += 1;
-            ctx.push_vec(
-                &mut selected,
-                face.id.try_clone_for_decode(ctx, "catia_project_face_id")?,
-                "catia_project_faces",
-            )?;
+            selected.push(face.id.clone());
         }
     }
-    ctx.sort_unstable_by(
-        &mut selected,
-        Ord::cmp,
-        |id| id.as_str().len(),
-        "catia_project_face_sort",
-    )?;
+    selected.sort_unstable_by(Ord::cmp);
     if used != [1, 1] || selected[0] == selected[1] {
-        return Ok(None);
+        return None;
     }
     let Ok(result) = selected.try_into() else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(result))
+    Some(result)
 }
 
 /// Retain the exact feature-local frame and geometry incidence without PMI aggregation.
@@ -364,7 +339,6 @@ pub(crate) fn bind(
 ) -> Result<(), CodecError> {
     let mut has_project_range = false;
     for entity in &native.entity_records {
-        ctx.charge_work(1, "catia_project_range_admission")?;
         if scope.contains(entity.object_graph.as_str()) && diameter(entity).is_some() {
             has_project_range = true;
             break;
@@ -374,49 +348,34 @@ pub(crate) fn bind(
         return Ok(());
     }
     let identities = UniqueIndex::collect(
-        ctx,
         native
             .entity_records
             .iter()
             .map(|e| ((e.object_graph.as_str(), e.entity_id), e)),
-        "catia_project_identities",
-    )?;
+    );
     let records = UniqueIndex::collect(
-        ctx,
         native
             .object_graphs
             .iter()
             .flat_map(|g| g.records.iter())
             .map(|r| (r.id.as_str(), r)),
-        "catia_project_records",
-    )?;
+    );
     let mut frames = UniqueIndex::new();
     for record in native.object_graphs.iter().flat_map(|g| &g.records) {
-        ctx.charge_work(1, "catia_project_frame_search")?;
         if record.lead != 0x54 {
             continue;
         }
         let Some(entity) = paired(record, &identities) else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entity.value_schema_selections.len()),
-            "catia_project_frame_program",
-        )?;
         if frame_program(entity) {
             if let Some(storage) = record.storage_ref() {
-                frames.insert(
-                    ctx,
-                    (record.parent.as_str(), storage),
-                    (record, entity),
-                    "catia_project_frames",
-                )?;
+                frames.insert((record.parent.as_str(), storage), (record, entity));
             }
         }
     }
     let mut bindings = Vec::new();
     for (index, entity) in native.entity_records.iter().enumerate() {
-        ctx.charge_work(1, "catia_project_range_search")?;
         if !scope.contains(entity.object_graph.as_str()) {
             continue;
         }
@@ -437,17 +396,17 @@ pub(crate) fn bind(
         let Some((frame, frame_entity)) = frames.get(&(record.parent.as_str(), storage)) else {
             continue;
         };
-        let Some(origin) = origin(ctx, frame, &records, &identities)? else {
+        let Some(origin) = origin(frame, &records, &identities) else {
             continue;
         };
-        let Some(faces) = faces(ctx, model, origin, diameter)? else {
+        let Some(faces) = faces(ctx, model, origin, diameter) else {
             continue;
         };
         let target = ProjectRangeTarget {
-            frame_entity: ctx.copy_retained_text(&frame_entity.id, "catia_project_frame_entity")?,
+            frame_entity: frame_entity.id.clone(),
             faces,
         };
-        ctx.push_vec(&mut bindings, (index, target), "catia_project_bindings")?;
+        bindings.push((index, target));
     }
     for (index, target) in bindings {
         let interval = native.entity_records[index]

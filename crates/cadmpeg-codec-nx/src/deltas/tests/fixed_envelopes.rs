@@ -17,11 +17,9 @@ fn ambiguous_fixed_record_does_not_choose_an_identity_or_swallow_its_successor()
     }
     assert!(super::super::fixed_layout(&stream, 0, 13, super::super::SHELL, 0).is_some());
     assert!(super::super::fixed_layout(&stream, 0, 13, super::super::SHELL, 1).is_some());
-    let census = crate::test_support::with_decode_context(|ctx| {
-        assert!(
-            super::super::consume_fixed(ctx, &stream, 0, 13, super::super::SHELL, None)?.is_none()
-        );
-        crate::deltas::census::walk(ctx, &stream)
+    let census = crate::test_support::with_decode_context(|_ctx| {
+        assert!(super::super::consume_fixed(&stream, 0, 13, super::super::SHELL, None)?.is_none());
+        crate::deltas::census::walk(&stream)
     })
     .unwrap();
     assert!(census.records.iter().all(|record| record.kind() != 13));
@@ -54,7 +52,7 @@ fn ambiguous_fixed_payload_does_not_expose_a_tombstone_pattern() {
     assert!(super::super::fixed_layout(&stream, 0, 13, super::super::SHELL, 1).is_some());
     assert_eq!(super::super::compact_tombstone(&stream, 15), Some(257));
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&stream))
             .unwrap();
     assert!(census.records.iter().all(|record| record.kind() != 13));
     assert!(census.tombstones.is_empty());
@@ -91,7 +89,7 @@ fn base_intersection_does_not_consume_its_successors_type_tag() {
     stream.extend_from_slice(&[0, 41, 0, 0, 0, 1, 0, 21, b'L']);
     stream.extend_from_slice(&[0; 88]);
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&stream))
             .unwrap();
     let record = census.records.iter().find(|r| r.kind() == 38).unwrap();
     assert_eq!(record.offset, intersection_offset);
@@ -111,7 +109,7 @@ fn type_45_declared_array_does_not_claim_a_finite_successor_word() {
     // schema's declared one-element array.
     stream.extend_from_slice(&3.0f64.to_be_bytes());
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&stream))
             .unwrap();
     let record = census.records.iter().find(|r| r.kind() == 45).unwrap();
     assert_eq!(record.end, end);

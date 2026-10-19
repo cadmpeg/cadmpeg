@@ -2,7 +2,7 @@
 //! Nominal thread diameter and abstaining physical-cylinder selection.
 
 use crate::native::features::holes::FeatureSymbolicThread;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
@@ -80,20 +80,16 @@ fn nominal_diameter(designation: &str) -> Option<PositiveLength> {
 }
 
 fn vertex_parameter(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     index: &ModelIndex<'_>,
     vertex: &VertexId,
     axis: [f64; 3],
-) -> Result<Option<f64>, CodecError> {
-    let Some(vertex) = index.vertices(vertex.as_str(), ctx)? else {
-        return Ok(None);
-    };
-    let Some(point) = index.points(vertex.point.as_str(), ctx)? else {
-        return Ok(None);
-    };
+) -> Option<f64> {
+    let vertex = index.vertices(vertex.as_str(), cadmpeg_ir::index::StandardIndex)?;
+    let point = index.points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)?;
     let point = point.position().get();
     let value = dot([point.x, point.y, point.z], axis);
-    Ok(value.is_finite().then_some(value))
+    value.is_finite().then_some(value)
 }
 
 fn face_interval(
@@ -104,14 +100,15 @@ fn face_interval(
 ) -> Result<Option<[f64; 2]>, CodecError> {
     let mut interval: Option<[f64; 2]> = None;
     let mut include = |vertex: &VertexId| -> Result<bool, CodecError> {
-        let Some(t) = vertex_parameter(ctx, index, vertex, axis)? else {
+        let Some(t) = vertex_parameter(ctx, index, vertex, axis) else {
             return Ok(false);
         };
         interval = Some(interval.map_or([t, t], |[lo, hi]| [lo.min(t), hi.max(t)]));
         Ok(true)
     };
     for identity in &face.loops {
-        let Some(boundary) = index.loops(identity.as_str(), ctx)? else {
+        let Some(boundary) = index.loops(identity.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             return Ok(None);
         };
         if boundary.face != face.id {
@@ -130,13 +127,17 @@ fn face_interval(
                     }
                 }
                 for identity in ring.coedges() {
-                    let Some(coedge) = index.coedges(identity.as_str(), ctx)? else {
+                    let Some(coedge) =
+                        index.coedges(identity.as_str(), cadmpeg_ir::index::StandardIndex)
+                    else {
                         return Ok(None);
                     };
                     if coedge.owner_loop != boundary.id {
                         return Ok(None);
                     }
-                    let Some(edge) = index.edges(coedge.edge.as_str(), ctx)? else {
+                    let Some(edge) =
+                        index.edges(coedge.edge.as_str(), cadmpeg_ir::index::StandardIndex)
+                    else {
                         return Ok(None);
                     };
                     if !include(&edge.start)? || !include(&edge.end)? {
@@ -153,18 +154,23 @@ fn cylinder_groups(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<Vec<PhysicalCylinder>, CodecError> {
-    let index = ModelIndex::new_model_only(ir, ctx)?;
-    let (owners, _storage) = ctx.collect_scoped_btree_groups(
-        ir.model
-            .shells
-            .iter()
-            .flat_map(|shell| shell.faces().iter().map(move |face| (face.as_str(), shell))),
-        "NX symbolic thread face ownership",
-    )?;
+    let index = ModelIndex::new_model_only(ir);
+    let owners = (ir
+        .model
+        .shells
+        .iter()
+        .flat_map(|shell| shell.faces().iter().map(move |face| (face.as_str(), shell))))
+    .fold(
+        std::collections::BTreeMap::<_, Vec<_>>::new(),
+        |mut groups, (key, value)| {
+            groups.entry(key).or_default().push(value);
+            groups
+        },
+    );
     let mut groups: Vec<PhysicalCylinder> = Vec::new();
     for face in &ir.model.faces {
-        ctx.charge_work(1, "NX symbolic thread cylinder scan")?;
-        let Some(surface) = index.surfaces(face.surface.as_str(), ctx)? else {
+        let Some(surface) = index.surfaces(face.surface.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             continue;
         };
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
@@ -176,26 +182,20 @@ fn cylinder_groups(
         if shell.id != face.shell {
             continue;
         }
-        let Some(region) = index.regions(shell.region.as_str(), ctx)? else {
+        let Some(region) = index.regions(shell.region.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             continue;
         };
-        ctx.charge_work(
-            u64_from_index(region.shells.len()),
-            "NX symbolic thread region ownership",
-        )?;
         if region.shells.iter().filter(|id| **id == shell.id).count() != 1 {
             continue;
         }
-        let Some(body) = index.bodies(region.body.as_str(), ctx)? else {
+        let Some(body) = index.bodies(region.body.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             continue;
         };
         if body.transform.is_some() {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(body.regions.len()),
-            "NX symbolic thread body ownership",
-        )?;
         if body.regions.iter().filter(|id| **id == region.id).count() != 1 {
             continue;
         }
@@ -218,10 +218,6 @@ fn cylinder_groups(
             continue;
         }
         let radius = cylinder.radius().get();
-        ctx.charge_work(
-            u64_from_index(groups.len()),
-            "NX symbolic thread seam groups",
-        )?;
         let mut matches = groups.iter_mut().filter(|group| {
             group.shell == shell.id
                 && distance(group.axis, axis) <= EPS_AXIS_DIRECTION
@@ -238,22 +234,11 @@ fn cylinder_groups(
             return Ok(Vec::new());
         }
         if let Some(group) = matched {
-            ctx.reserve_vec(&mut group.faces, 1, "NX symbolic thread seam faces")?;
-            group.faces.push(
-                face.id
-                    .try_clone_for_decode(ctx, "NX symbolic thread face identity")?,
-            );
+            group.faces.push(face.id.clone());
         } else {
-            let mut faces = ctx.collection_vec(1, "NX symbolic thread physical cylinder face")?;
-            faces.push(
-                face.id
-                    .try_clone_for_decode(ctx, "NX symbolic thread face identity")?,
-            );
-            ctx.reserve_vec(&mut groups, 1, "NX symbolic thread physical cylinders")?;
+            let faces = vec![face.id.clone()];
             groups.push(PhysicalCylinder {
-                shell: shell
-                    .id
-                    .try_clone_for_decode(ctx, "NX symbolic thread shell identity")?,
+                shell: shell.id.clone(),
                 axis,
                 foot,
                 radius,
@@ -271,10 +256,6 @@ pub(super) fn definitions<'a>(
     threads: &'a [FeatureSymbolicThread],
 ) -> Result<BTreeMap<&'a str, FeatureDefinition>, CodecError> {
     let mut result = BTreeMap::new();
-    ctx.charge_work(
-        u64_from_index(threads.len()),
-        "NX symbolic thread construction scan",
-    )?;
     if !threads.iter().any(|thread| thread.construction.is_some()) {
         return Ok(result);
     }
@@ -286,10 +267,6 @@ pub(super) fn definitions<'a>(
         let Some(designation) = thread.designation() else {
             continue;
         };
-        ctx.charge_work(
-            u64_from_index(designation.len() + threads.len()),
-            "NX symbolic thread designation and unique owner",
-        )?;
         if threads
             .iter()
             .filter(|other| other.operation_label == thread.operation_label)
@@ -302,10 +279,6 @@ pub(super) fn definitions<'a>(
             continue;
         };
         let point = construction.point_mm();
-        ctx.charge_work(
-            u64_from_index(groups.len()),
-            "NX symbolic thread cylinder candidates",
-        )?;
         let mut candidates = groups.iter().filter(|group| {
             let t = dot(point, group.axis);
             let foot = subtract(point, group.axis.map(|v| t * v));
@@ -316,29 +289,25 @@ pub(super) fn definitions<'a>(
         });
         let first = candidates.next();
         let face = if let (Some(group), None) = (first, candidates.next()) {
-            let mut faces =
-                ctx.collection_vec(group.faces.len(), "NX symbolic thread selected faces")?;
+            let mut faces = Vec::new();
             for face in &group.faces {
-                faces.push(face.try_clone_for_decode(ctx, "NX symbolic thread selected face")?);
+                faces.push(face.clone());
             }
             FaceSelection::Resolved {
                 faces,
-                native: ctx
-                    .copy_retained_text(&thread.id, "NX symbolic thread selection witness")?,
+                native: thread.id.clone(),
             }
         } else {
             FaceSelection::Unresolved
         };
-        ctx.insert_btree_map(
-            &mut result,
+        result.insert(
             thread.operation_label.as_str(),
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face,
                 diameter: Some(diameter),
                 extent: None,
             }),
-            "NX symbolic thread definitions",
-        )?;
+        );
     }
     Ok(result)
 }

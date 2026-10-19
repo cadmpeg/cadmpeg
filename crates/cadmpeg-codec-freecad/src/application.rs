@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::Serialize;
 
@@ -17,7 +16,7 @@ pub(crate) fn install(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<(), NativeConvertError> {
-    let records = wire_records(ctx, objects, properties, entries)?;
+    let records = wire_records(objects, properties, entries);
     namespace.set_arena(ctx, "applications", &records)
 }
 
@@ -29,16 +28,8 @@ pub(crate) fn matches_native(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<bool, NativeConvertError> {
-    let (mut expected, _expected_storage) = ctx
-        .with_scoped_storage("FreeCAD expected application records", || {
-            wire_records(ctx, objects, properties, entries)
-        })?;
-    ctx.stable_sort_by(
-        &mut expected,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.len(),
-        "FreeCAD application records sort",
-    )?;
+    let mut expected = wire_records(objects, properties, entries);
+    expected.sort_by(|left, right| left.id.cmp(&right.id));
     let mut actual = namespace.arenas().get("applications").into_iter().flatten();
     for record in expected {
         let Some(actual) = actual.next() else {
@@ -97,97 +88,41 @@ struct ApplicationPayloadWire<'a> {
 }
 
 fn wire_records<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     objects: &'a [ObjectRecord],
     properties: &'a [PropertyRecord],
     entries: &'a [EntryRecord],
-) -> Result<Vec<ApplicationRecordWire<'a>>, CodecError> {
+) -> Vec<ApplicationRecordWire<'a>> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
-        let owner = property.owner.as_str();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(owner.len()).max(1),
-            "FreeCAD application owner hashing",
-        )?;
-        if !by_owner.contains_key(owner) {
-            ctx.reserve_map(&mut by_owner, 1, "FreeCAD application owner lookup")?;
-        }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(owner.len()).max(1),
-            "FreeCAD application owner hashing",
-        )?;
-        let owned = by_owner.entry(owner).or_default();
-        ctx.reserve_vec(owned, 1, "FreeCAD application owner properties")?;
-        owned.push(property);
+        by_owner
+            .entry(property.owner.as_str())
+            .or_default()
+            .push(property);
     }
     let mut entry_index = HashMap::new();
     for entry in entries {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entry.name().len()).max(1),
-            "FreeCAD application entry hashing",
-        )?;
-        if !entry_index.contains_key(entry.name()) {
-            ctx.reserve_map(&mut entry_index, 1, "FreeCAD application entry lookup")?;
-        }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entry.name().len()).max(1),
-            "FreeCAD application entry hashing",
-        )?;
         entry_index.insert(entry.name(), entry);
     }
-    let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
+    let mut records = Vec::new();
     for object in objects {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(object.id().as_str().len()).max(1),
-            "FreeCAD application owner lookup",
-        )?;
         let mut owned = by_owner.remove(object.id().as_str()).unwrap_or_default();
-        ctx.stable_sort_by(
-            &mut owned,
-            |left, right| {
-                (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
-            },
-            |_| 0,
-            "FreeCAD application owner properties sort",
-        )?;
+        owned.sort_by(|left, right| {
+            (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
+        });
         let data = object
             .data
             .as_ref()
             .map_or(&[][..], |data| data.text().as_bytes());
-        let mut property_ids =
-            ctx.collection_vec(owned.len(), "FreeCAD application property IDs")?;
-        property_ids.extend(owned.iter().map(|property| property.id.as_str()));
-        let side_entry_count = owned
+        let property_ids = owned.iter().map(|property| property.id.as_str()).collect();
+        let side_entries = owned
             .iter()
-            .map(|property| property.side_entries().len())
-            .sum();
-        let mut side_entries =
-            ctx.collection_vec(side_entry_count, "FreeCAD application side entries")?;
-        side_entries.extend(
-            owned
-                .iter()
-                .flat_map(|property| property.side_entries().iter().map(String::as_str)),
-        );
-        let mut property_records =
-            ctx.collection_vec(owned.len(), "FreeCAD application property records")?;
+            .flat_map(|property| property.side_entries().iter().map(String::as_str))
+            .collect();
+        let mut property_records = Vec::new();
         for property in owned {
             let data = property.xml.text().as_bytes();
-            let mut payload_count = 0;
+            let mut payloads = Vec::new();
             for name in property.side_entries() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(name.len()).max(1),
-                    "FreeCAD application payload lookup",
-                )?;
-                if entry_index.contains_key(name.as_str()) {
-                    payload_count += 1;
-                }
-            }
-            let mut payloads = ctx.collection_vec(payload_count, "FreeCAD application payloads")?;
-            for name in property.side_entries() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(name.len()).max(1),
-                    "FreeCAD application payload lookup",
-                )?;
                 if let Some(entry) = entry_index.get(name.as_str()) {
                     payloads.push(ApplicationPayloadWire {
                         entry: entry.id(),
@@ -197,18 +132,12 @@ fn wire_records<'a>(
                     });
                 }
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(data.len()),
-                "FreeCAD application property digest",
-            )?;
-            ctx.charge_retained(64, "FreeCAD application property digest")?;
             property_records.push(ApplicationPropertyWire {
-                id: crate::native::native_child_id_charged(
-                    ctx,
+                id: crate::native::native_child_id(
                     "application-property",
                     object.id(),
                     &property.name,
-                )?,
+                ),
                 object: object.id(),
                 property: &property.id,
                 type_name: &property.type_name,
@@ -223,13 +152,8 @@ fn wire_records<'a>(
                 inert: is_inert(property),
             });
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len()),
-            "FreeCAD application object digest",
-        )?;
-        ctx.charge_retained(64, "FreeCAD application object digest")?;
         records.push(ApplicationRecordWire {
-            id: crate::native::native_id_charged(ctx, "application", object.name())?,
+            id: crate::native::native_id("application", object.name()),
             object: object.id(),
             type_name: &object.type_name,
             domain: object
@@ -254,7 +178,7 @@ fn wire_records<'a>(
             property_records,
         });
     }
-    Ok(records)
+    records
 }
 
 fn is_inert(property: &PropertyRecord) -> bool {

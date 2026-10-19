@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Control and owner-chart invariants for parameter-space records.
 
-use super::parsed_owner_charts;
+use crate::families::b2::records::b2_owner_charts_from_records;
 use crate::families::b2::records::b2_parameter_points;
 use crate::test_support::test_b2::{
     b2_compact_parameter_operand_stream, b2_owner_chart_stream, b2_parameter_point_stream,
@@ -75,7 +75,7 @@ fn owner_chart_compares_operand_values_independently_of_compact_width() {
         bytes.extend_from_slice(&frame[6..]);
     }
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert_eq!(parsed_owner_charts(&bytes, &records).len(), 1);
+    assert_eq!(b2_owner_charts_from_records(&bytes, &records).len(), 1);
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn parameter_point_controls_require_matching_scalar_count_and_unit_direction() {
 fn owner_chart_rejects_opposing_side_with_wrong_constant_axis() {
     let mut bytes = b2_owner_chart_stream(0x28);
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert_eq!(parsed_owner_charts(&bytes, &records).len(), 1);
+    assert_eq!(b2_owner_charts_from_records(&bytes, &records).len(), 1);
     let side = records
         .iter()
         .find(|r| r.class() == 0x18)
@@ -140,7 +140,7 @@ fn owner_chart_rejects_opposing_side_with_wrong_constant_axis() {
         .start;
     bytes[side + 1] = 0x02;
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert!(parsed_owner_charts(&bytes, &records).is_empty());
+    assert!(b2_owner_charts_from_records(&bytes, &records).is_empty());
 }
 
 #[test]
@@ -165,14 +165,14 @@ fn owner_chart_implicit_line_requires_half_span_midpoint_and_boundary() {
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
         let records = crate::wire::records::consolidated_records(&bytes);
-        assert_eq!(parsed_owner_charts(&bytes, &records).len(), 1);
+        assert_eq!(b2_owner_charts_from_records(&bytes, &records).len(), 1);
         for (index, value) in values.into_iter().enumerate() {
             let mut invalid = bytes.clone();
             let at = side + 2 + index * 8;
             invalid[at..at + 8].copy_from_slice(&(value + 1.0).to_le_bytes());
             let records = crate::wire::records::consolidated_records(&invalid);
             assert!(
-                parsed_owner_charts(&invalid, &records).is_empty(),
+                b2_owner_charts_from_records(&invalid, &records).is_empty(),
                 "lane {index}"
             );
         }

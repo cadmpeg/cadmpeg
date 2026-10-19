@@ -11,12 +11,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use crate::history_records::AsmHistory;
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::bind_body_recipe_operand_history_candidates;
+use crate::history::{bind_body_recipe_operand_history_candidates, BindingHistories};
 use crate::history_records::{
-    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalRelation,
-    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
+    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
 };
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
@@ -63,7 +63,7 @@ fn three_point_recipe_vertices_must_define_the_solved_plane() {
 fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
-        AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistory,
+        AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
     };
     use crate::records::{
         dimensions::DesignRecipeReference,
@@ -221,30 +221,32 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         }],
         ..AsmHistoricalTopology::default()
     };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "f3d:history:state#4".into(),
-            parent: "f3d:history".into(),
-            byte_offset: 0,
-            state_id: 4,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 0,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-            transition: None,
-        }],
-    };
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "f3d:history:state#4".into(),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id: 4,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )],
+    );
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
         crate::records::entity_header::DesignTimelineFrame::test_items(
@@ -269,7 +271,6 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let mut scopes = vec![extrude, work_point];
 
     super::super::bind_vertex_recipe_history(
-        &cadmpeg_test_support::service_decode_context(),
         &mut scopes,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -310,7 +311,6 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         .candidate_faces
         .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
     super::super::bind_vertex_recipe_history(
-        &cadmpeg_test_support::service_decode_context(),
         &mut ambiguous,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -332,7 +332,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
 
 #[test]
 fn feature_input_topology_projects_historical_vertices() {
-    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -365,46 +365,44 @@ fn feature_input_topology_projects_historical_vertices() {
         ),
         native_ref: Some(scope.id.clone()),
     };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "f3d:history:state#4".into(),
-            parent: "f3d:history".into(),
-            byte_offset: 0,
-            state_id: 4,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 0,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(
-                AsmHistoricalTopology {
-                    vertices: vec![43, 59],
-                    ..AsmHistoricalTopology::default()
-                },
-            ),
-            transition: None,
-        }],
-    };
+    let mut history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "f3d:history:state#4".into(),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id: 4,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                vertices: vec![43, 59],
+                ..AsmHistoricalTopology::default()
+            }),
+            Vec::new(),
+        )],
+    );
 
     let projected = super::super::project_feature_input_topologies(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
-        std::slice::from_ref(&history),
+        std::slice::from_mut(&mut history),
         &[],
         &std::collections::HashMap::new(),
-    )
-    .unwrap();
-    let prefix = super::super::feature_input_prefix(&feature.id, 4);
+    );
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
         projected[0].vertices.as_slice(),
@@ -489,16 +487,12 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         ..Default::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            super::super::surface_patch_edge_operand_slot(
-                decode_ctx,
-                Some(&structure),
-                &references,
-                &topology,
-                &mut crate::history::topology_cache::TopologyQueryCache::default(),
-            )
-        })
-        .unwrap(),
+        super::super::surface_patch_edge_operand_slot(
+            Some(&structure),
+            &references,
+            &topology,
+            &mut crate::history::topology_cache::TopologyQueryCache::default()
+        ),
         Some(22)
     );
 
@@ -513,16 +507,12 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         radial_next: 13,
     });
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            super::super::surface_patch_edge_operand_slot(
-                decode_ctx,
-                Some(&structure),
-                &references,
-                &ambiguous,
-                &mut crate::history::topology_cache::TopologyQueryCache::default(),
-            )
-        })
-        .unwrap(),
+        super::super::surface_patch_edge_operand_slot(
+            Some(&structure),
+            &references,
+            &ambiguous,
+            &mut crate::history::topology_cache::TopologyQueryCache::default()
+        ),
         None
     );
 }
@@ -657,12 +647,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
 
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(
-                &cadmpeg_test_support::service_decode_context(),
-                &operand,
-                Some("current")
-            )
-            .unwrap(),
+            .external(&operand, Some("current")),
         Some(bodies[1].id.clone())
     );
 
@@ -685,12 +670,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(
-                &cadmpeg_test_support::service_decode_context(),
-                &operand,
-                Some("current")
-            )
-            .unwrap(),
+            .external(&operand, Some("current")),
         None
     );
 }
@@ -804,41 +784,37 @@ fn body_recipe_history_fixture() -> (
         ],
         ..AsmHistoricalTopology::default()
     };
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("f3d:Breps.BlobParts/BREP.input:asm-delta-state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:Breps.BlobParts/BREP.input:asm-delta-state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
     let previous = state(1, topology.clone(), None);
-    let current = state(
-        2,
-        topology,
-        Some(AsmHistoricalTransition {
-            previous_state_id: Some(1),
-            records: AsmHistoricalEntityDelta::default(),
-            topology: AsmHistoricalTopologyDelta::default(),
-        }),
+    let current = state(2, topology, Some(1));
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![current, previous],
     );
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![current, previous],
-    };
 
     (scope, history, operands, candidate)
 }
@@ -846,15 +822,12 @@ fn body_recipe_history_fixture() -> (
 #[test]
 fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     let (scope, history, mut operands, candidate) = body_recipe_history_fixture();
-    crate::test_support::with_decode_context(|decode_ctx| {
-        bind_body_recipe_operand_history_candidates(
-            decode_ctx,
-            &mut operands,
-            &[],
-            std::slice::from_ref(&scope),
-            std::slice::from_ref(&history),
-        )
-    })
+    bind_body_recipe_operand_history_candidates(
+        &mut operands,
+        &[],
+        std::slice::from_ref(&scope),
+        BindingHistories::Shared(std::slice::from_ref(&history)),
+    )
     .unwrap();
 
     assert_eq!(
@@ -866,20 +839,6 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     assert_eq!(operands[0].resolved_body_state_id, Some(1));
     assert_eq!(operands[0].resolved_body_slot, Some(1));
     assert_eq!(operands[0].resolved_body_face_slots, [10, 11, 12]);
-}
-
-#[test]
-fn body_recipe_history_refuses_collection_limit() {
-    let (scope, history, mut operands, _) = body_recipe_history_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_body_recipe_operand_history_candidates(&ctx, &mut operands, &[], &[scope], &[history])
-            .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -899,33 +858,21 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &topology)?
-                .faces(decode_ctx, 1)
-        })
-        .unwrap(),
+        crate::history::body_index::CompleteBodyIndex::new(&topology).faces(1),
         Some(vec![10, 11])
     );
 
     let mut incomplete = topology.clone();
     incomplete.shell_faces[0].member_refs.clear();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &incomplete)?
-                .faces(decode_ctx, 1)
-        })
-        .unwrap(),
+        crate::history::body_index::CompleteBodyIndex::new(&incomplete).faces(1),
         None
     );
 
     let mut ambiguous = topology;
     ambiguous.shell_faces.push(relation(4, vec![10]));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &ambiguous)?
-                .faces(decode_ctx, 1)
-        })
-        .unwrap(),
+        crate::history::body_index::CompleteBodyIndex::new(&ambiguous).faces(1),
         None
     );
 }
@@ -1070,7 +1017,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     };
     let mut selection = BodySelection::Native(group_id.into());
     super::super::bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         &scope,
         &inputs,
@@ -1081,15 +1027,14 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )
-    .unwrap();
+    );
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")],
-                &cadmpeg_test_support::service_decode_context()
+            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                "f3d:brep:body#1"
             )
+            .expect("identity grammar")],)
             .expect("distinct bodies"),
             native: group_id.into(),
         }
@@ -1124,8 +1069,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         ordinal: 0,
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 32;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut candidates = crate::history::body_candidates::BodyCandidates::new(
@@ -1136,14 +1080,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         std::slice::from_ref(&link),
     );
     for _ in 0..1_000 {
+        assert_eq!(candidates.linked(&operand), Some(body.id.clone()));
         assert_eq!(
-            candidates.linked(&ctx, &operand).unwrap(),
-            Some(body.id.clone())
-        );
-        assert_eq!(
-            candidates
-                .face_body_candidates(&ctx, &operand, &body.id)
-                .unwrap(),
+            candidates.face_body_candidates(&operand, &body.id),
             (true, true)
         );
     }
@@ -1156,8 +1095,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             std::slice::from_ref(&recipe),
             std::slice::from_ref(&link)
         )
-        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
-        .unwrap(),
+        .linked(&operand),
         Some(body.id.clone())
     );
 
@@ -1173,8 +1111,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             std::slice::from_ref(&recipe),
             &links
         )
-        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
-        .unwrap(),
+        .linked(&operand),
         None
     );
     // Equal ordinals retain the first source link, regardless of its selector.
@@ -1188,8 +1125,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             std::slice::from_ref(&recipe),
             &links
         )
-        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
-        .unwrap(),
+        .linked(&operand),
         Some(body.id.clone())
     );
     let mut second_body = body.clone();
@@ -1204,8 +1140,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             std::slice::from_ref(&recipe),
             &[link.clone(), second_link]
         )
-        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
-        .unwrap(),
+        .linked(&operand),
         None
     );
     let mut direct_operand = operand.clone();
@@ -1230,7 +1165,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     super::super::bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         &scope,
         &direct_inputs,
@@ -1241,20 +1175,17 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )
-    .unwrap();
+    );
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {
-            members: cadmpeg_ir::features::BodyMembers::try_from_rows(
-                vec![cadmpeg_ir::features::BodyMember::new(
+            members: cadmpeg_ir::features::BodyMembers::try_from_rows(vec![
+                cadmpeg_ir::features::BodyMember::new(
                     body.id.clone(),
                     cadmpeg_core::text::NonBlankString::new(native)
                         .expect("non-blank native fixture"),
-                ),],
-                &cadmpeg_test_support::service_decode_context()
-            )
-            .expect("selection storage is admitted")
+                ),
+            ],)
             .expect("valid body selection rows"),
         }
     );
@@ -1307,12 +1238,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     feature.native_ref = Some(scale_scope.id.clone());
-    super::super::bind_feature_body_selections(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_mut(&mut feature),
-        &scale_inputs,
-    )
-    .unwrap();
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs)
+        .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
@@ -1332,13 +1259,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let move_history = crate::history_records::AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: Vec::new(),
-    };
+    let move_history =
+        crate::test_support::history::history("f3d:history".into(), 0, None, false, Vec::new());
     let move_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&move_scope),
         groups: std::slice::from_ref(&scale_group),
@@ -1375,7 +1297,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     };
     move_feature.native_ref = Some(move_scope.id.clone());
     super::super::bind_feature_body_selections(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut move_feature),
         &move_inputs,
     )
@@ -1411,22 +1332,15 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![
-                    BodyId::mint("test:model:body#2").expect("identity grammar"),
-                    BodyId::mint("test:model:body#1").expect("identity grammar"),
-                ],
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                BodyId::mint("test:model:body#2").expect("identity grammar"),
+                BodyId::mint("test:model:body#1").expect("identity grammar"),
+            ])
             .unwrap(),
         ),
         native_ref: Some("native:scope".into()),
     };
-    super::super::bind_base_feature_output_selection(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut feature,
-    )
-    .unwrap();
+    super::super::bind_base_feature_output_selection(&mut feature).unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {

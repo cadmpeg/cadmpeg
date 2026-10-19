@@ -1,13 +1,11 @@
 //! Design parameter enrichment and scalar synchronisation.
 
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::{NAME_MARKER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
-    FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
-    FeatureInputScalarRole,
+    FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
+    FeatureInputScalar, FeatureInputScalarRole,
 };
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,60 +15,105 @@ enum ScalarUnit {
     Angle,
 }
 
-fn scalar_owned_by_feature(
-    scalar: &FeatureInputScalar,
-    feature: &str,
-    start: u64,
-    end: Option<u64>,
-) -> bool {
-    scalar.feature_ref.as_deref() == Some(feature)
-        || (scalar.feature_ref.is_none()
-            && scalar.offset > start
-            && end.is_none_or(|end| scalar.offset < end))
+/// A lane's scalars by owner. A scalar naming a feature belongs to it; an
+/// unreferenced scalar belongs to the object whose open span holds its offset.
+struct ScalarOwners<'a> {
+    referenced: HashMap<&'a str, Vec<usize>>,
+    unreferenced: Vec<(u64, usize)>,
+}
+
+impl<'a> ScalarOwners<'a> {
+    fn new(scalars: &'a [FeatureInputScalar]) -> Self {
+        let mut referenced = HashMap::<_, Vec<_>>::new();
+        let mut unreferenced = Vec::new();
+        for (index, scalar) in scalars.iter().enumerate() {
+            match scalar.feature_ref.as_deref() {
+                Some(feature) => referenced.entry(feature).or_default().push(index),
+                None => unreferenced.push((scalar.offset, index)),
+            }
+        }
+        unreferenced.sort_unstable();
+        Self {
+            referenced,
+            unreferenced,
+        }
+    }
+
+    /// Indices, in scalar order, of the scalars `feature` owns over the span
+    /// after `start` and before `end`.
+    fn owned(&self, feature: &str, start: u64, end: Option<u64>) -> Vec<usize> {
+        let first = self
+            .unreferenced
+            .partition_point(|&(offset, _)| offset <= start);
+        let last = end.map_or(self.unreferenced.len(), |end| {
+            self.unreferenced
+                .partition_point(|&(offset, _)| offset < end)
+        });
+        let mut owned = self.referenced.get(feature).cloned().unwrap_or_default();
+        owned.extend(
+            self.unreferenced
+                .get(first..last)
+                .into_iter()
+                .flatten()
+                .map(|&(_, index)| index),
+        );
+        owned.sort_unstable();
+        owned
+    }
+}
+
+/// A lane's class declarations and name records in offset order.
+struct DeclaredParameters<'a> {
+    classes: Vec<&'a FeatureInputClass>,
+    name_offsets: Vec<u64>,
+}
+
+impl<'a> DeclaredParameters<'a> {
+    fn new(lane: &'a FeatureInputLane) -> Self {
+        let mut classes = lane.classes.iter().collect::<Vec<_>>();
+        classes.sort_by_key(|class| class.offset);
+        let mut name_offsets = lane
+            .names
+            .iter()
+            .map(|name| name.offset)
+            .collect::<Vec<_>>();
+        name_offsets.sort_unstable();
+        Self {
+            classes,
+            name_offsets,
+        }
+    }
+
+    /// The last class declared before `name`, the later of two at one
+    /// offset, when no other name lies between them.
+    fn class_of(&self, name: &FeatureInputName) -> Option<&'a FeatureInputClass> {
+        let before = self
+            .classes
+            .partition_point(|class| class.offset < name.offset);
+        let class = *self.classes.get(before.checked_sub(1)?)?;
+        let after_class = self
+            .name_offsets
+            .partition_point(|&offset| offset <= class.offset);
+        let before_name = self
+            .name_offsets
+            .partition_point(|&offset| offset < name.offset);
+        (after_class >= before_name).then_some(class)
+    }
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
-    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
-) -> Result<(), CodecError> {
+) {
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
-        let feature_count = histories.iter().try_fold(0usize, |count, history| {
-            count.checked_add(history.features.len()).ok_or_else(|| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
-            })
-        })?;
-        let work = lane
-            .classes
-            .len()
-            .checked_add(lane.names.len())
-            .and_then(|count| count.checked_mul(lane.scalars.len()))
-            .and_then(|count| {
-                feature_count
-                    .checked_mul(lane.names.len().checked_add(lane.scalars.len())?)
-                    .and_then(|features| count.checked_add(features))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(
-            u64::try_from(work).map_err(|_| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
-            })?,
-            "scan SLDPRT parameter candidates",
-        )?;
-        let mut names_by_id = HashMap::new();
-        ctx.reserve_map(
-            &mut names_by_id,
-            lane.names.len(),
-            "index SLDPRT parameter names",
-        )?;
-        for name in &lane.names {
-            names_by_id.insert(name.id.as_str(), name);
-        }
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name))
+            .collect::<HashMap<_, _>>();
         let relation_unit = |family| match family {
             FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
             FeatureInputRelationFamily::LineLineDistance
@@ -80,21 +123,13 @@ pub(crate) fn enrich_history_parameters<'a>(
             | FeatureInputRelationFamily::PointPointVerticalDistance
             | FeatureInputRelationFamily::CircleDiameter => ScalarUnit::Length,
         };
+        let declared = DeclaredParameters::new(lane);
         let units = lane
             .scalars
             .iter()
             .filter_map(|scalar| {
                 let name = names_by_id.get(scalar.name.as_str())?;
-                let parameter_class = lane
-                    .classes
-                    .iter()
-                    .filter(|class| class.offset < name.offset)
-                    .max_by_key(|class| class.offset)?;
-                if lane.names.iter().any(|intervening| {
-                    intervening.offset > parameter_class.offset && intervening.offset < name.offset
-                }) {
-                    return None;
-                }
+                let parameter_class = declared.class_of(name)?;
                 let unit = match parameter_class.name.as_str() {
                     "moLengthParameter_c" => ScalarUnit::Length,
                     "moAngleParameter_c" => ScalarUnit::Angle,
@@ -107,76 +142,50 @@ pub(crate) fn enrich_history_parameters<'a>(
                     .iter()
                     .map(|binding| (binding.scalar_ref.as_str(), relation_unit(binding.family))),
             );
-        let mut scalar_units = HashMap::new();
-        for (scalar, unit) in units {
-            ctx.insert_hash_map(&mut scalar_units, scalar, unit, "index SLDPRT scalar units")?;
-        }
+        let mut scalar_units = units.collect::<HashMap<_, _>>();
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
             for scalar in relation.scalar_refs() {
-                ctx.insert_hash_map(
-                    &mut scalar_units,
-                    scalar.as_str(),
-                    unit,
-                    "index SLDPRT scalar units",
-                )?;
+                scalar_units.insert(scalar.as_str(), unit);
             }
         }
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                let Some(name) = feature_object_name(feature, lane) else {
+                let Some(name) = object_names.of(feature) else {
                     continue;
                 };
-                ctx.reserve_vec(&mut starts, 1, "collect SLDPRT parameter feature starts")?;
                 starts.push((name.offset, history_index, feature_index));
             }
         }
-        ctx.stable_sort_by(
-            &mut starts,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
-            "sort SLDPRT feature starts",
-        )?;
+        starts.sort_by_key(|left| left.0);
+        let owners = ScalarOwners::new(&lane.scalars);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|next| next.0);
             let feature = &histories[history_index].features[feature_index];
             let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
-            for scalar in lane
-                .scalars
-                .iter()
-                .filter(|scalar| scalar_owned_by_feature(scalar, &feature.id, start, end))
+            for scalar in owners
+                .owned(&feature.id, start, end)
+                .into_iter()
+                .filter_map(|index| lane.scalars.get(index))
             {
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
                 };
-                ctx.push_btree_group(
-                    &mut owned,
-                    name.value.as_str(),
-                    scalar,
-                    "index SLDPRT owned scalar names",
-                    "collect SLDPRT owned scalars",
-                )?;
+                owned.entry(name.value.as_str()).or_default().push(scalar);
             }
             for (name, scalars) in owned {
-                let mut driving = Vec::new();
-                for scalar in scalars
+                let driving = scalars
                     .iter()
+                    .copied()
                     .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-                {
-                    ctx.reserve_vec(&mut driving, 1, "collect SLDPRT driving scalars")?;
-                    driving.push(*scalar);
-                }
+                    .collect::<Vec<_>>();
                 let candidates_for_name = if driving.is_empty() {
-                    let mut native = Vec::new();
-                    for scalar in scalars
+                    scalars
                         .into_iter()
                         .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
-                    {
-                        ctx.reserve_vec(&mut native, 1, "collect SLDPRT native scalars")?;
-                        native.push(scalar);
-                    }
-                    native
+                        .collect()
                 } else {
                     driving
                 };
@@ -193,18 +202,10 @@ pub(crate) fn enrich_history_parameters<'a>(
                     if value_only {
                         continue;
                     }
-                    let name = ctx.format_retained(
-                        format_args!("{name}"),
-                        "retain SLDPRT parameter candidate name",
-                    )?;
-                    let key = (history_index, feature_index, name);
-                    ctx.push_btree_group(
-                        &mut candidates,
-                        key,
-                        (scalar.value.get(), unit),
-                        "index SLDPRT parameter candidates",
-                        "collect SLDPRT parameter candidates",
-                    )?;
+                    candidates
+                        .entry((history_index, feature_index, name.to_owned()))
+                        .or_default()
+                        .push((scalar.value.get(), unit));
                 }
             }
         }
@@ -273,22 +274,11 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         };
         if replace_existing {
-            ctx.insert_btree_map(
-                &mut feature.parameters,
-                name,
-                expression,
-                "insert SLDPRT enriched parameter",
-            )?;
+            feature.parameters.insert(name, expression);
         } else {
-            ctx.admit_btree_entry(
-                &feature.parameters,
-                &name,
-                "insert SLDPRT enriched parameter",
-            )?;
             feature.parameters.entry(name).or_insert(expression);
         }
     }
-    Ok(())
 }
 
 /// Infer a length unit from the owning operation and its native display role.
@@ -362,7 +352,6 @@ fn native_scalar_matches_discrete_parameter(
 }
 
 pub(crate) fn sync_changed_feature_scalars(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
     changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
@@ -375,31 +364,26 @@ pub(crate) fn sync_changed_feature_scalars(
             .iter()
             .map(|name| (name.id.as_str(), name.value.as_str()))
             .collect::<HashMap<_, _>>();
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter_map(|feature| {
-                feature_object_name(feature, lane).map(|name| (name.offset, feature))
-            })
+            .filter_map(|feature| object_names.of(feature).map(|name| (name.offset, feature)))
             .collect::<Vec<_>>();
-        ctx.stable_sort_by(
-            &mut starts,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
-            "sldprt feature name starts sort",
-        )?;
+        starts.sort_by_key(|(left, _)| *left);
+        let owners = ScalarOwners::new(&lane.scalars);
         let mut updates = Vec::<(usize, f64)>::new();
         for (index, &(start, feature)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
+            let mut owned = None;
             for (name, expression) in &feature.parameters {
                 if !changed.contains(&(feature.id.clone(), name.clone())) {
                     continue;
                 }
-                let candidates = lane
-                    .scalars
+                let candidates = owned
+                    .get_or_insert_with(|| owners.owned(&feature.id, start, end))
                     .iter()
-                    .enumerate()
-                    .filter(|(_, scalar)| scalar_owned_by_feature(scalar, &feature.id, start, end))
+                    .filter_map(|&index| Some((index, lane.scalars.get(index)?)))
                     .filter(|(_, scalar)| {
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })

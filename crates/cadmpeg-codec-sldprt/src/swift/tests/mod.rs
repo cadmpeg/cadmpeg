@@ -160,16 +160,11 @@ fn neutral_feature(
         ordinal,
         name: Some(name.into()),
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-            dependencies,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(format!("sldprt:history:feature#{id}")),
     }
@@ -190,7 +185,6 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
             Some(cadmpeg_ir::scalar::PositiveLength::new(diameter).unwrap()),
         )
         .unwrap(),
-
         extent: None,
         bottom: None,
         taper_angle: None,
@@ -199,3 +193,4 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
 }
 
 mod depth;
+mod walks;

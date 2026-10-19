@@ -36,7 +36,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
     assert!(result.ir().native.namespace("catia").is_some());
@@ -117,7 +117,7 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert!(scan.census.fbb_runs > 0);
     assert_eq!(scan.census.edge_delimiters, 0);
@@ -138,7 +138,7 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert_eq!(scan.census.edge_delimiters, 0);
 
@@ -173,7 +173,7 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &topology)
     })
-    .expect("service resource budget")
+    .expect("parse the FBB topology")
     .is_none());
 
     let result = decode(fbb_only_quad_unmatched_edge_catpart());
@@ -197,6 +197,46 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert_valid(&result);
 }
 
+/// Under every allowance up to the one it needs, the standard mesh search
+/// either finds the topology it finds under the production allowance or skips
+/// it with a loss; it never refuses the decode. Each candidate solve also
+/// asserts in test builds that its allowance paid for all of its work.
+#[test]
+fn fbb_only_mesh_incidence_stays_within_every_topology_allowance() {
+    let bytes = fbb_only_quad_unmatched_edge_catpart();
+    let attached = |result: &EditableDecodeResult| {
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str(),
+        ) == 1
+    };
+    let production = decode(bytes.clone());
+    assert!(attached(&production));
+
+    let mut limit = 0;
+    let smallest = loop {
+        let result =
+            crate::test_support::with_standard_topology_limit(limit, || decode(bytes.clone()));
+        if attached(&result) {
+            break result;
+        }
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("exhausted its operation")),
+            "allowance {limit}: {:?}",
+            result.report().losses
+        );
+        limit += 1;
+        assert!(limit < 10_000, "the fixture needs a small allowance");
+    };
+    assert!(limit > 0);
+    assert_eq!(smallest.ir(), production.ir());
+    assert_valid(&smallest);
+}
+
 #[test]
 fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     let bytes = zero_entity_cylinder_parametric_support_catpart();
@@ -205,7 +245,7 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
             ctx,
             bytes.clone()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::ZeroEntity
     );
@@ -240,7 +280,7 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::E5Stream);
     assert!(scan.e5_record_range.is_some());
 
@@ -262,7 +302,7 @@ fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FloatPackedInnerNoFbb);
 
     let result = decode(bytes);
@@ -298,7 +338,7 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
                 .decode(
                     &mut Cursor::new(bytes),
                     &DecodeOptions {
-                        container_only: true,
+                        depth: cadmpeg_core::decode::DecodeDepth::Container,
                         ..DecodeOptions::default()
                     },
                 )
@@ -329,7 +369,7 @@ fn assert_entity_resource_limit(error: &cadmpeg_ir::DecodeFailure) {
 #[test]
 fn container_only_raw_payload_refuses_entity_before_copy() {
     let mut options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     options.policy.limits.max_entities = 0;
@@ -348,7 +388,7 @@ fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
     let retained_len = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget")
+    .expect("scan the container")
     .brep
     .expect("standard B-rep")
     .len();
@@ -356,7 +396,7 @@ fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
     let mut reached = false;
     for _ in 0..512 {
         let mut options = DecodeOptions {
-            container_only: true,
+            depth: cadmpeg_core::decode::DecodeDepth::Container,
             ..DecodeOptions::default()
         };
         options.policy.limits.max_retained_bytes = cap;
@@ -402,7 +442,7 @@ fn full_route_raw_payload_refuses_retained_bytes_before_copy() {
     let retained_len = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget")
+    .expect("scan the container")
     .brep
     .expect("standard B-rep")
     .len();
@@ -475,7 +515,7 @@ fn every_decode_path_populates_v1_annotations() {
             .decode(
                 &mut Cursor::new(standard_catpart()),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

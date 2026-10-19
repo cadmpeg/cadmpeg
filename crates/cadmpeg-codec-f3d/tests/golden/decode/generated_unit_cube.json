@@ -42,7 +42,7 @@
       "length": "millimeter"
     },
     "tolerances": {
-      "linear": 1e-6,
+      "linear": 1e-06,
       "angular": 1e-10
     },
     "model": {
@@ -1765,9 +1765,12 @@
         ],
         "wire_topologies": [],
         "xref_designs": [],
-        "xref_references": []
+        "xref_references": [],
+        "asm_face_boundaries": [],
+        "design_intent_failures": []
       }
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

@@ -21,10 +21,9 @@ pub(crate) struct CatiaE5CurveSupportRecord {
 }
 
 pub(super) fn derive(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<CatiaE5CurveSupportRecord>, CodecError> {
-    ctx.charge_work(u64_from_index(bytes.len()), "catia_e5_native_support_scan")?;
     let mut output = Vec::new();
     for span in crate::container::all_e5_record_spans(bytes) {
         let frame = &bytes[span.clone()];
@@ -32,24 +31,17 @@ pub(super) fn derive(
         if !matches!(class, 0xc0 | 0xc1) {
             continue;
         }
-        let Some(support) = support::parse(ctx, class, &frame[13..])? else {
+        let Some(support) = support::parse(class, &frame[13..]) else {
             continue;
         };
         let record_id = View::u32_le_at(frame, 9)
             .ok_or_else(|| CodecError::malformed("E5 support frame has no record identity"))?;
-        ctx.push_vec(
-            &mut output,
-            CatiaE5CurveSupportRecord {
-                id: ctx.format_retained(
-                    format_args!("catia:e5:curve-support#{}", span.start),
-                    "catia_native_e5_curve_support_id",
-                )?,
-                byte_offset: u64_from_index(span.start),
-                record_id,
-                support,
-            },
-            "catia_native_e5_curve_supports",
-        )?;
+        output.push(CatiaE5CurveSupportRecord {
+            id: format!("catia:e5:curve-support#{}", span.start),
+            byte_offset: u64_from_index(span.start),
+            record_id,
+            support,
+        });
     }
     Ok(output)
 }
@@ -87,16 +79,6 @@ mod tests {
             serde_json::from_value::<Vec<super::CatiaE5CurveSupportRecord>>(wire)
                 .expect("load programs"),
             records
-        );
-    }
-
-    #[test]
-    fn native_support_records_refuse_before_arena_growth() {
-        let result =
-            crate::test_support::with_collection_limit(0, |ctx| derive(ctx, &boundary_frames()));
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_e5_curve_supports")
         );
     }
 }

@@ -175,13 +175,6 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 
 #[test]
 fn section_profile_prefers_a_resolved_sketch_chain() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("admitted circular profile fixture");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture"),
@@ -198,40 +191,25 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
-        })
-        .expect("profile lookup admitted"),
+        section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#offset:40".to_string()
         ))
     );
 
-    ir.model.sketches[0]
-        .profiles
-        .push_single(
-            &resource_ctx,
-            SketchEntityUse {
-                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
-                    .expect("valid test fixture"),
-                reversed: false,
-            },
-        )
-        .expect("admitted circular profile fixture");
+    ir.model.sketches[0].profiles.push_single(SketchEntityUse {
+        entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
+            .expect("valid test fixture"),
+        reversed: false,
+    });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
-        })
-        .expect("profile lookup admitted"),
+        section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Sketch(
             SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
         ))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#918".to_string())
-        })
-        .expect("profile lookup admitted"),
+        section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#918".to_string()
         ))
@@ -239,21 +217,15 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
 }
 
 #[test]
-fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn section_profile_lookup_resolves_the_feature_sketch() {
     let id = SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let mut profiles = cadmpeg_ir::sketches::SketchProfiles::default();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        profiles.push_single(
-            ctx,
-            SketchEntityUse {
-                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:1")
-                    .expect("entity ID"),
-                reversed: false,
-            },
-        )
-    })
-    .expect("profile use admitted");
+    ({
+        profiles.push_single(SketchEntityUse {
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:1").expect("entity ID"),
+            reversed: false,
+        });
+    });
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: id.clone(),
@@ -264,32 +236,8 @@ fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
         profiles,
         native_ref: None,
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
-        .expect_err("one sketch needs one lookup unit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo section profile sketch lookup")
-    );
-    policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
-        .expect_err("selected sketch copy exceeds cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo section profile sketch identity")
-    );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#40".to_owned())
-        })
-        .expect("service profile admitted"),
+        section_profile_ref(&ir, "creo:featdefs:sketch#40".to_owned()),
         ProfileRef::Planar(PlanarProfileRef::Sketch(id))
     );
 }
@@ -344,14 +292,14 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     ]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
@@ -370,14 +318,14 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     })
     .expect("valid test fixture");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
@@ -396,14 +344,14 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     })
     .expect("valid test fixture");
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
 }
@@ -504,7 +452,14 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
                 && cylinder.radius().get() == 0.75
     ));
     assert!(matches!(
-        cylinder_from_single_cap_outline(CapOutline { surface_id: 46, origin: [0.0, 16.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]] }),
+        cylinder_from_single_cap_outline(
+            CapOutline {
+                surface_id: 46,
+                origin: [0.0, 16.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                corners: [[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]
+            }
+        ),
         Some(cylinder)
             if *cylinder.origin() == Point3::new(0.0, 16.0, 0.0)
                 && *cylinder.frame().axis().as_raw() == Vector3::new(0.0, 1.0, 0.0)

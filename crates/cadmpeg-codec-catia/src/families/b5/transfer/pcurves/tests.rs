@@ -25,7 +25,6 @@ fn line(start: f64, end: f64) -> B5Pcurve {
 fn isocurve_lift_binds_affine_and_reversed_reference_parameters() {
     crate::test_support::with_service_context(|ctx| {
         let surface = NurbsSurface::from_lanes(
-            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 6.0, 6.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -37,8 +36,7 @@ fn isocurve_lift_binds_affine_and_reversed_reference_parameters() {
             ),
             false,
         )
-        .expect("budget")
-        .expect("surface");
+        .expect("budget");
         let surface = B5Surface::Nurbs(surface);
         for (start, end) in [(2.0, 6.0), (6.0, 2.0)] {
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =

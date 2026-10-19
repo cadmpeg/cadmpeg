@@ -37,45 +37,15 @@ impl From<cadmpeg_core::CodecError> for SketchCollectionError {
     }
 }
 
-fn distinct_sketch_members<'id>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    identities: impl ExactSizeIterator<Item = &'id str>,
-    operation: &'static str,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    // Drop the temporary identities before their storage reservation.
-    let (storage, mut members) = {
-        let mut values = Vec::new();
-        let reservation = ctx.reserve_temporary_vec(&mut values, identities.len(), operation)?;
-        (reservation, values)
-    };
+fn distinct_sketch_members<'id>(identities: impl Iterator<Item = &'id str>) -> bool {
+    let mut members: Vec<&str> = Vec::new();
     for identity in identities {
-        ctx.charge_work(1, operation)?;
-        let mut low = 0;
-        let mut high = members.len();
-        while low < high {
-            ctx.charge_work(1, operation)?;
-            let middle = low + (high - low) / 2;
-            let candidate: &str = members[middle];
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(candidate.len().min(identity.len())),
-                operation,
-            )?;
-            match candidate.cmp(identity) {
-                std::cmp::Ordering::Less => low = middle + 1,
-                std::cmp::Ordering::Greater => high = middle,
-                std::cmp::Ordering::Equal => return Ok(false),
-            }
+        match members.binary_search(&identity) {
+            Ok(_) => return false,
+            Err(position) => members.insert(position, identity),
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(members.len() - low),
-            operation,
-        )?;
-        ctx.charge_work(1, operation)?;
-        members.insert(low, identity);
     }
-    drop(members);
-    drop(storage);
-    Ok(true)
+    true
 }
 
 pub mod scaling;
@@ -394,73 +364,24 @@ impl SketchProfiles {
         self.0.is_empty()
     }
 
-    /// Append a profile containing one entity use after resource admission.
-    pub fn push_single(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        entity: SketchEntityUse,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        const OPERATION: &str = "append sketch profile use";
-        ctx.charge_work(2, OPERATION)?;
-        let mut profile = Vec::new();
-        ctx.reserve_vec(&mut profile, 1, OPERATION)?;
-        if self.0.len() == self.0.capacity() {
-            ctx.charge_work(
-                u64::try_from(self.0.len())
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-        }
-        ctx.reserve_vec(&mut self.0, 1, OPERATION)?;
-        profile.push(entity);
-        self.0.push(profile);
-        Ok(())
+    /// Append a profile containing one entity use.
+    pub fn push_single(&mut self, entity: SketchEntityUse) {
+        self.0.push(vec![entity]);
     }
 
     /// Retain matching uses and remove empty chains after every predicate returns.
-    pub fn retain_uses(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut keep: impl FnMut(&SketchEntityUse) -> bool,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        const OPERATION: &str = "filter sketch profile uses";
-        let count = self.0.iter().try_fold(0usize, |count, profile| {
-            ctx.charge_work(1, OPERATION)?;
-            count
-                .checked_add(profile.len())
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
-        })?;
-        ctx.charge_work(
-            u64::try_from(count)
-                .ok()
-                .and_then(|count| count.checked_mul(4))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        let (mut decisions, _decision_storage) = ctx.temporary_vec(count, OPERATION)?;
+    pub fn retain_uses(&mut self, mut keep: impl FnMut(&SketchEntityUse) -> bool) {
+        let mut decisions = Vec::new();
         for profile in &self.0 {
             for usage in profile {
-                ctx.charge_work(
-                    u64::try_from(usage.entity.as_str().len())
-                        .ok()
-                        .and_then(|len| len.checked_add(1))
-                        .and_then(|work| work.checked_mul(4))
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
                 decisions.push(keep(usage));
             }
         }
-        let mut decision_index = 0;
+        let mut decisions = decisions.into_iter();
         for profile in &mut self.0 {
-            profile.retain(|_| {
-                let decision = decisions[decision_index];
-                decision_index += 1;
-                decision
-            });
+            profile.retain(|_| decisions.next() == Some(true));
         }
         self.0.retain(|profile| !profile.is_empty());
-        Ok(())
     }
 
     /// Append a nonempty profile chain.
@@ -670,77 +591,6 @@ pub struct SketchGeometry(
 );
 
 impl SketchGeometry {
-    /// Copy geometry after charging each retained nested allocation.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        use SketchGeometryDefinition as Definition;
-        ctx.charge_work(1, operation)?;
-        let definition = match self.definition() {
-            Definition::Nurbs { curve } => Definition::Nurbs {
-                curve: curve.try_clone_for_decode(ctx, operation)?,
-            },
-            Definition::Text {
-                text,
-                font_family,
-                font_weight,
-                height,
-                width_factor,
-                placement,
-                horizontal_alignment,
-                vertical_alignment,
-            } => Definition::Text {
-                text: text.try_clone_for_decode(ctx, operation)?,
-                font_family: font_family.try_clone_for_decode(ctx, operation)?,
-                font_weight: *font_weight,
-                height: *height,
-                width_factor: *width_factor,
-                placement: *placement,
-                horizontal_alignment: *horizontal_alignment,
-                vertical_alignment: *vertical_alignment,
-            },
-            Definition::ExternalReference {
-                document,
-                object,
-                subelements,
-            } => {
-                let document = document
-                    .as_deref()
-                    .map(|document| ctx.copy_retained_text(document, operation))
-                    .transpose()?;
-                let object = object.try_clone_for_decode(ctx, operation)?;
-                let mut copied_subelements = Vec::new();
-                ctx.reserve_vec(&mut copied_subelements, subelements.len(), operation)?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(subelements.len()),
-                    operation,
-                )?;
-                for subelement in subelements {
-                    copied_subelements.push(ctx.copy_retained_text(subelement, operation)?);
-                }
-                Definition::ExternalReference {
-                    document,
-                    object,
-                    subelements: copied_subelements,
-                }
-            }
-            Definition::Native { native_kind } => Definition::Native {
-                native_kind: native_kind.try_clone_for_decode(ctx, operation)?,
-            },
-            Definition::Point { .. }
-            | Definition::Line { .. }
-            | Definition::ReferenceLine { .. }
-            | Definition::Circle { .. }
-            | Definition::Arc { .. }
-            | Definition::Ellipse { .. }
-            | Definition::Hyperbola { .. }
-            | Definition::Parabola { .. } => return Ok(self.clone()),
-        };
-        Ok(Self::from_admitted_definition(definition))
-    }
-
     /// Build from a definition whose field types already carry the admitted invariants.
     #[must_use]
     pub fn from_admitted_definition(
@@ -1495,56 +1345,44 @@ impl SpatialSketchProfile {
         normal: Vector3,
         u_axis: Vector3,
         boundary: Vec<SpatialSketchEntityUse>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, &'static str> {
         let Some(origin) = FinitePoint3::new(origin) else {
-            return Ok(Err("spatial profile origin must be finite"));
+            return Err("spatial profile origin must be finite");
         };
         let Some(normal) = UnitVector3::new(normal) else {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+            return Err(SPATIAL_PROFILE_AXES_ERROR);
         };
         let Some(u_axis) = UnitVector3::new(u_axis) else {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+            return Err(SPATIAL_PROFILE_AXES_ERROR);
         };
-        Self::from_parts(origin, normal, u_axis, boundary, ctx, operation)
+        Self::from_parts(origin, normal, u_axis, boundary)
     }
 
-    /// Admit typed plane controls and charge temporary uniqueness storage.
+    /// Admit typed plane controls.
     pub fn from_parts(
         origin: FinitePoint3,
         normal: UnitVector3,
         u_axis: UnitVector3,
         boundary: Vec<SpatialSketchEntityUse>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, &'static str> {
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
-        ctx.charge_work(1, operation)?;
+
         let dot = n.x * u.x + n.y * u.y + n.z * u.z;
         if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+            return Err(SPATIAL_PROFILE_AXES_ERROR);
         }
         if boundary.is_empty() {
-            return Ok(Err(
-                "spatial profile boundary must be nonempty and contain distinct entities",
-            ));
+            return Err("spatial profile boundary must be nonempty and contain distinct entities");
         }
-        if !distinct_sketch_members(
-            ctx,
-            boundary.iter().map(|use_| use_.entity.as_str()),
-            operation,
-        )? {
-            return Ok(Err(
-                "spatial profile boundary must be nonempty and contain distinct entities",
-            ));
+        if !distinct_sketch_members(boundary.iter().map(|use_| use_.entity.as_str())) {
+            return Err("spatial profile boundary must be nonempty and contain distinct entities");
         }
-        Ok(Ok(Self {
+        Ok(Self {
             origin,
             normal,
             u_axis,
             boundary,
-        }))
+        })
     }
 
     /// Profile-plane origin in model space.
@@ -2131,9 +1969,8 @@ impl SpatialSketchNurbsCurve {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<(), E>, cadmpeg_core::CodecError> {
-        self.0.try_map_control_points(map, ctx)
+    ) -> Result<(), E> {
+        self.0.try_map_control_points(map)
     }
 }
 
@@ -2150,32 +1987,6 @@ pub struct SpatialSketchGeometry(
 );
 
 impl SpatialSketchGeometry {
-    /// Copy the retained geometry payload through the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        use SpatialSketchGeometryDefinition as Definition;
-        ctx.charge_work(1, operation)?;
-        let definition = match &self.0 {
-            Definition::Nurbs { curve } => Definition::Nurbs {
-                curve: SpatialSketchNurbsCurve(curve.0.try_clone_for_decode(ctx, operation)?),
-            },
-            Definition::NurbsSurface { surface } => Definition::NurbsSurface {
-                surface: surface.try_clone_for_decode(ctx, operation)?,
-            },
-            Definition::Native { native_kind } => Definition::Native {
-                native_kind: native_kind.try_clone_for_decode(ctx, operation)?,
-            },
-            Definition::Point { .. }
-            | Definition::Line { .. }
-            | Definition::Circle { .. }
-            | Definition::Arc { .. } => return Ok(self.clone()),
-        };
-        Ok(Self(definition))
-    }
-
     /// Borrow the admitted spatial geometry definition.
     #[must_use]
     pub fn definition(
@@ -3251,23 +3062,15 @@ impl TryFrom<SketchPolygonWire> for SketchPolygon {
 }
 
 impl SketchPolygon {
-    /// Admit decoded members and charge temporary uniqueness storage.
-    pub fn try_new(
-        entities: Vec<SketchEntityId>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+    /// Admit decoded members.
+    pub fn try_new(entities: Vec<SketchEntityId>) -> Result<Self, &'static str> {
         if entities.len() < 3 {
-            return Ok(Err(
-                "entities requires at least three distinct polygon members",
-            ));
+            return Err("entities requires at least three distinct polygon members");
         }
-        if !distinct_sketch_members(ctx, entities.iter().map(SketchEntityId::as_str), operation)? {
-            return Ok(Err(
-                "entities requires at least three distinct polygon members",
-            ));
+        if !distinct_sketch_members(entities.iter().map(SketchEntityId::as_str)) {
+            return Err("entities requires at least three distinct polygon members");
         }
-        Ok(Ok(Self { entities }))
+        Ok(Self { entities })
     }
 
     /// Returns the ordered polygon members.

@@ -9,7 +9,6 @@ mod thread;
 
 use super::move_face::{CoreView as MoveFaceView, MoveFaceCore};
 use super::operation_record::OperationPayload;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
@@ -158,47 +157,28 @@ impl CoreView<'_> {
             | Self::CurveMesh(bytes) => bytes.len(),
         }
     }
-    pub(crate) fn retain(&self, ctx: &DecodeContext<'_>) -> Result<OperationCore, CodecError> {
+    pub(crate) fn retain(&self) -> Result<OperationCore, CodecError> {
         match self {
-            Self::MoveFace(core) => Ok(OperationCore::MoveFace(core.retain(ctx)?)),
-            Self::DeleteFace(bytes) => Ok(OperationCore::DeleteFace(
-                ctx.copy_slice(bytes, "NX bounded delete_face core")?.into(),
-            )),
-            Self::Threads(bytes) => Ok(OperationCore::Threads(
-                ctx.copy_slice(bytes, "NX bounded threads core")?.into(),
-            )),
-            Self::DetailedThread(bytes) => Ok(OperationCore::DetailedThread(
-                ctx.copy_slice(bytes, "NX bounded detailed_thread core")?
-                    .into(),
-            )),
-            Self::CurveMesh(bytes) => Ok(OperationCore::CurveMesh(
-                ctx.copy_slice(bytes, "NX bounded curve-mesh core")?.into(),
-            )),
-            Self::CopyFace(bytes) => Ok(OperationCore::CopyFace(
-                ctx.copy_slice(bytes, "NX bounded face-copy core")?.into(),
-            )),
-            Self::Cylinder(bytes) => Ok(OperationCore::Cylinder(
-                ctx.copy_slice(bytes, "NX bounded cylinder core")?.into(),
-            )),
-            Self::Cone(bytes) => Ok(OperationCore::Cone(
-                ctx.copy_slice(bytes, "NX bounded cone core")?.into(),
-            )),
-            Self::Sphere(bytes) => Ok(OperationCore::Sphere(
-                ctx.copy_slice(bytes, "NX bounded sphere core")?.into(),
-            )),
-            Self::MoveObject(bytes) => Ok(OperationCore::MoveObject(
-                ctx.copy_slice(bytes, "NX bounded object-motion core")?
-                    .into(),
-            )),
+            Self::MoveFace(core) => Ok(OperationCore::MoveFace(core.retain()?)),
+            Self::DeleteFace(bytes) => Ok(OperationCore::DeleteFace((bytes).to_vec().into())),
+            Self::Threads(bytes) => Ok(OperationCore::Threads((bytes).to_vec().into())),
+            Self::DetailedThread(bytes) => {
+                Ok(OperationCore::DetailedThread((bytes).to_vec().into()))
+            }
+            Self::CurveMesh(bytes) => Ok(OperationCore::CurveMesh((bytes).to_vec().into())),
+            Self::CopyFace(bytes) => Ok(OperationCore::CopyFace((bytes).to_vec().into())),
+            Self::Cylinder(bytes) => Ok(OperationCore::Cylinder((bytes).to_vec().into())),
+            Self::Cone(bytes) => Ok(OperationCore::Cone((bytes).to_vec().into())),
+            Self::Sphere(bytes) => Ok(OperationCore::Sphere((bytes).to_vec().into())),
+            Self::MoveObject(bytes) => Ok(OperationCore::MoveObject((bytes).to_vec().into())),
         }
     }
 }
 
 pub(crate) fn core_for_decode<'a>(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'a>,
     classes: &[super::TypeDefinition<'_>],
-) -> Result<Option<CoreView<'a>>, CodecError> {
+) -> Option<CoreView<'a>> {
     let selects = |selector: u8, expected: &str| {
         selector
             .checked_sub(1)
@@ -206,15 +186,10 @@ pub(crate) fn core_for_decode<'a>(
             .is_some_and(|class| class.name == expected)
     };
     if record.name() == "MOVE_FACE" {
-        return super::move_face::core_for_decode(ctx, record, classes)
-            .map(|core| core.map(CoreView::MoveFace));
+        return super::move_face::core_for_decode(record, classes).map(CoreView::MoveFace);
     }
     if matches!(record.name(), "COPY_FACE" | "THRU_CURVE_MESH") {
-        ctx.charge_work(
-            u64_from_index(record.payload().len()),
-            "NX complete profile or face-copy core",
-        )?;
-        return Ok(if record.name() == "COPY_FACE" {
+        return if record.name() == "COPY_FACE" {
             copy_face::read(record.payload())
                 .filter(|s| {
                     s.iter()
@@ -230,28 +205,24 @@ pub(crate) fn core_for_decode<'a>(
                         .all(|(s, name)| selects(*s, name))
                 })
                 .map(|_| CoreView::CurveMesh(record.payload()))
-        });
+        };
     }
     if matches!(record.name(), "DELETE FACE" | "THREADS" | "DETAILED_THREAD") {
-        ctx.charge_work(
-            u64_from_index(record.payload().len()),
-            "NX complete direct or thread core",
-        )?;
         if record.name() == "DELETE FACE" {
-            return Ok(delete_face::read(record.payload())
+            return delete_face::read(record.payload())
                 .filter(|s| {
                     s.iter()
                         .zip(delete_face::CLASSES)
                         .all(|(s, name)| selects(*s, name))
                 })
-                .map(|_| CoreView::DeleteFace(record.payload())));
+                .map(|_| CoreView::DeleteFace(record.payload()));
         }
         let family = if record.name() == "THREADS" {
             thread::Family::Threads
         } else {
             thread::Family::DetailedThread
         };
-        return Ok(thread::read(record.payload(), family)
+        return thread::read(record.payload(), family)
             .filter(|s| {
                 selects(s[0], thread::OWNER) && selects(s[1], super::body_write::BODY_IMAGE_CLASS)
             })
@@ -261,7 +232,7 @@ pub(crate) fn core_for_decode<'a>(
                 } else {
                     CoreView::DetailedThread(record.payload())
                 }
-            }));
+            });
     }
     let (family, owner) = match record.name() {
         "CYLINDER" => (frames::Family::Cylinder, "UGS::CYLINDER_PARMS"),
@@ -271,22 +242,16 @@ pub(crate) fn core_for_decode<'a>(
             frames::Family::MoveObject,
             "UGS::ModlFeature::MoveObjectParms",
         ),
-        _ => return Ok(None),
+        _ => return None,
     };
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "NX complete operation core",
-    )?;
-    let Some(frame) = frames::read(record.payload(), family) else {
-        return Ok(None);
-    };
+    let frame = frames::read(record.payload(), family)?;
     if !selects(frame.owner, owner)
         || !selects(frame.endpoint, super::body_write::BODY_IMAGE_CLASS)
         || frame
             .motion
             .is_some_and(|selector| !selects(selector, "UGS::Modl::MotionOptions"))
     {
-        return Ok(None);
+        return None;
     }
     if frame.byte_len != record.payload().len()
         && (!frame.null_terminal
@@ -296,15 +261,15 @@ pub(crate) fn core_for_decode<'a>(
                 .get(frame.byte_len)
                 .is_some_and(|selector| selects(*selector, "UGS::OM::MethodicObject")))
     {
-        return Ok(None);
+        return None;
     }
     let bytes = &record.payload()[..frame.byte_len];
-    Ok(Some(match family {
+    Some(match family {
         frames::Family::Cylinder => CoreView::Cylinder(bytes),
         frames::Family::Cone => CoreView::Cone(bytes),
         frames::Family::Sphere => CoreView::Sphere(bytes),
         frames::Family::MoveObject => CoreView::MoveObject(bytes),
-    }))
+    })
 }
 
 #[cfg(test)]

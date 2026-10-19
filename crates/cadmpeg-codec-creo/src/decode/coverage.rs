@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface, curve, sketch-segment, and design-constraint transfer coverage.
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -15,28 +14,15 @@ use crate::container::ContainerScan;
 
 use super::feature_history::link::surface_kind_for_geometry;
 
-fn charged_map_entry<'a, K: Ord, V: Default>(
-    ctx: &DecodeContext<'_>,
-    map: &'a mut BTreeMap<K, V>,
-    key: K,
-    operation: &'static str,
-) -> Result<&'a mut V, CodecError> {
-    ctx.admit_btree_entry(map, &key, operation)?;
+fn charged_map_entry<K: Ord, V: Default>(map: &mut BTreeMap<K, V>, key: K) -> &mut V {
     match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
-        std::collections::btree_map::Entry::Vacant(entry) => Ok(entry.insert(V::default())),
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => entry.insert(V::default()),
     }
 }
 
-pub(super) fn source_section(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    offset: usize,
-) -> Result<String, CodecError> {
-    ctx.copy_retained_text(
-        source_section_ref(scan, offset),
-        "creo expression source section",
-    )
+pub(super) fn source_section(scan: &ContainerScan, offset: usize) -> String {
+    source_section_ref(scan, offset).to_owned()
 }
 
 pub(super) fn source_section_ref<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
@@ -187,57 +173,20 @@ impl CurveTransferCoverage {
         self.ambiguous_rows += count;
     }
 
-    fn record_source_row(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        type_byte: u8,
-    ) -> Result<(), CodecError> {
+    fn record_source_row(&mut self, type_byte: u8) {
         self.unique_rows += 1;
-        charged_map_entry(
-            ctx,
-            &mut self.by_type,
-            type_byte,
-            "creo curve coverage type nodes",
-        )?
-        .0 += 1;
-        charged_map_entry(
-            ctx,
-            &mut self.unknown_by_type,
-            type_byte,
-            "creo curve coverage unknown type nodes",
-        )?;
-        Ok(())
+        charged_map_entry(&mut self.by_type, type_byte).0 += 1;
+        charged_map_entry(&mut self.unknown_by_type, type_byte);
     }
 
-    fn record_transferred_row(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        type_byte: u8,
-    ) -> Result<(), CodecError> {
+    fn record_transferred_row(&mut self, type_byte: u8) {
         self.transferred_rows += 1;
-        charged_map_entry(
-            ctx,
-            &mut self.by_type,
-            type_byte,
-            "creo curve coverage type nodes",
-        )?
-        .1 += 1;
-        Ok(())
+        charged_map_entry(&mut self.by_type, type_byte).1 += 1;
     }
 
-    fn record_retained_unknown_row(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        type_byte: u8,
-    ) -> Result<(), CodecError> {
+    fn record_retained_unknown_row(&mut self, type_byte: u8) {
         self.retained_unknown_rows += 1;
-        *charged_map_entry(
-            ctx,
-            &mut self.unknown_by_type,
-            type_byte,
-            "creo curve coverage unknown type nodes",
-        )? += 1;
-        Ok(())
+        *charged_map_entry(&mut self.unknown_by_type, type_byte) += 1;
     }
 
     /// Source and transferred counts by native curve type.
@@ -357,11 +306,10 @@ impl DesignConstraintTransferCoverage {
 }
 
 pub(super) fn design_constraint_transfer_coverage(
-    ctx: &DecodeContext<'_>,
     constraints: &[SketchConstraint],
     id_marker: &str,
     native_kind_prefix: &str,
-) -> Result<DesignConstraintTransferCoverage, CodecError> {
+) -> DesignConstraintTransferCoverage {
     let mut coverage = DesignConstraintTransferCoverage::default();
     for constraint in constraints
         .iter()
@@ -383,19 +331,9 @@ pub(super) fn design_constraint_transfer_coverage(
             coverage.native += 1;
         }
         if let Some(native_kind) = native_kind {
-            *charged_map_entry(
-                ctx,
-                &mut coverage.native_by_kind,
-                native_kind,
-                "creo native constraint kind nodes",
-            )? += 1;
+            *charged_map_entry(&mut coverage.native_by_kind, native_kind) += 1;
             if constraint.active == Some(true) {
-                *charged_map_entry(
-                    ctx,
-                    &mut coverage.active_native_by_kind,
-                    native_kind,
-                    "creo active native constraint kind nodes",
-                )? += 1;
+                *charged_map_entry(&mut coverage.active_native_by_kind, native_kind) += 1;
             }
         }
         if constraint.active == Some(true) {
@@ -405,7 +343,7 @@ pub(super) fn design_constraint_transfer_coverage(
             }
         }
     }
-    Ok(coverage)
+    coverage
 }
 
 pub(super) fn constraint_kind_breakdown<'a>(
@@ -442,11 +380,10 @@ pub(super) fn constraint_kind_breakdown<'a>(
 }
 
 pub(super) fn curve_transfer_coverage(
-    ctx: &DecodeContext<'_>,
     rows: &[crate::curve::CurveTopologyRow],
     curves: &[Curve],
 ) -> Result<CurveTransferCoverage, CodecError> {
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let unique_rows = crate::identity::uniquely_identified_rows(rows, |row| row.id);
     let mut transferred_ids = BTreeSet::new();
     for id in curves
         .iter()
@@ -468,7 +405,7 @@ pub(super) fn curve_transfer_coverage(
                 .ok()
         })
     {
-        ctx.insert_btree_set(&mut transferred_ids, id, "creo transferred curve ID nodes")?;
+        transferred_ids.insert(id);
     }
     let mut unknown_ids = BTreeSet::new();
     for id in curves
@@ -491,7 +428,7 @@ pub(super) fn curve_transfer_coverage(
                 .ok()
         })
     {
-        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown curve ID nodes")?;
+        unknown_ids.insert(id);
     }
     let mut coverage = CurveTransferCoverage::default();
     coverage.record_ambiguous_rows(
@@ -500,24 +437,23 @@ pub(super) fn curve_transfer_coverage(
             .ok_or_else(|| CodecError::malformed("unique row count exceeds source row count"))?,
     );
     for row in unique_rows {
-        coverage.record_source_row(ctx, row.type_byte)?;
+        coverage.record_source_row(row.type_byte);
         if transferred_ids.contains(&row.id) {
-            coverage.record_transferred_row(ctx, row.type_byte)?;
+            coverage.record_transferred_row(row.type_byte);
         }
         if unknown_ids.contains(&row.id) {
-            coverage.record_retained_unknown_row(ctx, row.type_byte)?;
+            coverage.record_retained_unknown_row(row.type_byte);
         }
     }
     Ok(coverage)
 }
 
 pub(super) fn surface_transfer_coverage(
-    ctx: &DecodeContext<'_>,
     rows: &[crate::surface::SurfaceRow],
     surfaces: &[Surface],
     procedural_surfaces: &[ProceduralSurface],
 ) -> Result<SurfaceTransferCoverage, CodecError> {
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let unique_rows = crate::identity::uniquely_identified_rows(rows, |row| row.id);
     let mut extrusion_constructions = BTreeSet::new();
     for id in procedural_surfaces
         .iter()
@@ -529,11 +465,7 @@ pub(super) fn surface_transfer_coverage(
         })
         .map(|procedural| &procedural.id)
     {
-        ctx.insert_btree_set(
-            &mut extrusion_constructions,
-            id,
-            "creo extrusion construction nodes",
-        )?;
+        extrusion_constructions.insert(id);
     }
     let mut extrusion_surfaces = BTreeSet::new();
     for id in surfaces
@@ -546,7 +478,7 @@ pub(super) fn surface_transfer_coverage(
         })
         .map(|surface| &surface.id)
     {
-        ctx.insert_btree_set(&mut extrusion_surfaces, id, "creo extrusion surface nodes")?;
+        extrusion_surfaces.insert(id);
     }
     let mut transferred = Vec::new();
     for surface in surfaces {
@@ -565,7 +497,6 @@ pub(super) fn surface_transfer_coverage(
         let extra = extrusion_surfaces.contains(&surface.id).then_some(
             crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         );
-        ctx.reserve_vec(&mut transferred, 1, "creo transferred surface rows")?;
         transferred.push((id, [Some(kind), extra]));
     }
     let mut unknown_ids = BTreeSet::new();
@@ -589,7 +520,7 @@ pub(super) fn surface_transfer_coverage(
                 .ok()
         })
     {
-        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown surface ID nodes")?;
+        unknown_ids.insert(id);
     }
     let mut coverage = SurfaceTransferCoverage::default();
     coverage.record_ambiguous_rows(

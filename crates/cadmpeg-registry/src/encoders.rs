@@ -22,8 +22,10 @@ pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::DecodeDepth;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::write::target::TargetRequest;
+    use cadmpeg_ir::codec::write::DepthNeed;
     use cadmpeg_ir::codec::FormatId;
 
     use super::build_encoder;
@@ -61,6 +63,22 @@ mod tests {
                     target.id
                 );
             }
+        }
+    }
+
+    /// Each encoder's decode need, pinned: a geometry writer that starts
+    /// reading a design arena must raise its need here, where review sees it.
+    #[test]
+    fn every_encoder_declares_its_decode_need() {
+        for format in Format::all() {
+            let encoder = build_encoder(format);
+            let expected = match encoder.id().as_str() {
+                "cadir" => DepthNeed::Recorded,
+                "step" | "iges" | "rhino" => DepthNeed::AtLeast(DecodeDepth::Geometry),
+                "f3d" | "sldprt" | "fcstd" => DepthNeed::AtLeast(DecodeDepth::Full),
+                other => panic!("{other}: no pinned decode need"),
+            };
+            assert_eq!(encoder.needs(), expected, "{}", encoder.id());
         }
     }
 

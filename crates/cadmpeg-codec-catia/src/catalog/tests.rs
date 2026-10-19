@@ -6,53 +6,7 @@
 use super::PREFIX;
 use crate::test_support::test_object_graph::catalog_stream;
 
-fn parse(bytes: &[u8]) -> Vec<super::Catalog> {
-    crate::test_support::with_service_context(|ctx| super::parse(ctx, bytes))
-        .expect("catalog fixture fits the service limits")
-}
-
-#[test]
-fn catalog_entries_refuse_count_limit_before_reservation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = catalog_stream(&PREFIX);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("catalog fixture fits the input limit");
-    let error =
-        super::parse(&ctx, &bytes).expect_err("four catalog entries exceed zero collection items");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_catalog_entries"));
-    assert_eq!(parse(&bytes).len(), 1);
-}
-
-#[test]
-fn catalog_value_refuses_retained_limit_before_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = catalog_stream(&PREFIX);
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "catia_catalog_entry_value",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("catalog input");
-            super::parse(&ctx, &bytes)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "catia_catalog_entry_value"));
-    assert_eq!(parse(&bytes).len(), 1);
-}
+use super::parse;
 
 #[test]
 fn catalog_accepts_utf8_and_expression_line_feeds() {
@@ -76,7 +30,7 @@ fn catalog_accepts_utf8_and_expression_line_feeds() {
             .to_le_bytes(),
     );
     bytes.extend_from_slice(&body);
-    let catalogs = parse(&bytes);
+    let catalogs = parse(&bytes).catalogs;
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].entries[4].value, "angle\n°");
 }
@@ -84,7 +38,7 @@ fn catalog_accepts_utf8_and_expression_line_feeds() {
 #[test]
 fn catalog_rejects_a_count_larger_than_the_framed_entry_bytes() {
     let bytes = [0x7c, 0x02, 8, 0, 0, 0, 0xe4, 0xff];
-    assert!(parse(&bytes).is_empty());
+    assert!(parse(&bytes).catalogs.is_empty());
 }
 
 #[test]
@@ -111,7 +65,7 @@ fn catalog_accepts_zero_tagged_u32_entry_lengths() {
             .to_le_bytes(),
     );
     bytes.extend_from_slice(&body);
-    let catalogs = parse(&bytes);
+    let catalogs = parse(&bytes).catalogs;
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].entries[4].value, long);
 }
@@ -141,7 +95,7 @@ fn catalog_owns_catalog_shaped_bytes_inside_an_entry() {
     let outer_len = u32::try_from(outer.len()).expect("fixture catalog length");
     outer[2..6].copy_from_slice(&outer_len.to_le_bytes());
 
-    let catalogs = parse(&outer);
+    let catalogs = parse(&outer).catalogs;
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].pos, 0);
     assert_eq!(catalogs[0].entries.len(), 5);
@@ -157,7 +111,7 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
         "Sketch",
         "Pad",
     ];
-    let catalogs = parse(&catalog_stream(&entries));
+    let catalogs = parse(&catalog_stream(&entries)).catalogs;
 
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].entries.len() + 1, 7);
@@ -168,15 +122,98 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
 }
 
 #[test]
-fn catalog_scan_refuses_marker_free_work() {
-    let bytes = [0_u8; 64];
-    crate::test_support::with_work_limit(0, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            super::parse(ctx, &bytes).expect_err("catalog scan consumes work")
-        else {
-            panic!("resource refusal required")
-        };
-        assert_eq!(limit.operation, "catia_catalog_scan");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
+fn catalog_prefix_stream_parses_as_one_catalog() {
+    let bytes = catalog_stream(&PREFIX);
+
+    assert_eq!(parse(&bytes).catalogs.len(), 1);
+}
+
+/// Nested `7C02` candidates with the exact prefix, each declaring one entry
+/// more than it frames, so every candidate walks to the end of the image and
+/// then fails. Every byte is UTF-8, so each outer candidate reads the inner
+/// candidate as one entry value.
+fn failing_candidate_tower(levels: usize) -> Vec<u8> {
+    const EMPTY_ENTRIES: usize = 121;
+    let ascii_bytes = |value: usize| {
+        u32::try_from(value)
+            .ok()
+            .filter(|value| value.to_le_bytes().iter().all(|byte| *byte < 0x80))
+    };
+    let mut inner = b"x".repeat(16);
+    for _ in 0..levels {
+        let inner_len = ascii_bytes(inner.len()).expect("inner candidate length is ASCII");
+        let prefix_len = PREFIX.iter().map(|entry| entry.len() + 1).sum::<usize>();
+        let (pad, total_len) = (0..127)
+            .find_map(|pad| {
+                let total = 6 + 2 + prefix_len + EMPTY_ENTRIES + 1 + pad + 5 + inner.len();
+                ascii_bytes(total).map(|total| (pad, total))
+            })
+            .expect("a pad keeps the frame length ASCII");
+        let mut candidate = vec![0x7c, 0x02];
+        candidate.extend_from_slice(&total_len.to_le_bytes());
+        // 128 declared entries; the frame holds 127.
+        candidate.extend_from_slice(&[0xd1, 0x80]);
+        for entry in PREFIX {
+            candidate.push(u8::try_from(entry.len() + 1).expect("fixture entry length"));
+            candidate.extend_from_slice(entry.as_bytes());
+        }
+        candidate.extend(std::iter::repeat_n(1, EMPTY_ENTRIES));
+        candidate.push(u8::try_from(pad + 1).expect("fixture pad length"));
+        candidate.extend(std::iter::repeat_n(b'y', pad));
+        candidate.push(0);
+        candidate.extend_from_slice(&inner_len.to_le_bytes());
+        candidate.extend_from_slice(&inner);
+        inner = candidate;
+    }
+    assert!(std::str::from_utf8(&inner).is_ok());
+    inner
+}
+
+#[test]
+fn failing_nested_candidates_stop_at_the_walk_allowance() {
+    const LEVELS: usize = 64;
+    let bytes = failing_candidate_tower(LEVELS);
+
+    let scan = parse(&bytes);
+    assert!(scan.catalogs.is_empty());
+    assert!(scan.bounded_candidates > 0);
+    assert!(scan.bounded_candidates < LEVELS);
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    refusal.push_catalog_scan_bounded(scan.bounded_candidates);
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one bounded catalog scan");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::SourceCatalogScanBounded.kind()
+    );
+    assert!(note
+        .message
+        .contains("bound of 4 walked entry bytes per input byte"));
+}
+
+#[test]
+fn a_few_failing_nested_candidates_fit_the_walk_allowance() {
+    let scan = parse(&failing_candidate_tower(4));
+    assert!(scan.catalogs.is_empty());
+    assert_eq!(scan.bounded_candidates, 0);
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    refusal.push_catalog_scan_bounded(scan.bounded_candidates);
+    assert_eq!(refusal.note_count(), 0);
+}
+
+#[test]
+fn a_wrong_first_entry_rejects_before_the_walk() {
+    let mut bytes = catalog_stream(&PREFIX);
+    let first = bytes
+        .windows(PREFIX[0].len())
+        .position(|window| window == PREFIX[0].as_bytes())
+        .expect("first prefix entry");
+    bytes[first] = b'X';
+    let scan = parse(&bytes);
+    assert!(scan.catalogs.is_empty());
+    assert_eq!(scan.bounded_candidates, 0);
 }

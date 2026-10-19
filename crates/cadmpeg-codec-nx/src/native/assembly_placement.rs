@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
@@ -15,8 +15,6 @@ use crate::layout::assembly_placement_prefix::MAGIC_VALUE;
 const ENTRY_NAME: &str = "/Root/UG_PART/UG_PART";
 const ID_PREFIX: &str = "nx:assembly:placement#";
 const EPS_PLACEMENT_ROTATION: f64 = 1e-4;
-/// Fixed prefix, twelve widest atoms, terminator, trailer, longest label, UUID.
-pub(crate) const MAX_FRAME_BYTES: usize = 6 + 12 * 8 + 4 + 5 + 256 + 39;
 
 /// One complete frame, with derived fields checked against its exact bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -180,7 +178,6 @@ fn parse_frame(mut view: View<'_>) -> Option<ParsedFrame<'_>> {
 
 /// Retain complete frames without inferring a child identity or unit conversion.
 pub(in crate::native) fn assembly_placements(
-    ctx: &DecodeContext<'_>,
     container: &Container<'_>,
 ) -> Result<Vec<AssemblyPlacement>, CodecError> {
     let mut entries = container
@@ -212,19 +209,11 @@ pub(in crate::native) fn assembly_placements(
     let Some(payload) = image.child(start, end) else {
         return Ok(Vec::new());
     };
-    ctx.charge_work(
-        u64_from_index(payload.window().len()),
-        "scan NX assembly placement prefixes",
-    )?;
     let mut records = Vec::new();
     for (relative, bytes) in payload.window().windows(MAGIC_VALUE.len()).enumerate() {
         if bytes != MAGIC_VALUE {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(MAX_FRAME_BYTES),
-            "read NX assembly placement frame",
-        )?;
         let Some(candidate) = payload.child(start + relative, end) else {
             continue;
         };
@@ -238,26 +227,21 @@ pub(in crate::native) fn assembly_placements(
             .window()
             .get(..frame.length)
             .ok_or_else(|| CodecError::malformed("NX placement frame span"))?;
-        let mut id = ctx.retained_string(
-            ID_PREFIX.len() + 20,
-            "retain NX assembly placement identity",
-        )?;
-        write!(id, "{ID_PREFIX}{source_offset}")
-            .map_err(|_| ctx.refuse_codec_limit("write NX placement identity", 0, 1))?;
-        ctx.reserve_vec(&mut records, 1, "NX assembly placement records")?;
+        let mut id = String::new();
+        write!(id, "{ID_PREFIX}{source_offset}").map_err(|_| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "write NX placement identity"
+            ))
+        })?;
         records.push(AssemblyPlacement {
             id,
-            raw_frame: ctx
-                .copy_retained(raw, "retain NX placement frame bytes")?
-                .into(),
+            raw_frame: (raw).to_vec().into(),
             matrix: frame.matrix,
-            label: ctx.copy_retained_text(frame.label, "retain NX placement label")?,
-            uuid: CanonicalUuid::new(
-                ctx.copy_retained_text(frame.uuid.as_str(), "retain NX placement UUID")?,
-            )
-            .map_err(|_| CodecError::malformed("NX placement UUID"))?,
-            source_entry: ctx
-                .copy_retained_text(&entry.name, "retain NX placement source entry")?,
+            label: (frame.label).to_owned(),
+            uuid: CanonicalUuid::new((frame.uuid.as_str()).to_owned())
+                .map_err(|_| CodecError::malformed("NX placement UUID"))?,
+            source_entry: entry.name.clone(),
             source_offset,
         });
     }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::native::projection::{zero_entity_record, zero_entity_vertex_owner};
 use crate::native::{
     CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
@@ -141,16 +143,12 @@ pub(super) fn validate_zero_entity_support_runs(
                                             })
                                             .collect::<Vec<_>>();
                                         let expected =
-                                            crate::test_support::with_service_context(|ctx| {
-                                                crate::families::zero_entity::records::
-                                                    oriented_closed_model_endpoints(
-                                                        ctx,
-                                                        &endpoints,
-                                                        &loop_record.forward_senses,
-                                                    )
-                                            })
-                                            .expect("native test endpoints fit the service profile")
-                                            .unwrap_or_default();
+                                            crate::families::zero_entity::records::
+                                                oriented_closed_model_endpoints(
+                                                    &endpoints,
+                                                    &loop_record.forward_senses,
+                                                )
+                                                .unwrap_or_default();
                                         loop_record.oriented_model_endpoints == expected
                                     }
                                     && loop_record.terminal_id == *terminal
@@ -395,6 +393,8 @@ fn validate_zero_entity_model_curve(
     }
 }
 
+/// The endpoint candidates the native decode derives from `runs`, under its
+/// bound.
 pub(super) fn validate_zero_entity_records(
     records: &[CatiaZeroEntityRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {

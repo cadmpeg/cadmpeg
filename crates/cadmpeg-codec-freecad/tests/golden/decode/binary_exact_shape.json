@@ -265,7 +265,7 @@
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -278,7 +278,7 @@
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -291,7 +291,7 @@
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -304,7 +304,7 @@
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -317,7 +317,7 @@
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "faces": [
@@ -332,7 +332,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
@@ -345,7 +345,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
@@ -358,7 +358,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "features": [
@@ -799,17 +799,17 @@
         {
           "id": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "point": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
-          "tolerance": 1.0000036674803817e-7
+          "tolerance": 1.0000036674803817e-07
         },
         {
           "id": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "point": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "point": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "view_presentations": []
@@ -963,11 +963,12 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 1e-06
     },
     "units": {
       "length": "millimeter"
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

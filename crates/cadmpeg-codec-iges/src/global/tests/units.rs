@@ -123,7 +123,7 @@ fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
             "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,{resolution},1,1Ha,1Ho,11,0,0H,0H;"
         );
         let (parsed, losses) = crate::test_support::parse_global(
-            &crate::test_support::scan(&fixed_ascii_with_global(global.as_bytes())).unwrap(),
+            &crate::card::scan(&fixed_ascii_with_global(global.as_bytes())).unwrap(),
         )
         .unwrap();
 
@@ -194,7 +194,10 @@ fn recovered_global_real_is_strictly_reported_as_noncanonical() {
         1
     );
     let error = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
@@ -247,7 +250,10 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
     );
 
     let error = IgesCodec
-        .decode(&mut Cursor::new(bytes.clone()), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes.clone()),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
@@ -261,7 +267,7 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         .decode(
             &mut Cursor::new(bytes),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -292,7 +298,7 @@ fn a_zero_model_scale_suppresses_geometry_and_charges_one_length_loss() {
         .decode(
             &mut Cursor::new(bytes),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

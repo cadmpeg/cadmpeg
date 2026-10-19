@@ -3,8 +3,7 @@
 
 use super::operation_record::OperationPayload;
 use super::reference_index::FeatureReferenceToken;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
 
@@ -47,32 +46,22 @@ impl ExtractFaceLane {
             .sum::<usize>()
     }
 
-    fn read(
-        ctx: &DecodeContext<'_>,
-        bytes: &[u8],
-        at: &mut usize,
-    ) -> Result<Option<Self>, CodecError> {
+    fn read(bytes: &[u8], at: &mut usize) -> Option<Self> {
         let Some(&[1, count @ 1..=255]) = bytes.get(*at..*at + 2) else {
-            return Ok(None);
+            return None;
         };
         *at += 2;
-        let mut members = ctx.collection_vec(usize::from(count - 1), "NX EXTRACT_FACE lane")?;
+        let mut members = Vec::new();
         for _ in 1..count {
-            let Some(&key) = bytes.get(*at) else {
-                return Ok(None);
-            };
+            let &key = bytes.get(*at)?;
             *at += 1;
-            let Some(left) = bytes.get(*at..).and_then(FeatureReferenceToken::read) else {
-                return Ok(None);
-            };
+            let left = bytes.get(*at..).and_then(FeatureReferenceToken::read)?;
             *at += left.raw().len();
-            let Some(right) = bytes.get(*at..).and_then(FeatureReferenceToken::read) else {
-                return Ok(None);
-            };
+            let right = bytes.get(*at..).and_then(FeatureReferenceToken::read)?;
             *at += right.raw().len();
             members.push(ExtractFaceRelation { key, left, right });
         }
-        Ok(Some(Self(members)))
+        Some(Self(members))
     }
 }
 
@@ -124,82 +113,61 @@ impl ExtractFaceEnvelope {
             + self.navigator_text.len()
     }
 
-    pub(crate) fn read(
-        ctx: &DecodeContext<'_>,
-        record: OperationPayload<'_>,
-    ) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn read(record: OperationPayload<'_>) -> Option<Self> {
         if record.name() != "EXTRACT_FACE" {
-            return Ok(None);
+            return None;
         }
         let bytes = record.payload();
         // Maximum: two 254-member lanes of seven-byte triples and 253 UTF-8 bytes.
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len().min(3856)),
-            "scan NX EXTRACT_FACE envelope",
-        )?;
-        let Some(parameter_class_index) = bytes.first().copied().and_then(NonZeroU8::new) else {
-            return Ok(None);
-        };
+        let parameter_class_index = bytes.first().copied().and_then(NonZeroU8::new)?;
         if bytes.get(1..5) != Some(&[0, 0, 1, 0]) {
-            return Ok(None);
+            return None;
         }
         let mut at = 5;
         let mut control_words = [0; 4];
         for word in &mut control_words {
             if bytes.get(at) != Some(&1) {
-                return Ok(None);
+                return None;
             }
-            let Some(value) = View::u32_be_at(bytes, at + 1) else {
-                return Ok(None);
-            };
+            let value = View::u32_be_at(bytes, at + 1)?;
             *word = value;
             at += 5;
         }
         if bytes.get(at..at + 6) != Some(&[0; 6]) {
-            return Ok(None);
+            return None;
         }
         at += 6;
-        let Some(first) = ExtractFaceLane::read(ctx, bytes, &mut at)? else {
-            return Ok(None);
-        };
-        let Some(second) = ExtractFaceLane::read(ctx, bytes, &mut at)? else {
-            return Ok(None);
-        };
+        let first = ExtractFaceLane::read(bytes, &mut at)?;
+        let second = ExtractFaceLane::read(bytes, &mut at)?;
         if bytes.get(at) != Some(&255) {
-            return Ok(None);
+            return None;
         }
         at += 1;
-        let Some(terminal) = bytes.get(at..).and_then(FeatureReferenceToken::read) else {
-            return Ok(None);
-        };
+        let terminal = bytes.get(at..).and_then(FeatureReferenceToken::read)?;
         at += terminal.raw().len();
         if bytes.get(at..at + 5) != Some(&[0; 5]) {
-            return Ok(None);
+            return None;
         }
         at += 5;
         let Some(&[3, len @ 2..=255]) = bytes.get(at..at + 2) else {
-            return Ok(None);
+            return None;
         };
         let end = at + usize::from(len);
         if bytes.get(end) != Some(&0) {
-            return Ok(None);
+            return None;
         }
-        let Some(text) = bytes
+        let text = bytes
             .get(at + 2..end)
-            .and_then(|b| std::str::from_utf8(b).ok())
-        else {
-            return Ok(None);
-        };
-        let mut navigator_text =
-            ctx.retained_string(text.len(), "NX EXTRACT_FACE navigator text")?;
+            .and_then(|b| std::str::from_utf8(b).ok())?;
+        let mut navigator_text = String::new();
         navigator_text.push_str(text);
-        Ok(Some(Self {
+        Some(Self {
             parameter_class_index,
             control_words,
             lanes: [first, second],
             terminal,
             navigator_text,
-        }))
+        })
     }
 }
 

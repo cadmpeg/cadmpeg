@@ -4,11 +4,11 @@ use super::super::{
     declared_solver_rows, section_skamp_constraints, synchronize_segment_count,
     synchronize_skamp_count,
 };
-use super::fixtures::{
-    base_definition, section_line_fixed_coordinate, section_skamp_saved_point_on_line,
-};
+use super::fixtures::base_definition;
 use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
-use crate::decode::sketch::skamp::unique_section_skamp_segment;
+use crate::decode::sketch::skamp::{
+    section_line_fixed_coordinate, section_skamp_saved_point_on_line, unique_section_skamp_segment,
+};
 use crate::decode::sketch_transfer::loci::section_skamp_endpoint;
 use crate::feature::definitions::test_support::append_points;
 use crate::feature::definitions::{ScalarLane, VariableType};
@@ -50,18 +50,14 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
         offset: 82,
     });
     assert_eq!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| {
-            section_skamp_endpoint(
-                ctx,
-                refusal,
-                &saved_definition,
-                &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
-                &crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 14,
-                    sense: 3,
-                },
-            )
-        }),
+        section_skamp_endpoint(
+            &saved_definition,
+            &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
+            &crate::feature::definitions::FeatureSkampItem {
+                entity_id: 14,
+                sense: 3,
+            },
+        ),
         Some(SketchLocus::End(
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string())
                 .expect("valid test fixture")
@@ -194,7 +190,7 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
     }];
     synchronize_skamp_count(&mut saved_definition);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_definition))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &saved_definition))
             .expect("test section solve")
             .get(&4),
         Some(&[3.0, 1.0])
@@ -253,7 +249,7 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
         Some((7, crate::decode::sketch::axis::SectionAxis::V, 1.0))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(
             ctx,
             &saved_point_row_type_nine
         ))
@@ -313,13 +309,13 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
     ];
     synchronize_skamp_count(&mut saved_coincident);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_coincident))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &saved_coincident))
             .expect("test section solve"),
         BTreeMap::from([(1, [0.0, 2.0]), (4, [1.0, 1.0]), (5, [0.0, 1.0])])
     );
     saved_coincident.variables = None;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_coincident))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &saved_coincident))
             .expect("test section solve"),
         BTreeMap::from([(4, [1.0, 1.0]), (5, [0.0, 1.0])])
     );
@@ -365,7 +361,7 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
     }];
     synchronize_skamp_count(&mut saved_symmetric);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_symmetric))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &saved_symmetric))
             .expect("test section solve")
             .get(&5),
         Some(&[0.0, 1.0])
@@ -408,7 +404,7 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
     }];
     synchronize_skamp_count(&mut saved_definition);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_definition))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &saved_definition))
             .expect("test section solve")
             .get(&5),
         Some(&[3.0, 0.0])

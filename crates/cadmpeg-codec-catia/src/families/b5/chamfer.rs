@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-id class-`3b` chamfer syntax and native source records.
 
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 use crate::families::chamfer::ChamferParameters;
 use crate::wire::bytes::read_f64_array;
@@ -36,14 +35,10 @@ pub(crate) fn payload(bytes: &[u8]) -> Option<([ObjectReference; 5], ChamferPara
     Some((references, parameters))
 }
 
-pub(crate) fn records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<B5Chamfer>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "catia_b5_chamfer_scan",
-    )?;
+pub(crate) fn records(bytes: &[u8]) -> Vec<B5Chamfer> {
     let mut records = Vec::new();
     let Some(last) = bytes.len().checked_sub(7) else {
-        return Ok(records);
+        return records;
     };
     for pos in 0..last {
         if bytes.get(pos..pos + 3) != Some(&[0xb5, 0x03, 0x3b]) {
@@ -57,17 +52,13 @@ pub(crate) fn records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<B5Cha
         let Some(object_id) = View::u32_le_at(bytes, pos + 4) else {
             continue;
         };
-        ctx.push_vec(
-            &mut records,
-            B5Chamfer {
-                pos,
-                end,
-                object_id,
-                references,
-                parameters,
-            },
-            "catia_b5_chamfer_records",
-        )?;
+        records.push(B5Chamfer {
+            pos,
+            end,
+            object_id,
+            references,
+            parameters,
+        });
     }
-    Ok(records)
+    records
 }

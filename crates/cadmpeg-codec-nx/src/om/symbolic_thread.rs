@@ -4,7 +4,6 @@
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
 use super::scalar::{PayloadScalarAtom, PayloadScalarEncoding};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
@@ -89,7 +88,6 @@ impl SymbolicThreadWitness {
 
     /// The returned position is relative to the enclosing section's bytes.
     pub(crate) fn read(
-        ctx: &DecodeContext<'_>,
         record: OperationPayload<'_>,
         cut_offset: usize,
     ) -> Result<Option<(Self, usize)>, CodecError> {
@@ -103,9 +101,12 @@ impl SymbolicThreadWitness {
         let Some(cut) = cut_offset.checked_sub(record.payload_offset()) else {
             return Ok(None);
         };
-        let mode_end = cut
-            .checked_add(6)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX symbolic thread mode span", 0, 1))?;
+        let mode_end = cut.checked_add(6).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX symbolic thread mode span"
+            ))
+        })?;
         if !matches!(
             bytes.get(cut..mode_end),
             Some(b"\x03\x05CUT\0" | b"\x03\x05Cut\0")
@@ -114,7 +115,6 @@ impl SymbolicThreadWitness {
         }
         // Twelve tail positions, 22 possible half widths, and at most 72 bytes
         // of exact-byte/scalar work per candidate; no unbounded payload scan.
-        ctx.charge_work(12 * 22 * 72, "NX symbolic thread duplicate witness")?;
         let mut found = None;
         let Some(first_tail) = cut.checked_sub(12) else {
             return Ok(None);

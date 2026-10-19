@@ -2,8 +2,6 @@
 //! PMARK nodes and nonempty packet contents.
 
 use super::pmark_state::PmarkState;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -17,17 +15,11 @@ impl Serialize for PmarkNodes {
 }
 
 impl PmarkNodes {
-    pub(super) fn new(ctx: &DecodeContext<'_>, first: PmarkState) -> Result<Self, CodecError> {
-        Ok(Self(ctx.alloc_filled(1, first, "NX PMARK nodes")?))
+    pub(super) fn new(first: PmarkState) -> Self {
+        Self(vec![first])
     }
-    pub(super) fn push(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        node: PmarkState,
-    ) -> Result<(), CodecError> {
-        ctx.reserve_vec(&mut self.0, 1, "NX PMARK nodes")?;
+    pub(super) fn push(&mut self, node: PmarkState) {
         self.0.push(node);
-        Ok(())
     }
     pub(crate) fn as_slice(&self) -> &[PmarkState] {
         &self.0

@@ -614,7 +614,7 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
                 cadmpeg_ir::geometry::VariableBlendCache::Stale {}
             ))));
     assert!(!cadmpeg_ir::validate_neutral(stale.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.severity == Severity::Error));

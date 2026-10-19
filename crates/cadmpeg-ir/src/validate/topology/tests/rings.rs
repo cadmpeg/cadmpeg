@@ -12,7 +12,7 @@ fn dangling_reference_is_flagged() {
     // Point a coedge's edge at something that does not exist.
     ir.model.coedges[0].edge =
         EdgeId::mint("test:model:entity#does-not-exist").expect("valid identity");
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report
         .findings
         .iter()
@@ -27,7 +27,7 @@ fn coedge_use_curve_requires_a_resolved_carrier() {
         curve: CurveId::mint("missing:model:use-curve#0").expect("valid identity"),
         parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message.contains("coedge use curve")
     }));
@@ -56,7 +56,7 @@ fn mismatched_partner_edge_is_flagged() {
             c.edge = other_edge.clone();
         }
     }
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report
             .findings
@@ -78,7 +78,7 @@ fn new_topology_references_are_validated() {
     ir.model.coedges[0].radial_next =
         CoedgeId::mint("test:model:entity#missing-radial").expect("valid identity");
 
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     let messages = report
         .findings
         .iter()
@@ -105,7 +105,7 @@ fn two_member_radial_ring_with_equal_senses_warns() {
         .unwrap()
         .sense = sense;
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
@@ -119,7 +119,7 @@ fn coedge_backed_edge_cannot_be_a_wire_edge() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.shells[0].add_wire_edge(ir.model.coedges[0].edge.clone());
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::WireTopology));
@@ -154,11 +154,10 @@ fn wire_and_free_topology_negative_cases_are_reported() {
 
     ir.model.shells[0].add_free_vertex(ir.model.edges[0].start.clone());
     ir.model.bodies[0].kind = crate::topology::BodyKind::Wire;
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
 
     let findings = validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     for message in [
         "wire edge must belong to exactly one shell",
@@ -199,7 +198,7 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
     ir.model.shells.push(second_shell);
 
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
@@ -215,7 +214,7 @@ fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
     ir.model.edges[0].carrier =
         crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([1.0, 0.0]))
             .unwrap();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(!report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
             && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
@@ -249,10 +248,8 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         .chain(std::iter::once(loop_id.clone()))
         .collect();
     ir.model.faces[0].loops = crate::topology::FaceLoops::unspecified(face_loops);
-    ir.model
-        .finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    ir.model.finalize();
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
 
@@ -287,7 +284,7 @@ fn spring_support_reference_findings_name_the_construction() {
             .unwrap(),
         ),
     ));
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(owner.as_str())

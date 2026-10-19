@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 
 use crate::container::InventorContainer;
 use crate::decode::decode_container;
@@ -12,7 +11,7 @@ use crate::property_set::{
 use crate::test_support::test_fixtures::primary_envelope_fixture;
 
 #[test]
-fn parsed_property_records_refuse_each_copy_before_materialization() {
+fn parsed_property_records_are_projected() {
     let bytes = primary_envelope_fixture();
     let arena = DecodeArena::new();
     let (setup_ctx, root) =
@@ -44,29 +43,7 @@ fn parsed_property_records_refuse_each_copy_before_materialization() {
         }),
     });
 
-    let mut cap = 0;
-    let mut operations = Vec::new();
-    let mut decoded = None;
-    for _ in 0..1024 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        match decode_container(&ctx, &container) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                assert!(limit.used + limit.additional > cap);
-                operations.push(limit.operation);
-                cap = limit.used + limit.additional;
-            }
-            Ok(value) => {
-                decoded = Some(value);
-                break;
-            }
-            Err(error) => panic!("unexpected property projection error: {error}"),
-        }
-    }
-    let decoded = decoded.expect("property projection reaches service success");
+    let decoded = decode_container(&setup_ctx, &container).expect("property projection");
     let namespace = decoded
         .ir
         .native
@@ -93,21 +70,4 @@ fn parsed_property_records_refuse_each_copy_before_materialization() {
             .len(),
         1
     );
-    for operation in [
-        "retain Inventor property-set id",
-        "retain Inventor property-set path",
-        "retain Inventor property-set CLSID",
-        "retain Inventor property section id",
-        "retain Inventor property section path",
-        "retain Inventor property section FMTID",
-        "retain Inventor property name",
-        "retain Inventor property value id",
-        "retain Inventor property raw digest",
-        "retain Inventor property value path",
-    ] {
-        assert!(
-            operations.contains(&operation),
-            "no refusal for {operation}"
-        );
-    }
 }

@@ -70,7 +70,6 @@ pub(super) fn unreadable_literal(
 ) -> Result<bool, CodecError> {
     let _depth = ctx.enter_nested("STEP metadata literal walk")?;
     for value in values {
-        ctx.charge_work(1, "STEP metadata literal walk")?;
         let unreadable = match value {
             Value::UninterpretedLiteral => true,
             Value::List(values) => unreadable_literal(values, ctx)?,

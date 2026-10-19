@@ -19,7 +19,7 @@ fn with_decode_ctx<T>(
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .expect("surface fixture is admitted");
-    run(&ctx).expect("surface fixture stays within resource limits")
+    run(&ctx).expect("run the surface fixture")
 }
 
 fn named_prototype_records(
@@ -48,19 +48,9 @@ fn parameter_records(payload: &[u8]) -> Vec<super::SurfaceParameterRecord> {
     with_decode_ctx(payload, |ctx| super::parameter_records(ctx, payload))
 }
 
-fn counted_parameter_scalar_slots(
-    body: &[u8],
-    count: usize,
-    cache: &crate::scalar::ScalarCache,
-) -> Option<Vec<super::ScalarTokenSlot>> {
-    with_decode_ctx(body, |ctx| {
-        super::counted_parameter_scalar_slots(ctx, body, count, cache)
-    })
-}
-
 fn cross_section_parameter_records(payload: &[u8]) -> Vec<super::SurfaceParameterRecord> {
     with_decode_ctx(payload, |ctx| {
-        super::cross_section_parameter_records(ctx, payload)
+        super::cross_section_parameter_records(ctx, payload, &mut Vec::new())
     })
 }
 
@@ -69,7 +59,9 @@ fn contour_records(payload: &[u8]) -> Vec<super::SurfaceContourRecord> {
 }
 
 fn plane_local_systems(payload: &[u8]) -> Vec<super::PlaneLocalSystem> {
-    with_decode_ctx(payload, |ctx| super::plane_local_systems(ctx, payload))
+    with_decode_ctx(payload, |ctx| {
+        super::plane_local_systems(ctx, payload, &mut Vec::new())
+    })
 }
 
 fn plane_local_systems_for_rows(
@@ -77,7 +69,7 @@ fn plane_local_systems_for_rows(
     rows: &[super::SurfaceRow],
 ) -> Vec<super::PlaneLocalSystem> {
     with_decode_ctx(payload, |ctx| {
-        super::plane_local_systems_for_rows(ctx, payload, rows)
+        super::plane_local_systems_for_rows(ctx, payload, rows, &mut Vec::new())
     })
 }
 

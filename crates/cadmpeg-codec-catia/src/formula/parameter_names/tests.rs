@@ -24,23 +24,6 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
 }
 
 #[test]
-fn parameter_name_indexes_refuse_collection_limit() {
-    let mut ir = CadIr::empty();
-    let mut value = parameter("one", "native");
-    value.name = "Length".to_string();
-    ir.model.parameters.push(value);
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        normalize(ctx, &mut ir.model.parameters)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_parameter_reserved_names")
-    );
-    crate::test_support::with_service_context(|ctx| normalize(ctx, &mut ir.model.parameters))
-        .expect("service profile admits name indexes");
-    assert_eq!(ir.model.parameters[0].name, "Length");
-}
-#[test]
 fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
     let mut ir = CadIr::empty();
     let mut first = parameter("first", "first-native");
@@ -53,8 +36,7 @@ fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
         .parameters
         .extend([first, second, later_source_name]);
 
-    crate::test_support::with_service_context(|ctx| normalize(ctx, &mut ir.model.parameters))
-        .unwrap();
+    crate::test_support::with_service_context(|_ctx| normalize(&mut ir.model.parameters)).unwrap();
 
     assert_eq!(
         ir.model
@@ -80,8 +62,7 @@ fn normalizes_unnamed_document_parameters() {
         value.name.clear();
         ir.model.parameters.push(value);
     }
-    crate::test_support::with_service_context(|ctx| normalize(ctx, &mut ir.model.parameters))
-        .unwrap();
+    crate::test_support::with_service_context(|_ctx| normalize(&mut ir.model.parameters)).unwrap();
     assert_eq!(
         ir.model
             .parameters

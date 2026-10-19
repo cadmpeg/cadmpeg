@@ -6,7 +6,6 @@ use super::reference_index::PayloadIndexToken;
 use super::surface_branches::surface_feature_payload_branches;
 use super::surface_envelope::surface_feature_payload_references;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 
 const PREFIX: [u8; 22] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 2, 1, 1, 1, 5, 1, 1, 1, 1, 1, 9,
@@ -17,18 +16,14 @@ const SUFFIX: [u8; 36] = [
 ];
 
 pub(crate) fn studio_post_branch_references(
-    ctx: &DecodeContext<'_>,
+    _ctxx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<[(PayloadIndexToken, u64); 8]>, CodecError> {
+) -> Option<[(PayloadIndexToken, u64); 8]> {
     if record.name() != "Studio Surface" {
-        return Ok(None);
+        return None;
     }
-    let Some(envelope) = surface_feature_payload_references(record) else {
-        return Ok(None);
-    };
-    let Some(group) = surface_feature_payload_branches(ctx, record)? else {
-        return Ok(None);
-    };
+    let envelope = surface_feature_payload_references(record)?;
+    let group = surface_feature_payload_branches(record)?;
     let branches = group.into_branches();
     let parsed = (|| {
         let origin = u64_from_index(record.payload_offset());
@@ -59,7 +54,7 @@ pub(crate) fn studio_post_branch_references(
         }
         Some(references)
     })();
-    Ok(parsed)
+    parsed
 }
 
 #[cfg(test)]
@@ -69,7 +64,6 @@ mod tests {
     fn read(payload: &[u8], name: &str) -> Option<[(super::PayloadIndexToken, u64); 8]> {
         crate::test_support::with_decode_context(|ctx| {
             studio_post_branch_references(ctx, OperationPayload::new(payload, 100, name).unwrap())
-                .unwrap()
         })
     }
 

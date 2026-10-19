@@ -9,7 +9,7 @@ use crate::native::{
     CatiaRangeInterval, CatiaRangeNominal, CatiaRangeNominalFraming,
 };
 use crate::object_graph::{ObjectPayload, PayloadField};
-use crate::test_support::{with_collection_limit, with_service_context};
+use crate::test_support::with_service_context;
 use cadmpeg_ir::document::Model;
 
 const PROGRAM: [u8; 19] = [
@@ -488,34 +488,6 @@ fn altered_range_and_frame_programs_remain_native() {
 }
 
 #[test]
-fn frame_binding_refuses_unadmitted_index_collection() {
-    let mut f = Fixture::new(false);
-    assert!(matches!(
-        with_collection_limit(0, |ctx| bind(
-            ctx,
-            &mut f.native,
-            &f.model,
-            &ModelingGraphScope::Unscoped
-        )),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    assert!(f.target().is_none());
-}
-
-#[test]
-fn unresolved_and_other_graph_scopes_leave_the_range_native() {
-    for scope in [
-        ModelingGraphScope::Unresolved,
-        ModelingGraphScope::Scoped("other".into()),
-    ] {
-        let mut f = Fixture::new(false);
-        with_collection_limit(0, |ctx| bind(ctx, &mut f.native, &f.model, &scope))
-            .expect("valid fixture");
-        assert!(f.target().is_none());
-    }
-}
-
-#[test]
 fn two_nearby_parallel_axes_are_not_one_target_axis() {
     use cadmpeg_ir::geometry::analytic::CylinderSurface;
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -534,4 +506,17 @@ fn two_nearby_parallel_axes_are_not_one_target_axis() {
     }
     f.bind();
     assert!(f.target().is_none());
+}
+
+#[test]
+fn unresolved_and_other_graph_scopes_leave_the_range_native() {
+    for scope in [
+        ModelingGraphScope::Unresolved,
+        ModelingGraphScope::Scoped("other".into()),
+    ] {
+        let mut f = Fixture::new(false);
+        with_service_context(|ctx| bind(ctx, &mut f.native, &f.model, &scope))
+            .expect("valid fixture");
+        assert!(f.target().is_none());
+    }
 }

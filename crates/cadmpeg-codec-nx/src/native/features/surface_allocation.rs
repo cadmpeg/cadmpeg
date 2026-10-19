@@ -5,6 +5,7 @@ use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::surface_branches::FeatureSurfaceConstructionBranch;
 use super::{offset_data_block_bytes, FeatureOperationLabel, FeatureSurfaceConstructionReference};
 use crate::container::Container;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 
@@ -114,37 +115,30 @@ impl<'de> Deserialize<'de> for FeatureSurfaceConstructionPayload {
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.
 pub(in crate::native) fn feature_surface_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     references: &[FeatureSurfaceConstructionReference],
     operation_labels: &[FeatureOperationLabel],
     branches: &[FeatureSurfaceConstructionBranch],
     post_branch_references: &[FeatureSurfaceConstructionReference],
 ) -> Result<Vec<FeatureSurfaceConstructionPayload>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let label_bytes = references
+    let blocks = offset_data_block_bytes(container)?;
+    let _label_bytes = references
         .len()
         .checked_mul(std::mem::size_of::<&str>() * 4)
-        .ok_or_else(|| ctx.refuse_codec_limit("NX surface payload labels", 0, 1))?;
-    let _labels_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(label_bytes),
-        "NX surface payload labels",
-    )?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX surface payload labels"
+            ))
+        })?;
+
     let mut labels = BTreeSet::new();
     for reference in references {
-        ctx.charge_work(1, "scan NX surface payload labels")?;
-        ctx.insert_btree_set(
-            &mut labels,
-            reference.operation_label.as_str(),
-            "NX surface payload labels",
-        )?;
+        labels.insert(reference.operation_label.as_str());
     }
     let mut output = Vec::new();
     'operation: for operation_label in labels {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(operation_labels.len()),
-            "select NX surface allocation kind",
-        )?;
         let Some(kind) = operation_labels
             .iter()
             .find(|label| label.id == operation_label)
@@ -155,32 +149,24 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         if !matches!(kind, "SKIN" | "Studio Surface") {
             continue;
         }
-        let scan_work = references
-            .len()
-            .checked_mul(2)
-            .ok_or_else(|| ctx.refuse_codec_limit("scan NX surface construction graph", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(scan_work),
-            "scan NX surface construction graph",
-        )?;
-        let graph_count = references
+        let _scan_work = references.len().checked_mul(2).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "scan NX surface construction graph"
+            ))
+        })?;
+        let _graph_count = references
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
             .count();
 
-        let (mut graph, _graph_reservation) =
-            ctx.temporary_vec(graph_count, "NX surface construction graph")?;
+        let mut graph = Vec::new();
         graph.extend(
             references
                 .iter()
                 .filter(|reference| reference.operation_label == operation_label),
         );
-        ctx.stable_sort_by(
-            &mut graph,
-            |first, second| first.ordinal.cmp(&second.ordinal),
-            |_| 0,
-            "sort NX surface construction graph",
-        )?;
+        graph.sort_by_key(|first| first.ordinal);
         if graph
             .iter()
             .enumerate()
@@ -192,23 +178,13 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(branches.len()),
-            "select NX surface allocation branches",
-        )?;
-        let (mut owned_branches, _branches_reservation) =
-            ctx.temporary_vec(branches.len(), "NX surface allocation branches")?;
+        let mut owned_branches = Vec::new();
         owned_branches.extend(
             branches
                 .iter()
                 .filter(|branch| branch.operation_label == operation_label),
         );
-        ctx.stable_sort_by(
-            &mut owned_branches,
-            |a, b| a.ordinal().cmp(&b.ordinal()),
-            |_| 0,
-            "sort NX surface allocation branches",
-        )?;
+        owned_branches.sort_by_key(|a| a.ordinal());
         if owned_branches.is_empty()
             || owned_branches
                 .iter()
@@ -222,18 +198,11 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             let Some(block) = reference.data_block.as_deref() else {
                 continue 'operation;
             };
-            ctx.reserve_vec(&mut source_rows, 1, "NX surface allocation source rows")?;
             source_rows.push((block, reference.token.value(), reference.source_offset));
         }
         let mut branch_ids = Vec::new();
         for branch in owned_branches {
-            ctx.reserve_vec(
-                &mut branch_ids,
-                1,
-                "NX surface allocation branch identities",
-            )?;
-            branch_ids
-                .push(ctx.copy_retained_text(&branch.id, "NX surface allocation branch identity")?);
+            branch_ids.push(branch.id.clone());
             for ((token, block), offset) in branch
                 .references
                 .members()
@@ -248,7 +217,6 @@ pub(in crate::native) fn feature_surface_construction_payloads(
                 let Some(block) = block.as_deref() else {
                     continue 'operation;
                 };
-                ctx.reserve_vec(&mut source_rows, 1, "NX surface allocation source rows")?;
                 source_rows.push((block, token.value(), offset));
             }
         }
@@ -256,25 +224,13 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             continue;
         };
         let sources = if kind == "Studio Surface" {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(post_branch_references.len()),
-                "select NX Studio post-branch references",
-            )?;
-            let (mut post, _post_reservation) = ctx.temporary_vec(
-                post_branch_references.len(),
-                "NX Studio post-branch reference graph",
-            )?;
+            let mut post = Vec::new();
             post.extend(
                 post_branch_references
                     .iter()
                     .filter(|r| r.operation_label == operation_label),
             );
-            ctx.stable_sort_by(
-                &mut post,
-                |a, b| a.ordinal.cmp(&b.ordinal),
-                |_| 0,
-                "sort NX Studio post-branch references",
-            )?;
+            post.sort_by_key(|a| a.ordinal);
             let Ok(post): Result<[&FeatureSurfaceConstructionReference; 8], _> = post.try_into()
             else {
                 continue;
@@ -287,11 +243,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
                 let Some(block) = reference.data_block.as_deref() else {
                     continue 'operation;
                 };
-                identities[ordinal] = ctx.copy_retained_text(
-                    &reference.id,
-                    "NX Studio post-branch reference identity",
-                )?;
-                ctx.reserve_vec(&mut source_rows, 1, "NX surface allocation source rows")?;
+                identities[ordinal].clone_from(&reference.id);
                 source_rows.push((block, reference.token.value(), reference.source_offset));
             }
             SurfaceAllocationSources::StudioSurface {
@@ -303,12 +255,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
                 construction_branches,
             }
         };
-        ctx.stable_sort_by(
-            &mut source_rows,
-            |a, b| a.2.cmp(&b.2),
-            |_| 0,
-            "sort NX surface allocation source rows",
-        )?;
+        source_rows.sort_by_key(|a| a.2);
         let Some((first_block, first_index, _)) = source_rows.first().copied() else {
             continue;
         };
@@ -345,36 +292,34 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         }
         let mut data_blocks = Vec::new();
         for (block, _, _) in source_rows {
-            ctx.reserve_vec(&mut data_blocks, 1, "NX surface construction source blocks")?;
-            data_blocks
-                .push(ctx.copy_retained_text(block, "NX surface construction source block")?);
+            data_blocks.push((block).to_owned());
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
             continue;
         };
         let prefix = "nx:feature-history:surface-construction-payload#";
-        let id_len = prefix
+        let _id_len = prefix
             .len()
             .checked_add(operation_key.len())
             .ok_or_else(|| {
-                ctx.refuse_codec_limit("NX surface construction payload identity", 0, 1)
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "NX surface construction payload identity"
+                ))
             })?;
-        let mut id = ctx.retained_string(id_len, "NX surface construction payload identity")?;
+        let mut id = String::new();
         id.push_str(prefix);
         id.push_str(operation_key);
         let mut construction_references: [String; 14] = std::array::from_fn(|_| String::new());
         for (slot, reference) in graph.into_iter().enumerate() {
-            construction_references[slot] = ctx
-                .copy_retained_text(&reference.id, "NX surface construction reference identity")?;
+            construction_references[slot].clone_from(&reference.id);
         }
-        ctx.reserve_vec(&mut output, 1, "NX surface construction payloads")?;
         output.push(FeatureSurfaceConstructionPayload {
             id,
-            operation_label: ctx
-                .copy_retained_text(operation_label, "NX surface construction operation label")?,
+            operation_label: (operation_label).to_owned(),
             construction_references,
             sources,
             content,
@@ -388,7 +333,6 @@ pub(in crate::native) fn admit_surface_allocations(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     namespace: &cadmpeg_ir::native::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
-    use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::native::NativeConvertError;
     let fail = || {
         NativeConvertError::InvalidCollection("surface allocation must match its complete ordered reference graph and physical blocks".into())
@@ -427,10 +371,6 @@ pub(in crate::native) fn admit_surface_allocations(
             SurfaceAllocationSources::Skin { .. } => "SKIN",
             SurfaceAllocationSources::StudioSurface { .. } => "Studio Surface",
         };
-        ctx.charge_work(
-            u64_from_index(labels.len()),
-            "resolve NX surface allocation kind",
-        )?;
         let mut matching = labels
             .iter()
             .filter(|label| label.id == payload.operation_label);
@@ -438,10 +378,6 @@ pub(in crate::native) fn admit_surface_allocations(
         if matching.next().is_some() || label.value != kind {
             return Err(fail());
         }
-        ctx.charge_work(
-            u64_from_index(envelopes.len() + post.len()),
-            "count NX surface allocation reference lanes",
-        )?;
         if envelopes
             .iter()
             .filter(|r| r.operation_label == payload.operation_label)
@@ -460,10 +396,6 @@ pub(in crate::native) fn admit_surface_allocations(
                                   id: &str,
                                   ordinal: usize|
          -> Result<(), NativeConvertError> {
-            ctx.charge_work(
-                u64_from_index(population.len()),
-                "resolve NX surface allocation reference",
-            )?;
             let mut matches = population.iter().filter(|r| r.id == id);
             let reference = matches.next().ok_or_else(fail)?;
             if matches.next().is_some()
@@ -473,9 +405,8 @@ pub(in crate::native) fn admit_surface_allocations(
                 return Err(fail());
             }
             let block = reference.data_block.as_deref().ok_or_else(fail)?;
-            ctx.reserve_vec(&mut rows, 1, "NX surface admission references")?;
             rows.push((
-                ctx.copy_retained_text(block, "NX surface admission block")?,
+                (block).to_owned(),
                 reference.token.value(),
                 reference.source_offset,
             ));
@@ -498,10 +429,6 @@ pub(in crate::native) fn admit_surface_allocations(
                 construction_branches
             }
         };
-        ctx.charge_work(
-            u64_from_index(branches.len()),
-            "count NX surface allocation branches",
-        )?;
         if branches
             .iter()
             .filter(|r| r.operation_label == payload.operation_label)
@@ -511,10 +438,6 @@ pub(in crate::native) fn admit_surface_allocations(
             return Err(fail());
         }
         for (ordinal, id) in owned_branches.0.iter().enumerate() {
-            ctx.charge_work(
-                u64_from_index(branches.len()),
-                "resolve NX surface allocation branch",
-            )?;
             let mut matches = branches.iter().filter(|r| r.id == *id);
             let branch = matches.next().ok_or_else(fail)?;
             if matches.next().is_some()
@@ -535,20 +458,10 @@ pub(in crate::native) fn admit_surface_allocations(
                 )))
             {
                 let block = block.as_deref().ok_or_else(fail)?;
-                ctx.reserve_vec(&mut rows, 1, "NX surface admission references")?;
-                rows.push((
-                    ctx.copy_retained_text(block, "NX surface admission block")?,
-                    token.value(),
-                    offset,
-                ));
+                rows.push(((block).to_owned(), token.value(), offset));
             }
         }
-        ctx.stable_sort_by(
-            &mut rows,
-            |a, b| a.2.cmp(&b.2),
-            |_| 0,
-            "sort NX surface admission references",
-        )?;
+        rows.sort_by_key(|a| a.2);
         if rows.len() != payload.content.blocks().len() {
             return Err(fail());
         }
@@ -556,25 +469,21 @@ pub(in crate::native) fn admit_surface_allocations(
             if row.0 != physical.id {
                 return Err(fail());
             }
-            ctx.charge_work(
-                u64_from_index(blocks.len()),
-                "resolve NX surface allocation block",
-            )?;
             let mut matches = blocks.iter().filter(|b| b.id() == physical.id);
             let block = matches.next().ok_or_else(fail)?;
             if matches.next().is_some()
                 || block
-                    .fields()
+                    .fields()?
                     .get("block_ordinal")
                     .and_then(serde_json::Value::as_u64)
                     != Some(u64::from(row.1))
                 || block
-                    .fields()
+                    .fields()?
                     .get("source_offset")
                     .and_then(serde_json::Value::as_u64)
                     != Some(physical.source_offset)
                 || block
-                    .fields()
+                    .fields()?
                     .get("byte_len")
                     .and_then(serde_json::Value::as_u64)
                     != Some(physical.byte_len)
@@ -592,13 +501,13 @@ mod tests {
 
     fn allocation(bytes: Vec<u8>, expected_blocks: usize, kind: &str) {
         crate::test_support::with_decode_context(|ctx| {
-            let container = crate::container::scan_bytes(ctx, bytes).unwrap();
+            let container = crate::container::scan_bytes(bytes).unwrap();
             let references =
                 super::super::construction_records::feature_surface_construction_references(
-                    ctx, &container,
+                    &container,
                 )
                 .unwrap();
-            let labels = super::super::feature_operation_labels(ctx, &container).unwrap();
+            let labels = super::super::feature_operation_labels(&container).unwrap();
             let branches = super::super::surface_branches::feature_surface_construction_branches(
                 ctx, &container,
             )

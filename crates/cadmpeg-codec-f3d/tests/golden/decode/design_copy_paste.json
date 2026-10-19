@@ -42,7 +42,7 @@
       "length": "millimeter"
     },
     "tolerances": {
-      "linear": 9.999999999999999e-6,
+      "linear": 9.999999999999999e-06,
       "angular": 1e-10
     },
     "model": {
@@ -559,6 +559,8 @@
             "occurrence_guid": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
             "occurrence_guid_offset": 3150,
             "occurrence_ordinal": 1,
+            "owner_entity": 0,
+            "owner_entity_offset": 3245,
             "record_index": 1600
           },
           {
@@ -571,6 +573,8 @@
             "occurrence_guid": "cccccccc-1111-2222-3333-dddddddddddd",
             "occurrence_guid_offset": 3379,
             "occurrence_ordinal": 2,
+            "owner_entity": 0,
+            "owner_entity_offset": 3602,
             "record_index": 1601,
             "transform": [
               [
@@ -1292,7 +1296,7 @@
                 }
               ],
               "degree": 2,
-              "fit_tolerance": 1e-8,
+              "fit_tolerance": 1e-08,
               "kind": "nurbs",
               "knots": [
                 0.0,
@@ -1613,9 +1617,12 @@
         ],
         "wire_topologies": [],
         "xref_designs": [],
-        "xref_references": []
+        "xref_references": [],
+        "asm_face_boundaries": [],
+        "design_intent_failures": []
       }
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

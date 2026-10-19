@@ -145,21 +145,25 @@ impl<'de> Deserialize<'de> for RmFastLoadStorage {
     }
 }
 
-fn absolute(ctx: &DecodeContext<'_>, base: u64, at: usize) -> Result<u64, CodecError> {
-    base.checked_add(u64_from_index(at))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX RMFastLoad source offset", 0, 1))
+fn absolute(base: u64, at: usize) -> Result<u64, CodecError> {
+    base.checked_add(u64_from_index(at)).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "{} exceeds its local bound",
+            "NX RMFastLoad source offset"
+        ))
+    })
 }
 
-fn owning_class_count(
-    ctx: &DecodeContext<'_>,
-    classes: &[ClassDefinition],
-    base: u64,
-) -> Result<usize, CodecError> {
+fn owning_class_count(classes: &[ClassDefinition], base: u64) -> Result<usize, CodecError> {
     // Equality checks at most the fixed canonical entry length, plus its length.
-    let work = u64_from_index(classes.len())
+    let _work = u64_from_index(classes.len())
         .checked_mul(u64_from_index(ENTRY.len() + 1))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX RMFastLoad owning classes", 0, 1))?;
-    ctx.charge_work(work, "count NX RMFastLoad owning classes")?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX RMFastLoad owning classes"
+            ))
+        })?;
     Ok(classes
         .iter()
         .filter(|c| c.belongs_to_section(ENTRY, base))
@@ -173,93 +177,86 @@ pub(super) fn collect(
 ) -> Result<Vec<RmFastLoadStorage>, CodecError> {
     let mut output = Vec::new();
     for entry in &container.entries {
-        ctx.charge_work(
-            u64_from_index(entry.name.len()),
-            "select NX RMFastLoad storage entry",
-        )?;
         if entry.name != ENTRY {
             continue;
         }
         let Some((source_offset, byte_len)) = entry.file_span() else {
             continue;
         };
-        let Some(bytes) = container.bounded_entry_bytes(ctx, source_offset, byte_len)? else {
+        let Some(bytes) = container.bounded_entry_bytes(source_offset, byte_len) else {
             continue;
         };
-        let class_count = owning_class_count(ctx, classes, source_offset)?;
-        let Some(storage) = Storage::read(ctx, bytes, class_count)? else {
+        let class_count = owning_class_count(classes, source_offset)?;
+        let Some(storage) = Storage::read(bytes, class_count) else {
             continue;
         };
         let count = index_from_u32(storage.header_words[0]);
         let row_count = index_from_u32(storage.header_words[4]);
-        let work = u64_from_index(count)
+        let _work = u64_from_index(count)
             .checked_mul(6)
             .and_then(|n| u64_from_index(row_count).checked_mul(30)?.checked_add(n))
             .and_then(|n| n.checked_add(u64_from_index(ENTRY.len()) + 10))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX RMFastLoad materialization work", 0, 1))?;
-        ctx.charge_work(work, "materialize and recheck NX RMFastLoad storage")?;
-        let mut boundaries = ctx.collection_vec(count + 1, "retain NX RMFastLoad boundaries")?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "NX RMFastLoad materialization work"
+                ))
+            })?;
+        let mut boundaries = Vec::new();
         boundaries.extend(storage.boundaries());
-        let mut table_words = ctx.collection_vec(count, "retain NX RMFastLoad table words")?;
+        let mut table_words = Vec::new();
         table_words.extend(storage.table_words());
-        let mut physical_spans =
-            ctx.collection_vec(count, "retain NX RMFastLoad physical spans")?;
+        let mut physical_spans = Vec::new();
         for pair in boundaries.windows(2) {
             let start = index_from_u32(pair[0]);
             let end = index_from_u32(pair[1]);
             physical_spans.push(PhysicalSpan {
-                source_offset: absolute(ctx, source_offset, start)?,
+                source_offset: absolute(source_offset, start)?,
                 byte_len: u64_from_index(end - start),
-                sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    &bytes[start..end],
-                    "hash NX RMFastLoad physical span",
-                )?,
+                sha256: Sha256Digest::digest(&bytes[start..end]),
             });
         }
-        ctx.charge_collection_items(
-            u64_from_index(row_count)
-                .checked_mul(3)
-                .and_then(|n| n.checked_add(9))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("NX RMFastLoad fixed token collections", 0, 1)
-                })?,
-            "retain NX RMFastLoad fixed token collections",
-        )?;
-        let mut terminal_rows =
-            ctx.collection_vec(row_count, "retain NX RMFastLoad terminal rows")?;
+        let mut terminal_rows = Vec::new();
         for triple in storage.triples() {
             terminal_rows.push(TerminalRow {
-                source_offset: absolute(ctx, source_offset, triple.offset)?,
+                source_offset: absolute(source_offset, triple.offset)?,
                 tokens: triple.atoms,
             });
         }
         let prefix = "nx:rmfastload:physical-storage#";
-        let mut id =
-            ctx.retained_string(prefix.len() + 20, "retain NX RMFastLoad storage identity")?;
-        write!(id, "{prefix}{:010}", output.len())
-            .map_err(|_| ctx.refuse_codec_limit("NX RMFastLoad storage identity", 0, 1))?;
+        let mut id = String::new();
+        write!(id, "{prefix}{:010}", output.len()).map_err(|_| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX RMFastLoad storage identity"
+            ))
+        })?;
         let preamble = bytes
             .get(storage.terminal_offset..storage.terminal_offset + 12)
             .and_then(|b| NativeBytes::try_from(b).ok())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX RMFastLoad terminal preamble", 0, 1))?;
-        let trailer = NativeBytes::try_from(&bytes[storage.trailer_offset..])
-            .map_err(|_| ctx.refuse_codec_limit("NX RMFastLoad terminal trailer", 0, 1))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "NX RMFastLoad terminal preamble"
+                ))
+            })?;
+        let trailer = NativeBytes::try_from(&bytes[storage.trailer_offset..]).map_err(|_| {
+            CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX RMFastLoad terminal trailer"
+            ))
+        })?;
         let wire = StorageWire {
             id,
-            source_entry: ctx.copy_retained_text(ENTRY, "retain NX RMFastLoad source entry")?,
+            source_entry: (ENTRY).to_owned(),
             source_offset,
             byte_len,
-            sha256: Sha256Digest::digest_for_decode(
-                ctx,
-                bytes,
-                "hash NX RMFastLoad complete entry",
-            )?,
-            header_source_offset: absolute(ctx, source_offset, storage.header_offset)?,
+            sha256: Sha256Digest::digest(bytes),
+            header_source_offset: absolute(source_offset, storage.header_offset)?,
             header_words: storage.header_words,
-            boundary_source_offset: absolute(ctx, source_offset, storage.boundary_offset)?,
+            boundary_source_offset: absolute(source_offset, storage.boundary_offset)?,
             boundaries,
-            table_count_source_offset: absolute(ctx, source_offset, storage.count_offset)?,
+            table_count_source_offset: absolute(source_offset, storage.count_offset)?,
             table_words,
             physical_spans,
             terminal_preamble: preamble,
@@ -267,10 +264,12 @@ pub(super) fn collect(
             terminal_trailer: trailer,
         };
         if !wire.is_complete() {
-            return Err(ctx.refuse_codec_limit("NX RMFastLoad complete allocation", 0, 1));
+            return Err(CodecError::malformed(format_args!(
+                "{} exceeds its local bound",
+                "NX RMFastLoad complete allocation"
+            )));
         }
         ctx.charge_entities(1, "admit NX RMFastLoad physical storage")?;
-        ctx.reserve_vec(&mut output, 1, "retain NX RMFastLoad storage records")?;
         output.push(RmFastLoadStorage(wire));
     }
     Ok(output)
@@ -293,7 +292,7 @@ pub(crate) fn admit(
         namespace.arena_iter_as_for_decode::<RmFastLoadStorage>(ctx, "rmfastload_physical_storages")
     {
         let record = record?;
-        let count = owning_class_count(ctx, &classes, record.0.source_offset)?;
+        let count = owning_class_count(&classes, record.0.source_offset)?;
         if count != index_from_u32(record.0.header_words[3]) {
             return Err(NativeConvertError::InvalidCollection(
                 "RMFastLoad class count must match its owning section".into(),

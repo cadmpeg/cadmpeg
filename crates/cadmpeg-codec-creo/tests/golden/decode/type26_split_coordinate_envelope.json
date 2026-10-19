@@ -106,7 +106,7 @@
                     "length": 7,
                     "offset": 1,
                     "raw": "8d071bd2656f6c",
-                    "value": 0.00004407630756705222
+                    "value": 4.407630756705222e-05
                   }
                 ]
               },
@@ -155,7 +155,7 @@
                 "length": 7,
                 "offset": 1,
                 "raw": "8d071bd2656f6c",
-                "value": 0.00004407630756705222
+                "value": 4.407630756705222e-05
               },
               {
                 "length": 3,
@@ -266,11 +266,12 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 1e-06
     },
     "units": {
       "length": "millimeter"
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "coverage": {

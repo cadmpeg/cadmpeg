@@ -1,11 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Consolidated record framing and edge-resolution vocabulary.
 //!
 //! Inventories length-closed A/B-family records, groups consolidated edge runs
 //! and their native incidence graph, and resolves edge-block side carriers
 //! against typed analytic and NURBS charts.
 
-use crate::math::distance;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use crate::math::{distance_at_most, distance_below};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::features::FinitePoint3;
@@ -37,7 +38,8 @@ use crate::wire::bytes::{
 use crate::wire::records::consolidated_records;
 use crate::wire::records::{
     family_pcurves_from_records, records_are_contiguous, scan_vertex_record_ranges,
-    ConsolidatedFamily, ConsolidatedPcurve, ConsolidatedRawFrame, ConsolidatedRecord,
+    ConsolidatedFamily, ConsolidatedPcurve, ConsolidatedPcurveSite, ConsolidatedRawFrame,
+    ConsolidatedRecord,
 };
 
 const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-6;
@@ -451,35 +453,22 @@ struct ConsolidatedCarriers<'a> {
 #[cfg(test)]
 fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_edge_blocks_from_records(ctx, data, &records).expect("service decode")
-    })
+    consolidated_edge_blocks_from_records(data, &records)
 }
 
 fn consolidated_edge_blocks_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedEdgeBlock>, CodecError> {
+) -> Vec<ConsolidatedEdgeBlock> {
     let mut pcurves = BTreeMap::new();
     for family in [ConsolidatedFamily::A, ConsolidatedFamily::B] {
-        for value in family_pcurves_from_records(ctx, data, records, family)? {
-            ctx.insert_btree_map(
-                &mut pcurves,
-                value.pos,
-                value,
-                "catia_consolidated_edge_pcurves",
-            )?;
+        for value in family_pcurves_from_records(data, records, family) {
+            pcurves.insert(value.pos, value);
         }
     }
     let mut parameters = BTreeMap::new();
     for value in b2_edge_parameters_from_records(data, records) {
-        ctx.insert_btree_map(
-            &mut parameters,
-            value.pos,
-            value,
-            "catia_consolidated_edge_parameters",
-        )?;
+        parameters.insert(value.pos, value);
     }
     let mut blocks = Vec::new();
     for window in records.windows(3) {
@@ -507,20 +496,16 @@ fn consolidated_edge_blocks_from_records(
                         pcurves.remove(&second_record.byte_offset()),
                         parameters.remove(&parameter_record.byte_offset()),
                     ) {
-                        ctx.push_vec(
-                            &mut blocks,
-                            ConsolidatedEdgeBlock {
-                                pcurves: [first, second],
-                                parameters: parameter,
-                            },
-                            "catia_consolidated_edge_blocks",
-                        )?;
+                        blocks.push(ConsolidatedEdgeBlock {
+                            pcurves: [first, second],
+                            parameters: parameter,
+                        });
                     }
                 }
             }
         }
     }
-    Ok(blocks)
+    blocks
 }
 
 /// Decode complete six-record consolidated edge runs. Records separated by any
@@ -529,33 +514,21 @@ fn consolidated_edge_blocks_from_records(
 #[cfg(test)]
 fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_topology_edge_runs_from_records(ctx, data, &records).expect("service decode")
-    })
+    consolidated_topology_edge_runs_from_records(data, &records)
+        .expect("decode the consolidated topology edge runs")
 }
 
 pub(crate) fn consolidated_topology_edge_runs_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedTopologyEdgeRun>, CodecError> {
     let mut edges = BTreeMap::new();
-    for edge in consolidated_edge_blocks_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
-            &mut edges,
-            edge.pcurves[0].pos,
-            edge,
-            "catia_consolidated_topology_edges",
-        )?;
+    for edge in consolidated_edge_blocks_from_records(data, records) {
+        edges.insert(edge.pcurves[0].pos, edge);
     }
     let mut use_runs = BTreeMap::new();
-    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
-            &mut use_runs,
-            value.uses[0].pos,
-            value,
-            "catia_consolidated_topology_uses",
-        )?;
+    for value in consolidated_edge_use_runs_from_records(data, records)? {
+        use_runs.insert(value.uses[0].pos, value);
     }
     let mut runs = Vec::new();
     for window in records.windows(6) {
@@ -579,14 +552,10 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
                 edges.remove(&pcurve0.byte_offset()),
                 use_runs.remove(&use0.byte_offset()),
             ) {
-                ctx.push_vec(
-                    &mut runs,
-                    ConsolidatedTopologyEdgeRun {
-                        edge,
-                        node: use_run.node,
-                    },
-                    "catia_consolidated_topology_runs",
-                )?;
+                runs.push(ConsolidatedTopologyEdgeRun {
+                    edge,
+                    node: use_run.node,
+                });
             }
         }
     }
@@ -599,41 +568,21 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_analytic_circle_edge_runs(data: &[u8]) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_analytic_circle_edge_runs_from_records(ctx, data, &records)
-    })
-    .expect("service decode")
+    consolidated_analytic_circle_edge_runs_from_records(data, &records)
+        .expect("decode the consolidated analytic circle edge runs")
 }
 
 pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedAnalyticCircleEdgeRun>, CodecError> {
-    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut circles = BTreeMap::new();
     for value in b2_circles_from_records(data, records) {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut circles,
-                value.pos,
-                value,
-                "catia_analytic_circle_carriers",
-            )
-        })?;
+        circles.insert(value.pos, value);
     }
     let mut use_runs = BTreeMap::new();
-    for value in
-        temporary.with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))?
-    {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut use_runs,
-                value.uses[0].pos,
-                value,
-                "catia_analytic_circle_use_runs",
-            )
-        })?;
+    for value in consolidated_edge_use_runs_from_records(data, records)? {
+        use_runs.insert(value.uses[0].pos, value);
     }
     let mut runs = Vec::new();
     for window in records.windows(6) {
@@ -696,29 +645,19 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
                 definition.frame.width(),
                 definition.frame.flag,
                 definition.frame.header_token(),
-                ctx.copy_slice(
-                    &definition.frame.payload,
-                    "catia_analytic_circle_test_definition_payload",
-                )?,
+                definition.frame.payload.to_vec(),
             )
             .map_err(CodecError::malformed)?,
             class: definition.class,
         };
-        let descriptor = ConsolidatedRawFrame::from_record(
-            parameter,
-            ctx.copy_slice(&data[payload], "catia_analytic_circle_descriptor_payload")?,
-        )?;
-        ctx.push_vec(
-            &mut runs,
-            ConsolidatedAnalyticCircleEdgeRun {
-                descriptor,
-                circle: circle.clone(),
-                #[cfg(test)]
-                definition,
-                node: use_run.node,
-            },
-            "catia_analytic_circle_edge_runs",
-        )?;
+        let descriptor = ConsolidatedRawFrame::from_record(parameter, data[payload].to_vec())?;
+        runs.push(ConsolidatedAnalyticCircleEdgeRun {
+            descriptor,
+            circle: circle.clone(),
+            #[cfg(test)]
+            definition,
+            node: use_run.node,
+        });
     }
     Ok(runs)
 }
@@ -729,42 +668,21 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_class25_edge_runs_from_records(ctx, data, &records).expect("service decode")
-    })
+    consolidated_class25_edge_runs_from_records(data, &records)
+        .expect("decode the consolidated class 25 edge runs")
 }
 
 pub(crate) fn consolidated_class25_edge_runs_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedClass25EdgeRun>, CodecError> {
-    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut descriptors = BTreeMap::new();
-    for value in
-        temporary.with_storage(|| b2_class25_descriptors_from_records(ctx, data, records))?
-    {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut descriptors,
-                value.pos,
-                value,
-                "catia_class25_edge_descriptors",
-            )
-        })?;
+    for value in b2_class25_descriptors_from_records(data, records) {
+        descriptors.insert(value.pos, value);
     }
     let mut use_runs = BTreeMap::new();
-    for value in
-        temporary.with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))?
-    {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut use_runs,
-                value.uses[0].pos,
-                value,
-                "catia_class25_edge_use_runs",
-            )
-        })?;
+    for value in consolidated_edge_use_runs_from_records(data, records)? {
+        use_runs.insert(value.uses[0].pos, value);
     }
     let mut runs = Vec::new();
     for window in records.windows(5) {
@@ -800,20 +718,15 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
         let Some((descriptor, node)) = candidate else {
             continue;
         };
-        ctx.push_vec(
-            &mut runs,
-            ConsolidatedClass25EdgeRun {
-                descriptor: B2Class25Descriptor {
-                    pos: descriptor.pos,
-                    record_id: descriptor.record_id,
-                    control: descriptor.control,
-                    values: ctx
-                        .copy_slice(&descriptor.values, "catia_class25_edge_descriptor_values")?,
-                },
-                node,
+        runs.push(ConsolidatedClass25EdgeRun {
+            descriptor: B2Class25Descriptor {
+                pos: descriptor.pos,
+                record_id: descriptor.record_id,
+                control: descriptor.control,
+                values: descriptor.values.clone(),
             },
-            "catia_class25_edge_runs",
-        )?;
+            node,
+        });
     }
     Ok(runs)
 }
@@ -824,19 +737,16 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_edge_use_runs_from_records(ctx, data, &records).expect("service decode")
-    })
+    consolidated_edge_use_runs_from_records(data, &records)
+        .expect("decode the consolidated edge use runs")
 }
 
 pub(crate) fn consolidated_edge_use_runs_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedEdgeUseRun>, CodecError> {
     let mut runs = Vec::new();
     for (index, window) in records.windows(3).enumerate() {
-        ctx.charge_work(1, "catia_edge_use_window_scan")?;
         let [use0, use1, node_record] = window else {
             continue;
         };
@@ -850,18 +760,13 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(node_record.source_range().len()),
-            "catia_edge_use_node_parse",
-        )?;
+
         let Some(node_value) =
             b2_edge_nodes_from_records(data, std::slice::from_ref(node_record)).next()
         else {
             continue;
         };
-        let (parsed_uses, storage) = ctx.with_scoped_storage("catia_edge_use_chain", || {
-            b2_use_metadata_from_records(ctx, data, &window[..2])
-        })?;
+        let parsed_uses = b2_use_metadata_from_records(data, &window[..2]);
         let candidate = (|| {
             let node = node_value;
             let [first, second] = parsed_uses.as_slice() else {
@@ -914,33 +819,21 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             ))
         }) {
             Some((record, payload, class)) => Some(ConsolidatedEdgeDefinition {
-                frame: ConsolidatedRawFrame::from_record(
-                    record,
-                    ctx.copy_retained(
-                        &data[payload],
-                        "catia_edge_use_preceding_definition_payload",
-                    )?,
-                )?,
+                frame: ConsolidatedRawFrame::from_record(record, data[payload].to_vec())?,
                 class,
             }),
             None => None,
         };
-        storage.commit()?;
         let uses = parsed_uses
             .try_into()
             .map_err(|_| CodecError::malformed("edge use chain must contain two uses"))?;
-        ctx.push_vec(
-            &mut runs,
-            ConsolidatedEdgeUseRun {
-                definition,
-                uses,
-                node,
-            },
-            "catia_edge_use_runs",
-        )?;
+        runs.push(ConsolidatedEdgeUseRun {
+            definition,
+            uses,
+            node,
+        });
     }
     for window in records.windows(4) {
-        ctx.charge_work(1, "catia_edge_use_window_scan")?;
         let [node_record, definition_record, use0, use1] = window else {
             continue;
         };
@@ -956,18 +849,13 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(node_record.source_range().len()),
-            "catia_edge_use_node_parse",
-        )?;
+
         let Some(node_value) =
             b2_edge_nodes_from_records(data, std::slice::from_ref(node_record)).next()
         else {
             continue;
         };
-        let (parsed_uses, storage) = ctx.with_scoped_storage("catia_edge_use_chain", || {
-            b2_use_metadata_from_records(ctx, data, &window[2..])
-        })?;
+        let parsed_uses = b2_use_metadata_from_records(data, &window[2..]);
         let candidate = (|| {
             let node = node_value;
             let [first, second] = parsed_uses.as_slice() else {
@@ -1001,60 +889,36 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             continue;
         };
         let definition = Some(ConsolidatedEdgeDefinition {
-            frame: ConsolidatedRawFrame::from_record(
-                definition_record,
-                ctx.copy_retained(
-                    &data[payload],
-                    "catia_edge_use_succeeding_definition_payload",
-                )?,
-            )?,
+            frame: ConsolidatedRawFrame::from_record(definition_record, data[payload].to_vec())?,
             class,
         });
-        storage.commit()?;
         let uses = parsed_uses
             .try_into()
             .map_err(|_| CodecError::malformed("edge use chain must contain two uses"))?;
-        ctx.push_vec(
-            &mut runs,
-            ConsolidatedEdgeUseRun {
-                definition,
-                uses,
-                node,
-            },
-            "catia_edge_use_runs",
-        )?;
+        runs.push(ConsolidatedEdgeUseRun {
+            definition,
+            uses,
+            node,
+        });
     }
     Ok(runs)
 }
 
 /// Resolve compact owner references that land exactly on class-`0x5e` frames.
 pub(crate) fn consolidated_owned_edge_nodes_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedOwnedEdgeNode>, CodecError> {
-    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
+) -> Vec<ConsolidatedOwnedEdgeNode> {
     let mut indices = BTreeMap::new();
     for (index, record) in records.iter().enumerate() {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut indices,
-                record.byte_offset(),
-                index,
-                "catia_owned_edge_record_indices",
-            )
-        })?;
+        indices.insert(record.byte_offset(), index);
     }
     let mut nodes = BTreeMap::new();
     for node in b2_edge_nodes_from_records(data, records) {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(&mut nodes, node.pos, node, "catia_owned_edge_nodes")
-        })?;
+        nodes.insert(node.pos, node);
     }
     let mut owned = Vec::new();
-    for relation in temporary
-        .with_storage(|| b2_adjacent_face_counted_owners_from_records(ctx, data, records))?
-    {
+    for relation in b2_adjacent_face_counted_owners_from_records(data, records) {
         let Some(&owner_index) = indices.get(&relation.owner.pos) else {
             continue;
         };
@@ -1092,270 +956,189 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
             {
                 continue;
             }
-            ctx.push_vec(
-                &mut owned,
-                ConsolidatedOwnedEdgeNode {
-                    owner_pos: relation.owner.pos,
-                    allocation_ordinal,
-                    node,
-                },
-                "catia_owned_edge_results",
-            )?;
+            owned.push(ConsolidatedOwnedEdgeNode {
+                owner_pos: relation.owner.pos,
+                allocation_ordinal,
+                node,
+            });
         }
     }
-    Ok(owned)
+    owned
 }
 
 /// Resolve compact edge endpoint references through the framed allocation walk.
 pub(crate) fn consolidated_compact_edge_endpoints_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedCompactEdgeEndpoints>, CodecError> {
-    struct EndpointResolver<'a, 'b> {
-        ctx: &'a DecodeContext<'b>,
+) -> Vec<ConsolidatedCompactEdgeEndpoints> {
+    struct EndpointResolver<'a> {
         records: &'a [ConsolidatedRecord],
         nodes: &'a HashMap<usize, B2EdgeNode>,
         allocation_locations: &'a HashMap<usize, (usize, usize)>,
         allocation_scopes: &'a [Vec<usize>],
-        active: HashSet<(usize, usize)>,
         memo: HashMap<(usize, usize), Option<usize>>,
-        storage: ScopedReservation<'a>,
     }
 
-    impl EndpointResolver<'_, '_> {
-        fn resolve(
-            &mut self,
-            record_index: usize,
-            endpoint: usize,
-        ) -> Result<Option<usize>, CodecError> {
-            let key = (record_index, endpoint);
-            if let Some(cached) = self.memo.get(&key) {
-                return Ok(*cached);
-            }
-            let _depth = self
-                .ctx
-                .enter_nested("catia_compact_endpoint_resolution_depth")?;
-            self.ctx
-                .charge_work(1, "catia_compact_endpoint_resolution_work")?;
-            if !self.storage.with_storage(|| {
-                self.ctx
-                    .insert_hash_set(&mut self.active, key, "catia_compact_endpoint_active")
-            })? {
-                return Ok(None);
-            }
-            let result = (|| {
-                let node = self.nodes.get(&record_index)?;
-                let reference = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
-                let encoding = node.reference_encodings[endpoint + 1];
-                let &(scope, allocation_ordinal) = self.allocation_locations.get(&record_index)?;
-                let target = match encoding {
-                    AllocationReferenceEncoding::OwnedChild => allocation_ordinal
-                        .checked_add(1)?
-                        .checked_add(usize::try_from(reference).ok()?)
-                        .and_then(|target| self.allocation_scopes.get(scope)?.get(target))
-                        .copied()?,
-                    AllocationReferenceEncoding::BackwardDistance => {
-                        let target =
-                            allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?;
-                        *self.allocation_scopes.get(scope)?.get(target)?
-                    }
-                    AllocationReferenceEncoding::WidthCoded => {
-                        let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
-                        let target_record = self.records.get(target)?;
-                        if target_record.source_index()
-                            != self.records.get(record_index)?.source_index()
-                            || target_record.family() != ConsolidatedFamily::B
-                            || target_record.class() != 0x18
-                        {
-                            return None;
-                        }
-                        return Some(Ok(target));
-                    }
-                    AllocationReferenceEncoding::Selector2
-                    | AllocationReferenceEncoding::TaggedU8
-                    | AllocationReferenceEncoding::TaggedU16 => return None,
-                };
-                let target_record = self.records.get(target)?;
-                if target_record.family() != ConsolidatedFamily::B {
-                    return None;
+    /// One endpoint reference: a vertex record, or an edge-use record whose
+    /// end endpoint the reference defers to.
+    enum EndpointStep {
+        Vertex(usize),
+        Through(usize),
+    }
+
+    impl EndpointResolver<'_> {
+        /// Follow a chain of deferring edge-use records to its vertex. Every
+        /// endpoint on the chain shares the chain's result; a chain that
+        /// returns to one of its own endpoints resolves to `None`.
+        fn resolve(&mut self, record_index: usize, endpoint: usize) -> Option<usize> {
+            let mut chain = Vec::new();
+            let mut on_chain = HashSet::new();
+            let mut key = (record_index, endpoint);
+            let result = loop {
+                if let Some(&cached) = self.memo.get(&key) {
+                    break cached;
                 }
-                match target_record.class() {
-                    0x5d => Some(Ok(target)),
-                    0x5e => self.resolve(target, 1).transpose(),
-                    _ => None,
+                if !on_chain.insert(key) {
+                    break None;
                 }
-            })();
-            self.active.remove(&key);
-            let result = result.transpose()?;
-            self.storage.with_storage(|| {
-                self.ctx
-                    .insert_hash_map(&mut self.memo, key, result, "catia_compact_endpoint_memo")
-            })?;
-            Ok(result)
+                chain.push(key);
+                match self.step(key.0, key.1) {
+                    Some(EndpointStep::Vertex(target)) => break Some(target),
+                    Some(EndpointStep::Through(target)) => key = (target, 1),
+                    None => break None,
+                }
+            };
+            for key in chain {
+                self.memo.insert(key, result);
+            }
+            result
+        }
+
+        fn step(&self, record_index: usize, endpoint: usize) -> Option<EndpointStep> {
+            let node = self.nodes.get(&record_index)?;
+            let reference = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
+            let encoding = node.reference_encodings[endpoint + 1];
+            let &(scope, allocation_ordinal) = self.allocation_locations.get(&record_index)?;
+            let target = match encoding {
+                AllocationReferenceEncoding::OwnedChild => allocation_ordinal
+                    .checked_add(1)?
+                    .checked_add(usize::try_from(reference).ok()?)
+                    .and_then(|target| self.allocation_scopes.get(scope)?.get(target))
+                    .copied()?,
+                AllocationReferenceEncoding::BackwardDistance => {
+                    let target =
+                        allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?;
+                    *self.allocation_scopes.get(scope)?.get(target)?
+                }
+                AllocationReferenceEncoding::WidthCoded => {
+                    let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
+                    let target_record = self.records.get(target)?;
+                    if target_record.source_index()
+                        != self.records.get(record_index)?.source_index()
+                        || target_record.family() != ConsolidatedFamily::B
+                        || target_record.class() != 0x18
+                    {
+                        return None;
+                    }
+                    return Some(EndpointStep::Vertex(target));
+                }
+                AllocationReferenceEncoding::Selector2
+                | AllocationReferenceEncoding::TaggedU8
+                | AllocationReferenceEncoding::TaggedU16 => return None,
+            };
+            let target_record = self.records.get(target)?;
+            if target_record.family() != ConsolidatedFamily::B {
+                return None;
+            }
+            match target_record.class() {
+                0x5d => Some(EndpointStep::Vertex(target)),
+                0x5e => Some(EndpointStep::Through(target)),
+                _ => None,
+            }
         }
     }
 
-    let mut temporary = ctx.reserve_scoped(0, "catia compact endpoint workspace")?;
     let mut by_pos = HashMap::new();
     for node in b2_edge_nodes_from_records(data, records) {
-        temporary.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut by_pos,
-                node.pos,
-                node,
-                "catia_compact_endpoint_nodes_by_pos",
-            )
-        })?;
+        by_pos.insert(node.pos, node);
     }
     let mut nodes = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if let Some(node) = by_pos.get(&record.byte_offset()).copied() {
-            temporary.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut nodes,
-                    index,
-                    node,
-                    "catia_compact_endpoint_nodes_by_index",
-                )
-            })?;
+            nodes.insert(index, node);
         }
     }
     let mut allocation_scopes = Vec::new();
-    temporary.with_storage(|| {
-        ctx.push_vec(
-            &mut allocation_scopes,
-            Vec::new(),
-            "catia_compact_endpoint_scopes",
-        )
-    })?;
+    allocation_scopes.push(Vec::new());
     let mut allocation_locations = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if index > 0
             && (records[index - 1].source_index() != record.source_index()
                 || records[index - 1].source_range().end != record.source_range().start)
         {
-            temporary.with_storage(|| {
-                ctx.push_vec(
-                    &mut allocation_scopes,
-                    Vec::new(),
-                    "catia_compact_endpoint_scopes",
-                )
-            })?;
+            allocation_scopes.push(Vec::new());
         }
         if record.family() == ConsolidatedFamily::B && matches!(record.class(), 0x5d | 0x5e) {
             let scope = allocation_scopes.len() - 1;
             let ordinal = allocation_scopes[scope].len();
-            temporary.with_storage(|| {
-                ctx.push_vec(
-                    &mut allocation_scopes[scope],
-                    index,
-                    "catia_compact_endpoint_scope_entries",
-                )
-            })?;
-            temporary.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut allocation_locations,
-                    index,
-                    (scope, ordinal),
-                    "catia_compact_endpoint_locations",
-                )
-            })?;
+            allocation_scopes[scope].push(index);
+            allocation_locations.insert(index, (scope, ordinal));
         }
     }
     let mut resolver = EndpointResolver {
-        ctx,
-        storage: ctx.reserve_scoped(0, "catia compact endpoint memo workspace")?,
         records,
         nodes: &nodes,
         allocation_locations: &allocation_locations,
         allocation_scopes: &allocation_scopes,
-        active: HashSet::new(),
         memo: HashMap::new(),
     };
     let mut endpoints = Vec::new();
     for (&record_index, &node) in &nodes {
         let vertices = [
-            resolver.resolve(record_index, 0)?,
-            resolver.resolve(record_index, 1)?,
+            resolver.resolve(record_index, 0),
+            resolver.resolve(record_index, 1),
         ];
         let [Some(start), Some(end)] = vertices else {
             continue;
         };
-        ctx.push_vec(
-            &mut endpoints,
-            ConsolidatedCompactEdgeEndpoints {
-                node,
-                endpoint_records: [records[start].byte_offset(), records[end].byte_offset()],
-            },
-            "catia_compact_endpoint_bindings",
-        )?;
+        endpoints.push(ConsolidatedCompactEdgeEndpoints {
+            node,
+            endpoint_records: [records[start].byte_offset(), records[end].byte_offset()],
+        });
     }
-    ctx.stable_sort_by(
-        &mut endpoints,
-        |left, right| left.node.pos.cmp(&right.node.pos),
-        |_| 0,
-        "catia_compact_endpoint_bindings_sort",
-    )?;
-    Ok(endpoints)
+    endpoints.sort_by_key(|left| left.node.pos);
+    endpoints
 }
 
 /// Derive owner-local four-edge boundary cycles from fixed-nine references.
 /// Every returned endpoint is closed by the same bounded record source as its
 /// owner. Other fixed-nine roles remain unclassified.
 pub(crate) fn consolidated_owner_boundary_cycles_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedOwnerBoundaryCycle>, CodecError> {
+) -> Vec<ConsolidatedOwnerBoundaryCycle> {
     let mut endpoint_records = HashMap::new();
-    for binding in consolidated_compact_edge_endpoints_from_records(ctx, data, records)? {
-        ctx.insert_hash_map(
-            &mut endpoint_records,
-            binding.node.pos,
-            binding.endpoint_records,
-            "catia_owner_boundary_endpoints",
-        )?;
+    for binding in consolidated_compact_edge_endpoints_from_records(data, records) {
+        endpoint_records.insert(binding.node.pos, binding.endpoint_records);
     }
     let mut face_nodes = BTreeMap::new();
     for node in b2_face_nodes_5f_from_records(data, records) {
-        ctx.insert_btree_map(
-            &mut face_nodes,
-            node.pos,
-            node,
-            "catia_owner_boundary_face_nodes",
-        )?;
+        face_nodes.insert(node.pos, node);
     }
     let mut record_indices = BTreeMap::new();
     let mut record_sources = HashMap::new();
     for (index, record) in records.iter().enumerate() {
-        ctx.insert_btree_map(
-            &mut record_indices,
-            record.byte_offset(),
-            index,
-            "catia_owner_boundary_record_indices",
-        )?;
-        ctx.insert_hash_map(
-            &mut record_sources,
-            record.byte_offset(),
-            record.source_index(),
-            "catia_owner_boundary_record_sources",
-        )?;
+        record_indices.insert(record.byte_offset(), index);
+        record_sources.insert(record.byte_offset(), record.source_index());
     }
     let mut targets_by_owner = BTreeMap::<(usize, usize), Vec<_>>::new();
-    for target in b2_owner_identity_targets_from_records(ctx, data, records)? {
+    for target in b2_owner_identity_targets_from_records(data, records) {
         let key = (target.source_index, target.owner_pos);
         if let Some(targets) = targets_by_owner.get_mut(&key) {
-            ctx.push_vec(targets, target, "catia_owner_boundary_target_entries")?;
+            targets.push(target);
         } else {
-            let mut targets = Vec::new();
-            ctx.push_vec(&mut targets, target, "catia_owner_boundary_target_entries")?;
-            ctx.insert_btree_map(
-                &mut targets_by_owner,
-                key,
-                targets,
-                "catia_owner_boundary_target_groups",
-            )?;
+            let targets = vec![target];
+            targets_by_owner.insert(key, targets);
         }
     }
     let mut cycles = Vec::new();
@@ -1363,7 +1146,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
         let Some(targets) = targets_by_owner.get(&(packet.source_index, packet.pos)) else {
             continue;
         };
-        let Some(edges) = b2_closed_owner_boundary_edges(ctx, targets, &endpoint_records)? else {
+        let Some(edges) = b2_closed_owner_boundary_edges(targets, &endpoint_records) else {
             continue;
         };
         let cycle = {
@@ -1416,10 +1199,10 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 })
         };
         if let Some(cycle) = cycle {
-            ctx.push_vec(&mut cycles, cycle, "catia_owner_boundary_cycles")?;
+            cycles.push(cycle);
         }
     }
-    Ok(cycles)
+    cycles
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated
@@ -1503,23 +1286,14 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
-    let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
-    let points = object_stream_vertices_from_records(ctx, data, records)?;
-    let standalone = ctx.collect_vec(
-        b2_cylinders_from_records(data, records),
-        "catia_resolved_standalone_cylinders",
-    )?;
-    let circles = ctx.collect_vec(
-        b2_circles_from_records(data, records),
-        "catia_resolved_circles",
-    )?;
-    let cones = ctx.collect_vec(b2_cones_from_records(data, records), "catia_resolved_cones")?;
-    let spheres = ctx.collect_vec(
-        b2_spheres_from_records(data, records),
-        "catia_resolved_spheres",
-    )?;
-    let tori = ctx.collect_vec(b2_tori_from_records(data, records), "catia_resolved_tori")?;
-    let planes = b2_plane_carriers_from_records(ctx, data, records)?;
+    let surfaces = a5_surfaces_from_records(data, records, refusal)?;
+    let points = object_stream_vertices_from_records(data, records);
+    let standalone = (b2_cylinders_from_records(data, records)).collect::<Vec<_>>();
+    let circles = (b2_circles_from_records(data, records)).collect::<Vec<_>>();
+    let cones = (b2_cones_from_records(data, records)).collect::<Vec<_>>();
+    let spheres = (b2_spheres_from_records(data, records)).collect::<Vec<_>>();
+    let tori = (b2_tori_from_records(data, records)).collect::<Vec<_>>();
+    let planes = b2_plane_carriers_from_records(data, records);
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         circles: &circles,
@@ -1530,7 +1304,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         nurbs_surfaces: &surfaces,
     };
     let mut resolved = Vec::new();
-    for block in consolidated_edge_blocks_from_records(ctx, data, records)? {
+    for block in consolidated_edge_blocks_from_records(data, records) {
         let mut supports = [None, None];
         for side in [0, 1] {
             supports[side] = resolve_side_support(ctx, &block.pcurves[side], &points, &carriers)?;
@@ -1548,13 +1322,11 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             else {
                 continue;
             };
-            let partner_points = ctx.collect_vec(
-                block.pcurves[partner]
-                    .sites
-                    .iter()
-                    .map(|site| site.point.get()),
-                "catia_resolved_partner_parameters",
-            )?;
+            let partner_points = block.pcurves[partner]
+                .sites
+                .iter()
+                .map(|site| site.point.get())
+                .collect::<Vec<_>>();
             let mut winners = Vec::new();
             for surface in &surfaces {
                 if let Some(offset) = nurbs_carrier_offset_surface(
@@ -1563,14 +1335,10 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     &partner_points,
                     &anchor_points,
                 )? {
-                    ctx.push_vec(
-                        &mut winners,
-                        ConsolidatedSupportBinding::NurbsCarrier {
-                            pos: surface.pos,
-                            offset,
-                        },
-                        "catia_resolved_partner_winners",
-                    )?;
+                    winners.push(ConsolidatedSupportBinding::NurbsCarrier {
+                        pos: surface.pos,
+                        offset,
+                    });
                 }
             }
             if let [winner] = winners.as_slice() {
@@ -1578,38 +1346,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             }
         }
         if supports.iter().all(Option::is_none) {
-            let mut candidates = [Vec::new(), Vec::new()];
-            for side in [0, 1] {
-                for surface in &surfaces {
-                    let binding = ConsolidatedSupportBinding::NurbsCarrier {
-                        pos: surface.pos,
-                        offset: FiniteReal::ZERO,
-                    };
-                    if let Some(points) =
-                        support_points(ctx, &binding, &block.pcurves[side], &carriers)?
-                    {
-                        ctx.push_vec(
-                            &mut candidates[side],
-                            (binding, points),
-                            "catia_resolved_surface_candidates",
-                        )?;
-                    }
-                }
-            }
-            let mut winner = None;
-            'pairs: for (first_binding, first_points) in &candidates[0] {
-                for (second_binding, second_points) in &candidates[1] {
-                    if !point_sequences_agree(first_points, second_points) {
-                        continue;
-                    }
-                    if winner.is_some() {
-                        winner = None;
-                        break 'pairs;
-                    }
-                    winner = Some([*first_binding, *second_binding]);
-                }
-            }
-            if let Some(winner) = winner {
+            if let Some(winner) = unique_agreeing_nurbs_pair(ctx, &block, &surfaces, &carriers)? {
                 supports = winner.map(Some);
             }
         }
@@ -1617,16 +1354,12 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         let endpoint_loci = shared_loci
             .as_ref()
             .and_then(|points| Some([*points.first()?, *points.last()?]));
-        ctx.push_vec(
-            &mut resolved,
-            ResolvedConsolidatedEdgeBlock {
-                block,
-                supports,
-                shared_loci,
-                endpoint_loci,
-            },
-            "catia_resolved_edge_blocks",
-        )?;
+        resolved.push(ResolvedConsolidatedEdgeBlock {
+            block,
+            supports,
+            shared_loci,
+            endpoint_loci,
+        });
     }
     Ok(resolved)
 }
@@ -1664,29 +1397,17 @@ fn resolve_side_support(
     let mut winners = Vec::new();
     for cylinder in carriers.cylinders {
         if pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cylinder_point(cylinder, uv)))? {
-            ctx.push_vec(
-                &mut winners,
-                ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos },
-                "catia_resolved_side_winners",
-            )?;
+            winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
         }
     }
     for circle in carriers.circles {
         if pcurve_matches_circle(pcurve, circle) {
-            ctx.push_vec(
-                &mut winners,
-                ConsolidatedSupportBinding::Circle { pos: circle.pos },
-                "catia_resolved_side_winners",
-            )?;
+            winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
         }
     }
     for cone in carriers.cones {
         if pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cone_point(cone, uv)))? {
-            ctx.push_vec(
-                &mut winners,
-                ConsolidatedSupportBinding::Cone { pos: cone.pos },
-                "catia_resolved_side_winners",
-            )?;
+            winners.push(ConsolidatedSupportBinding::Cone { pos: cone.pos });
         }
     }
     for sphere in carriers.spheres {
@@ -1699,20 +1420,12 @@ fn resolve_side_support(
                 Err(failure) => failure.non_finite(),
             }
         })? {
-            ctx.push_vec(
-                &mut winners,
-                ConsolidatedSupportBinding::Sphere { pos: sphere.pos },
-                "catia_resolved_side_winners",
-            )?;
+            winners.push(ConsolidatedSupportBinding::Sphere { pos: sphere.pos });
         }
     }
     for torus in carriers.tori {
         if pcurve_endpoints_match(pcurve, points, |uv| b2_torus_point(ctx, torus, uv))? {
-            ctx.push_vec(
-                &mut winners,
-                ConsolidatedSupportBinding::Torus { pos: torus.pos },
-                "catia_resolved_side_winners",
-            )?;
+            winners.push(ConsolidatedSupportBinding::Torus { pos: torus.pos });
         }
     }
     for plane in carriers.planes {
@@ -1725,11 +1438,7 @@ fn resolve_side_support(
                     Err(failure) => failure.non_finite(),
                 }
             })? {
-                ctx.push_vec(
-                    &mut winners,
-                    ConsolidatedSupportBinding::Plane { pos: plane.pos },
-                    "catia_resolved_side_winners",
-                )?;
+                winners.push(ConsolidatedSupportBinding::Plane { pos: plane.pos });
             }
         }
     }
@@ -1739,13 +1448,79 @@ fn resolve_side_support(
     })
 }
 
+/// The one pair of NURBS carriers without offset, one for each side of
+/// `block`, on which the two pcurves lift to points that agree.
+///
+/// Two lifts agree only if their first points agree. The complete lifts are
+/// thus evaluated only for the pairs whose first points agree.
+fn unique_agreeing_nurbs_pair(
+    ctx: &DecodeContext<'_>,
+    block: &ConsolidatedEdgeBlock,
+    surfaces: &[FreeformSurface],
+    carriers: &ConsolidatedCarriers<'_>,
+) -> Result<Option<[ConsolidatedSupportBinding; 2]>, CodecError> {
+    let [first_pcurve, second_pcurve] = &block.pcurves;
+    if first_pcurve.sites.len() != second_pcurve.sites.len() {
+        return Ok(None);
+    }
+    let bindings = surfaces
+        .iter()
+        .map(|surface| ConsolidatedSupportBinding::NurbsCarrier {
+            pos: surface.pos,
+            offset: FiniteReal::ZERO,
+        })
+        .collect::<Vec<_>>();
+    let mut starts = [Vec::new(), Vec::new()];
+    for (side, pcurve) in block.pcurves.iter().enumerate() {
+        for binding in &bindings {
+            let start = support_points_at(ctx, binding, &pcurve.sites[..1], carriers)?
+                .and_then(|points| points.first().copied());
+            starts[side].push(start);
+        }
+    }
+    let mut lifts = [vec![None; bindings.len()], vec![None; bindings.len()]];
+    let mut winner = None;
+    for (first, first_start) in starts[0].iter().enumerate() {
+        let Some(first_start) = first_start else {
+            continue;
+        };
+        for (second, second_start) in starts[1].iter().enumerate() {
+            let Some(second_start) = second_start else {
+                continue;
+            };
+            if !distance_at_most(*first_start, *second_start, 2e-3) {
+                continue;
+            }
+            for (side, index, pcurve) in [(0, first, first_pcurve), (1, second, second_pcurve)] {
+                if lifts[side][index].is_none() {
+                    lifts[side][index] =
+                        Some(support_points(ctx, &bindings[index], pcurve, carriers)?);
+                }
+            }
+            let (Some(Some(first_points)), Some(Some(second_points))) =
+                (&lifts[0][first], &lifts[1][second])
+            else {
+                continue;
+            };
+            if !point_sequences_agree(first_points, second_points) {
+                continue;
+            }
+            if winner.is_some() {
+                return Ok(None);
+            }
+            winner = Some([bindings[first], bindings[second]]);
+        }
+    }
+    Ok(winner)
+}
+
 fn point_sequences_agree(first: &[Point3], second: &[Point3]) -> bool {
     !first.is_empty()
         && first.len() == second.len()
         && first
             .iter()
             .zip(second)
-            .all(|(&left, &right)| distance(left, right) <= 2e-3)
+            .all(|(&left, &right)| distance_at_most(left, right, 2e-3))
 }
 
 fn resolved_support_loci(
@@ -1787,32 +1562,134 @@ fn support_points(
             let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            ctx.collect_options(
-                pcurve
-                    .sites
-                    .iter()
-                    .map(|site| b2_cylinder_point(carrier, site.point.get())),
-                "catia_resolved_support_points",
-            )?
+            (pcurve
+                .sites
+                .iter()
+                .map(|site| b2_cylinder_point(carrier, site.point.get())))
+            .collect::<Option<Vec<_>>>()
         }
         ConsolidatedSupportBinding::Cone { pos } => {
             let Some(carrier) = carriers.cones.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            ctx.collect_options(
-                pcurve
-                    .sites
-                    .iter()
-                    .map(|site| b2_cone_point(carrier, site.point.get())),
-                "catia_resolved_support_points",
-            )?
+            (pcurve
+                .sites
+                .iter()
+                .map(|site| b2_cone_point(carrier, site.point.get())))
+            .collect::<Option<Vec<_>>>()
         }
         ConsolidatedSupportBinding::Sphere { pos } => {
             let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            ctx.collect_fallible_options(
-                pcurve.sites.iter().map(|site| {
+            (pcurve.sites.iter().map(|site| {
+                let [u, v] = site.point.get();
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(
+                        ctx,
+                        &b2_sphere_geometry(carrier),
+                        u,
+                        v,
+                    ),
+                )? {
+                    Ok(point) => Ok(Some(point.get())),
+                    Err(failure) => failure.non_finite(),
+                }
+            }))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::Torus { pos } => {
+            let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            (pcurve
+                .sites
+                .iter()
+                .map(|site| b2_torus_point(ctx, carrier, site.point.get())))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::Plane { pos } => {
+            let Some(carrier) = carriers.planes.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            let Some(geometry) = b2_plane_geometry(carrier) else {
+                return Ok(None);
+            };
+            (pcurve.sites.iter().map(|site| {
+                let [u, v] = site.point.get();
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                )? {
+                    Ok(point) => Ok(Some(point.get())),
+                    Err(failure) => failure.non_finite(),
+                }
+            }))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
+            let Some(surface) = carriers
+                .nurbs_surfaces
+                .iter()
+                .find(|surface| surface.pos == *pos)
+                .map(|surface| &surface.geometry)
+            else {
+                return Ok(None);
+            };
+            (pcurve.sites.iter().map(|site| {
+                let [u, v] = site.point.get();
+                let partials = match nurbs_surface_partials(ctx, surface, u, v) {
+                    Ok(partials) => partials,
+                    Err(failure) => return failure.non_finite(),
+                };
+                let Some(normal) = partials.du.cross(partials.dv.get()).unit() else {
+                    return Ok(None);
+                };
+                Ok(Some(Point3::new(
+                    partials.point.x + offset.get() * normal.x,
+                    partials.point.y + offset.get() * normal.y,
+                    partials.point.z + offset.get() * normal.z,
+                )))
+            }))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::Circle { .. } => None,
+    };
+    Ok(points)
+}
+
+/// The points of `binding` at `sites`, in site order.
+fn support_points_at(
+    ctx: &DecodeContext<'_>,
+    binding: &ConsolidatedSupportBinding,
+    sites: &[ConsolidatedPcurveSite],
+    carriers: &ConsolidatedCarriers<'_>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
+    let points = match binding {
+        ConsolidatedSupportBinding::Cylinder { pos } => {
+            let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            sites
+                .iter()
+                .map(|site| b2_cylinder_point(carrier, site.point.get()))
+                .collect::<Option<Vec<_>>>()
+        }
+        ConsolidatedSupportBinding::Cone { pos } => {
+            let Some(carrier) = carriers.cones.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            sites
+                .iter()
+                .map(|site| b2_cone_point(carrier, site.point.get()))
+                .collect::<Option<Vec<_>>>()
+        }
+        ConsolidatedSupportBinding::Sphere { pos } => {
+            let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            sites
+                .iter()
+                .map(|site| {
                     let [u, v] = site.point.get();
                     match cadmpeg_ir::eval::decode::outer_refusal(
                         cadmpeg_ir::eval::decode::surface_point(
@@ -1825,21 +1702,17 @@ fn support_points(
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
-                }),
-                "catia_resolved_support_points",
-            )?
+                })
+                .collect::<Result<Option<Vec<_>>, _>>()?
         }
         ConsolidatedSupportBinding::Torus { pos } => {
             let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            ctx.collect_fallible_options(
-                pcurve
-                    .sites
-                    .iter()
-                    .map(|site| b2_torus_point(ctx, carrier, site.point.get())),
-                "catia_resolved_support_points",
-            )?
+            sites
+                .iter()
+                .map(|site| b2_torus_point(ctx, carrier, site.point.get()))
+                .collect::<Result<Option<Vec<_>>, _>>()?
         }
         ConsolidatedSupportBinding::Plane { pos } => {
             let Some(carrier) = carriers.planes.iter().find(|value| value.pos == *pos) else {
@@ -1848,8 +1721,9 @@ fn support_points(
             let Some(geometry) = b2_plane_geometry(carrier) else {
                 return Ok(None);
             };
-            ctx.collect_fallible_options(
-                pcurve.sites.iter().map(|site| {
+            sites
+                .iter()
+                .map(|site| {
                     let [u, v] = site.point.get();
                     match cadmpeg_ir::eval::decode::outer_refusal(
                         cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
@@ -1857,9 +1731,8 @@ fn support_points(
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
-                }),
-                "catia_resolved_support_points",
-            )?
+                })
+                .collect::<Result<Option<Vec<_>>, _>>()?
         }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
             let Some(surface) = carriers
@@ -1870,8 +1743,9 @@ fn support_points(
             else {
                 return Ok(None);
             };
-            ctx.collect_fallible_options(
-                pcurve.sites.iter().map(|site| {
+            sites
+                .iter()
+                .map(|site| {
                     let [u, v] = site.point.get();
                     let partials = match nurbs_surface_partials(ctx, surface, u, v) {
                         Ok(partials) => partials,
@@ -1885,9 +1759,8 @@ fn support_points(
                         partials.point.y + offset.get() * normal.y,
                         partials.point.z + offset.get() * normal.z,
                     )))
-                }),
-                "catia_resolved_support_points",
-            )?
+                })
+                .collect::<Result<Option<Vec<_>>, _>>()?
         }
         ConsolidatedSupportBinding::Circle { .. } => None,
     };
@@ -1920,7 +1793,6 @@ fn nurbs_carrier_offset(
     parameters: &[[f64; 2]],
     anchors: &[Point3],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface offset boundary")?;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = geometry else {
         return Ok(None);
     };
@@ -1933,13 +1805,11 @@ fn nurbs_carrier_offset_surface(
     parameters: &[[f64; 2]],
     anchors: &[Point3],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface offset boundary")?;
     if parameters.len() != anchors.len() || parameters.is_empty() {
         return Ok(None);
     }
     let mut first = None::<FiniteReal>;
     for (&[u, v], &anchor) in parameters.iter().zip(anchors) {
-        ctx.charge_work_limit(1, "catia surface offset sample")?;
         let partials = match nurbs_surface_partials(ctx, surface, u, v) {
             Ok(partials) => partials,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
@@ -2018,7 +1888,7 @@ fn pcurve_endpoints_match(
         let matches = evaluate(uv)?.is_some_and(|point| {
             vertices
                 .iter()
-                .any(|vertex| distance(point, vertex.get()) < 2e-3)
+                .any(|vertex| distance_below(point, vertex.get(), 2e-3))
         });
         if !matches {
             return Ok(false);
@@ -2031,58 +1901,43 @@ fn pcurve_endpoints_match(
 /// A/B or B5/A8 record. Marker-like bytes inside record payloads are not
 /// vertices.
 pub(in crate::families) fn object_stream_vertices(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
 ) -> Result<Vec<FinitePoint3>, CodecError> {
     let records = crate::wire::records::consolidated_records_in_sources(
-        ctx,
         data,
         std::iter::once(std::iter::once(crate::wire::records::SourceExtent::whole(
             data,
         ))),
     )?;
-    object_stream_vertices_from_records(ctx, data, &records)
+    Ok(object_stream_vertices_from_records(data, &records))
 }
 
 fn object_stream_vertices_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Result<Vec<FinitePoint3>, CodecError> {
+) -> Vec<FinitePoint3> {
     let mut points = Vec::new();
-    for range in object_stream_vertex_row_ranges_from_records(ctx, data, records)? {
-        for point in crate::wire::records::scan_vertex_records(ctx, &data[range])? {
-            ctx.push_vec(&mut points, point, "catia_object_stream_vertices")?;
+    for range in object_stream_vertex_row_ranges_from_records(data, records) {
+        for point in crate::wire::records::scan_vertex_records(&data[range]) {
+            points.push(point);
         }
     }
-    Ok(points)
+    points
 }
 
 fn object_stream_vertex_row_ranges_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Result<Vec<Range<usize>>, CodecError> {
-    let scan_work = u64_from_index(data.len()).checked_mul(4).ok_or_else(|| {
-        ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
-    let mut ranges = ctx.collect_vec(
-        records
-            .iter()
-            .filter_map(crate::wire::records::ConsolidatedRecord::range)
-            .chain(crate::families::b5::graph::framed_ranges(data)),
-        "catia_object_stream_frame_ranges",
-    )?;
+) -> Vec<Range<usize>> {
+    let mut ranges = records
+        .iter()
+        .filter_map(crate::wire::records::ConsolidatedRecord::range)
+        .chain(crate::families::b5::graph::framed_ranges(data))
+        .collect::<Vec<_>>();
     if ranges.is_empty() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-    ctx.sort_unstable_by(
-        &mut ranges,
-        |left, right| (left.start, left.end).cmp(&(right.start, right.end)),
-        |_| 0,
-        "catia_object_stream_frame_ranges_sort",
-    )?;
+    ranges.sort_unstable_by_key(|left| (left.start, left.end));
     let mut rows = Vec::new();
     let mut region_start = 0usize;
     for range in ranges {
@@ -2090,24 +1945,16 @@ fn object_stream_vertex_row_ranges_from_records(
             continue;
         }
         if range.start > region_start {
-            for row in scan_vertex_record_ranges(ctx, &data[region_start..range.start])? {
-                ctx.push_vec(
-                    &mut rows,
-                    row.start + region_start..row.end + region_start,
-                    "catia_object_stream_vertex_rows",
-                )?;
+            for row in scan_vertex_record_ranges(&data[region_start..range.start]) {
+                rows.push(row.start + region_start..row.end + region_start);
             }
         }
         region_start = region_start.max(range.end);
     }
-    for row in scan_vertex_record_ranges(ctx, &data[region_start..])? {
-        ctx.push_vec(
-            &mut rows,
-            row.start + region_start..row.end + region_start,
-            "catia_object_stream_vertex_rows",
-        )?;
+    for row in scan_vertex_record_ranges(&data[region_start..]) {
+        rows.push(row.start + region_start..row.end + region_start);
     }
-    Ok(rows)
+    rows
 }
 
 #[cfg(test)]
@@ -2124,7 +1971,6 @@ mod tests {
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -2144,7 +1990,6 @@ mod tests {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid unit-square surface"),
         ));
         let tiny = 1e-200;
@@ -2325,7 +2170,7 @@ mod tests {
                 &[None, binding()],
                 &carriers
             ))
-            .expect("service decode"),
+            .expect("resolve the support loci"),
             Some(vec![Point3::new(0.0, 0.0, 0.0); 2])
         );
         assert_eq!(
@@ -2335,24 +2180,20 @@ mod tests {
                 &[binding(), binding()],
                 &carriers
             ))
-            .expect("service decode"),
+            .expect("resolve the support loci"),
             None
         );
     }
 
     #[test]
-    fn resolved_cylinder_winner_and_loci_refuse_collection_limits() {
+    fn pcurve_on_its_cylinder_resolves_and_lifts_to_the_same_points() {
         let pcurve_bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let pcurve_records = crate::wire::records::consolidated_records(&pcurve_bytes);
-        let pcurves = crate::test_support::with_service_context(|ctx| {
-            crate::wire::records::family_pcurves_from_records(
-                ctx,
-                &pcurve_bytes,
-                &pcurve_records,
-                crate::wire::records::ConsolidatedFamily::A,
-            )
-        })
-        .expect("service decode");
+        let pcurves = crate::wire::records::family_pcurves_from_records(
+            &pcurve_bytes,
+            &pcurve_records,
+            crate::wire::records::ConsolidatedFamily::A,
+        );
         let pcurve = &pcurves[0];
         let cylinder_bytes = crate::test_support::test_b2::b2_cylinder_stream();
         let cylinder_records = crate::wire::records::consolidated_records(&cylinder_bytes);
@@ -2363,6 +2204,7 @@ mod tests {
         .collect();
         let carriers = super::ConsolidatedCarriers {
             cylinders: &cylinders,
+
             circles: &[],
             cones: &[],
             spheres: &[],
@@ -2380,34 +2222,123 @@ mod tests {
                 cadmpeg_ir::features::FinitePoint3::new(point).expect("finite point")
             })
             .collect();
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            super::resolve_side_support(ctx, pcurve, &points, &carriers)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_resolved_side_winners")
-        );
         let binding = crate::test_support::with_service_context(|ctx| {
             super::resolve_side_support(ctx, pcurve, &points, &carriers)
         })
-        .expect("service decode")
+        .expect("resolve the side support")
         .expect("unique cylinder");
-        let limited = crate::test_support::with_collection_limit(1, |ctx| {
-            super::support_points(ctx, &binding, pcurve, &carriers)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_resolved_support_points")
-        );
         let lifted = crate::test_support::with_service_context(|ctx| {
             super::support_points(ctx, &binding, pcurve, &carriers)
         })
-        .expect("service decode")
+        .expect("evaluate the support points")
         .expect("lifted cylinder sites");
         assert_eq!(
             lifted,
             points.iter().map(|point| point.get()).collect::<Vec<_>>()
         );
+    }
+
+    /// The pair search that lifts both pcurves in full on every carrier.
+    fn exhaustive_nurbs_pair(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        block: &super::ConsolidatedEdgeBlock,
+        carriers: &super::ConsolidatedCarriers<'_>,
+    ) -> Option<[super::ConsolidatedSupportBinding; 2]> {
+        let mut candidates = [Vec::new(), Vec::new()];
+        for side in [0, 1] {
+            for surface in carriers.nurbs_surfaces {
+                let binding = super::ConsolidatedSupportBinding::NurbsCarrier {
+                    pos: surface.pos,
+                    offset: cadmpeg_ir::scalar::FiniteReal::ZERO,
+                };
+                if let Some(points) =
+                    super::support_points(ctx, &binding, &block.pcurves[side], carriers)
+                        .expect("lift within the test budget")
+                {
+                    candidates[side].push((binding, points));
+                }
+            }
+        }
+        let mut winner = None;
+        for (first_binding, first_points) in &candidates[0] {
+            for (second_binding, second_points) in &candidates[1] {
+                if !super::point_sequences_agree(first_points, second_points) {
+                    continue;
+                }
+                if winner.is_some() {
+                    return None;
+                }
+                winner = Some([*first_binding, *second_binding]);
+            }
+        }
+        winner
+    }
+
+    #[test]
+    fn nurbs_pair_search_matches_the_exhaustive_search() {
+        let offset =
+            |point: [f64; 3], by: [f64; 3]| [point[0] + by[0], point[1] + by[1], point[2] + by[2]];
+        let (p0, p1) = ([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]);
+        let along_u = [
+            p0,
+            offset(p0, [0.0, 0.0, 1.0]),
+            p1,
+            offset(p1, [0.0, 0.0, 1.0]),
+        ];
+        let along_v = [
+            p0,
+            p1,
+            offset(p0, [0.0, 1.0, 0.0]),
+            offset(p1, [0.0, 1.0, 0.0]),
+        ];
+        let same_start = [
+            p0,
+            offset(p1, [0.0, 0.0, 0.5]),
+            offset(p1, [0.0, 0.5, 0.0]),
+            offset(p1, [0.5, 0.0, 0.0]),
+        ];
+        let far = along_u.map(|point| offset(point, [100.0, 0.0, 0.0]));
+        let cases: [(&[[[f64; 3]; 4]], bool); 6] = [
+            (&[along_u, along_v], true),
+            (&[along_u, along_v, along_u], false),
+            (&[far, along_u, same_start, along_v, far], true),
+            (&[same_start, along_u], false),
+            (&[far], false),
+            (&[], false),
+        ];
+        for (surfaces, unique) in cases {
+            let bytes =
+                crate::test_support::test_a5_bound::a5_nurbs_edge_stream_with_surfaces(surfaces);
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let carriers_found = crate::families::a5a8::records::a5_surfaces_from_records(
+                &bytes,
+                &records,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("decode the test surfaces");
+            assert_eq!(carriers_found.len(), surfaces.len());
+            let carriers = super::ConsolidatedCarriers {
+                cylinders: &[],
+
+                circles: &[],
+                cones: &[],
+                spheres: &[],
+                tori: &[],
+                planes: &[],
+                nurbs_surfaces: &carriers_found,
+            };
+            let blocks = super::consolidated_edge_blocks_from_records(&bytes, &records);
+            assert_eq!(blocks.len(), 1);
+            let (found, expected) = crate::test_support::with_service_context(|ctx| {
+                (
+                    super::unique_agreeing_nurbs_pair(ctx, &blocks[0], &carriers_found, &carriers)
+                        .expect("search within the test budget"),
+                    exhaustive_nurbs_pair(ctx, &blocks[0], &carriers),
+                )
+            });
+            assert_eq!(found, expected, "{surfaces:?}");
+            assert_eq!(found.is_some(), unique, "{surfaces:?}");
+        }
     }
 }
 

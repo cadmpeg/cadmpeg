@@ -15,8 +15,8 @@ fn all_declared_world_layouts_align_with_the_independent_first_node_reader() {
     ] {
         let first = world::first_node(count);
         let schema_len = world::schema(count).len();
-        with_decode_context(|ctx| {
-            let (node, end) = SchemaNode::read(ctx, &first, 0).unwrap().unwrap();
+        with_decode_context(|_ctx| {
+            let (node, end) = SchemaNode::read(&first, 0).unwrap().unwrap();
             assert_eq!(WorldLayout::from_schema(node.definition()), Some(layout));
             let (xmt, targets, repeated_end) = layout.read(&first, schema_len).unwrap();
             assert_eq!(xmt, 2);
@@ -37,7 +37,7 @@ fn all_declared_world_layouts_align_with_the_independent_first_node_reader() {
 fn unowned_world_candidates_do_not_select_a_layout() {
     for count in [15, 18, 19] {
         let bytes = world::record(count, false);
-        let census = with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+        let census = with_decode_context(|_ctx| walk(&bytes)).unwrap();
         assert!(census.records.iter().all(|record| record.kind() != 101));
     }
 }
@@ -51,7 +51,7 @@ fn declared_worlds_use_one_layout_for_direct_and_escaped_repetitions() {
             bytes.extend_from_slice(&world::record(count, escaped));
             let end = bytes.len();
             bytes.extend_from_slice(&[0xde, 0xad]);
-            let census = with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+            let census = with_decode_context(|_ctx| walk(&bytes)).unwrap();
             assert_eq!(census.schema_nodes.len(), 1);
             let records: Vec<_> = census.records.iter().filter(|r| r.kind() == 101).collect();
             assert_eq!(records.len(), 1);
@@ -105,7 +105,7 @@ fn duplicate_declarations_do_not_override_the_first_layout() {
     bytes.extend_from_slice(&world::first_node(19));
     let at = bytes.len();
     bytes.extend_from_slice(&world::record(18, false));
-    let census = with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+    let census = with_decode_context(|_ctx| walk(&bytes)).unwrap();
     assert_eq!(census.schema_nodes.len(), 1);
     let repeated = census
         .records
@@ -123,7 +123,7 @@ fn an_explicit_other_base_version_cannot_be_interpreted_as_v13() {
     bytes[version..version + 5].copy_from_slice(b"11004");
     bytes.extend_from_slice(&world::first_node(19));
     bytes.extend_from_slice(&world::record(19, false));
-    let census = with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+    let census = with_decode_context(|_ctx| walk(&bytes)).unwrap();
     assert!(census.transmit_header.is_some());
     assert!(census.schema_nodes.is_empty());
     assert!(census.records.iter().all(|record| record.kind() != 101));

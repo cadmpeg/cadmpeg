@@ -51,12 +51,12 @@ fn world(mesh: bool, lattice: bool) -> Vec<u8> {
 
 #[test]
 fn world_variants_come_from_edit_fields_and_end_before_the_instance() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for (mesh, lattice, count) in [(false, false, 15), (true, false, 18), (true, true, 19)] {
             let mut bytes = world(mesh, lattice);
             let end = bytes.len();
             bytes.extend_from_slice(&[0, 2, 0, 1, 1]);
-            let (schema, actual_end) = read(ctx, &bytes, 0).unwrap().unwrap();
+            let (schema, actual_end) = read(&bytes, 0).unwrap().unwrap();
             assert_eq!(actual_end, end);
             assert_eq!(schema.plan.kind, 101);
             assert_eq!(schema.plan.fields.len(), count);
@@ -98,23 +98,23 @@ fn world_variants_come_from_edit_fields_and_end_before_the_instance() {
                 names
             );
             for len in 0..end {
-                assert!(read(ctx, &bytes[..len], 0).unwrap().is_none());
+                assert!(read(&bytes[..len], 0).unwrap().is_none());
             }
             for changed in [count - 1, count + 1] {
                 let mut invalid = bytes.clone();
                 invalid[2] = u8::try_from(changed).unwrap();
-                assert!(read(ctx, &invalid, 0).unwrap().is_none());
+                assert!(read(&invalid, 0).unwrap().is_none());
             }
             let mut invalid = bytes.clone();
             invalid[end - 1] = b'X';
-            assert!(read(ctx, &invalid, 0).unwrap().is_none());
+            assert!(read(&invalid, 0).unwrap().is_none());
         }
     });
 }
 
 #[test]
 fn region_insert_and_append_preserve_class_constraints() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for (frame, owner_class) in [(false, 12), (true, 65_000)] {
             let mut bytes = vec![0, 19, if frame { 9 } else { 8 }];
             bytes.extend_from_slice(b"CCCCCC");
@@ -124,7 +124,7 @@ fn region_insert_and_append_preserve_class_constraints() {
             bytes.push(b'C');
             descriptor(&mut bytes, b'A', "owner", owner_class, 0);
             bytes.push(b'Z');
-            let (schema, end) = read(ctx, &bytes, 0).unwrap().unwrap();
+            let (schema, end) = read(&bytes, 0).unwrap().unwrap();
             assert_eq!(end, bytes.len());
             assert_eq!(
                 schema.plan.fields.last().unwrap().pointer_class,
@@ -149,8 +149,8 @@ fn region_insert_and_append_preserve_class_constraints() {
 
 #[test]
 fn first_use_match_is_distinct_from_a_missing_edit_or_a_zero_field_candidate() {
-    with_decode_context(|ctx| {
-        let (schema, end) = read(ctx, &[0, 101, 255, 0, 2], 0).unwrap().unwrap();
+    with_decode_context(|_ctx| {
+        let (schema, end) = read(&[0, 101, 255, 0, 2], 0).unwrap().unwrap();
         assert_eq!(end, 3);
         assert_eq!(schema.plan.fields.len(), 11);
         for bytes in [
@@ -158,7 +158,7 @@ fn first_use_match_is_distinct_from_a_missing_edit_or_a_zero_field_candidate() {
             &[0, 101, 1, b'A', b'Z'],
             &[0, 250, 255],
         ] {
-            assert!(read(ctx, bytes, 0).unwrap().is_none());
+            assert!(read(bytes, 0).unwrap().is_none());
         }
     });
 }
@@ -191,12 +191,12 @@ fn descriptor_positive_integer_and_wire_invariants_are_checked() {
 
 #[test]
 fn unestablished_primary_scalar_codes_cannot_enter_status_metadata() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for scalar in *b"qt" {
             let mut bytes = vec![0, 41, 1, b'D', b'D'];
             descriptor(&mut bytes, b'A', "opaque", 0, scalar);
             bytes.push(b'Z');
-            assert!(read(ctx, &bytes, 0).unwrap().is_none());
+            assert!(read(&bytes, 0).unwrap().is_none());
         }
     });
 }

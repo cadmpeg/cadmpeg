@@ -16,43 +16,11 @@ use crate::IgesCodec;
 use super::{status, SourceStatus};
 
 #[test]
-fn directory_summary_refuses_group_and_note_limits_before_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let entries = [crate::test_support::directory_target(1, 116)];
-    for (cap, operation) in [
-        (0, "iges directory summary groups"),
-        (1, "iges directory summary notes"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::summary_notes(&entries, &ctx);
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == cap
-                    && limit.additional == 1
-                    && limit.operation == operation
-        ));
-    }
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        super::summary_notes(&entries, &ctx).unwrap(),
-        ["entities=1", "entity.116.form.0=1"]
-    );
-}
-
-#[test]
 fn directory_entity_refuses_entity_limit_before_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let bytes = point_file();
-    let scan = crate::test_support::scan(&bytes).unwrap();
+    let scan = crate::card::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
@@ -133,8 +101,8 @@ fn blank_directory_status_defaults_to_zero_fields() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -154,10 +122,10 @@ fn eight_digit_directory_status_supplies_four_two_digit_fields() {
         .unwrap();
     let entity = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
 
-    assert_eq!(entity.fields()["blank_status"], 1);
-    assert_eq!(entity.fields()["subordinate_status"], 2);
-    assert_eq!(entity.fields()["use_flag"], 3);
-    assert_eq!(entity.fields()["hierarchy_status"], 4);
+    assert_eq!(entity.fields().unwrap()["blank_status"], 1);
+    assert_eq!(entity.fields().unwrap()["subordinate_status"], 2);
+    assert_eq!(entity.fields().unwrap()["use_flag"], 3);
+    assert_eq!(entity.fields().unwrap()["hierarchy_status"], 4);
 }
 
 #[test]
@@ -181,7 +149,10 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
         let losses = &result.report().losses;
         assert!(native.arenas()["entities"].is_empty(), "{status}");
         assert_eq!(quarantined.len(), 1, "{status}");
-        assert_eq!(quarantined[0].fields()["defect"], "status-number-invalid");
+        assert_eq!(
+            quarantined[0].fields().unwrap()["defect"],
+            "status-number-invalid"
+        );
         assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
         assert_eq!(
             losses[0].code,
@@ -228,17 +199,17 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
     );
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["directions"].len(), 1);
-    let direction_fields = native.arenas()["directions"][0].fields();
+    let direction_fields = native.arenas()["directions"][0].fields().unwrap();
     let components = direction_fields["components"].as_array().unwrap();
     assert_eq!(components[0], 2.0);
     assert_eq!(components[1], -3.0);
     assert_eq!(components[2], 4.0);
     assert_eq!(
-        native.arenas()["directions"][0].fields()["physically_dependent"],
+        native.arenas()["directions"][0].fields().unwrap()["physically_dependent"],
         true
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -327,7 +298,9 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
             "{field}"
         );
         assert_eq!(
-            decoded.ir().native.namespace("iges").unwrap().arenas()["entities"][0].fields()[field],
+            decoded.ir().native.namespace("iges").unwrap().arenas()["entities"][0]
+                .fields()
+                .unwrap()[field],
             serde_json::Value::Null,
             "{field}"
         );
@@ -360,4 +333,13 @@ fn late_directory_status_padding_preserves_required_use_codes_with_a_loss() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()));
+}
+
+#[test]
+fn directory_summary_counts_entities_by_type_and_form() {
+    let entries = [crate::test_support::directory_target(1, 116)];
+    assert_eq!(
+        super::summary_notes(&entries),
+        ["entities=1", "entity.116.form.0=1"]
+    );
 }

@@ -82,24 +82,20 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         ..AsmHistoricalTopology::default()
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The transition index is built once; each query admits one deleted edge and two output rows.
-    policy.limits.max_collection_items = 4_000;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cache = crate::history::treatment_index::TreatmentCache::default();
     for _ in 0..1_000 {
         let (radii, edges) =
-            treatment_edge_candidates(&ctx, None, &[20], &result, &preceding, &[17], &mut cache)
-                .unwrap();
+            treatment_edge_candidates(None, &[20], &result, &preceding, &[17], &mut cache);
         assert_eq!(edges, [17]);
         assert_eq!(radii.len(), 1);
         assert_eq!(radii[0].radius.get(), 3.0);
     }
     ctx.finish_session().unwrap();
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
+    let candidates = {
         treatment_radius_candidates(
-            decode_ctx,
             Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
             &[20],
             &result,
@@ -107,66 +103,51 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &[17],
             &mut crate::history::treatment_index::TreatmentCache::default(),
         )
-    })
-    .unwrap();
+    };
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].edge_slot, 17);
     assert_eq!(candidates[0].radius.get(), 3.0);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| treatment_edge_candidates(
-            ctx,
+        treatment_edge_candidates(
             None,
             &[20],
             &result,
             &preceding,
             &[17],
             &mut crate::history::treatment_index::TreatmentCache::default()
-        ))
-        .unwrap()
+        )
         .1,
         [17]
     );
 
     let mut existing_carrier = preceding.clone();
     existing_carrier.surfaces.push(200);
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| treatment_radius_candidates(
-            decode_ctx,
-            Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
-            &[20],
-            &result,
-            &existing_carrier,
-            &[17],
-            &mut crate::history::treatment_index::TreatmentCache::default()
-        ))
-        .unwrap()
-        .is_empty()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|ctx| treatment_edge_candidates(
-            ctx,
-            None,
-            &[20],
-            &result,
-            &preceding,
-            &[18],
-            &mut crate::history::treatment_index::TreatmentCache::default()
-        ))
-        .unwrap()
-        .1
-        .is_empty()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| treatment_radius_candidates(
-            decode_ctx,
-            Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
-            &[20],
-            &result,
-            &preceding,
-            &[18],
-            &mut crate::history::treatment_index::TreatmentCache::default()
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(treatment_radius_candidates(
+        Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
+        &[20],
+        &result,
+        &existing_carrier,
+        &[17],
+        &mut crate::history::treatment_index::TreatmentCache::default()
+    )
+    .is_empty());
+    assert!(treatment_edge_candidates(
+        None,
+        &[20],
+        &result,
+        &preceding,
+        &[18],
+        &mut crate::history::treatment_index::TreatmentCache::default()
+    )
+    .1
+    .is_empty());
+    assert!(treatment_radius_candidates(
+        Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
+        &[20],
+        &result,
+        &preceding,
+        &[18],
+        &mut crate::history::treatment_index::TreatmentCache::default()
+    )
+    .is_empty());
 }

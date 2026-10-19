@@ -160,12 +160,9 @@ impl FieldReader<'_> {
 }
 
 impl ProjectedCurveReferences {
-    pub(crate) fn read(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        record: OperationPayload<'_>,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+    pub(crate) fn read(record: OperationPayload<'_>) -> Option<Self> {
         if !matches!(record.name(), "CPROJ" | "CPROJ_CMB") {
-            return Ok(None);
+            return None;
         }
         let bytes = record.payload();
         if record.name() == "CPROJ" {
@@ -177,25 +174,15 @@ impl ProjectedCurveReferences {
                     origin: record.payload_offset(),
                 };
                 let parsed = reader.projected(|_| {});
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(reader.at - start + 1),
-                    "NX projected curve lane scan",
-                )?;
                 if let Some(count) = parsed {
                     if candidate.is_some() {
-                        return Ok(None);
+                        return None;
                     }
                     candidate = Some((start, count, reader.at));
                 }
             }
-            let Some((start, count, end)) = candidate else {
-                return Ok(None);
-            };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(end - start),
-                "NX projected curve lane emission",
-            )?;
-            let mut references = ctx.collection_vec(count, "NX projected curve lane references")?;
+            let (start, count, end) = candidate?;
+            let mut references = Vec::new();
             let mut reader = FieldReader {
                 bytes,
                 at: start,
@@ -204,34 +191,30 @@ impl ProjectedCurveReferences {
             if reader.projected(|reference| references.push(reference)) != Some(count)
                 || reader.at != end
             {
-                return Err(cadmpeg_core::CodecError::malformed(
-                    "NX validated projected lane changed",
-                ));
+                return None;
             }
-            return Ok(Some(Self { references }));
+            return Some(Self { references });
         }
-        Ok(super::unique_candidate((0..bytes.len()).filter_map(
-            |start| {
-                let mut reader = FieldReader {
-                    bytes,
-                    at: start,
-                    origin: record.payload_offset(),
-                };
-                if bytes
-                    .get(start..)
-                    .is_some_and(|tail| tail.starts_with(&CMB_PREFIX))
-                {
-                    reader.combined()
-                } else if bytes
-                    .get(start..)
-                    .is_some_and(|tail| tail.starts_with(&NETWORK_PREFIX))
-                {
-                    reader.network()
-                } else {
-                    None
-                }
-            },
-        )))
+        super::unique_candidate((0..bytes.len()).filter_map(|start| {
+            let mut reader = FieldReader {
+                bytes,
+                at: start,
+                origin: record.payload_offset(),
+            };
+            if bytes
+                .get(start..)
+                .is_some_and(|tail| tail.starts_with(&CMB_PREFIX))
+            {
+                reader.combined()
+            } else if bytes
+                .get(start..)
+                .is_some_and(|tail| tail.starts_with(&NETWORK_PREFIX))
+            {
+                reader.network()
+            } else {
+                None
+            }
+        }))
     }
 
     pub(crate) fn into_references(self) -> Vec<PayloadObjectReference<PayloadIndexToken>> {
@@ -245,8 +228,7 @@ mod tests {
     use crate::om::operation_record::OperationPayload;
 
     fn read_for_test(record: OperationPayload<'_>) -> Option<ProjectedCurveReferences> {
-        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(ctx, record))
-            .unwrap()
+        crate::test_support::with_decode_context(|_ctx| ProjectedCurveReferences::read(record))
     }
 
     #[test]
@@ -318,19 +300,6 @@ mod tests {
         extended.extend([0x80, 2]);
         extended.extend(&bytes[25..]);
         assert_eq!(read(&extended).unwrap().into_references().len(), 5);
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| policy.limits.max_collection_items = 0,
-            |ctx| {
-                assert!(matches!(
-                    super::ProjectedCurveReferences::read(
-                        ctx,
-                        OperationPayload::new(&bytes, 0, "CPROJ").unwrap()
-                    ),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
-                ));
-            },
-        );
     }
 
     #[test]

@@ -65,7 +65,6 @@ fn legacy_operand_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecErr
         return Ok(());
     };
     for operand in operands.iter_mut() {
-        ctx.charge_work(1, "walk native legacy operand")?;
         cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
             ctx,
             operand,
@@ -75,19 +74,6 @@ fn legacy_operand_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecErr
         )?;
     }
     if let Some(point) = operands.first_mut() {
-        let fields = point.as_object().map_or(0, serde_json::Map::len);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(fields)
-                .checked_mul(12)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "find native legacy construction",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?,
-            "find native legacy construction",
-        )?;
         if let Some(construction) = point.get_mut("construction") {
             cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,

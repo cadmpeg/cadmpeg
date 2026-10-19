@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Per-family CATIA record decoders.
 
 use cadmpeg_core::decode::DecodeContext;
@@ -45,18 +46,6 @@ impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
     pub(crate) fn charge(&mut self) -> Result<(), CodecError> {
         self.ctx
             .charge_entities(1, "admit CATIA family model entity")?;
-        self.admitted += 1;
-        Ok(())
-    }
-
-    pub(crate) fn reserve_entity<T>(
-        &mut self,
-        values: &mut Vec<T>,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.ctx
-            .charge_entities(1, "admit CATIA family model entity")?;
-        self.ctx.reserve_vec(values, 1, operation)?;
         self.admitted += 1;
         Ok(())
     }

@@ -19,11 +19,11 @@ fn payload(sentinel: bool) -> (Vec<u8>, usize) {
 
 #[test]
 fn symbolic_thread_witness_preserves_zero_widths_references_and_duplicate_bytes() {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         for sentinel in [false, true] {
             let (bytes, cut) = payload(sentinel);
             let record = OperationPayload::new(&bytes, 100, "SYMBOLIC_THREAD").unwrap();
-            let (field, offset) = SymbolicThreadWitness::read(ctx, record, cut + 100)
+            let (field, offset) = SymbolicThreadWitness::read(record, cut + 100)
                 .unwrap()
                 .unwrap();
             assert_eq!(offset, 103);
@@ -39,21 +39,19 @@ fn symbolic_thread_witness_preserves_zero_widths_references_and_duplicate_bytes(
             for end in 0..bytes.len() {
                 let truncated =
                     OperationPayload::new(&bytes[..end], 100, "SYMBOLIC_THREAD").unwrap();
-                assert!(SymbolicThreadWitness::read(ctx, truncated, cut + 100)
+                assert!(SymbolicThreadWitness::read(truncated, cut + 100)
                     .unwrap()
                     .is_none());
             }
             let mut different = bytes.clone();
             different[12] = 1;
             assert!(SymbolicThreadWitness::read(
-                ctx,
                 OperationPayload::new(&different, 100, "SYMBOLIC_THREAD").unwrap(),
                 cut + 100
             )
             .unwrap()
             .is_none());
             assert!(SymbolicThreadWitness::read(
-                ctx,
                 OperationPayload::new(&bytes, 100, "THREADS").unwrap(),
                 cut + 100
             )
@@ -69,11 +67,10 @@ fn symbolic_thread_witness_abstains_when_zero_atoms_also_parse_inside_a_scalar()
     for start in [5, 15] {
         bytes[start..start + 8].copy_from_slice(&[0x2f, 0xf0, 0, 0, 0, 0, 0, 0]);
     }
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         // The six terminal zero bytes also spell two zero triples. Neither
         // candidate has a demonstrated tuple-start boundary, so both abstain.
         assert!(SymbolicThreadWitness::read(
-            ctx,
             OperationPayload::new(&bytes, 0, "SYMBOLIC_THREAD").unwrap(),
             cut
         )
@@ -83,32 +80,11 @@ fn symbolic_thread_witness_abstains_when_zero_atoms_also_parse_inside_a_scalar()
 }
 
 #[test]
-fn symbolic_thread_witness_refuses_work_limit() {
-    let (bytes, cut) = payload(false);
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let error = SymbolicThreadWitness::read(
-                ctx,
-                OperationPayload::new(&bytes, 0, "SYMBOLIC_THREAD").unwrap(),
-                cut,
-            )
-            .unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-            );
-        },
-    );
-}
-
-#[test]
 fn symbolic_thread_witness_accepts_complete_zero_tuple() {
     let (mut bytes, cut) = payload(false);
     bytes.splice(3..23, [0; 6]);
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         let (field, start) = SymbolicThreadWitness::read(
-            ctx,
             OperationPayload::new(&bytes, 100, "SYMBOLIC_THREAD").unwrap(),
             cut - 14 + 100,
         )

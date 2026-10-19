@@ -15,7 +15,7 @@ fn framed(payload: &[u8]) -> Vec<u8> {
 
 fn decode(bytes: &[u8]) -> Vec<CatiaConsolidatedClass61Record> {
     let frames = crate::wire::records::consolidated_records(bytes);
-    crate::test_support::with_service_context(|ctx| records(ctx, bytes, &frames))
+    crate::test_support::with_service_context(|_ctx| records(bytes, &frames))
         .expect("service roster admission")
 }
 
@@ -204,33 +204,6 @@ fn wire_rejects_fields_that_disagree_with_retained_bytes() {
         serde_json::from_value::<CatiaConsolidatedClass61Record>(wire)
             .expect("checked roster wire"),
         rows[0]
-    );
-}
-
-#[test]
-fn member_payload_record_and_identity_admission_refuse_limits() {
-    let bytes = crate::test_support::test_b2::b2_counted_61_stream();
-    let frames = crate::wire::records::consolidated_records(&bytes);
-    let mut refused = std::collections::HashSet::new();
-    for limit in 0..40 {
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) =
-            crate::test_support::with_collection_limit(limit, |ctx| records(ctx, &bytes, &frames))
-        {
-            refused.insert(error.operation);
-        }
-    }
-    for operation in [
-        "catia_class61_members",
-        "catia_class61_payload",
-        "catia_class61_records",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
-    let result = crate::test_support::with_retained_refusal(&[], "catia_class61_id", |ctx| {
-        records(ctx, &bytes, &frames)
-    });
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_class61_id")
     );
 }
 

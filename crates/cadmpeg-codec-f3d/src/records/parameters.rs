@@ -7,6 +7,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::num::NonZeroU64;
+use std::sync::LazyLock;
 
 cadmpeg_core::named_optional_field!(
     deserialize_family_discriminator,
@@ -85,7 +86,8 @@ pub(crate) enum DesignParameterSource {
     Owned(OwnedDesignParameter),
 }
 
-const USER_PARAMETER_SOURCE_KIND: &str = "User Parameter";
+static USER_PARAMETER_SOURCE_KIND: LazyLock<NonBlankString> =
+    LazyLock::new(|| cadmpeg_core::nonblank_literal!("User Parameter"));
 
 /// An owned source family. Its nonempty name cannot identify a user parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,7 +107,7 @@ impl DesignParameterSource {
             return Err("design parameter source_kind is empty".into());
         };
         match (
-            source_kind == USER_PARAMETER_SOURCE_KIND,
+            source_kind == *USER_PARAMETER_SOURCE_KIND,
             owner_record_index,
         ) {
             (true, None) => family_discriminator
@@ -352,15 +354,20 @@ impl DesignParameter {
         }
     }
 
-    pub(crate) fn source_kind(&self) -> &str {
+    pub(crate) fn source_kind(&self) -> &NonBlankString {
         match &self.source {
-            DesignParameterSource::User { .. } => USER_PARAMETER_SOURCE_KIND,
-            DesignParameterSource::Owned(source) => source.source_kind.as_str(),
+            DesignParameterSource::User { .. } => &USER_PARAMETER_SOURCE_KIND,
+            DesignParameterSource::Owned(source) => &source.source_kind,
         }
     }
 
+    /// The source kind as text.
+    pub(crate) fn source_kind_str(&self) -> &str {
+        self.source_kind().as_str()
+    }
+
     pub(crate) fn kind(&self) -> DesignParameterKind {
-        design_parameter_kind_from_source(self.source_kind())
+        design_parameter_kind_from_source(self.source_kind_str())
     }
 
     pub(crate) fn owner_record_index(&self) -> Option<u32> {
@@ -412,7 +419,7 @@ impl Serialize for DesignParameter {
             owner_record_index: self.owner_record_index(),
             expression: self.expression.as_str(),
             expression_offset: self.expression_offset,
-            source_kind: self.source_kind(),
+            source_kind: self.source_kind_str(),
             source_kind_offset: self.source_kind_offset,
             kind: self.kind(),
             unit: self.unit.as_ref().map(|field| field.value.as_str()),
@@ -541,7 +548,7 @@ impl From<DesignParameter> for DesignParameterSerde {
         let owner_record_index = parameter.owner_record_index();
         let family_discriminator = parameter.family_discriminator();
         let source_kind = match parameter.source {
-            DesignParameterSource::User { .. } => USER_PARAMETER_SOURCE_KIND.to_owned(),
+            DesignParameterSource::User { .. } => USER_PARAMETER_SOURCE_KIND.to_string(),
             DesignParameterSource::Owned(source) => source.source_kind.to_string(),
         };
         Self {
@@ -771,6 +778,8 @@ impl DesignParameterOwner {
         } else {
             return Err("record_index, parameter_record_index, and companion_record_index must follow a parameter frame order".into());
         };
+        // A variant byte either ends its scope lane, keeping the variant-less
+        // length, or is followed by one zero byte.
         let modern = matches!(
             (
                 wire.frame_length,
@@ -780,9 +789,9 @@ impl DesignParameterOwner {
             (99 | 103, Some(40), None)
                 | (100, Some(41), None)
                 | (107, Some(44), None)
-                | (101, Some(41), Some(0..=1))
-                | (104, Some(40), Some(0..=1))
-                | (108, Some(44), Some(0..=1))
+                | (100 | 101, Some(41), Some(0..=1))
+                | (103 | 104, Some(40), Some(0..=1))
+                | (107 | 108, Some(44), Some(0..=1))
         );
         let legacy = wire.local_ordinal == 0
             && match wire.frame_length {

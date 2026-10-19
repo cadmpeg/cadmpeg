@@ -108,7 +108,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -532,7 +532,6 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         (
             "planar-open",
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -543,14 +542,12 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid planar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "unique-planar-open",
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -561,14 +558,12 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid unique-planar-open NURBS"),
             [1, 0, 1, 0],
         ),
         (
             "nonplanar-open",
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
                 vec![
@@ -580,14 +575,12 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid nonplanar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "closed-planar",
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -598,21 +591,18 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid closed-planar NURBS"),
             [0, 1, 1, 0],
         ),
         (
             "equal-weight-rational",
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 Some(vec![2.0, 2.0]),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid equal-weight rational NURBS"),
             [0, 0, 1, 0],
         ),
@@ -643,7 +633,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 record.field("entity_type").and_then(|value| value.as_i64()) == Some(126)
             })
             .unwrap_or_else(|| panic!("{name}: missing Type 126 entity"));
-        let fields = entity.fields();
+        let fields = entity.fields().unwrap();
         let parameters = fields["parameters"].as_array().unwrap();
         for (index, expected_value) in expected.into_iter().enumerate() {
             assert_eq!(

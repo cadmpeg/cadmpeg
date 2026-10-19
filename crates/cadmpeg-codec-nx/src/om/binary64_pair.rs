@@ -2,8 +2,6 @@
 //! Fixed binary64 pairs with derived payload positions.
 
 use super::scalar::ShiftedBinary64;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use std::ops::Add;
@@ -191,64 +189,40 @@ impl TryFrom<&[u8]> for SketchBinary64PairForm {
     }
 }
 
-pub(crate) fn datum_plane_pairs(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<Binary64Pair<DatumPlanePairForm>>, CodecError> {
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum-plane pairs")?;
+pub(crate) fn datum_plane_pairs(bytes: &[u8]) -> Vec<Binary64Pair<DatumPlanePairForm>> {
     let mut pairs = Vec::new();
     for offset in 0..bytes.len() {
         if let Some(pair) = Binary64Pair::read(bytes, offset, DatumPlanePairForm) {
-            ctx.push_vec(&mut pairs, pair, "NX binary64 pairs")?;
+            pairs.push(pair);
         }
     }
-    Ok(pairs)
+    pairs
 }
 
-pub(crate) fn object_pairs(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<Binary64Pair<ObjectPairForm>>, CodecError> {
-    let work = u64_from_index(bytes.len())
-        .checked_mul(u64_from_index(ObjectPairForm::ALL.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX object pairs", u64::MAX, u64::MAX))?;
-    ctx.charge_work(work, "scan NX object pairs")?;
+pub(crate) fn object_pairs(bytes: &[u8]) -> Vec<Binary64Pair<ObjectPairForm>> {
     let mut pairs = Vec::new();
     for form in ObjectPairForm::ALL {
         for offset in 0..bytes.len() {
             if let Some(pair) = Binary64Pair::read(bytes, offset, form) {
-                ctx.push_vec(&mut pairs, pair, "NX binary64 pairs")?;
+                pairs.push(pair);
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut pairs,
-        |first, second| first.offset().cmp(&second.offset()),
-        |_| 0,
-        "sort NX object pairs",
-    )?;
-    Ok(pairs)
+    pairs.sort_by_key(Binary64Pair::offset);
+    pairs
 }
 
-pub(crate) fn sketch_pairs(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
+pub(crate) fn sketch_pairs(bytes: &[u8]) -> Vec<Binary64Pair<SketchBinary64PairForm>> {
     let mut pairs = Vec::new();
-    for pair in object_pairs(ctx, bytes)? {
-        ctx.push_vec(
-            &mut pairs,
-            Binary64Pair {
-                form: SketchBinary64PairForm::Object(pair.form),
-                offset: pair.offset,
-                values: pair.values,
-                discriminator_byte_len: pair.discriminator_byte_len,
-                separator_width: pair.separator_width,
-            },
-            "NX binary64 pairs",
-        )?;
+    for pair in object_pairs(bytes) {
+        pairs.push(Binary64Pair {
+            form: SketchBinary64PairForm::Object(pair.form),
+            offset: pair.offset,
+            values: pair.values,
+            discriminator_byte_len: pair.discriminator_byte_len,
+            separator_width: pair.separator_width,
+        });
     }
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX sketch pairs")?;
     for (offset, window) in bytes.windows(3).enumerate() {
         let [code, repeated, 0x41] = window else {
             continue;
@@ -262,53 +236,26 @@ pub(crate) fn sketch_pairs(
         if let Some(pair) =
             Binary64Pair::read(bytes, offset, SketchBinary64PairForm::Repeated(code))
         {
-            ctx.push_vec(&mut pairs, pair, "NX binary64 pairs")?;
+            pairs.push(pair);
         }
     }
-    ctx.stable_sort_by(
-        &mut pairs,
-        |first, second| first.offset().cmp(&second.offset()),
-        |_| 0,
-        "sort NX sketch pairs",
-    )?;
-    Ok(pairs)
+    pairs.sort_by_key(Binary64Pair::offset);
+    pairs
 }
 
 #[cfg(test)]
 mod tests {
     fn datum_plane_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::DatumPlanePairForm>> {
-        crate::test_support::with_decode_context(|ctx| super::datum_plane_pairs(ctx, bytes))
-            .unwrap()
+        super::datum_plane_pairs(bytes)
     }
     fn object_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::ObjectPairForm>> {
-        crate::test_support::with_decode_context(|ctx| super::object_pairs(ctx, bytes)).unwrap()
+        super::object_pairs(bytes)
     }
     fn sketch_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::SketchBinary64PairForm>> {
-        crate::test_support::with_decode_context(|ctx| super::sketch_pairs(ctx, bytes)).unwrap()
+        super::sketch_pairs(bytes)
     }
 
     use crate::test_support::test_bytes::shifted_f64_bytes;
-
-    #[test]
-    fn object_binary64_pairs_refuse_collection_limit() {
-        let mut bytes = vec![8, 2, 3, 1, 3, 1, 0xc0, 0x45, 4, 0, 0x80, 0x86, 2, 0, 3];
-        bytes.extend_from_slice(&shifted_f64_bytes(10.0));
-        bytes.push(0);
-        bytes.extend_from_slice(&shifted_f64_bytes(20.0));
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let error = super::object_pairs(ctx, &bytes).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
-            },
-        );
-    }
 
     #[test]
     fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {

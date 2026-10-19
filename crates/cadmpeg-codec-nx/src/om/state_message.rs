@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::state_message_text::StateMessageText;
 use super::state_tagged_value::StateTaggedValue;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -44,12 +44,9 @@ impl<S: crate::immutable_text::ImmutableText> StateMessage<S> {
 }
 
 impl StateMessage<&str> {
-    pub(crate) fn into_owned(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<StateMessage<String>, CodecError> {
+    pub(crate) fn into_owned(self) -> Result<StateMessage<String>, CodecError> {
         Ok(StateMessage {
-            text: self.text.into_owned(ctx)?,
+            text: self.text.into_owned()?,
             value: self.value,
             count_or_severity: self.count_or_severity,
         })

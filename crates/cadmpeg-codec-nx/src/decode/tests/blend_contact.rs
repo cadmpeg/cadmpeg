@@ -8,9 +8,8 @@ use crate::decode::blend::{
     blend_contact_offset_matches, closest_pcurve_parameters, closest_spine_parameter,
     constant_surface_offset_between,
 };
-use crate::decode::offset::{
-    continue_surface_intersection_parameters, solve_damped_least_squares_4x4,
-};
+use crate::decode::offset::solve_damped_least_squares_4x4;
+use crate::decode::offset::test_support::continue_surface_intersection_parameters;
 use cadmpeg_ir::math::Point3;
 
 use cadmpeg_ir::geometry::{
@@ -28,7 +27,6 @@ fn test_surface(
     u_periodic: bool,
 ) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
     cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, u_knots, u_periodic),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -37,7 +35,6 @@ fn test_surface(
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -49,14 +46,12 @@ fn test_pcurve(
 ) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots,
             control_points,
             weights,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -96,14 +91,12 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
                     vec![Point3::new(2.0, 2.0, 0.0), Point3::new(2.0, 2.0, 1.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("finite wide spine"),
             )),
             source_object: None,
@@ -144,18 +137,15 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             ),
             None,
         ));
-        let index =
-            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let grid = crate::decode::blend::blend_surface_parameter_grid_with_index_and_budget(
             &index, &surface, 0, &budget,
         )
-        .expect("evaluator allocation succeeds")
+        .expect("evaluation stays within session limits")
         .expect("finite wide blend grid");
         assert!(grid
             .iter()
@@ -195,7 +185,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         None,
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -208,7 +198,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         Some(Point2::new(f64::NAN, 0.5)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
@@ -269,7 +259,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
             let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &first,
                 lanes[0][ordinal].u,
                 lanes[0][ordinal].v,
@@ -277,7 +267,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .unwrap();
             let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &second,
                 lanes[1][ordinal].u,
                 lanes[1][ordinal].v,
@@ -352,7 +342,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
             let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &cylinder,
                 cylinder_uv.u,
                 cylinder_uv.v,
@@ -360,7 +350,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .unwrap();
             let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &section_plane,
                 plane_uv.u,
                 plane_uv.v,
@@ -616,15 +606,9 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
         ));
     }
 
-    let model_index =
-        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     assert_eq!(
-        crate::decode::offset::surface_parameter_periods_with_index(
-            &model_index,
-            &surfaces[0],
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .unwrap(),
+        crate::decode::offset::surface_parameter_periods_with_index(&model_index, &surfaces[0]),
         [None, None]
     );
 }
@@ -667,7 +651,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         Some(Point2::new(0.875, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -706,7 +690,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         Some(Point2::new(0.50011, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -727,7 +711,6 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 0.5, 1.0, 1.0],
                     vec![
@@ -738,7 +721,6 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -751,7 +733,6 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
             cadmpeg_ir::math::Point3::new(-5.0, 2.0, 0.0),
             Some(0.9),
         )
-        .expect("evaluator allocation succeeds")
         .unwrap();
 
         assert!((actual - 0.25).abs() < 1.0e-10);
@@ -848,14 +829,12 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
             unreachable!("folded test pcurve is NURBS");
         };
         *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs.pole_rows().raw_points(),
             Some(vec![1.0; 3]),
             nurbs.periodic(),
         )
-        .expect("fixture pcurve construction admission")
         .unwrap();
         assert_eq!(
             closest_pcurve_parameters(
@@ -1218,7 +1197,6 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             },
         ]);
         let _attached = ir.model.add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &support_offset,
             ProceduralSurface::new(
                 support_offset_construction.clone(),
@@ -1281,7 +1259,6 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             None,
         );
         let _attached = ir.model.add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &spine,
             ProceduralCurve::new(
                 spine_procedural,
@@ -1316,28 +1293,29 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         let parameter = 0.35;
         let expected = Point2::new(parameter, 0.0);
         let point = Point3::new(0.0, 0.0, parameter);
-        let index =
-            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
-        let actual =
-        crate::decode::blend::blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-&index,
-&crate::decode::blend::SourcePcurveSample { blend: &blend, support: &support, source_pcurve: &source_pcurve, curve_parameter: parameter },
-crate::decode::blend::BoundaryInverseTarget {
+        let actual = crate::decode::blend::blend_support_parameter_from_source_pcurve(
+            &index,
+            &crate::decode::blend::SourcePcurveSample {
+                blend: &blend,
+                support: &support,
+                source_pcurve: &source_pcurve,
+                curve_parameter: parameter,
+            },
+            crate::decode::blend::BoundaryInverseTarget {
                 point,
                 seed: None,
                 tolerance: FIT_TOLERANCE,
             },
-&mut contact_seeds,
-&geometry_budget,
-)
-        .expect("evaluator allocation succeeds")
+            &mut contact_seeds,
+            &geometry_budget,
+        )
+        .expect("evaluation stays within session limits")
         .expect("reverse contact relation transfers the certified boundary");
         assert!((actual.u - expected.u).abs() <= FIT_TOLERANCE);
         assert!((actual.v - expected.v).abs() <= FIT_TOLERANCE);
@@ -1380,9 +1358,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
             source_object: None,
         });
 
-        let first = closest_spine_parameter(geometry_ctx, &ir, &ellipse, point, None)
-            .expect("evaluator allocation succeeds")
-            .unwrap();
+        let first = closest_spine_parameter(geometry_ctx, &ir, &ellipse, point, None).unwrap();
         let continued = closest_spine_parameter(
             geometry_ctx,
             &ir,
@@ -1390,7 +1366,6 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
             point,
             Some(parameter + std::f64::consts::TAU),
         )
-        .expect("evaluator allocation succeeds")
         .unwrap();
 
         assert!((first - parameter).abs() < 1.0e-8, "{first}");
@@ -1400,12 +1375,10 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         );
 
         let center = Point3::new(2.0, 3.0, 4.0);
-        let upper = closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(1.4))
-            .expect("evaluator allocation succeeds")
-            .unwrap();
-        let lower = closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(4.8))
-            .expect("evaluator allocation succeeds")
-            .unwrap();
+        let upper =
+            closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(1.4)).unwrap();
+        let lower =
+            closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(4.8)).unwrap();
         assert!(
             (upper - std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
             "{upper}"

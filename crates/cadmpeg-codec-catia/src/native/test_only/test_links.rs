@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::container;
 use crate::families::consolidated::records::{Class23Slots, ConsolidatedEdgeDefinitionData};
 use crate::native::edge_node::consolidated_vertex_identities;
@@ -253,9 +255,7 @@ pub(super) fn validate_consolidated_edge_runs(
         }
     }
     let expected_nodes = nodes.to_vec();
-    let expected_identities = crate::test_support::with_service_context(|ctx| {
-        consolidated_vertex_identities(ctx, &expected_nodes)
-    })?;
+    let expected_identities = consolidated_vertex_identities(&expected_nodes);
     if expected_nodes != nodes || expected_identities != vertex_identities {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "consolidated vertex identities disagree with edge incidence".to_string(),
@@ -318,14 +318,7 @@ pub(super) fn validate_native_links(
         }
     }
     for (index, segment) in segments.iter().enumerate() {
-        let parsed = crate::test_support::with_service_context(|ctx| {
-            container::finjpl_segments(ctx, &container::BodyExtent::whole(&segment.data))
-        })
-        .map_err(|_| {
-            cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "stored CATIA FINJPL segment exceeds service limits".to_string(),
-            )
-        })?;
+        let parsed = container::finjpl_segments(&container::BodyExtent::whole(&segment.data));
         let expected_id = format!("catia:outer:finjpl#{index}");
         if segment.id != expected_id
             || u64::try_from(segment.data.len()).ok() != Some(segment.byte_len)
@@ -369,10 +362,8 @@ pub(super) fn validate_native_links(
                 block.id, block.catalog
             )));
         }
-        let selections = crate::test_support::with_service_context(|ctx| {
-            value_schema_selections(ctx, &block.id, block.byte_offset, &block.fields(), catalog)
-        })
-        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
+        let selections =
+            value_schema_selections(&block.id, block.byte_offset, &block.fields(), catalog);
         if selections != block.schema_selections {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid derived view",
@@ -469,14 +460,16 @@ pub(super) fn validate_native_links(
                     object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
                     catalog,
                 )
-            });
+            })
+            .map_err(|error| {
+                cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object record `{}` schema selection does not rederive: {error}",
+                    record.id
+                ))
+            })?;
             if record.class_entry() != expected_class.map(|(entry, _)| entry)
                 || record.class_name() != expected_class.map(|(_, value)| value)
-                || expected_repeated_selection
-                    .as_ref()
-                    .map_or(true, |selection| {
-                        record.repeated_reference_schema_selection != *selection
-                    })
+                || record.repeated_reference_schema_selection != expected_repeated_selection
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "object record `{}` has an invalid schema class",

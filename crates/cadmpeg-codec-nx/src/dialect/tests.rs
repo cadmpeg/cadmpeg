@@ -53,16 +53,10 @@ fn classify(container: &Container<'_>) -> DialectMatch {
 fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
-        container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
-        })
-        .unwrap(),
+        container: { crate::container::scan_bytes(bytes.clone()) }.unwrap(),
         streams: extract_streams(&bytes),
     };
-    let (layers, losses) =
-        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -94,16 +88,10 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
             .expect("the fixture text is a schema token"),
     );
     let scan = crate::decode::Scan {
-        container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes)
-        })
-        .unwrap(),
+        container: { crate::container::scan_bytes(bytes) }.unwrap(),
         streams,
     };
-    let (layers, losses) =
-        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -126,20 +114,12 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let mut streams = extract_streams(&bytes);
     streams.push(streams[0].clone());
     let scan = crate::decode::Scan {
-        container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes)
-        })
-        .unwrap(),
+        container: { crate::container::scan_bytes(bytes) }.unwrap(),
         streams,
     };
 
-    let summary =
-        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("test container summary");
-    let (layers, losses) =
-        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+    let summary = crate::inspect::summarize(&scan).expect("test container summary");
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
     assert_eq!(
         layers
             .iter()
@@ -222,10 +202,7 @@ fn the_legacy_arm_declares_the_ugii_payload_version_as_canonical_decimal() {
 #[test]
 fn splmsstr_version_byte_is_checked_before_container_construction() {
     let valid = single_part_prt();
-    let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(ctx, valid.clone())
-    })
-    .expect("version 0x06 scans");
+    let container = crate::container::scan_bytes(valid.clone()).expect("version 0x06 scans");
     let matched = classify(&container);
     assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
     assert_eq!(matched.declared()[DECLARED_SPLMSSTR_VERSION], "6");
@@ -235,7 +212,7 @@ fn splmsstr_version_byte_is_checked_before_container_construction() {
         let mut invalid = valid.clone();
         invalid[crate::layout::splmsstr_header::VERSION_TAG] = version;
         assert!(matches!(
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, invalid)),
+            crate::container::scan_bytes(invalid),
             Err(CodecError::Malformed(message)) if message.contains("version byte must be 0x06")
         ));
     }
@@ -255,86 +232,9 @@ fn a_header_too_short_to_declare_a_version_never_scans() {
     let file = single_part_prt();
     for truncated_len in MAGIC.len()..=crate::layout::splmsstr_header::HEADER_MARKER {
         assert!(
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(
-                ctx,
-                &file[..truncated_len]
-            ))
-            .is_err(),
+            crate::container::scan_bytes(&file[..truncated_len]).is_err(),
             "an image of {truncated_len} bytes must not scan"
         );
     }
-    crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-        .expect("the whole image scans");
-}
-
-#[test]
-fn dialect_classification_refuses_collection_limit() {
-    let bytes = single_part_prt();
-    let scan = crate::decode::Scan {
-        container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
-        })
-        .unwrap(),
-        streams: extract_streams(&bytes),
-    };
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-        },
-    );
-}
-
-#[test]
-fn dialect_classification_refuses_retained_limit() {
-    let bytes = single_part_prt();
-    let scan = crate::decode::Scan {
-        container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
-        })
-        .unwrap(),
-        streams: extract_streams(&bytes),
-    };
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-        },
-    );
-}
-
-#[test]
-fn dialect_classification_refuses_work_limit() {
-    let bytes = single_part_prt();
-    let scan = crate::decode::Scan {
-        container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
-        })
-        .unwrap(),
-        streams: extract_streams(&bytes),
-    };
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
-        },
-    );
+    crate::container::scan_bytes(file).expect("the whole image scans");
 }

@@ -27,7 +27,7 @@ fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::Fea
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("test context");
     crate::resolved_features::names::object_names(&ctx, payload, parent)
-        .expect("service profile admits names")
+        .expect("compute the object names")
 }
 
 #[test]
@@ -519,7 +519,13 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds,
             pattern: admitted_pattern,
-        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) } if seeds.is_empty())
+        }) if matches!(
+            admitted_pattern.definition(),
+            PatternTransform::Unresolved {
+                form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear)
+            }
+                if seeds.is_empty()
+        )
     ));
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
@@ -631,11 +637,18 @@ fn semantic_writer_round_trips_typed_sweep() {
         decoded.ir().model.features[3].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: Some(PathRef::Native(path_ref)),
-
             twist: Some(twist),
             scale: Some(scale),
             ..
-        }) if matches!((shape.referenced_profile(), shape.mode(),), (Some(PlanarProfileRef::Feature(profile)), cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },) if scale.get() == 1.5 && profile == &profile_a
+        }) if matches!(
+            (shape.referenced_profile(), shape.mode(),),
+            (
+                Some(PlanarProfileRef::Feature(profile)),
+                cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody
+                },
+            )
+                if scale.get() == 1.5 && profile == &profile_a
             && path_ref == &path
             && (twist.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)));
 
@@ -644,7 +657,6 @@ fn semantic_writer_round_trips_typed_sweep() {
         ir_edit.model.features[3].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape,
-
                 twist,
                 scale,
                 ..
@@ -671,21 +683,15 @@ fn semantic_writer_round_trips_typed_sweep() {
             .retain(|dependency| dependency != &profile_a);
         let mut dependencies = ir_edit.model.features[3].dependencies.to_vec();
         dependencies.insert(0, profile_b);
-        ir_edit.model.features[3].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            dependencies,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+        ir_edit.model.features[3].dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
     }
 
     let mut inconsistent = decoded.ir().clone();
     let mut dependencies = inconsistent.model.features[3].dependencies.to_vec();
     dependencies.remove(0);
-    inconsistent.model.features[3].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-        dependencies,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .unwrap();
+    inconsistent.model.features[3].dependencies =
+        cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
     let error = crate::test_support::plan_inherited_write(
         &inconsistent,
         decoded.source_fidelity(),
@@ -746,7 +752,6 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: None,
-
             twist: None,
             scale: None,
             ..
@@ -784,7 +789,6 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         regenerated.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: None,
-
             twist: Some(actual_twist),
             scale: None,
             ..
@@ -816,7 +820,6 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: None,
-
             twist: None,
             scale: None,
             ..
@@ -908,16 +911,14 @@ fn semantic_writer_round_trips_typed_loft() {
         *op = BooleanOp::Join;
         *closed = true;
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
-        ir_edit.model.features[5].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![
+        ir_edit.model.features[5].dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![
                 feature_refs[2].clone(),
                 feature_refs[1].clone(),
                 feature_refs[0].clone(),
                 feature_refs[4].clone(),
-            ],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+            ])
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1049,11 +1050,8 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
         let mut dependencies = ir_edit.model.features[2].dependencies.to_vec();
         dependencies.reverse();
-        ir_edit.model.features[2].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            dependencies,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+        ir_edit.model.features[2].dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1164,16 +1162,24 @@ fn semantic_writer_round_trips_typed_rib() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_ref = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
-                profile,
-                direction: Some(geometry_1),
-                thickness: Some(actual_thickness),
-                side: Some(RibSide::OneSided),
-                draft: RibDraft::Angle(value),
-            },
-            op: BooleanOp::Join,
-        }) if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),) if ( (profile == &profile_ref && (value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_thickness.get() == 2.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 }))));
+    decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
+        construction: cadmpeg_ir::features::RibConstruction {
+            profile,
+            direction: Some(geometry_1),
+            thickness: Some(actual_thickness),
+            side: Some(RibSide::OneSided),
+            draft: RibDraft::Angle(value),
+        },
+        op: BooleanOp::Join,
+    }) if matches!(
+        (profile.as_ref(),),
+        (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),)
+            if (
+                (profile == &profile_ref && (value.get() - 5f64.to_radians()).abs() < 1.0e-12)
+                && actual_thickness.get() == 2.0
+            )
+            && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })
+    )));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -1689,14 +1695,9 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     assert_eq!(written[0].value, lane.names[0].value);
     assert_eq!(written[2].value, lane.names[2].value);
     assert_eq!(
-        crate::resolved_features::scalars::named_scalars_charged(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &lane.id,
-            &written
-        )
-        .unwrap()
-        .len(),
+        crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written)
+            .unwrap()
+            .len(),
         scalars
     );
 }

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A8 sampled parameter correspondences between source-local curve representations.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use serde::{Deserialize, Serialize};
@@ -24,50 +23,26 @@ pub(crate) struct SampledParameterMap {
     pub(crate) active_reference_range: IncreasingParameterInterval,
 }
 
-pub(crate) fn parse(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Option<SampledParameterMap>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "catia_a8_parameter_map_parse",
-    )?;
-    let Some((reference, co_curve, leading, count, arrays_start)) = layout(payload) else {
-        return Ok(None);
-    };
-    let Some(reference_domain) = IncreasingParameterInterval::between(leading[0], leading[1])
-    else {
-        return Ok(None);
-    };
-    let Some(co_domain) = IncreasingParameterInterval::between(leading[3], leading[4]) else {
-        return Ok(None);
-    };
-    let Some(fit_tolerance) = NonNegativeReal::new(leading[2].get()) else {
-        return Ok(None);
-    };
+pub(crate) fn parse(payload: &[u8]) -> Option<SampledParameterMap> {
+    let (reference, co_curve, leading, count, arrays_start) = layout(payload)?;
+    let reference_domain = IncreasingParameterInterval::between(leading[0], leading[1])?;
+    let co_domain = IncreasingParameterInterval::between(leading[3], leading[4])?;
+    let fit_tolerance = NonNegativeReal::new(leading[2].get())?;
     let tail = arrays_start + count * 16;
-    let Some(active) = crate::wire::bytes::read_f64_array::<3>(payload, tail) else {
-        return Ok(None);
-    };
-    let Some(active_reference_range) = IncreasingParameterInterval::between(active[0], active[1])
-    else {
-        return Ok(None);
-    };
+    let active = crate::wire::bytes::read_f64_array::<3>(payload, tail)?;
+    let active_reference_range = IncreasingParameterInterval::between(active[0], active[1])?;
     if active[2].get().to_bits() != fit_tolerance.get().to_bits()
         || active_reference_range.lower() < reference_domain.lower()
         || active_reference_range.upper() > reference_domain.upper()
     {
-        return Ok(None);
+        return None;
     }
     let mut view = View::over_retained(&payload[arrays_start..tail]);
-    let mut reference_parameters =
-        ctx.collection_vec(count, "catia_a8_map_reference_parameters")?;
-    let mut co_parameters = ctx.collection_vec(count, "catia_a8_map_co_parameters")?;
+    let mut reference_parameters = Vec::new();
+    let mut co_parameters = Vec::new();
     for parameters in [&mut reference_parameters, &mut co_parameters] {
         for _ in 0..count {
-            let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
-                return Ok(None);
-            };
+            let value = view.f64_le().and_then(FiniteReal::new)?;
             parameters.push(value);
         }
     }
@@ -75,7 +50,7 @@ pub(crate) fn parse(
         || !(co_parameters.windows(2).all(|p| p[0] < p[1])
             || co_parameters.windows(2).all(|p| p[0] > p[1]))
     {
-        return Ok(None);
+        return None;
     }
     let scale = leading
         .iter()
@@ -94,10 +69,10 @@ pub(crate) fn parse(
             .iter()
             .any(|p| p.get() < domain.lower() - bound || p.get() > domain.upper() + bound)
         {
-            return Ok(None);
+            return None;
         }
     }
-    Ok(Some(SampledParameterMap {
+    Some(SampledParameterMap {
         reference,
         co_curve,
         reference_domain,
@@ -106,7 +81,7 @@ pub(crate) fn parse(
         reference_parameters,
         co_parameters,
         active_reference_range,
-    }))
+    })
 }
 
 fn layout(payload: &[u8]) -> Option<(u32, u32, [FiniteReal; 5], usize, usize)> {

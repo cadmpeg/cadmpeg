@@ -108,16 +108,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     .with_native_ref(Some(corner.id().to_string()))];
 
     assert_eq!(
-        doubled_profile_distance_loci(
-            &cadmpeg_test_support::service_decode_context(),
-            &relation,
-            (0, 1),
-            &sketch,
-            &parameter,
-            &entities,
-            &markers,
-        )
-        .unwrap(),
+        doubled_profile_distance_loci(&relation, (0, 1), &sketch, &parameter, &entities, &markers,),
         Some((
             SketchLocus::Start(line_id.clone()),
             SketchLocus::End(line_id.clone()),
@@ -130,15 +121,13 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         doubled_profile_distance_loci(
-            &cadmpeg_test_support::service_decode_context(),
             &relation,
             (0, 1),
             &sketch,
             &parameter,
             &entities,
             &markers_without_handle,
-        )
-        .unwrap(),
+        ),
         None
     );
 }
@@ -155,7 +144,6 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -216,14 +204,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     };
     let mut features = vec![producer, target];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("edge selection fixture context");
-    project_compact_edge_selections(&ctx, &mut features, &[], &[lane]).unwrap();
+    project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[1].evaluation.definition()
@@ -330,13 +311,11 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
 
     assert_eq!(
         relation_operand_marker(
-            &cadmpeg_test_support::service_decode_context(),
             &relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        )
-        .unwrap(),
+        ),
         Some("point")
     );
     let mut constrained_operand = relation.operands[0].clone();
@@ -347,24 +326,20 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     };
     assert_eq!(
         relation_operand_marker(
-            &cadmpeg_test_support::service_decode_context(),
             &constrained_relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        )
-        .unwrap(),
+        ),
         Some("constrained-point")
     );
     assert_eq!(
         relation_operand_marker(
-            &cadmpeg_test_support::service_decode_context(),
             &relation,
             0,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &markers
-        )
-        .unwrap(),
+        ),
         Some("stored-marker")
     );
 }
@@ -409,7 +384,6 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -740,7 +714,6 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -846,14 +819,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         arc("a1", "p1", "p2"),
     ];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-8).unwrap();
+    resolve_connected_marker_arcs(&mut entities, 1.0e-8);
 
     for entity in &entities[3..] {
         assert!(matches!(*entity.geometry.definition(),
@@ -871,7 +837,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
                 .expect("nonempty source identity"),
         );
     }
-    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-8).unwrap();
+    resolve_connected_marker_arcs(&mut entities, 1.0e-8);
     assert!(entities[3..].iter().all(|entity| matches!(
         *entity.geometry.definition(),
         SketchGeometryDefinition::Arc { .. }
@@ -891,12 +857,12 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         .with_native_ref(Some("line".into()))
         .with_endpoint_refs(vec!["p2".into(), "p0".into()]),
     );
-    assert_eq!(closed_marker_profiles(&ctx, &entities).unwrap()[0].len(), 3);
+    assert_eq!(closed_marker_profiles(&entities)[0].len(), 3);
     entities
         .last_mut()
         .expect("required invariant")
         .construction = true;
-    assert!(closed_marker_profiles(&ctx, &entities).unwrap().is_empty());
+    assert!(closed_marker_profiles(&entities).is_empty());
     entities.push(
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
@@ -910,7 +876,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         .with_native_ref(Some("circle".into())),
     );
     assert_eq!(
-        closed_marker_profiles(&ctx, &entities).unwrap(),
+        closed_marker_profiles(&entities),
         vec![vec![SketchEntityUse {
             entity: SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
             reversed: false,
@@ -920,13 +886,6 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
 
 #[test]
 fn unowned_radial_records_do_not_override_complete_diameter_circles() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -938,7 +897,6 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1053,7 +1011,6 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     let mut invalid_entities = entities.clone();
     let mut invalid_sketches = sketches.clone();
     project_marker_dimensioned_circles(
-        &resource_ctx,
         &mut invalid_entities,
         &mut invalid_sketches,
         std::slice::from_ref(&feature),
@@ -1065,7 +1022,6 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     assert!(invalid_sketches[0].profiles.is_empty());
 
     project_marker_dimensioned_circles(
-        &resource_ctx,
         &mut entities,
         &mut sketches,
         std::slice::from_ref(&feature),
@@ -1135,16 +1091,11 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-            dependencies,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
@@ -1184,16 +1135,15 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             ordinal: 3,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![FeatureId::mint("synthetic:test:id#child").expect("identity grammar")],
-                &cadmpeg_test_support::service_decode_context(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+                "synthetic:test:id#child",
             )
+            .expect("identity grammar")])
             .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Extrude {
                     profile: ProfileRef::Planar(PlanarProfileRef::Feature(
@@ -1224,11 +1174,12 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     multi_consumer.id =
         FeatureId::mint("synthetic:test:id#multi-consumer").expect("identity grammar");
     multi_consumer.ordinal = 4;
-    multi_consumer.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-        vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")],
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .unwrap();
+    multi_consumer.dependencies =
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+            "synthetic:test:id#multi-child",
+        )
+        .expect("identity grammar")])
+        .unwrap();
     multi_consumer.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = definition
         else {
@@ -1266,13 +1217,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     };
     let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];
 
-    project_dissected_sketches(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut features,
-        &sketches,
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    project_dissected_sketches(&mut features, &sketches, std::slice::from_ref(&history));
 
     assert!(matches!(
         features[1].evaluation.definition(),

@@ -4,12 +4,11 @@
 use super::{design_stream, Ctx};
 use crate::layout::sheet_metal_settings_prefix as settings_prefix;
 use crate::records::sheet_metal_settings::{PRESENTATION_GUID, RULE_GUID, SETTINGS_GUID};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::check::{Check, Finding};
 
-pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     if ctx.native.design_sheet_metal_settings.is_empty() {
-        return Ok(());
+        return;
     }
     let mut types = std::collections::HashMap::new();
     for row in &ctx.native.design_types {
@@ -19,12 +18,7 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
             if let Some(prior) = types.get_mut(&key) {
                 *prior = None;
             } else {
-                ctx.decode.insert_hash_map(
-                    &mut types,
-                    key,
-                    Some(row),
-                    "index F3D sheet-metal settings types",
-                )?;
+                types.insert(key, Some(row));
             }
         }
     }
@@ -41,18 +35,10 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
                         && version.is_none_or(|expected| expected == row.version)
                 })
         };
-        let unique = ctx.decode.insert_hash_set(
-            &mut indices,
-            (stream, settings.record_index),
-            "index F3D settings identities",
-        )?;
+        let unique = indices.insert((stream, settings.record_index));
         let header = u32::try_from(settings.record_index)
             .ok()
             .and_then(|index| ctx.records_by_index.get(&(stream, index)));
-        ctx.decode.charge_work(
-            cadmpeg_core::decode::u64_from_index(ctx.native.design_types.len()),
-            "validate F3D settings class registration",
-        )?;
         let primary_type = types
             .get(&(type_stream, settings.record_index))
             .and_then(|row| *row);
@@ -106,18 +92,14 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
             && typed(settings.presentation_record_index, PRESENTATION_GUID, None)
             && references_resolve;
         if !valid {
-            ctx.push_constant_finding(
+            super::push_constant_finding(
                 findings,
                 Check::NativeLinks,
                 "Fusion sheet-metal settings has an invalid indexed or typed link",
-                Some(
-                    ctx.decode
-                        .copy_retained_text(settings.id(), "retain F3D settings finding")?,
-                ),
-            )?;
+                Some((settings.id()).to_owned()),
+            );
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

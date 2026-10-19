@@ -4,8 +4,6 @@
 use super::compact::LocatedCompactIndex;
 use super::reference_index::FeatureReferenceToken;
 use super::PayloadObjectReference;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MultiInstanceOutputs<O> {
@@ -55,31 +53,6 @@ impl<O> MultiInstanceOutputs<O> {
         Ok(())
     }
 
-    pub(crate) fn new_charged(
-        ctx: &DecodeContext<'_>,
-        rows: Vec<(LocatedCompactIndex<O>, u8)>,
-        references: Vec<PayloadObjectReference<FeatureReferenceToken, O>>,
-    ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(rows.len().checked_mul(rows.len()).ok_or_else(
-                || ctx.refuse_codec_limit("nx instance selector validation", u64::MAX, u64::MAX),
-            )?),
-            "nx instance selector validation",
-        )?;
-        if Self::validate(&rows, &references).is_err() {
-            return Ok(None);
-        }
-        let mut selectors = Vec::new();
-        for (selector, _) in rows {
-            ctx.reserve_vec(&mut selectors, 1, "nx instance selectors")?;
-            selectors.push(selector);
-        }
-        Ok(Some(Self {
-            selectors,
-            references,
-        }))
-    }
-
     pub(crate) fn selectors(&self) -> &[LocatedCompactIndex<O>] {
         &self.selectors
     }
@@ -102,14 +75,9 @@ impl<O> MultiInstanceOutputs<O> {
             })
     }
 
-    pub(crate) fn map_offsets<P>(
-        self,
-        ctx: &DecodeContext<'_>,
-        mut map: impl FnMut(O) -> P,
-    ) -> Result<MultiInstanceOutputs<P>, CodecError> {
+    pub(crate) fn map_offsets<P>(self, mut map: impl FnMut(O) -> P) -> MultiInstanceOutputs<P> {
         let mut selectors = Vec::new();
         for selector in self.selectors {
-            ctx.reserve_vec(&mut selectors, 1, "nx mapped instance selectors")?;
             selectors.push(LocatedCompactIndex {
                 atom: selector.atom,
                 offset: map(selector.offset),
@@ -117,16 +85,15 @@ impl<O> MultiInstanceOutputs<O> {
         }
         let mut references = Vec::new();
         for reference in self.references {
-            ctx.reserve_vec(&mut references, 1, "nx mapped instance references")?;
             references.push(PayloadObjectReference {
                 token: reference.token,
                 offset: map(reference.offset),
             });
         }
-        Ok(MultiInstanceOutputs {
+        MultiInstanceOutputs {
             selectors,
             references,
-        })
+        }
     }
 }
 
@@ -162,12 +129,8 @@ mod tests {
             outputs.ordinals().collect::<Vec<_>>(),
             (2..=u8::MAX).collect::<Vec<_>>()
         );
-        let mapped = crate::test_support::with_decode_context(|ctx| {
-            outputs.map_offsets(ctx, |offset| {
-                cadmpeg_core::decode::u64_from_index(offset) + 1000
-            })
-        })
-        .unwrap();
+        let mapped =
+            outputs.map_offsets(|offset| cadmpeg_core::decode::u64_from_index(offset) + 1000);
         assert_eq!(mapped.selectors().len(), 254);
         assert_eq!(mapped.references().len(), 254);
         assert_eq!(mapped.selectors()[253].offset, 1255);

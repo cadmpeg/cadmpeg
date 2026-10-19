@@ -4,8 +4,8 @@ use crate::wire::records::consolidated_records;
 #[test]
 fn counted_lists_preserve_child_ordinals_and_reference_forms() {
     let bytes = [0xb2, 0x03, 0x60, 5, 0x49, 0x84, 0x03, 0x07, 0x0b, 0x0f];
-    let native = crate::test_support::with_service_context(|ctx| {
-        records(ctx, &bytes, &consolidated_records(&bytes))
+    let native = crate::test_support::with_service_context(|_ctx| {
+        records(&bytes, &consolidated_records(&bytes))
     })
     .expect("complete counted list");
     let [record] = native.as_slice() else {
@@ -29,39 +29,6 @@ fn counted_lists_preserve_child_ordinals_and_reference_forms() {
     assert!(validate(&changed).is_err());
     let wire = serde_json::to_value(&changed[0]).expect("changed reference wire");
     assert!(serde_json::from_value::<super::CatiaConsolidatedClass60Record>(wire).is_err());
-}
-
-#[test]
-fn counted_lists_abstain_on_nonclosure_and_charge_references() {
-    for payload in [
-        &[0x81, 0x08][..],
-        &[0x81, 0x05, 0x03],
-        &[0x01, 0x05],
-        &[0x84, 0x03],
-    ] {
-        let mut bytes = vec![
-            0xb2,
-            0x03,
-            0x60,
-            u8::try_from(payload.len()).expect("small payload"),
-            5,
-        ];
-        bytes.extend_from_slice(payload);
-        assert!(crate::test_support::with_service_context(|ctx| records(
-            ctx,
-            &bytes,
-            &consolidated_records(&bytes)
-        ))
-        .expect("bounded admission")
-        .is_empty());
-    }
-    let bytes = [0xb2, 0x03, 0x60, 2, 5, 0x81, 0x09];
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        records(ctx, &bytes, &consolidated_records(&bytes))
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_class60_references")
-    );
 }
 
 #[test]
@@ -109,4 +76,29 @@ fn counted_lists_preserve_logical_order_across_reordered_extents() {
         crate::native::CatiaNative::load(&namespace).expect("load logical source order"),
         native
     );
+}
+
+#[test]
+fn counted_lists_abstain_on_nonclosure() {
+    for payload in [
+        &[0x81, 0x08][..],
+        &[0x81, 0x05, 0x03],
+        &[0x01, 0x05],
+        &[0x84, 0x03],
+    ] {
+        let mut bytes = vec![
+            0xb2,
+            0x03,
+            0x60,
+            u8::try_from(payload.len()).expect("small payload"),
+            5,
+        ];
+        bytes.extend_from_slice(payload);
+        assert!(crate::test_support::with_service_context(|_ctx| records(
+            &bytes,
+            &consolidated_records(&bytes)
+        ))
+        .expect("bounded admission")
+        .is_empty());
+    }
 }

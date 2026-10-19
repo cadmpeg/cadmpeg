@@ -19,9 +19,8 @@ fn row(state: u32, numbered: bool) -> Vec<u8> {
 }
 
 fn members(bytes: &[u8], kind: u32) -> Vec<CatiaStoragePropertyMember> {
-    crate::test_support::with_service_context(|ctx| {
+    crate::test_support::with_service_context(|_ctx| {
         parse(
-            ctx,
             bytes,
             &[FinjplSegment {
                 range: 0..bytes.len(),
@@ -60,34 +59,6 @@ fn direct_members_require_complete_numbered_label() {
         let mut damaged = bytes.clone();
         damaged[index] = 0xff;
         assert!(members(&damaged, 0x8e).is_empty(), "label byte {index}");
-    }
-}
-
-#[test]
-fn member_inventory_obeys_collection_and_work_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-    let bytes = row(1, true);
-    let segment = FinjplSegment {
-        range: 0..bytes.len(),
-        type_word: 0x8e,
-        name: None,
-    };
-    for dimension in [
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("valid storage member fixture");
-        let error = parse(&ctx, &bytes, std::slice::from_ref(&segment))
-            .expect_err("invalid storage member must be refused");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
     }
 }
 

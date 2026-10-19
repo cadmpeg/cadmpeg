@@ -4,7 +4,7 @@
 use std::ops::Range;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 
 use crate::parse::ParseError;
 
@@ -14,7 +14,7 @@ pub(crate) fn decode_payload(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, ParseError> {
     let mut compact = Vec::new();
-    let mut compact_reservation = ctx.reserve_scoped(0, "step_signature_compact_temp")?;
+
     let mut at = payload.start;
     while at < payload.end {
         if input[at].is_ascii_control() || input[at] == b' ' {
@@ -38,18 +38,11 @@ pub(crate) fn decode_payload(
             }
         }
 
-        ctx.reserve_scoped_vec(
-            &mut compact_reservation,
-            &mut compact,
-            1,
-            "step_signature_compact_items",
-        )?;
         compact.push(input[at]);
         at += 1;
     }
     let estimate = base64::decoded_len_estimate(compact.len());
-    let _cms_reservation =
-        ctx.reserve_scoped(u64_from_index(estimate), "step_signature_cms_temp")?;
+
     let mut cms = ctx.alloc_filled(estimate, 0_u8, "step_signature_cms_bytes")?;
     let decoded =
         STANDARD

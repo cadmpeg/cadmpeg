@@ -42,7 +42,7 @@
       "length": "millimeter"
     },
     "tolerances": {
-      "linear": 9.999999999999999e-6,
+      "linear": 9.999999999999999e-06,
       "angular": 1e-10
     },
     "model": {
@@ -282,7 +282,6 @@
             "records": [],
             "state_flag": 0,
             "state_id": 2,
-            "topology_cache": "released",
             "version_flag": 1
           },
           {
@@ -296,7 +295,6 @@
             "records": [],
             "state_flag": 0,
             "state_id": 3,
-            "topology_cache": "released",
             "version_flag": 1
           }
         ],
@@ -323,7 +321,8 @@
             "byte_offset": 1628,
             "history_entry_count": 99,
             "states": [],
-            "stream_size": 2
+            "stream_size": 2,
+            "topology_scope": "retained"
           }
         ],
         "asm_history_records": [
@@ -490,9 +489,12 @@
         ],
         "wire_topologies": [],
         "xref_designs": [],
-        "xref_references": []
+        "xref_references": [],
+        "asm_face_boundaries": [],
+        "design_intent_failures": []
       }
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

@@ -10,7 +10,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 fn translated_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -27,7 +26,6 @@ fn translated_surface() -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid translated surface")
 }
 
@@ -48,7 +46,7 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
 
 #[test]
 fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    {
         let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
             id,
             kind,
@@ -125,7 +123,6 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         ]);
         assert_eq!(
             generated_nurbs_translation_extent(
-                ctx,
                 &scan,
                 &ir,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -142,7 +139,6 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         ]);
         assert_eq!(
             generated_nurbs_translation_extent(
-                ctx,
                 &scan,
                 &ir,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -170,7 +166,6 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         }
         assert_eq!(
             generated_nurbs_translation_extent(
-                ctx,
                 &scan,
                 &local_only,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -187,7 +182,6 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             Some(3.0),
         ]);
         assert!(generated_nurbs_translation_extent(
-            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -196,5 +190,5 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         )
         .expect("admitted extent")
         .is_none());
-    });
+    };
 }

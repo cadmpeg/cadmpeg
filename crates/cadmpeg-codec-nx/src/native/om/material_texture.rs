@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! TIFF material assets with checked paths and image-directory bounds.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
 
 use crate::container::Container;
 
@@ -167,38 +166,14 @@ impl TryFrom<TextureWire> for MaterialTextureAsset {
 }
 
 pub(in crate::native) fn material_texture_assets(
-    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<MaterialTextureAsset>, CodecError> {
-    let name_bytes = container
-        .entries
-        .iter()
-        .try_fold(0usize, |total, entry| total.checked_add(entry.name.len()))
-        .and_then(|total| total.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX material texture entry scan", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(name_bytes),
-        "scan NX material texture entries",
-    )?;
-    let count = container
+    let mut entries = container
         .entries
         .iter()
         .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
-        .count();
-    let mut entries = Vec::new();
-    ctx.reserve_capacity(&mut entries, count, "allocate NX material texture entries")?;
-    entries.extend(
-        container
-            .entries
-            .iter()
-            .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX)),
-    );
-    ctx.stable_sort_by(
-        &mut entries,
-        |first, second| first.name.cmp(&second.name),
-        |entry| entry.name.len(),
-        "sort NX material texture entries",
-    )?;
+        .collect::<Vec<_>>();
+    entries.sort_by(|first, second| first.name.cmp(&second.name));
     let mut assets = Vec::new();
     for entry in entries {
         let parsed = (|| {
@@ -220,35 +195,14 @@ pub(in crate::native) fn material_texture_assets(
         let Some((offset, size, payload, byte_order, first_ifd_offset)) = parsed else {
             continue;
         };
-        ctx.reserve_vec(&mut assets, 1, "NX material texture assets")?;
-        let ordinal = assets.len();
-        let mut digits = 1;
-        let mut value = ordinal;
-        while value >= 10 {
-            value /= 10;
-            digits += 1;
-        }
-        let id_len = "nx:container:material-texture#"
-            .len()
-            .checked_add(digits)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX material texture identity length", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "retain NX material texture identity")?;
-        write!(id, "nx:container:material-texture#{ordinal}")
-            .map_err(|_| ctx.refuse_codec_limit("write NX material texture identity", 0, 1))?;
-        let mut source_entry =
-            ctx.retained_string(entry.name.len(), "retain NX material texture source entry")?;
-        source_entry.push_str(&entry.name);
+
         let asset = MaterialTextureAsset::new(
-            id,
+            format!("nx:container:material-texture#{}", assets.len()),
             byte_order,
             first_ifd_offset,
             u64_from_index(size),
-            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                payload,
-                "retain NX material texture digest",
-            )?,
-            source_entry,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(payload),
+            entry.name.clone(),
             offset,
         )
         .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
@@ -261,107 +215,38 @@ pub(in crate::native) fn material_texture_assets(
 mod tests {
     use super::{material_texture_assets, MaterialTextureAsset};
     use crate::container::{Container, DirEntry, DirEntryBody, Region};
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use std::sync::OnceLock;
 
     const TIFF: &[u8] = &[b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
 
     fn container() -> Container<'static> {
-        container_of(1)
-    }
-
-    fn container_of(count: usize) -> Container<'static> {
         Container {
             data: TIFF.into(),
             physical_size: cadmpeg_core::decode::u64_from_index(TIFF.len()),
             layout: crate::container::test_modern_layout(6),
-            entries: (0..count)
-                .map(|ordinal| DirEntry {
-                    name: if count == 1 {
-                        "/Root/materialsTif/Steel".to_owned()
-                    } else {
-                        format!("/Root/materialsTif/Steel{ordinal}")
-                    },
-                    region: Region::Header,
-                    body: DirEntryBody::File {
-                        offset: 0,
-                        len: cadmpeg_core::decode::u64_from_index(TIFF.len()),
-                    },
-                })
-                .collect(),
+            entries: vec![DirEntry {
+                name: "/Root/materialsTif/Steel".to_owned(),
+                region: Region::Header,
+                body: DirEntryBody::File {
+                    offset: 0,
+                    len: cadmpeg_core::decode::u64_from_index(TIFF.len()),
+                },
+            }],
             fastload_table: None,
             indexed_section_layouts: OnceLock::new(),
             om_section_cache: OnceLock::new(),
         }
     }
 
-    fn assert_limit(configure: impl FnOnce(&mut DecodePolicy), dimension: ResourceDimension) {
-        crate::test_support::with_decode_context_over(
-            TIFF,
-            |policy| {
-                configure(policy);
-            },
-            |ctx| {
-                let error = material_texture_assets(ctx, &container()).unwrap_err();
-                assert!(
-                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension)
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn material_texture_assets_refuse_collection_limit() {
-        assert_limit(
-            |policy| policy.limits.max_collection_items = 0,
-            ResourceDimension::CollectionItems,
-        );
-    }
-
-    #[test]
-    fn material_texture_assets_refuse_retained_limit() {
-        assert_limit(
-            |policy| policy.limits.max_retained_bytes = 0,
-            ResourceDimension::RetainedBytes,
-        );
-    }
-
-    #[test]
-    fn material_texture_assets_refuse_scoped_limit() {
-        // The stable sort reserves scratch only above 20 entries.
-        crate::test_support::with_decode_context_over(
-            TIFF,
-            |policy| policy.limits.max_materialized_bytes = 0,
-            |ctx| {
-                let error = material_texture_assets(ctx, &container_of(21)).unwrap_err();
-                assert!(matches!(error, CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::MaterializedBytes));
-            },
-        );
-    }
-
-    #[test]
-    fn material_texture_assets_refuse_work_limit() {
-        assert_limit(
-            |policy| policy.limits.max_work_units = 0,
-            ResourceDimension::WorkUnits,
-        );
-    }
-
     #[test]
     fn material_texture_assets_preserve_identity_and_source() {
-        crate::test_support::with_decode_context_over(
-            TIFF,
-            |_| {},
-            |ctx| {
-                let assets = material_texture_assets(ctx, &container()).unwrap();
-                assert_eq!(assets.len(), 1);
-                assert_eq!(assets[0].id, "nx:container:material-texture#0");
-                assert_eq!(assets[0].name(), "Steel");
-                assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
-            },
-        );
+        ({
+            let assets = material_texture_assets(&container()).unwrap();
+            assert_eq!(assets.len(), 1);
+            assert_eq!(assets[0].id, "nx:container:material-texture#0");
+            assert_eq!(assets[0].name(), "Steel");
+            assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
+        });
     }
 
     #[test]

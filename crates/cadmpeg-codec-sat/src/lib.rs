@@ -43,15 +43,10 @@ impl CodecBackend for SatCodec {
 
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
-        let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
-        Ok(detect::confidence(prefix))
+        Ok(detect::confidence(prefix.window()))
     }
 
     fn inspect_impl(

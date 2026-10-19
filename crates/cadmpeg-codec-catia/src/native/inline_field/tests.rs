@@ -4,6 +4,7 @@ use crate::test_support::test_object_graph::{
     catalog_stream, entity_table_record_with_value, inline_object_graph_record,
     object_graph_from_records, object_graph_record,
 };
+use cadmpeg_core::decode::DecodeContext;
 
 fn fixture(self_ref: u8, value: &[u8], repeated_outer: u32) -> Vec<u8> {
     let mut bytes = entity_table_record_with_value(1, &[0xfe]);
@@ -117,34 +118,6 @@ fn contradictory_self_or_value_carrier_leaves_body_unassigned() {
 }
 
 #[test]
-fn inline_binding_obeys_collection_and_work_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-    let native = super::super::CatiaNative::decode(&fixture(0x82, &[0x85, 0xfe], 7));
-    for dimension in [
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => unreachable!(),
-        }
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source context");
-        let error = derive(
-            &ctx,
-            &native.object_graphs,
-            &native.entity_records,
-            &native.catalogs,
-        )
-        .expect_err("inline binding exceeds explicit budget");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-    }
-}
-
-#[test]
 fn field_identity_does_not_resolve_in_another_graph() {
     let mut bytes = fixture(0x82, &[0x85, 0xfe], 7);
     let at = bytes
@@ -253,9 +226,8 @@ fn compact_inline_field_resolves_owner_class_storage_anchor() {
     graphs[0].records[0].storage = None;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
+    let (_ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source context");
-    let fields = derive(&ctx, &graphs, &native.entity_records, &native.catalogs)
-        .expect("missing storage role is not a resource error");
+    let fields = derive(&graphs, &native.entity_records, &native.catalogs);
     assert!(fields.is_empty());
 }

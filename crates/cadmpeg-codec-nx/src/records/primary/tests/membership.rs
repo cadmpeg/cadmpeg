@@ -18,7 +18,7 @@ fn member(first: bool, label: u32) -> Vec<u8> {
 
 #[test]
 fn primary_membership_uses_plain_fields_and_full_integer_label_storage() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for version in [11004, 13006] {
             for embedded in [false, true] {
                 for label in [0, 2, u32::MAX] {
@@ -26,8 +26,8 @@ fn primary_membership_uses_plain_fields_and_full_integer_label_storage() {
                     bytes.extend(member(embedded, label));
                     let end = bytes.len();
                     bytes.extend(END);
-                    let primary = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
-                    let records = primary.membership_records(ctx).unwrap();
+                    let primary = PrimaryRecords::read(&bytes).unwrap().unwrap();
+                    let records = primary.membership_records();
                     assert_eq!(records.len(), 1);
                     assert_eq!(u32::from(records[0].xmt), 12);
                     assert_eq!(
@@ -44,10 +44,8 @@ fn primary_membership_uses_plain_fields_and_full_integer_label_storage() {
                         &bytes[primary.records[0].fields[0].clone()],
                         &label.to_be_bytes()
                     );
-                    let incomplete = PrimaryRecords::read(ctx, &bytes[..end - 1])
-                        .unwrap()
-                        .unwrap();
-                    assert!(incomplete.membership_records(ctx).unwrap().is_empty());
+                    let incomplete = PrimaryRecords::read(&bytes[..end - 1]).unwrap().unwrap();
+                    assert!(incomplete.membership_records().is_empty());
                 }
             }
         }
@@ -56,7 +54,7 @@ fn primary_membership_uses_plain_fields_and_full_integer_label_storage() {
 
 #[test]
 fn primary_membership_does_not_scan_member_tags_inside_array_storage() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, false);
         let fake = member(false, 2);
         assert_eq!(fake.len() % 2, 0);
@@ -65,8 +63,8 @@ fn primary_membership_does_not_scan_member_tags_inside_array_storage() {
         bytes.extend_from_slice(&50u16.to_be_bytes());
         bytes.extend(fake);
         bytes.extend(END);
-        let primary = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
-        let records = primary.membership_records(ctx).unwrap();
+        let primary = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        let records = primary.membership_records();
         assert_eq!(records.len(), 1);
         assert_eq!(u32::from(records[0].xmt), 50);
         assert_eq!(records[0].kind, MembershipKind::Other);
@@ -75,13 +73,13 @@ fn primary_membership_does_not_scan_member_tags_inside_array_storage() {
 
 #[test]
 fn primary_membership_preserves_duplicate_source_identities_for_quarantine() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, false);
         bytes.extend(member(false, 0));
         bytes.extend(member(false, 2));
         bytes.extend(END);
-        let primary = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
-        let records = primary.membership_records(ctx).unwrap();
+        let primary = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        let records = primary.membership_records();
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].xmt, records[1].xmt);
     });
@@ -89,7 +87,7 @@ fn primary_membership_preserves_duplicate_source_identities_for_quarantine() {
 
 #[test]
 fn primary_membership_instance_is_type_eleven_with_a_node_label() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for version in [11004, 13006] {
             let mut bytes = header(version, false);
             bytes.extend_from_slice(&11u16.to_be_bytes());
@@ -101,8 +99,8 @@ fn primary_membership_instance_is_type_eleven_with_a_node_label() {
                 bytes.extend_from_slice(&1u16.to_be_bytes());
             }
             bytes.extend(END);
-            let primary = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
-            let records = primary.membership_records(ctx).unwrap();
+            let primary = PrimaryRecords::read(&bytes).unwrap().unwrap();
+            let records = primary.membership_records();
             assert_eq!(records.len(), 1);
             assert_eq!(
                 records[0].kind,

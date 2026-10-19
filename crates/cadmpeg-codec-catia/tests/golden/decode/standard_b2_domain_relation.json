@@ -1,6 +1,7 @@
 {
   "ir": {
     "ir_version": "37",
+    "decode_depth": "full",
     "model": {
       "appearance_bindings": [],
       "appearances": [],

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ISO 10303-21 string escape decoding and canonical encoding.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
 use crate::parse::implementation_level::ImplementationLevel;
 
 /// A malformed or unsupported string escape.
@@ -16,42 +13,18 @@ pub(crate) struct StringError {
     message: String,
 }
 
-/// A malformed string or caller-context refusal while decoding it.
-#[derive(Debug)]
-pub(crate) enum StringDecodeFailure {
-    Invalid(StringError),
-    Resource(CodecError),
-}
-
 const MAX_STORED_STRING_OCTETS: usize = 32_767;
 
-pub(crate) fn decode_with_context(
-    input: &[u8],
-    level: ImplementationLevel,
-    ctx: &DecodeContext<'_>,
-) -> Result<String, StringDecodeFailure> {
+pub(crate) fn decode(input: &[u8], level: ImplementationLevel) -> Result<String, StringError> {
     if input.len() > MAX_STORED_STRING_OCTETS {
-        return Err(StringDecodeFailure::Invalid(StringError {
+        return Err(StringError {
             offset: 0,
             message: "string exceeds maximum stored length".to_owned(),
-        }));
+        });
     }
-    let len = decoded_len(input, level).map_err(StringDecodeFailure::Invalid)?;
-    let operation = "step_string_text";
-    let mut output = ctx
-        .retained_string(len, operation)
-        .map_err(StringDecodeFailure::Resource)?;
-
-    decode_chars(input, level, |character| output.push(character))
-        .map_err(StringDecodeFailure::Invalid)?;
+    let mut output = String::new();
+    decode_chars(input, level, |character| output.push(character))?;
     Ok(output)
-}
-
-fn decoded_len(input: &[u8], level: ImplementationLevel) -> Result<usize, StringError> {
-    // One source byte expands to at most two UTF-8 bytes, so this sum fits usize.
-    let mut len = 0usize;
-    decode_chars(input, level, |character| len += character.len_utf8())?;
-    Ok(len)
 }
 
 fn decode_chars(

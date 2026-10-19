@@ -2,8 +2,6 @@
 //! NURBS surface boundaries and extrusion-plane generator curves.
 
 use crate::vecmath::normalize;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
@@ -36,22 +34,16 @@ impl std::fmt::Display for JoinedRefusals<'_> {
 }
 
 fn report_cubic_generator_loss(
-    ctx: &DecodeContext<'_>,
     surface_id: u32,
     refused: &[String],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    let message = ctx.format_retained(
-        format_args!(
-            "VisibGeom surface row {surface_id} states no cubic-extrusion plane generator \
-             carrier: {}",
-            JoinedRefusals(refused)
-        ),
-        "creo cubic generator loss message",
-    )?;
-    ctx.reserve_vec(losses, 1, "creo cubic generator loss notes")?;
+) {
+    let message = format!(
+        "VisibGeom surface row {surface_id} states no cubic-extrusion plane generator \
+     carrier: {}",
+        JoinedRefusals(refused)
+    );
     losses.push(crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(message));
-    Ok(())
 }
 
 struct NurbsSurfaceBoundary {
@@ -65,15 +57,14 @@ struct NurbsSurfaceBoundary {
 /// `surface_id` is the `VisibGeom` surface row that stated the surface. Every
 /// refusal names that row, so N refused rows stay N named records.
 fn nurbs_surface_boundaries(
-    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<[NurbsSurfaceBoundary; 4]>, CodecError> {
+) -> Option<[NurbsSurfaceBoundary; 4]> {
     let u_count = nurbs.u_count();
     let v_count = nurbs.v_count();
     let (Some(last_u), Some(last_v)) = (u_count.checked_sub(1), v_count.checked_sub(1)) else {
-        return Ok(None);
+        return None;
     };
     let weighted = matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. });
     if weighted
@@ -81,7 +72,7 @@ fn nurbs_surface_boundaries(
             (0..v_count).any(|v| nurbs.weight(u, v).is_none_or(|weight| weight.get() <= 0.0))
         })
     {
-        return Ok(None);
+        return None;
     }
     let mut boundaries = [None, None, None, None];
     for (ordinal, (along_u, fixed_index)) in
@@ -91,24 +82,8 @@ fn nurbs_surface_boundaries(
     {
         let count = if along_u { u_count } else { v_count };
         let mut control_indices = Vec::new();
-        ctx.reserve_vec(
-            &mut control_indices,
-            count,
-            "creo NURBS boundary control indices",
-        )?;
         let mut control_points = Vec::new();
-        ctx.reserve_vec(
-            &mut control_points,
-            count,
-            "creo NURBS boundary control points",
-        )?;
-        let mut weights = if weighted {
-            let mut weights = Vec::new();
-            ctx.reserve_vec(&mut weights, count, "creo NURBS boundary weights")?;
-            Some(weights)
-        } else {
-            None
-        };
+        let mut weights = weighted.then(Vec::new);
         for position in 0..count {
             let (u, v) = if along_u {
                 (position, fixed_index)
@@ -116,14 +91,10 @@ fn nurbs_surface_boundaries(
                 (fixed_index, position)
             };
             control_indices.push(u * v_count + v);
-            let Some(point) = nurbs.pole(u, v) else {
-                return Ok(None);
-            };
+            let point = nurbs.pole(u, v)?;
             control_points.push(point);
             if let Some(weights) = &mut weights {
-                let Some(weight) = nurbs.weight(u, v) else {
-                    return Ok(None);
-                };
+                let weight = nurbs.weight(u, v)?;
                 weights.push(weight);
             }
         }
@@ -142,14 +113,9 @@ fn nurbs_surface_boundaries(
                 nurbs.u_periodic(),
             )
         };
-        let knots = source_knots.try_clone_for_decode(ctx, "creo NURBS boundary knots")?;
+        let knots = source_knots.clone();
         let poles = if let Some(weights) = weights {
             let mut paired = Vec::new();
-            ctx.reserve_vec(
-                &mut paired,
-                control_points.len(),
-                "creo NURBS boundary paired poles",
-            )?;
             paired.extend(
                 control_points
                     .into_iter()
@@ -167,15 +133,14 @@ fn nurbs_surface_boundaries(
                 points: control_points,
             }
         };
-        let curve = match NurbsCurve::new(ctx, degree, knots, poles, periodic)? {
+        let curve = match NurbsCurve::new(degree, knots, poles, periodic) {
             Ok(curve) => curve,
             Err(error) => {
-                refusal.note_checked(
-                    ctx,
+                refusal.note(
                     format_args!("creo VisibGeom surface row {surface_id} boundary curve record"),
                     &error,
                 );
-                return Ok(None);
+                return None;
             }
         };
         boundaries[ordinal] = Some(NurbsSurfaceBoundary {
@@ -185,9 +150,9 @@ fn nurbs_surface_boundaries(
         });
     }
     let [Some(first), Some(second), Some(third), Some(fourth)] = boundaries else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some([first, second, third, fourth]))
+    Some([first, second, third, fourth])
 }
 
 fn surface_poles(nurbs: &NurbsSurface) -> impl Iterator<Item = FinitePoint3> + '_ {
@@ -211,59 +176,54 @@ fn point_tolerance(mut points: impl Iterator<Item = FinitePoint3>) -> Option<f64
 }
 
 pub(in super::super) fn nurbs_plane_boundary_curve(
-    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<CurveGeometry>, CodecError> {
-    let Some(boundaries) = nurbs_surface_boundaries(ctx, nurbs, surface_id, refusal)? else {
-        return Ok(None);
+) -> Option<CurveGeometry> {
+    let boundaries = nurbs_surface_boundaries(nurbs, surface_id, refusal)?;
+    let normal = normalize(plane.normal)?;
+    let tolerance = point_tolerance(surface_poles(nurbs))?
+        .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
+    let signed_distance = |point: &Point3| {
+        dot(
+            normal,
+            [
+                point.x - plane.origin[0],
+                point.y - plane.origin[1],
+                point.z - plane.origin[2],
+            ],
+        )
     };
-    Ok((|| {
-        let normal = normalize(plane.normal)?;
-        let tolerance = point_tolerance(surface_poles(nurbs))?
-            .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
-        let signed_distance = |point: &Point3| {
-            dot(
-                normal,
-                [
-                    point.x - plane.origin[0],
-                    point.y - plane.origin[1],
-                    point.z - plane.origin[2],
-                ],
-            )
-        };
-        surface_poles(nurbs)
-            .all(|point| signed_distance(&point).is_finite())
-            .then_some(())?;
-        let v_count = nurbs.v_count();
-        (v_count > 0).then_some(())?;
-        let mut candidates = boundaries.into_iter().filter(|boundary| {
-            !boundary.transverse_periodic
-                && boundary.control_indices.iter().all(|index| {
-                    nurbs
-                        .pole(*index / v_count, *index % v_count)
-                        .is_some_and(|point| signed_distance(&point).abs() <= tolerance)
-                })
-                && {
-                    let outside = || {
-                        surface_poles(nurbs)
-                            .enumerate()
-                            .filter(|(index, _)| !boundary.control_indices.contains(index))
-                            .map(|(_, point)| signed_distance(&point))
-                    };
-                    outside().next().is_some()
-                        && (outside().all(|distance| distance > tolerance)
-                            || outside().all(|distance| distance < -tolerance))
-                }
-        });
-        let boundary = candidates.next()?;
-        candidates.next().is_none().then_some(())?;
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            boundary.curve,
-        )))
-    })())
+    surface_poles(nurbs)
+        .all(|point| signed_distance(&point).is_finite())
+        .then_some(())?;
+    let v_count = nurbs.v_count();
+    (v_count > 0).then_some(())?;
+    let mut candidates = boundaries.into_iter().filter(|boundary| {
+        !boundary.transverse_periodic
+            && boundary.control_indices.iter().all(|index| {
+                nurbs
+                    .pole(*index / v_count, *index % v_count)
+                    .is_some_and(|point| signed_distance(&point).abs() <= tolerance)
+            })
+            && {
+                let outside = || {
+                    surface_poles(nurbs)
+                        .enumerate()
+                        .filter(|(index, _)| !boundary.control_indices.contains(index))
+                        .map(|(_, point)| signed_distance(&point))
+                };
+                outside().next().is_some()
+                    && (outside().all(|distance| distance > tolerance)
+                        || outside().all(|distance| distance < -tolerance))
+            }
+    });
+    let boundary = candidates.next()?;
+    candidates.next().is_none().then_some(())?;
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        boundary.curve,
+    )))
 }
 
 fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
@@ -396,19 +356,17 @@ fn nurbs_curves_match(
 }
 
 fn control_net_on_side(
-    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     boundary: &NurbsSurfaceBoundary,
     origin: FinitePoint3,
     normal: [f64; 3],
     tolerance: f64,
     positive: bool,
-) -> Result<bool, CodecError> {
+) -> bool {
     for (index, point) in surface_poles(surface).enumerate() {
         if boundary.control_indices.contains(&index) {
             continue;
         }
-        ctx.charge_work(1, "creo generator separation distance tests")?;
         let offset = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
         let distance = dot(normal, offset);
         let on_side = if positive {
@@ -417,28 +375,27 @@ fn control_net_on_side(
             distance < -tolerance
         };
         if !on_side {
-            return Ok(false);
+            return false;
         }
     }
-    Ok(true)
+    true
 }
 
 fn generator_separates_control_nets(
-    ctx: &DecodeContext<'_>,
     first: &NurbsSurface,
     first_boundary: &NurbsSurfaceBoundary,
     second: &NurbsSurface,
     second_boundary: &NurbsSurfaceBoundary,
-) -> Result<bool, CodecError> {
+) -> bool {
     let (Some(origin), Some(end)) = (
         curve_point(&first_boundary.curve, 0),
         curve_point(&first_boundary.curve, 1),
     ) else {
-        return Ok(false);
+        return false;
     };
     let generator = [end.x - origin.x, end.y - origin.y, end.z - origin.z];
     let Some(generator) = normalize(generator) else {
-        return Ok(false);
+        return false;
     };
     let seed = if generator[0].abs() < 0.8 {
         [1.0, 0.0, 0.0]
@@ -446,7 +403,7 @@ fn generator_separates_control_nets(
         [0.0, 1.0, 0.0]
     };
     let Some(first_axis) = normalize(cross(generator, seed)) else {
-        return Ok(false);
+        return false;
     };
     let second_axis = cross(generator, first_axis);
     let first_poles = || surface_poles(first);
@@ -464,7 +421,7 @@ fn generator_separates_control_nets(
             .map(|(_, point)| point)
     };
     if first_outside().next().is_none() || second_outside().next().is_none() {
-        return Ok(false);
+        return false;
     }
     let offset = |point: &Point3| [point.x - origin.x, point.y - origin.y, point.z - origin.z];
     let mut boundary_angles = Vec::new();
@@ -476,22 +433,11 @@ fn generator_separates_control_nets(
             (angle - std::f64::consts::FRAC_PI_2).rem_euclid(std::f64::consts::TAU),
         ]
     }) {
-        ctx.reserve_vec(
-            &mut boundary_angles,
-            1,
-            "creo generator separation boundary angles",
-        )?;
         boundary_angles.push(angle);
     }
-    ctx.stable_sort_by(
-        boundary_angles.as_mut_slice(),
-        f64::total_cmp,
-        |_| 0,
-        "creo generator separates control nets boundary angles ordering",
-    )?;
+    boundary_angles.as_mut_slice().sort_by(f64::total_cmp);
     let tolerance = point_tolerance(first_poles().chain(second_poles())).unwrap_or(f64::INFINITY);
     for index in 0..boundary_angles.len() {
-        ctx.charge_work(1, "creo generator separation angle evaluations")?;
         let start = boundary_angles[index];
         let end = if index + 1 == boundary_angles.len() {
             boundary_angles[0] + std::f64::consts::TAU
@@ -504,53 +450,27 @@ fn generator_separates_control_nets(
             angle.cos() * first_axis[1] + angle.sin() * second_axis[1],
             angle.cos() * first_axis[2] + angle.sin() * second_axis[2],
         ];
-        if (control_net_on_side(ctx, first, first_boundary, origin, normal, tolerance, true)?
-            && control_net_on_side(
-                ctx,
-                second,
-                second_boundary,
-                origin,
-                normal,
-                tolerance,
-                false,
-            )?)
-            || (control_net_on_side(ctx, first, first_boundary, origin, normal, tolerance, false)?
-                && control_net_on_side(
-                    ctx,
-                    second,
-                    second_boundary,
-                    origin,
-                    normal,
-                    tolerance,
-                    true,
-                )?)
+        if (control_net_on_side(first, first_boundary, origin, normal, tolerance, true)
+            && control_net_on_side(second, second_boundary, origin, normal, tolerance, false))
+            || (control_net_on_side(first, first_boundary, origin, normal, tolerance, false)
+                && control_net_on_side(second, second_boundary, origin, normal, tolerance, true))
         {
-            return Ok(true);
+            return true;
         }
     }
-    Ok(false)
+    false
 }
 
 pub(in super::super) fn shared_extrusion_generator_curve(
-    ctx: &DecodeContext<'_>,
     first: &NurbsSurface,
     first_surface_id: u32,
     second: &NurbsSurface,
     second_surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<CurveGeometry>, CodecError> {
-    let Some(first_boundaries) = nurbs_surface_boundaries(ctx, first, first_surface_id, refusal)?
-    else {
-        return Ok(None);
-    };
-    let Some(second_boundaries) =
-        nurbs_surface_boundaries(ctx, second, second_surface_id, refusal)?
-    else {
-        return Ok(None);
-    };
-    let Some(tolerance) = point_tolerance(surface_poles(first).chain(surface_poles(second))) else {
-        return Ok(None);
-    };
+) -> Option<CurveGeometry> {
+    let first_boundaries = nurbs_surface_boundaries(first, first_surface_id, refusal)?;
+    let second_boundaries = nurbs_surface_boundaries(second, second_surface_id, refusal)?;
+    let tolerance = point_tolerance(surface_poles(first).chain(surface_poles(second)))?;
     let mut selected_index = None;
     for (index, first_boundary) in first_boundaries.iter().enumerate() {
         for second_boundary in &second_boundaries {
@@ -567,31 +487,19 @@ pub(in super::super) fn shared_extrusion_generator_curve(
                         tolerance,
                     )
                 })
-                && generator_separates_control_nets(
-                    ctx,
-                    first,
-                    first_boundary,
-                    second,
-                    second_boundary,
-                )?
+                && generator_separates_control_nets(first, first_boundary, second, second_boundary)
             {
                 if selected_index.is_some() {
-                    return Ok(None);
+                    return None;
                 }
                 selected_index = Some(index);
             }
         }
     }
-    let Some(selected_index) = selected_index else {
-        return Ok(None);
-    };
-    let Some(boundary) = first_boundaries.into_iter().nth(selected_index) else {
-        return Ok(None);
-    };
-    let curve = boundary.curve;
-    Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        curve,
-    ))))
+    let boundary = first_boundaries.into_iter().nth(selected_index?)?;
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        boundary.curve,
+    )))
 }
 
 /// The power-basis coefficients `[cubic, quadratic, linear, constant]` of the
@@ -663,13 +571,8 @@ impl CubicRoots {
         }
     }
 
-    fn sort_and_dedup(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        ctx.stable_sort_by(
-            &mut self.values[..self.len],
-            f64::total_cmp,
-            |_| 0,
-            "creo cubic extrusion roots sort",
-        )?;
+    fn sort_and_dedup(&mut self) {
+        self.values[..self.len].sort_by(f64::total_cmp);
         let mut unique = 0;
         for index in 0..self.len {
             if unique == 0
@@ -684,7 +587,6 @@ impl CubicRoots {
             }
         }
         self.len = unique;
-        Ok(())
     }
 
     pub(in super::super) fn as_slice(&self) -> &[f64] {
@@ -706,13 +608,12 @@ impl std::ops::Index<usize> for CubicRoots {
 }
 
 pub(in super::super) fn cubic_unit_interval_roots(
-    ctx: &DecodeContext<'_>,
     cubic: Coefficient,
     quadratic: Coefficient,
     linear: Coefficient,
     constant: Coefficient,
     value_tolerance: f64,
-) -> Result<CubicRoots, CodecError> {
+) -> CubicRoots {
     let [cubic_value, quadratic_value, linear_value, constant_value] =
         [cubic, quadratic, linear, constant].map(Coefficient::stated);
     let scale = cubic_value
@@ -721,7 +622,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
         .max(linear_value.abs())
         .max(constant_value.abs());
     if scale <= value_tolerance {
-        return Ok(CubicRoots::new());
+        return CubicRoots::new();
     }
     let evaluate = |parameter: f64| {
         ((cubic_value * parameter + quadratic_value) * parameter + linear_value) * parameter
@@ -733,30 +634,29 @@ pub(in super::super) fn cubic_unit_interval_roots(
     // state.
     if cubic_value == 0.0 {
         let mut roots = CubicRoots::new();
-        for root in real_roots(ctx, quadratic, linear, constant)? {
+        for root in real_roots(quadratic, linear, constant) {
             if let Some(parameter) = unit_interval_parameter(root) {
                 if evaluate(root).abs() <= value_tolerance {
                     roots.push(parameter);
                 }
             }
         }
-        roots.sort_and_dedup(ctx)?;
-        return Ok(roots);
+        roots.sort_and_dedup();
+        return roots;
     }
     let mut stations = CubicRoots::new();
     stations.push(0.0);
     stations.push(1.0);
     for root in real_roots(
-        ctx,
         Coefficient::summed(3.0 * cubic_value, 3.0 * cubic.terms()),
         Coefficient::summed(2.0 * quadratic_value, 2.0 * quadratic.terms()),
         linear,
-    )? {
+    ) {
         if root > EPS_CUBIC_PARAM && root < 1.0 - EPS_CUBIC_PARAM {
             stations.push(root);
         }
     }
-    stations.sort_and_dedup(ctx)?;
+    stations.sort_and_dedup();
     let mut roots = CubicRoots::new();
     for &station in stations.as_slice() {
         if evaluate(station).abs() <= value_tolerance {
@@ -792,8 +692,8 @@ pub(in super::super) fn cubic_unit_interval_roots(
         }
         roots.push(f64::midpoint(left, right));
     }
-    roots.sort_and_dedup(ctx)?;
-    Ok(roots)
+    roots.sort_and_dedup();
+    roots
 }
 
 /// Generator curve where a cubic extrusion surface meets a plane.
@@ -802,24 +702,18 @@ pub(in super::super) fn cubic_unit_interval_roots(
 /// surface and the plane without it, so the refusal is a loss note naming the
 /// `VisibGeom` surface row and the decode continues with `Ok(None)`.
 pub(in super::super) fn cubic_extrusion_plane_generator_curve(
-    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     plane: PlaneEquation,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<CurveGeometry>, CodecError> {
+) -> Option<CurveGeometry> {
     fn recognize(
-        ctx: &DecodeContext<'_>,
         nurbs: &NurbsSurface,
         surface_id: u32,
         plane: PlaneEquation,
         refusal: &mut crate::lane_refusal::LaneRefusals,
-    ) -> Option<Result<CurveGeometry, CodecError>> {
-        let boundaries = match nurbs_surface_boundaries(ctx, nurbs, surface_id, refusal) {
-            Ok(Some(boundaries)) => boundaries,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    ) -> Option<CurveGeometry> {
+        let boundaries = nurbs_surface_boundaries(nurbs, surface_id, refusal)?;
         (nurbs.u_degree() == 3
             && nurbs.v_degree() == 1
             && nurbs.u_count() == 4
@@ -928,17 +822,8 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         });
         let [cubic, quadratic, linear, constant] = plane_distance_coefficients(signed);
         let weight_scale = weights.iter().copied().fold(1.0, f64::max);
-        let roots = match cubic_unit_interval_roots(
-            ctx,
-            cubic,
-            quadratic,
-            linear,
-            constant,
-            tolerance * weight_scale,
-        ) {
-            Ok(roots) => roots,
-            Err(error) => return Some(Err(error)),
-        };
+        let roots =
+            cubic_unit_interval_roots(cubic, quadratic, linear, constant, tolerance * weight_scale);
         let [parameter] = roots.as_slice() else {
             return None;
         };
@@ -974,132 +859,70 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         let second = evaluated(1);
         let curve = &boundaries[0].curve;
         let mut knots = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut knots,
-            curve.knots().len(),
-            "creo cubic generator knots",
-        ) {
-            return Some(Err(error));
-        }
         knots.extend_from_slice(curve.knots());
         let mut control_points = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut control_points,
-            2,
-            "creo cubic generator control points",
-        ) {
-            return Some(Err(error));
-        }
         control_points.extend([first.0, second.0]);
         let weights = if matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. }) {
             let mut weights = Vec::new();
-            if let Err(error) = ctx.reserve_vec(&mut weights, 2, "creo cubic generator weights") {
-                return Some(Err(error));
-            }
             weights.extend([first.1, second.1]);
             Some(weights)
         } else {
             None
         };
         let curve = match NurbsCurve::from_lanes(
-            ctx,
             curve.degree(),
             knots,
             control_points,
             weights,
             curve.periodic(),
         ) {
-            Ok(result) => result,
-            Err(error) => return Some(Err(error)),
-        };
-        let curve = match curve {
             Ok(curve) => curve,
             Err(error) => {
-                refusal.note_checked(
-                    ctx,
+                refusal.note(
                     format_args!(
                         "creo VisibGeom surface row {surface_id} cubic-extrusion plane generator \
-                         curve"
+                     curve"
                     ),
                     &error,
                 );
                 return None;
             }
         };
-        Some(Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))))
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
     }
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let recognized = recognize(ctx, nurbs, surface_id, plane, &mut refusal).transpose();
-    let refused = refusal.take_records_checked()?;
+    let recognized = recognize(nurbs, surface_id, plane, &mut refusal);
+    let refused = refusal.take_records();
     if refused.is_empty() {
         return recognized;
     }
-    report_cubic_generator_loss(ctx, surface_id, &refused, losses)?;
-    Ok(None)
+    report_cubic_generator_loss(surface_id, &refused, losses);
+    None
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use cadmpeg_ir::math::Point3;
 
     const EPS_TEST_VALUE: f64 = 1.0e-11;
     const EPS_TEST_ROOT: f64 = 1.0e-12;
 
-    fn generator_loss_with_policy(
-        policy: DecodePolicy,
-    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    #[test]
+    fn cubic_generator_loss_message_joins_refused_lanes() {
         let refused = ["first lane".to_owned(), "second lane".to_owned()];
         let mut losses = Vec::new();
-        super::report_cubic_generator_loss(&ctx, 7, &refused, &mut losses)?;
-        Ok(losses)
-    }
-
-    #[test]
-    fn cubic_generator_loss_message_refuses_retained_limit() {
-        let service = generator_loss_with_policy(DecodePolicy::service())
-            .expect("service profile admits the loss note");
-        assert_eq!(service.len(), 1);
+        super::report_cubic_generator_loss(7, &refused, &mut losses);
+        assert_eq!(losses.len(), 1);
         assert_eq!(
-            service[0].message,
+            losses[0].message,
             "VisibGeom surface row 7 states no cubic-extrusion plane generator carrier: first lane; second lane"
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(service[0].message.len()) - 1;
-        let error = generator_loss_with_policy(policy).expect_err("message exceeds retained cap");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "creo cubic generator loss message")
-        );
     }
 
     #[test]
-    fn cubic_generator_loss_note_refuses_collection_limit() {
-        assert_eq!(
-            generator_loss_with_policy(DecodePolicy::service())
-                .expect("service note")
-                .len(),
-            1
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let error = generator_loss_with_policy(policy).expect_err("one loss exceeds item cap");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo cubic generator loss notes")
-        );
-    }
-
-    fn boundary_count_with_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
+    fn rational_nurbs_surface_states_four_boundaries() {
         let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1111,189 +934,18 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid rational boundary surface");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits the collection policy");
-        super::nurbs_surface_boundaries(
-            &ctx,
+        let count = super::nurbs_surface_boundaries(
             &surface,
             7,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .map(|boundaries| boundaries.map_or(0, |boundaries| boundaries.len()))
-    }
-
-    fn cubic_generator_with_collection_limit(
-        limit: u64,
-    ) -> Result<Option<cadmpeg_ir::geometry::CurveGeometry>, cadmpeg_core::CodecError> {
-        let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                [-1.0, -0.5, 0.5, 1.0]
-                    .into_iter()
-                    .map(|x| vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
-                    .collect(),
-                Some(vec![
-                    vec![1.0, 1.0],
-                    vec![2.0, 2.0],
-                    vec![3.0, 3.0],
-                    vec![4.0, 4.0],
-                ]),
-            ),
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid cubic generator surface");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits the collection policy");
-        super::cubic_extrusion_plane_generator_curve(
-            &ctx,
-            &surface,
-            7,
-            super::PlaneEquation {
-                origin: [0.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            &mut Vec::new(),
-        )
-    }
-
-    #[test]
-    fn cubic_generator_knots_refuse_before_vec_copy() {
-        assert!(matches!(cubic_generator_with_collection_limit(75),
-            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo cubic generator knots"));
-        assert!(cubic_generator_with_collection_limit(84)
-            .expect("collection limit admits the cubic generator")
-            .is_some());
-    }
-
-    #[test]
-    fn cubic_generator_control_points_refuse_before_vec_growth() {
-        assert!(matches!(cubic_generator_with_collection_limit(77),
-            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo cubic generator control points"));
-    }
-
-    #[test]
-    fn cubic_generator_weights_refuse_before_vec_growth() {
-        assert!(matches!(cubic_generator_with_collection_limit(79),
-            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo cubic generator weights"));
-    }
-
-    #[test]
-    fn cubic_generator_constructor_refuses_pairing_and_typed_poles() {
-        for (cap, operation) in [
-            (81, "IR NURBS paired poles"),
-            (83, "IR NURBS admitted poles"),
-        ] {
-            assert!(matches!(cubic_generator_with_collection_limit(cap),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal.operation == operation));
-        }
-    }
-
-    macro_rules! boundary_collection_limit_test {
-        ($name:ident, $operation:literal) => {
-            #[test]
-            fn $name() {
-                let limit = (0..128)
-                    .find(|limit| matches!(boundary_count_with_limit(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                        if refusal.dimension == ResourceDimension::CollectionItems
-                            && refusal.operation == $operation))
-                    .expect("the rational boundary reaches the named collection allocation");
-                assert!(matches!(boundary_count_with_limit(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                    if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == $operation));
-                assert_eq!(boundary_count_with_limit(u64::MAX).expect("service budget admits all four boundaries"), 4);
-            }
-        };
-    }
-
-    boundary_collection_limit_test!(
-        nurbs_boundary_control_indices_refuse_before_vec_growth,
-        "creo NURBS boundary control indices"
-    );
-    boundary_collection_limit_test!(
-        nurbs_boundary_control_points_refuse_before_vec_growth,
-        "creo NURBS boundary control points"
-    );
-    boundary_collection_limit_test!(
-        nurbs_boundary_weights_refuse_before_vec_growth,
-        "creo NURBS boundary weights"
-    );
-    boundary_collection_limit_test!(
-        nurbs_boundary_knots_refuse_before_fallible_clone,
-        "creo NURBS boundary knots"
-    );
-
-    #[test]
-    fn nurbs_boundary_rational_pairing_refuses_collection_limit() {
-        // Two indices, two points, two weights and four knots precede pairing.
-        assert!(matches!(boundary_count_with_limit(11),
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.operation == "creo NURBS boundary paired poles"));
-        assert_eq!(
-            boundary_count_with_limit(48).expect("four admitted rational boundaries"),
-            4
-        );
-    }
-
-    #[test]
-    fn nurbs_plane_boundary_preserves_control_index_refusal() {
-        let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                vec![
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-                ],
-                None,
-            ),
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid plane boundary surface");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits the collection policy");
-        let error = super::nurbs_plane_boundary_curve(
-            &ctx,
-            &surface,
-            7,
-            super::PlaneEquation {
-                origin: [0.0; 3],
-                normal: [1.0, 0.0, 0.0],
-            },
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .expect_err("boundary allocation refusal must remain a resource error");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo NURBS boundary control indices")
-        );
+        .map_or(0, |boundaries| boundaries.len());
+        assert_eq!(count, 4);
     }
 
     fn shared_generator_surfaces() -> (NurbsSurface, NurbsSurface) {
         let first = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1305,10 +957,8 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid first extrusion surface");
         let second = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
             NurbsSurfaceLanes::new(
@@ -1320,106 +970,21 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid second extrusion surface");
         (first, second)
     }
 
-    fn shared_generator_with_limits(
-        collection_limit: u64,
-        work_limit: u64,
-    ) -> Result<Option<cadmpeg_ir::geometry::CurveGeometry>, cadmpeg_core::CodecError> {
+    #[test]
+    fn shared_extrusion_generator_curve_joins_adjacent_surfaces() {
         let (first, second) = shared_generator_surfaces();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_limit;
-        policy.limits.max_work_units = work_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits the collection policy");
-        super::shared_extrusion_generator_curve(
-            &ctx,
+        assert!(super::shared_extrusion_generator_curve(
             &first,
             7,
             &second,
             9,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-    }
-
-    #[test]
-    fn generator_separation_angles_refuse_before_vec_growth() {
-        let run = |limit| shared_generator_with_limits(limit, u64::MAX);
-        let limit = (0..512)
-            .find(|limit| {
-                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo generator separation boundary angles")
-            })
-            .expect("the shared generator reaches the angle collection");
-        assert!(
-            matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo generator separation boundary angles")
-        );
-        assert!(run(u64::MAX)
-            .expect("service budget admits the shared generator")
-            .is_some());
-    }
-
-    #[test]
-    fn generator_separation_angle_work_refuses_before_evaluation() {
-        let run = |limit| shared_generator_with_limits(u64::MAX, limit);
-        let (first, second) = shared_generator_surfaces();
-        let error = crate::test_support::last_refusal_at(
-            &[],
-            ResourceDimension::WorkUnits,
-            "creo generator separation angle evaluations",
-            |ctx| {
-                super::shared_extrusion_generator_curve(
-                    ctx,
-                    &first,
-                    7,
-                    &second,
-                    9,
-                    &mut crate::lane_refusal::LaneRefusals::new(),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "creo generator separation angle evaluations")
-        );
-        assert!(run(u64::MAX)
-            .expect("service work budget admits the shared generator")
-            .is_some());
-    }
-
-    #[test]
-    fn generator_separation_distance_work_refuses_before_evaluation() {
-        let run = |limit| shared_generator_with_limits(u64::MAX, limit);
-        let (first, second) = shared_generator_surfaces();
-        let error = crate::test_support::last_refusal_at(
-            &[],
-            ResourceDimension::WorkUnits,
-            "creo generator separation distance tests",
-            |ctx| {
-                super::shared_extrusion_generator_curve(
-                    ctx,
-                    &first,
-                    7,
-                    &second,
-                    9,
-                    &mut crate::lane_refusal::LaneRefusals::new(),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "creo generator separation distance tests")
-        );
-        assert!(run(u64::MAX)
-            .expect("service work budget admits the shared generator")
-            .is_some());
+        .is_some());
     }
 
     #[test]
@@ -1434,17 +999,9 @@ mod tests {
             [linear.stated(), constant.stated()],
             [20.700_000_000_000_003, -8.9]
         );
-        let roots = crate::decode::with_test_decode_ctx(|ctx| {
-            super::cubic_unit_interval_roots(
-                ctx,
-                cubic,
-                quadratic,
-                linear,
-                constant,
-                EPS_TEST_VALUE,
-            )
-        })
-        .expect("roots are admitted");
+        let roots = {
+            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE)
+        };
         assert_eq!(roots.as_slice(), [-constant.stated() / linear.stated()]);
 
         // Plane distances that are exactly quadratic in the polygon index. The
@@ -1457,17 +1014,9 @@ mod tests {
             [quadratic.stated(), linear.stated(), constant.stated()],
             [0.300_000_000_000_000_04, 0.0, -0.1]
         );
-        let roots = crate::decode::with_test_decode_ctx(|ctx| {
-            super::cubic_unit_interval_roots(
-                ctx,
-                cubic,
-                quadratic,
-                linear,
-                constant,
-                EPS_TEST_VALUE,
-            )
-        })
-        .expect("roots are admitted");
+        let roots = {
+            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE)
+        };
         assert_eq!(roots.len(), 1);
         assert!((roots[0] - (1.0f64 / 3.0).sqrt()).abs() <= EPS_TEST_ROOT);
     }

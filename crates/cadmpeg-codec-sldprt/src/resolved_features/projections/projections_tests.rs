@@ -4,7 +4,7 @@ use super::{
     full_round_fillet_selection_triple, project_compact_surface_selections,
     project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
     unique_cylindrical_face, unique_planar_face, unique_topological_cylindrical_face,
-    variable_fillet_radius_groups,
+    variable_fillet_radius_groups, VariableFilletObjects,
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -26,7 +26,7 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeMap;
 
-mod limits;
+mod compact_selections;
 mod patterns;
 
 fn with_projection_context<R>(
@@ -40,40 +40,6 @@ fn with_projection_context<R>(
     )
     .expect("variable fillet test context");
     test(&ctx)
-}
-
-#[test]
-fn draft_feature_identity_index_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut feature = cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: UnresolvedFamily::Draft,
-            }),
-        ),
-        native_ref: Some("draft".into()),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = super::project_draft_operands(&ctx, std::slice::from_mut(&mut feature), &[], &[])
-        .expect_err("draft feature identity exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "index SLDPRT draft feature identities")
-    );
 }
 
 #[test]
@@ -102,53 +68,40 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         tolerance: None,
     };
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
-            ctx,
+        unique_cylindrical_face(
             4.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
-        .expect("cylindrical face search"),
+        ),
         Some(face.id.clone())
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
-            ctx,
+        unique_cylindrical_face(
             3.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
-        .expect("cylindrical face search"),
+        ),
         None
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_topological_cylindrical_face(
-            ctx,
+        unique_topological_cylindrical_face(
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
-        .expect("topological cylinder search"),
+        ),
         Some(face.id.clone())
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
-            ctx,
+        unique_cylindrical_face(
             4.0,
             &[face.clone(), duplicate.clone()],
-            std::slice::from_ref(&surface),
-        ))
-        .expect("cylindrical face search"),
+            std::slice::from_ref(&surface)
+        ),
         None
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_topological_cylindrical_face(
-            ctx,
-            &[face, duplicate],
-            &[surface]
-        ))
-        .expect("topological cylinder search"),
+        unique_topological_cylindrical_face(&[face, duplicate], &[surface]),
         None
     );
 }
@@ -179,38 +132,32 @@ fn frame_only_plane_support_requires_one_coincident_face() {
     };
 
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
-            ctx,
+        unique_planar_face(
             Point3::new(4.0, -2.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        ))
-        .expect("planar face search"),
+            std::slice::from_ref(&surface)
+        ),
         Some(face.id.clone())
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
-            ctx,
+        unique_planar_face(
             Point3::new(0.0, 0.0, 6.0),
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        ))
-        .expect("planar face search"),
+            std::slice::from_ref(&surface)
+        ),
         None
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
-            ctx,
+        unique_planar_face(
             Point3::new(0.0, 0.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             &[face, duplicate],
-            &[surface],
-        ))
-        .expect("planar face search"),
+            &[surface]
+        ),
         None
     );
 }
@@ -249,7 +196,6 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -266,15 +212,11 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         native_ref: None,
     }];
 
-    with_projection_context(|ctx| {
-        project_unbound_offset_plane_faces(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        )
-    })
-    .expect("offset plane projection");
+    project_unbound_offset_plane_faces(
+        &mut features,
+        std::slice::from_ref(&face),
+        std::slice::from_ref(&surface),
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -326,7 +268,6 @@ fn generic_native_offset_plane_support_stays_native() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Face {
@@ -338,15 +279,11 @@ fn generic_native_offset_plane_support_stays_native() {
         native_ref: None,
     }];
 
-    with_projection_context(|ctx| {
-        project_unbound_offset_plane_faces(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        )
-    })
-    .expect("offset plane projection");
+    project_unbound_offset_plane_faces(
+        &mut features,
+        std::slice::from_ref(&face),
+        std::slice::from_ref(&surface),
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -398,7 +335,6 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -490,7 +426,12 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
@@ -591,7 +532,6 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -660,17 +600,14 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&history),
-            &[
-                lane("one", selection("one", first_tail)),
-                lane("two", selection("two", second_tail)),
-            ],
-        )
-    })
+    project_compact_surface_selections(
+        &mut features,
+        std::slice::from_ref(&history),
+        &[
+            lane("one", selection("one", first_tail)),
+            lane("two", selection("two", second_tail)),
+        ],
+    )
     .unwrap();
 
     assert!(matches!(
@@ -678,7 +615,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Generated { faces, native },
             ..
-        }) if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
+        }) if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
     ));
 }
 
@@ -696,7 +633,6 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Unresolved,
@@ -737,10 +673,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. }) =
         features[0].evaluation.definition()
@@ -762,7 +695,6 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -831,10 +763,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     for selection in &mut lane_two.surface_selections {
         selection.parent = lane_two.id.clone();
     }
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane_two])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane, lane_two]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) =
         features[1].evaluation.definition()
@@ -847,7 +776,12 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     assert!(matches!(
         group.center_faces(),
         FaceSelection::Generated { faces, .. }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "2".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "2".into(),
+                )
+                .unwrap()]
     ));
     assert!(matches!(
         group.side_one_faces(),
@@ -881,7 +815,6 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -965,10 +898,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         selection.parent = lane2.id.clone();
     }
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane2])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane, lane2]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
         targets,
@@ -981,12 +911,12 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     assert!(matches!(
         targets,
         BodySelection::Generated { bodies, native }
-            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef::new(FeatureId::mint("synthetic:test:id#target").expect("identity grammar"), "0,3,2".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
+            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef::new(FeatureId::mint("synthetic:test:id#target").expect("identity grammar"), "0,3,2".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
     ));
     assert!(matches!(
         tools,
         FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#tool").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#tool").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
     ));
     assert!(reverse.is_none());
     assert_eq!(
@@ -1010,7 +940,6 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1080,10 +1009,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
 
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -1140,7 +1066,6 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1204,17 +1129,14 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&history),
-            &[
-                lane("one", selection("one", first_signature.into())),
-                lane("two", selection("two", second_signature.into())),
-            ],
-        )
-    })
+    project_compact_surface_selections(
+        &mut features,
+        std::slice::from_ref(&history),
+        &[
+            lane("one", selection("one", first_signature.into())),
+            lane("two", selection("two", second_signature.into())),
+        ],
+    )
     .unwrap();
 
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1226,7 +1148,12 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:surface-component-ids:7"
     ));
 
@@ -1242,17 +1169,14 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     });
     let mut conflicting = selection("conflicting", first_signature.into());
     conflicting.components[0].local_id = Some(8);
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&history),
-            &[
-                lane("one", selection("one", first_signature.into())),
-                lane("conflicting", conflicting),
-            ],
-        )
-    })
+    project_compact_surface_selections(
+        &mut features,
+        std::slice::from_ref(&history),
+        &[
+            lane("one", selection("one", first_signature.into())),
+            lane("conflicting", conflicting),
+        ],
+    )
     .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
@@ -1306,7 +1230,6 @@ fn split_face_collects_distinct_generated_target_faces() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1386,10 +1309,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[history], &[lane])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[history], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
         features[2].evaluation.definition()
@@ -1400,8 +1320,8 @@ fn split_face_collects_distinct_generated_target_faces() {
         targets,
         FaceSelection::Generated { faces, native }
             if faces.as_slice() == [
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar"), "9".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"), "7".into()).unwrap(),
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar"), "9".into()).unwrap(),
             ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
     ));
     assert_eq!(
@@ -1547,16 +1467,14 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
-        variable_fillet_radius_groups(
-            ctx,
-            "variable",
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        &mut VariableFilletObjects::new(
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-            &[&selection],
-        )
-    })
-    .expect("fillet resource limits")
+        ),
+        &[&selection],
+    )
     .expect("vertex join");
     assert!(matches!(
         groups.as_slice(),
@@ -1564,7 +1482,10 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
-            ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
+            ] if first_parameter.get() == 0.0
+            && second_parameter.get() == 1.0
+            && actual_radius.get() == 2.0
+            && actual_radius_2.get() == 3.0) && selections.len() == 1
     ));
     lane.edge_selections.push(selection);
     let mut projected = [cadmpeg_ir::features::Feature {
@@ -1590,15 +1511,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         ),
         native_ref: Some("variable".into()),
     }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("fillet fixture context");
     super::project_compact_edge_selections(
-        &ctx,
         &mut projected,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -1747,10 +1660,11 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
-        variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection])
-    })
-    .expect("fillet resource limits")
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        &mut VariableFilletObjects::new(&[history], &[lane]),
+        &[&selection],
+    )
     .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
@@ -1758,7 +1672,10 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
-            ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
+            ] if first_parameter.get() == 0.0
+            && second_parameter.get() == 1.0
+            && actual_radius.get() == 2.0
+            && actual_radius_2.get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1815,16 +1732,11 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
-        variable_fillet_radius_groups(
-            ctx,
-            "variable",
-            std::slice::from_ref(&history),
-            &[],
-            &[&selection],
-        )
-    })
-    .expect("fillet resource limits")
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
+        &[&selection],
+    )
     .expect("endpoint-less two-control roster");
     assert!(matches!(
         groups.as_slice(),
@@ -1832,84 +1744,136 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
-            ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 50.0 && actual_radius_2.get() == 4.0) && selections.len() == 1
+            ] if first_parameter.get() == 0.0
+            && second_parameter.get() == 1.0
+            && actual_radius.get() == 50.0
+            && actual_radius_2.get() == 4.0) && selections.len() == 1
     ));
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
-    assert!(with_projection_context(|ctx| variable_fillet_radius_groups(
-        ctx,
+    assert!(variable_fillet_radius_groups(
         "variable",
-        &[history],
-        &[],
+        &mut VariableFilletObjects::new(&[history], &[]),
         &[&collision]
-    ))
-    .expect("fillet resource limits")
+    )
     .is_none());
 }
 
 #[test]
 fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
-    with_projection_context(|ctx| {
-        let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
-            id: format!("{parent}-{offset}"),
-            parent: parent.into(),
-            ordinal: 0,
-            offset,
-            selector: 0,
-            kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
-            object_name_ref: "name".into(),
-            feature_ref: "fillet-native".into(),
-            producer_feature_refs: vec!["producer-native".into()],
-            terminal_feature_ref: Some("producer-native".into()),
-            components: vec![FeatureInputComponentPathEntry {
-                instance: Some(0x8020),
-                type_signature: [0; 12].into(),
-                local_id: Some(local_id),
-            }],
+    let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
+        id: format!("{parent}-{offset}"),
+        parent: parent.into(),
+        ordinal: 0,
+        offset,
+        selector: 0,
+        kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
+        object_name_ref: "name".into(),
+        feature_ref: "fillet-native".into(),
+        producer_feature_refs: vec!["producer-native".into()],
+        terminal_feature_ref: Some("producer-native".into()),
+        components: vec![FeatureInputComponentPathEntry {
+            instance: Some(0x8020),
+            type_signature: [0; 12].into(),
+            local_id: Some(local_id),
+        }],
+    };
+
+    let lane = [
+        selection("lane-one", 40, 3),
+        selection("lane-one", 20, 2),
+        selection("lane-one", 60, 1),
+    ];
+    let borrowed = lane.iter().collect::<Vec<_>>();
+    let [center, side_one, side_two] =
+        full_round_fillet_selection_triple(&borrowed).expect("one lane of three is a triple");
+    assert_eq!(
+        [center.offset, side_one.offset, side_two.offset],
+        [20, 40, 60]
+    );
+
+    let short = lane[..2].iter().collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&short).is_none());
+
+    let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
+    let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&with_short_lane).is_none());
+
+    let other_lane = [
+        selection("lane-two", 20, 9),
+        selection("lane-two", 40, 8),
+        selection("lane-two", 60, 7),
+    ];
+    let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&disagreeing).is_none());
+
+    let fourth = [selection("lane-one", 80, 4)];
+    let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&over_long).is_none());
+}
+
+#[test]
+fn resumed_reference_name_search_matches_the_linear_search() {
+    use super::{reference_name, ReferenceNames};
+    use std::collections::HashSet;
+
+    fn linear(
+        taken: &HashSet<(FeatureId, String)>,
+        owner: &FeatureId,
+        source_name: &str,
+        offset: u64,
+    ) -> String {
+        let mut candidate = reference_name(source_name, None, None);
+        if taken.contains(&(owner.clone(), candidate.clone())) {
+            candidate = reference_name(source_name, Some(offset), None);
+            let mut suffix = 0;
+            while taken.contains(&(owner.clone(), candidate.clone())) {
+                suffix += 1;
+                candidate = reference_name(source_name, Some(offset), Some(suffix));
+            }
+        }
+        candidate
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let owners = [
+        FeatureId::mint("synthetic:test:id#owner-a").unwrap(),
+        FeatureId::mint("synthetic:test:id#owner-b").unwrap(),
+    ];
+    let mut names = ReferenceNames::default();
+    let mut taken = HashSet::new();
+    let mut suffixed = 0;
+    for _ in 0..400 {
+        let owner = &owners[usize::from(next(2) == 1)];
+        let source_name = if next(2) == 0 { "D1" } else { "D2" };
+        let offset = 10 * (1 + next(2));
+        let name = if next(5) == 0 {
+            reference_name(
+                source_name,
+                Some(offset),
+                Some(1 + u32::try_from(next(6)).unwrap()),
+            )
+        } else {
+            let expected = linear(&taken, owner, source_name, offset);
+            assert_eq!(names.free(owner, source_name, offset).unwrap(), expected);
+            suffixed += usize::from(expected.matches(':').count() == 2);
+            if next(4) == 0 {
+                continue;
+            }
+            expected
         };
-
-        let lane = [
-            selection("lane-one", 40, 3),
-            selection("lane-one", 20, 2),
-            selection("lane-one", 60, 1),
-        ];
-        let borrowed = lane.iter().collect::<Vec<_>>();
-        let [center, side_one, side_two] = full_round_fillet_selection_triple(ctx, &borrowed)
-            .expect("grouping")
-            .expect("one lane of three is a triple");
-        assert_eq!(
-            [center.offset, side_one.offset, side_two.offset],
-            [20, 40, 60]
-        );
-
-        let short = lane[..2].iter().collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &short)
-            .expect("grouping")
-            .is_none());
-
-        let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
-        let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &with_short_lane)
-            .expect("grouping")
-            .is_none());
-
-        let other_lane = [
-            selection("lane-two", 20, 9),
-            selection("lane-two", 40, 8),
-            selection("lane-two", 60, 7),
-        ];
-        let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &disagreeing)
-            .expect("grouping")
-            .is_none());
-
-        let fourth = [selection("lane-one", 80, 4)];
-        let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &over_long)
-            .expect("grouping")
-            .is_none());
-    });
+        names.insert(owner, name.clone());
+        taken.insert((owner.clone(), name));
+    }
+    assert!(suffixed > 0);
 }
 
 mod unresolved_fillet_groups;
+mod variable_fillet_objects;

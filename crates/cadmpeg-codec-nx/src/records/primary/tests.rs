@@ -56,7 +56,7 @@ fn group(first: bool, identity: u16, selector: u8) -> Vec<u8> {
 
 #[test]
 fn primary_group_projection_ends_at_its_last_pointer_without_status_bytes() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for version in [11004, 13006] {
             for embedded in [false, true] {
                 let mut bytes = header(version, embedded);
@@ -70,8 +70,8 @@ fn primary_group_projection_ends_at_its_last_pointer_without_status_bytes() {
                     ends.push(bytes.len());
                 }
                 bytes.extend(END);
-                let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
-                let groups = parsed.groups(ctx).unwrap();
+                let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
+                let groups = parsed.groups();
                 assert_eq!(groups.len(), 10);
                 for (index, group) in groups.iter().enumerate() {
                     assert_eq!(group.node_id, u32::MAX);
@@ -81,10 +81,10 @@ fn primary_group_projection_ends_at_its_last_pointer_without_status_bytes() {
                     assert_eq!(group.xmt, u32::try_from(index + 3).unwrap());
                 }
                 assert!(matches!(parsed.end, PrimaryEnd::Terminated { .. }));
-                let truncated = PrimaryRecords::read(ctx, &bytes[..ends[9] - 1])
+                let truncated = PrimaryRecords::read(&bytes[..ends[9] - 1])
                     .unwrap()
                     .unwrap();
-                assert_eq!(truncated.groups(ctx).unwrap().len(), 9);
+                assert_eq!(truncated.groups().len(), 9);
                 assert!(matches!(
                     truncated.end,
                     PrimaryEnd::Stopped {
@@ -99,7 +99,7 @@ fn primary_group_projection_ends_at_its_last_pointer_without_status_bytes() {
 
 #[test]
 fn primary_versions_keep_full_node_ids_and_terminator_suffix() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for version in [11004, 13006] {
             for embedded in [false, true] {
                 let mut bytes = header(version, embedded);
@@ -108,7 +108,7 @@ fn primary_versions_keep_full_node_ids_and_terminator_suffix() {
                 let end = bytes.len();
                 bytes.extend(END);
                 bytes.extend_from_slice(&[0, 16, 0, 11]);
-                let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+                let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
                 assert_eq!(parsed.records.len(), 1);
                 let record = &parsed.records[0];
                 assert_eq!(record.definition.kind, 16);
@@ -130,7 +130,7 @@ fn primary_versions_keep_full_node_ids_and_terminator_suffix() {
 
 #[test]
 fn primary_first_use_and_variable_fields_own_payload_tags() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, true);
         bytes.extend(edge(true, 11));
         let array_start = bytes.len();
@@ -146,7 +146,7 @@ fn primary_first_use_and_variable_fields_own_payload_tags() {
         bytes.extend(edge(false, 12));
         let end = bytes.len();
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(
             parsed
                 .records
@@ -159,9 +159,7 @@ fn primary_first_use_and_variable_fields_own_payload_tags() {
         assert_eq!(parsed.records[2].identity_at, array_end + 2);
         assert_eq!(parsed.records[2].range.end, end);
         for truncated in array_start + 1..array_end {
-            let partial = PrimaryRecords::read(ctx, &bytes[..truncated])
-                .unwrap()
-                .unwrap();
+            let partial = PrimaryRecords::read(&bytes[..truncated]).unwrap().unwrap();
             assert_eq!(partial.records.len(), 1);
             assert!(
                 matches!(partial.end, PrimaryEnd::Stopped { offset, .. } if offset == array_start)
@@ -172,7 +170,7 @@ fn primary_first_use_and_variable_fields_own_payload_tags() {
 
 #[test]
 fn primary_schema_edit_does_not_copy_omitted_tail() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, true);
         let start = bytes.len();
         bytes.extend_from_slice(&[0, 16, 1, b'C', b'Z', 0, 11]);
@@ -181,7 +179,7 @@ fn primary_schema_edit_does_not_copy_omitted_tail() {
         bytes.extend_from_slice(&[0, 16, 0, 12]);
         bytes.extend_from_slice(&7u32.to_be_bytes());
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 2);
         assert_eq!(parsed.records[0].range, start..first_end);
         assert_eq!(parsed.records[0].fields.len(), 1);
@@ -192,7 +190,7 @@ fn primary_schema_edit_does_not_copy_omitted_tail() {
 
 #[test]
 fn primary_new_nontransmitted_variable_field_still_has_a_count() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, true);
         bytes.extend_from_slice(&[0, 250, 1, 3]);
         bytes.extend_from_slice(b"NEW");
@@ -205,7 +203,7 @@ fn primary_new_nontransmitted_variable_field_still_has_a_count() {
         bytes.extend_from_slice(&[0, 11]);
         let end = bytes.len();
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 1);
         assert_eq!(parsed.records[0].variable_length, Some(123));
         assert_eq!(parsed.records[0].fields.len(), 1);
@@ -216,12 +214,12 @@ fn primary_new_nontransmitted_variable_field_still_has_a_count() {
 
 #[test]
 fn primary_duplicate_identity_keeps_both_physical_records() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, true);
         bytes.extend(edge(true, 11));
         bytes.extend(edge(false, 11));
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 2);
         assert_eq!(parsed.records[0].xmt, parsed.records[1].xmt);
         assert_eq!(parsed.records[0].range.end, parsed.records[1].range.start);
@@ -230,10 +228,10 @@ fn primary_duplicate_identity_keeps_both_physical_records() {
 
 #[test]
 fn primary_missing_terminator_keeps_prefix_and_deltas_is_not_primary() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, true);
         bytes.extend(edge(true, 11));
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 1);
         assert_eq!(
             parsed.end,
@@ -248,13 +246,13 @@ fn primary_missing_terminator_keeps_prefix_and_deltas_is_not_primary() {
             .position(|w| w == b"(partition)")
             .unwrap();
         deltas[at..at + 11].copy_from_slice(b"(deltas)   ");
-        assert!(PrimaryRecords::read(ctx, &deltas).unwrap().is_none());
+        assert!(PrimaryRecords::read(&deltas).unwrap().is_none());
     });
 }
 
 #[test]
 fn primary_extended_identity_is_not_a_first_use_escape() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let compact = edge(false, 11);
         let mut bytes = header(13006, false);
         bytes.extend_from_slice(&compact[..2]);
@@ -262,7 +260,7 @@ fn primary_extended_identity_is_not_a_first_use_escape() {
         bytes.extend_from_slice(&compact[4..]);
         let end = bytes.len();
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 1);
         assert_eq!(u32::from(parsed.records[0].xmt), 32_769);
         assert_eq!(parsed.records[0].range.end, end);
@@ -272,7 +270,7 @@ fn primary_extended_identity_is_not_a_first_use_escape() {
 
 #[test]
 fn primary_hvec_uses_three_double_values_per_element() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, true);
         bytes.extend_from_slice(&[0, 41, 255]);
         bytes.extend_from_slice(&2u32.to_be_bytes());
@@ -282,7 +280,7 @@ fn primary_hvec_uses_three_double_values_per_element() {
         }
         let end = bytes.len();
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 1);
         assert_eq!(parsed.records[0].range.end, end);
         assert_eq!(parsed.records[0].fields[1].len(), 48);
@@ -292,7 +290,7 @@ fn primary_hvec_uses_three_double_values_per_element() {
 
 #[test]
 fn primary_unknown_scalar_stops_without_resynchronizing() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for scalar in *b"qt" {
             let mut bytes = header(13006, true);
             bytes.extend(edge(true, 11));
@@ -306,7 +304,7 @@ fn primary_unknown_scalar_stops_without_resynchronizing() {
             bytes.extend_from_slice(&[0, 0, 0, 1, 1, scalar, 0, 12]);
             bytes.extend(edge(false, 13));
             bytes.extend(END);
-            let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+            let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
             assert_eq!(parsed.records.len(), 1);
             assert_eq!(
                 parsed.end,
@@ -321,7 +319,7 @@ fn primary_unknown_scalar_stops_without_resynchronizing() {
 
 #[test]
 fn primary_empty_unknown_scalar_array_needs_no_scalar_width() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for scalar in *b"qt" {
             let mut bytes = header(13006, true);
             let start = bytes.len();
@@ -337,11 +335,11 @@ fn primary_empty_unknown_scalar_array_needs_no_scalar_width() {
             let end = bytes.len();
             bytes.extend(group(true, 13, 4));
             bytes.extend(END);
-            let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+            let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
             assert_eq!(parsed.records.len(), 2);
             assert_eq!(parsed.records[0].range, start..end);
             assert_eq!(parsed.records[0].fields[0], end..end);
-            assert_eq!(parsed.groups(ctx).unwrap().len(), 1);
+            assert_eq!(parsed.groups().len(), 1);
             assert!(matches!(parsed.end, PrimaryEnd::Terminated { .. }));
         }
     });
@@ -349,7 +347,7 @@ fn primary_empty_unknown_scalar_array_needs_no_scalar_width() {
 
 #[test]
 fn primary_partition_description_needs_no_suffix() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let description = b": TRANSMIT FILE (partition)";
         let original = header(13006, true);
         let old_length =
@@ -360,16 +358,16 @@ fn primary_partition_description_needs_no_suffix() {
         bytes.extend_from_slice(&original[6 + old_length..]);
         bytes.extend(group(true, 11, 4));
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 1);
-        assert_eq!(parsed.groups(ctx).unwrap().len(), 1);
+        assert_eq!(parsed.groups().len(), 1);
         assert!(matches!(parsed.end, PrimaryEnd::Terminated { .. }));
     });
 }
 
 #[test]
 fn primary_empty_tag_values_preserves_following_group() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         for version in [11004, 13006] {
             for embedded in [false, true] {
                 let mut bytes = header(version, embedded);
@@ -381,10 +379,10 @@ fn primary_empty_tag_values_preserves_following_group() {
                 bytes.extend_from_slice(&[0, 2]);
                 bytes.extend(group(embedded, 3, 4));
                 bytes.extend(END);
-                let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+                let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
                 assert_eq!(parsed.records.len(), 2);
                 assert!(parsed.records[0].fields[0].is_empty());
-                assert_eq!(parsed.groups(ctx).unwrap().len(), 1);
+                assert_eq!(parsed.groups().len(), 1);
                 assert!(matches!(parsed.end, PrimaryEnd::Terminated { .. }));
             }
         }
@@ -393,20 +391,18 @@ fn primary_empty_tag_values_preserves_following_group() {
 
 #[test]
 fn primary_zero_field_edit_owns_empty_instances() {
-    with_decode_context(|ctx| {
+    with_decode_context(|_ctx| {
         let mut bytes = header(13006, true);
         let start = bytes.len();
         bytes.extend_from_slice(&[0, 16, 0, b'Z', 0, 11, 0, 16, 0, 12]);
         let end = bytes.len();
         bytes.extend(END);
-        let parsed = PrimaryRecords::read(ctx, &bytes).unwrap().unwrap();
+        let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
         assert_eq!(parsed.records.len(), 2);
         assert_eq!(parsed.records[0].range, start..start + 6);
         assert_eq!(parsed.records[1].range, start + 6..end);
         assert!(parsed.records.iter().all(|record| record.fields.is_empty()));
         assert!(matches!(parsed.end, PrimaryEnd::Terminated { .. }));
-        assert!(crate::records::read(ctx, &bytes[start..], 0)
-            .unwrap()
-            .is_none());
+        assert!(crate::records::read(&bytes[start..], 0).unwrap().is_none());
     });
 }

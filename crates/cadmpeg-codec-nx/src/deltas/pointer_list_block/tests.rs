@@ -45,15 +45,14 @@ fn nonnull_block_chain_and_incomplete_storage() {
     let mut bytes = first.clone();
     bytes.extend(second.clone());
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &bytes))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&bytes))
             .unwrap();
     assert_eq!(census.records.len(), 2);
     assert_eq!(census.records[0].family.references(), [21, 30]);
     assert_eq!(census.records[1].family.references(), [1, 31]);
     for end in 0..first.len() {
         assert!(
-            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-                ctx,
+            crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(
                 &first[..end]
             ))
             .unwrap()
@@ -73,12 +72,10 @@ fn block_identity_must_be_nonnull_before_materialization() {
         bytes.extend(0u32.to_be_bytes());
         bytes.extend([0, 1, 1, 0, 1, 1]);
         assert!(
-            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-                ctx, &bytes
-            ))
-            .unwrap()
-            .records
-            .is_empty()
+            crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&bytes))
+                .unwrap()
+                .records
+                .is_empty()
         );
     }
 }

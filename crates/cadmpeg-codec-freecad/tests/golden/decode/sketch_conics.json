@@ -209,7 +209,7 @@
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -222,7 +222,7 @@
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -235,7 +235,7 @@
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -248,7 +248,7 @@
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -261,7 +261,7 @@
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -274,7 +274,7 @@
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -287,7 +287,7 @@
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "faces": [],
@@ -750,52 +750,52 @@
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:1",
-          "tolerance": 1.00000001e-7
+          "tolerance": 1.00000001e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:12",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:15",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:16",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:19",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:2",
-          "tolerance": 1.00000001e-7
+          "tolerance": 1.00000001e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:20",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:4",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:8",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:9",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "view_presentations": []
@@ -974,11 +974,12 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 1e-06
     },
     "units": {
       "length": "millimeter"
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

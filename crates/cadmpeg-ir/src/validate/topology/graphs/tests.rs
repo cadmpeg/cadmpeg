@@ -1,85 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::document::CadIr;
-use crate::report::{
-    check::{Check, Finding},
-    Severity,
-};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-
-fn refuses(
-    ir: &CadIr,
-    check: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>,
-) {
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RetainedBytes,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = check(&ctx, ir, &mut findings) else {
-            panic!("topology graph must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(findings.is_empty());
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-}
-
-#[test]
-fn radial_ring_validation_preserves_index_walk_and_finding_refusals() {
-    let mut ir = crate::examples::unit_cube().unwrap();
-    ir.model.coedges[0].radial_next = "test:model:coedge#missing".try_into().unwrap();
-    refuses(&ir, super::check_coedge_pairing);
-}
-
-#[test]
-fn wire_topology_validation_preserves_index_walk_and_finding_refusals() {
-    let mut ir = crate::examples::unit_cube().unwrap();
-    ir.model.shells[0].add_wire_edge(ir.model.coedges[0].edge.clone());
-    refuses(&ir, super::check_wire_topology);
-}
-
-#[test]
-fn shell_connectivity_validation_preserves_index_walk_and_finding_refusals() {
-    let mut ir = crate::examples::unit_cube().unwrap();
-    ir.model.coedges.clear();
-    refuses(&ir, super::check_shell_connectivity);
-}
-
-#[test]
-fn topology_graph_validation_releases_scopes_without_retaining_identities() {
-    let ir = crate::examples::unit_cube().unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 32768;
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut findings = Vec::new();
-    super::check_coedge_pairing(&ctx, &ir, &mut findings).unwrap();
-    super::check_wire_topology(&ctx, &ir, &mut findings).unwrap();
-    super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings.is_empty());
-    drop(
-        ctx.reserve_scoped(32768, "topology graph scopes released")
-            .unwrap(),
-    );
-    ctx.finish_session().unwrap();
-}
+use crate::report::{check::Check, Severity};
 
 #[test]
 fn radial_ring_crossing_keeps_error_order_and_owner() {
@@ -94,9 +15,8 @@ fn radial_ring_crossing_keeps_error_order_and_owner() {
         .id
         .clone();
     ir.model.coedges[0].radial_next = other;
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_coedge_pairing(&ctx, &ir, &mut findings).unwrap();
+    super::check_coedge_pairing(&ir, &mut findings).unwrap();
     assert!(findings.len() >= 2);
     for finding in &findings[..2] {
         assert_eq!(finding.check, Check::CoedgePairing);
@@ -105,4 +25,96 @@ fn radial_ring_crossing_keeps_error_order_and_owner() {
     }
     assert_eq!(findings[0].message, "radial ring crosses edges");
     assert_eq!(findings[1].message, "radial ring does not close");
+}
+
+/// Faces with one vertex loop on each named vertex, and shells over the
+/// named faces.
+fn vertex_loop_model(faces: &[(&str, &[&str])], shells: &[&[&str]]) -> crate::CadIr {
+    use crate::ids::{FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId};
+    use crate::topology::{Face, FaceLoops, Loop, LoopBoundary, Sense, Shell};
+    let mut ir = crate::CadIr::empty();
+    let shell_id = |index: usize| ShellId::mint(format!("test:model:shell#{index}")).unwrap();
+    for (face, vertices) in faces {
+        let face_id = FaceId::mint(format!("test:model:face#{face}")).unwrap();
+        let loop_ids: Vec<LoopId> = vertices
+            .iter()
+            .map(|vertex| LoopId::mint(format!("test:model:loop#{face}-{vertex}")).unwrap())
+            .collect();
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: shell_id(0),
+            surface: SurfaceId::mint("test:model:surface#plane").unwrap(),
+            sense: Sense::Forward,
+            loops: FaceLoops::unspecified(loop_ids.clone()),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        for (loop_id, vertex) in loop_ids.into_iter().zip(*vertices) {
+            ir.model.loops.push(Loop {
+                id: loop_id,
+                face: face_id.clone(),
+                boundary: LoopBoundary::Vertex {
+                    vertex: VertexId::mint(format!("test:model:vertex#{vertex}")).unwrap(),
+                    pcurves: Vec::new(),
+                },
+            });
+        }
+    }
+    for (index, members) in shells.iter().enumerate() {
+        let members = members
+            .iter()
+            .map(|face| FaceId::mint(format!("test:model:face#{face}")).unwrap())
+            .collect();
+        ir.model.shells.push(
+            Shell::new(
+                shell_id(index),
+                RegionId::mint("test:model:region#0").unwrap(),
+                members,
+                Vec::new(),
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+    }
+    ir
+}
+
+fn disconnected_shells(ir: &crate::CadIr) -> Vec<String> {
+    let mut findings = Vec::new();
+    super::check_shell_connectivity(ir, &mut findings);
+    findings
+        .into_iter()
+        .map(|finding| {
+            assert_eq!(finding.check, Check::ShellTopology);
+            finding.entity.unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn shell_connectivity_joins_only_the_shells_own_faces() {
+    // Faces a and b share no vertex; each shares one with c.
+    let faces: [(&str, &[&str]); 3] = [("a", &["1"]), ("b", &["2"]), ("c", &["1", "2"])];
+    let ir = vertex_loop_model(&faces, &[&["a", "b"], &["a", "b", "c"], &["b", "c"]]);
+    assert_eq!(disconnected_shells(&ir), ["test:model:shell#0"]);
+}
+
+#[test]
+fn shell_connectivity_through_one_vertex_shared_by_many_faces_is_linear() {
+    // Every ordered pair of faces on the shared vertex would be 2^32 steps.
+    const FACES: usize = 1 << 16;
+    let names: Vec<String> = (0..FACES).map(|index| index.to_string()).collect();
+    let mut faces: Vec<(&str, &[&str])> = names
+        .iter()
+        .map(|name| (name.as_str(), &["shared"][..]))
+        .collect();
+    let members: Vec<&str> = names.iter().map(String::as_str).collect();
+    let ir = vertex_loop_model(&faces, &[&members]);
+    assert!(disconnected_shells(&ir).is_empty());
+    faces.push(("isolated", &["other"]));
+    let mut members = members;
+    members.push("isolated");
+    let ir = vertex_loop_model(&faces, &[&members]);
+    assert_eq!(disconnected_shells(&ir), ["test:model:shell#0"]);
 }

@@ -83,16 +83,10 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
 
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|endpoint| endpoint.id())
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|endpoint| endpoint.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -105,16 +99,10 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
     payload[96..].copy_from_slice(SKETCH_MARKER);
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|endpoint| endpoint.id())
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|endpoint| endpoint.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -129,16 +117,10 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
     payload[104..].copy_from_slice(SKETCH_MARKER);
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|endpoint| endpoint.id())
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|endpoint| endpoint.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 }

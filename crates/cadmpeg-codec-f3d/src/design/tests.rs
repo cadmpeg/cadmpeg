@@ -320,16 +320,13 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placements = [placement("A"), placement("B")];
     let mut points = [point("A"), point("B")];
     let mut relations = [relation("A"), relation("B")];
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        bind_sketch_graph(
-            ctx,
-            &[header("A"), header("B")],
-            &mut points,
-            &mut [],
-            &mut [],
-            &mut relations,
-        )
-    })
+    bind_sketch_graph(
+        &[header("A"), header("B")],
+        &mut points,
+        &mut [],
+        &mut [],
+        &mut relations,
+    )
     .expect("stream-local sketch graphs bind independently");
     assert_eq!(
         relations[0]
@@ -349,17 +346,14 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let mut overflowing_header = header("A");
     overflowing_header.entity_id =
         crate::records::identity::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
-    assert!(
-        crate::design::test_support::with_test_decode_context(|ctx| bind_sketch_graph(
-            ctx,
-            &[overflowing_header],
-            &mut [point("A")],
-            &mut [],
-            &mut [],
-            &mut [relation("A")],
-        ))
-        .is_err()
-    );
+    assert!(bind_sketch_graph(
+        &[overflowing_header],
+        &mut [point("A")],
+        &mut [],
+        &mut [],
+        &mut [relation("A")]
+    )
+    .is_err());
 
     let (mut sketches, mut entities) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(decode_ctx, &placements, &points, &[], &[], &[], 1.0e-6)
@@ -419,24 +413,25 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         parameter.source_ordinal = record_index;
         parameter
     };
-    let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = &[];
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &[
-                    parameter("A", 40, "Width", "1 mm"),
-                    parameter("A", 41, "Half", "Width / 2"),
-                    parameter("B", 40, "Width", "2 mm"),
-                ],
-                scopes,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &[
+                        parameter("A", 40, "Width", "1 mm"),
+                        parameter("A", 41, "Half", "Width / 2"),
+                        parameter("B", 40, "Width", "2 mm"),
+                    ],
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     let half = parameters
         .iter()
         .find(|parameter| parameter.name == "Half")
@@ -474,9 +469,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     ir.model.sketches = sketches;
     ir.model.sketch_entities = entities;
     ir.model.sketch_constraints = constraints;
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete owner frames, occurrence coordinates, and byte-consistent fields.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 
 use crate::families::b2::records::b2_owner_packet_from_frame;
@@ -15,7 +15,6 @@ use super::{
 };
 
 pub(super) fn source_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &ConsolidatedRecord,
 ) -> Result<ConsolidatedRawFrame<u64>, CodecError> {
@@ -23,22 +22,17 @@ pub(super) fn source_frame(
         .payload()
         .and_then(|range| bytes.get(range))
         .ok_or_else(|| CodecError::malformed("owner occurrence has no complete physical frame"))?;
-    Ok(ConsolidatedRawFrame::from_record(
-        record,
-        ctx.copy_slice(payload, "catia_native_owner_frame_payload")?,
-    )?
-    .into())
+    Ok(ConsolidatedRawFrame::from_record(record, (payload).to_vec())?.into())
 }
 
 pub(super) fn face_node(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &ConsolidatedRecord,
     node: crate::families::b2::records::B2FaceNode5f,
 ) -> Result<CatiaFaceNodeRelation, CodecError> {
     Ok(CatiaFaceNodeRelation {
         source_offset: u64_from_index(record.source_range().start),
-        frame: source_frame(ctx, bytes, record)?,
+        frame: source_frame(bytes, record)?,
         target_encoding: match node.target_encoding {
             crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
                 CatiaFaceNodeTargetEncoding::Compact

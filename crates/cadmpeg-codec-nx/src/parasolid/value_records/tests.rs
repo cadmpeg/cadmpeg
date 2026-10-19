@@ -2,7 +2,7 @@
 
 #[test]
 fn unowned_value_candidates_cannot_hide_referenced_values() {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         // These unowned bytes resemble a four-integer value and cover a
         // complete referenced value. Ownership selects which frame may advance.
         let mut bytes = vec![0, 0x52];
@@ -23,11 +23,9 @@ fn unowned_value_candidates_cannot_hide_referenced_values() {
             bytes.extend_from_slice(&reference.to_be_bytes());
         }
 
-        let offsets = crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
-            .unwrap()
-            .0;
+        let offsets = crate::parasolid::referenced_value_record_offsets(&bytes);
         assert_eq!(offsets, [value_offset]);
-        let records = super::entity_value_records_at(ctx, &bytes, offsets)
+        let records = super::entity_value_records_at(&bytes, offsets)
             .unwrap()
             .integers;
         assert_eq!(records.len(), 1);
@@ -37,8 +35,7 @@ fn unowned_value_candidates_cannot_hide_referenced_values() {
         // A referenced enclosing value retains its complete frame; bytes in
         // that payload do not become a nested independent record.
         let references = [999, 101].into_iter().collect();
-        let (candidates, _guard) =
-            super::value_record_candidates(ctx, &bytes, &references).unwrap();
+        let candidates = super::value_record_candidates(&bytes, &references);
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates.get(&999).unwrap(), &[0]);
         assert!(!candidates.contains_key(&101));
@@ -46,228 +43,188 @@ fn unowned_value_candidates_cannot_hide_referenced_values() {
 }
 
 #[test]
-fn unowned_value_payloads_do_not_consume_validation_work() {
-    let mut bytes = vec![0, 0x52];
-    bytes.extend_from_slice(&512u32.to_be_bytes());
-    bytes.extend_from_slice(&999u16.to_be_bytes());
-    bytes.extend_from_slice(&[0; 2_048]);
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len()) + 100;
-        },
-        |ctx| {
-            let references = [101].into_iter().collect();
-            let (candidates, _guard) =
-                super::value_record_candidates(ctx, &bytes, &references).unwrap();
-            assert!(candidates.is_empty());
-            assert!(ctx.resource_refusal().is_none());
-        },
+fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
+    let mut bytes = vec![0xaa, 0x00, 0x54];
+    bytes.extend_from_slice(&8u32.to_be_bytes());
+    bytes.extend_from_slice(&17u16.to_be_bytes());
+    bytes.extend_from_slice(b"deadbeef\0");
+    bytes.extend_from_slice(&[0xbb, 0x00, 0x54, 0, 0, 0, 3, 0, 18, b'a', b'b', b'c', 1]);
+
+    let records = crate::parasolid::value_records::entity_value_records(&bytes)
+        .unwrap()
+        .strings;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(records[0].byte_len, 17);
+    assert_eq!(u32::from(records[0].xmt), 17);
+    assert_eq!(records[0].value.as_str(), "deadbeef");
+    assert_eq!(
+        crate::parasolid::value_records::entity_54_string_record_at(&bytes, 1),
+        Some(records[0].clone())
+    );
+    assert!(
+        crate::parasolid::value_records::entity_54_string_record_at(&bytes, bytes.len() - 12)
+            .is_none()
+    );
+
+    let minimum = [0, 0x54, 0, 0, 0, 1, 0, 2, b'a', 0];
+    assert_eq!(
+        crate::parasolid::value_records::entity_value_records(&minimum)
+            .unwrap()
+            .strings[0]
+            .value
+            .as_str(),
+        "a"
     );
 }
 
 #[test]
-fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut bytes = vec![0xaa, 0x00, 0x54];
-        bytes.extend_from_slice(&8u32.to_be_bytes());
-        bytes.extend_from_slice(&17u16.to_be_bytes());
-        bytes.extend_from_slice(b"deadbeef\0");
-        bytes.extend_from_slice(&[0xbb, 0x00, 0x54, 0, 0, 0, 3, 0, 18, b'a', b'b', b'c', 1]);
-
-        let records = crate::parasolid::value_records::entity_value_records(ctx, &bytes)
-            .unwrap()
-            .strings;
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].offset, 1);
-        assert_eq!(records[0].byte_len, 17);
-        assert_eq!(u32::from(records[0].xmt), 17);
-        assert_eq!(records[0].value.as_str(), "deadbeef");
-        assert_eq!(
-            crate::parasolid::value_records::entity_54_string_record_at(ctx, &bytes, 1).unwrap(),
-            Some(records[0].clone())
-        );
-        assert!(crate::parasolid::value_records::entity_54_string_record_at(
-            ctx,
-            &bytes,
-            bytes.len() - 12
-        )
-        .unwrap()
-        .is_none());
-
-        let minimum = [0, 0x54, 0, 0, 0, 1, 0, 2, b'a', 0];
-        assert_eq!(
-            crate::parasolid::value_records::entity_value_records(ctx, &minimum)
-                .unwrap()
-                .strings[0]
-                .value
-                .as_str(),
-            "a"
-        );
-    });
-}
-
-#[test]
 fn parasolid_entity_52_integers_require_complete_counted_values() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut bytes = vec![0xaa, 0x00, 0x52];
-        bytes.extend_from_slice(&2u32.to_be_bytes());
-        bytes.extend_from_slice(&17u16.to_be_bytes());
-        bytes.extend_from_slice(&3u32.to_be_bytes());
-        bytes.extend_from_slice(&u32::MAX.to_be_bytes());
+    let mut bytes = vec![0xaa, 0x00, 0x52];
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&17u16.to_be_bytes());
+    bytes.extend_from_slice(&3u32.to_be_bytes());
+    bytes.extend_from_slice(&u32::MAX.to_be_bytes());
 
-        let records = crate::parasolid::value_records::entity_value_records(ctx, &bytes)
-            .unwrap()
-            .integers;
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].offset, 1);
-        assert_eq!(u32::from(records[0].xmt), 17);
-        assert_eq!(records[0].value.as_slice(), [3, u32::MAX]);
-        assert_eq!(records[0].byte_len, 16);
-        assert_eq!(
-            crate::parasolid::value_records::entity_52_integer_record_at(ctx, &bytes, 1).unwrap(),
-            Some(records[0].clone())
-        );
-        assert!(crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &bytes[..bytes.len() - 1]
-        )
+    let records = crate::parasolid::value_records::entity_value_records(&bytes)
         .unwrap()
-        .integers
-        .is_empty());
-        assert!(
-            crate::parasolid::value_records::entity_52_integer_record_at(
-                ctx,
-                &bytes[..bytes.len() - 1],
-                1
-            )
+        .integers;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(u32::from(records[0].xmt), 17);
+    assert_eq!(records[0].value.as_slice(), [3, u32::MAX]);
+    assert_eq!(records[0].byte_len, 16);
+    assert_eq!(
+        crate::parasolid::value_records::entity_52_integer_record_at(&bytes, 1).unwrap(),
+        Some(records[0].clone())
+    );
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&bytes[..bytes.len() - 1])
+            .unwrap()
+            .integers
+            .is_empty()
+    );
+    assert!(
+        crate::parasolid::value_records::entity_52_integer_record_at(&bytes[..bytes.len() - 1], 1)
             .unwrap()
             .is_none()
-        );
-    });
+    );
 }
 
 #[test]
 fn parasolid_entity_53_doubles_require_complete_finite_values() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut bytes = vec![0xaa, 0x00, 0x53, 0xff];
-        bytes.extend_from_slice(&2u32.to_be_bytes());
-        bytes.extend_from_slice(&18u16.to_be_bytes());
-        bytes.extend_from_slice(&0.001f64.to_be_bytes());
-        bytes.extend_from_slice(&0.25f64.to_be_bytes());
+    let mut bytes = vec![0xaa, 0x00, 0x53, 0xff];
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&18u16.to_be_bytes());
+    bytes.extend_from_slice(&0.001f64.to_be_bytes());
+    bytes.extend_from_slice(&0.25f64.to_be_bytes());
 
-        let records = crate::parasolid::value_records::entity_value_records(ctx, &bytes)
+    let records = crate::parasolid::value_records::entity_value_records(&bytes)
+        .unwrap()
+        .doubles;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(u32::from(records[0].xmt), 18);
+    assert_eq!(records[0].value.raw_values(), [0.001, 0.25]);
+    assert_eq!(records[0].byte_len, 25);
+    assert_eq!(
+        crate::parasolid::value_records::entity_53_double_record_at(&bytes, 1).unwrap(),
+        Some(records[0].clone())
+    );
+
+    let last = bytes.len() - 8;
+    bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&bytes)
             .unwrap()
-            .doubles;
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].offset, 1);
-        assert_eq!(u32::from(records[0].xmt), 18);
-        assert_eq!(records[0].value.raw_values(), [0.001, 0.25]);
-        assert_eq!(records[0].byte_len, 25);
-        assert_eq!(
-            crate::parasolid::value_records::entity_53_double_record_at(ctx, &bytes, 1).unwrap(),
-            Some(records[0].clone())
-        );
-
-        let last = bytes.len() - 8;
-        bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
-        assert!(
-            crate::parasolid::value_records::entity_value_records(ctx, &bytes)
-                .unwrap()
-                .doubles
-                .is_empty()
-        );
-        assert!(
-            crate::parasolid::value_records::entity_53_double_record_at(ctx, &bytes, 1)
-                .unwrap()
-                .is_none()
-        );
-    });
+            .doubles
+            .is_empty()
+    );
+    assert!(
+        crate::parasolid::value_records::entity_53_double_record_at(&bytes, 1)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
 fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() {
-    crate::test_support::with_decode_context(|ctx| {
-        let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
-            let mut bytes = vec![0x00, tag];
-            bytes.extend_from_slice(
-                &u32::try_from(vectors.len())
-                    .expect("test vector count fits u32")
-                    .to_be_bytes(),
-            );
-            bytes.extend_from_slice(&xmt.to_be_bytes());
-            for vector in vectors {
-                for component in vector {
-                    bytes.extend_from_slice(&component.to_be_bytes());
-                }
-            }
-            bytes
-        };
-        let vectors = [[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]];
-
-        let points = crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &vector_record(0x55, 20, &vectors),
-        )
-        .unwrap()
-        .points;
-        assert_eq!(points.len(), 1);
-        assert_eq!(points[0].value.raw_values(), vectors);
-        let vector_values = crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &vector_record(0x56, 21, &vectors),
-        )
-        .unwrap()
-        .vectors;
-        assert_eq!(vector_values.len(), 1);
-        assert_eq!(vector_values[0].value.raw_values(), vectors);
-        let directions = crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &vector_record(0x59, 22, &vectors),
-        )
-        .unwrap()
-        .directions;
-        assert_eq!(directions.len(), 1);
-        assert_eq!(directions[0].value.raw_values(), vectors);
-
-        let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
-        let axes = crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &vector_record(0x57, 23, &four_vectors),
-        )
-        .unwrap()
-        .axes;
-        assert_eq!(axes.len(), 1);
-        assert_eq!(
-            axes[0].value.raw_values(),
-            [
-                [four_vectors[0], four_vectors[1]],
-                [four_vectors[2], four_vectors[3]],
-            ]
+    let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
+        let mut bytes = vec![0x00, tag];
+        bytes.extend_from_slice(
+            &u32::try_from(vectors.len())
+                .expect("test vector count fits u32")
+                .to_be_bytes(),
         );
-        assert!(crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &vector_record(0x57, 23, &four_vectors[..3])
-        )
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        for vector in vectors {
+            for component in vector {
+                bytes.extend_from_slice(&component.to_be_bytes());
+            }
+        }
+        bytes
+    };
+    let vectors = [[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]];
+
+    let points =
+        crate::parasolid::value_records::entity_value_records(&vector_record(0x55, 20, &vectors))
+            .unwrap()
+            .points;
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].value.raw_values(), vectors);
+    let vector_values =
+        crate::parasolid::value_records::entity_value_records(&vector_record(0x56, 21, &vectors))
+            .unwrap()
+            .vectors;
+    assert_eq!(vector_values.len(), 1);
+    assert_eq!(vector_values[0].value.raw_values(), vectors);
+    let directions =
+        crate::parasolid::value_records::entity_value_records(&vector_record(0x59, 22, &vectors))
+            .unwrap()
+            .directions;
+    assert_eq!(directions.len(), 1);
+    assert_eq!(directions[0].value.raw_values(), vectors);
+
+    let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
+    let axes = crate::parasolid::value_records::entity_value_records(&vector_record(
+        0x57,
+        23,
+        &four_vectors,
+    ))
+    .unwrap()
+    .axes;
+    assert_eq!(axes.len(), 1);
+    assert_eq!(
+        axes[0].value.raw_values(),
+        [
+            [four_vectors[0], four_vectors[1]],
+            [four_vectors[2], four_vectors[3]],
+        ]
+    );
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&vector_record(
+            0x57,
+            23,
+            &four_vectors[..3]
+        ))
         .unwrap()
         .axes
-        .is_empty());
+        .is_empty()
+    );
 
-        let mut nonfinite = vectors;
-        nonfinite[1][2] = f64::INFINITY;
-        assert!(crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &vector_record(0x55, 20, &nonfinite)
-        )
-        .unwrap()
-        .points
-        .is_empty());
-    });
+    let mut nonfinite = vectors;
+    nonfinite[1][2] = f64::INFINITY;
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&vector_record(0x55, 20, &nonfinite))
+            .unwrap()
+            .points
+            .is_empty()
+    );
 }
 
 #[test]
 fn parasolid_entity_value_records_dispatches_all_value_families() {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
             let mut bytes = vec![0x00, tag];
             bytes.extend_from_slice(
@@ -323,7 +280,7 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
         unicode.extend_from_slice(&(u16::from(b'X')).to_be_bytes());
         bytes.extend(unicode);
 
-        let records = crate::parasolid::value_records::entity_value_records(ctx, &bytes).unwrap();
+        let records = crate::parasolid::value_records::entity_value_records(&bytes).unwrap();
         assert_eq!(records.integers.len(), 1);
         assert_eq!(records.doubles.len(), 1);
         assert_eq!(records.strings.len(), 1);
@@ -341,13 +298,11 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
         assert_eq!(records.unicode[0].value.as_str(), "NX");
 
         let references = (10..=18).collect();
-        let (candidates, _guard) =
-            super::value_record_candidates(ctx, &bytes, &references).unwrap();
+        let candidates = super::value_record_candidates(&bytes, &references);
         assert_eq!(candidates.len(), 9);
         assert!(candidates.values().all(|positions| positions.len() == 1));
         let selected =
-            super::entity_value_records_at(ctx, &bytes, candidates.into_values().flatten())
-                .unwrap();
+            super::entity_value_records_at(&bytes, candidates.into_values().flatten()).unwrap();
         assert_eq!(selected.integers, records.integers);
         assert_eq!(selected.doubles, records.doubles);
         assert_eq!(selected.strings, records.strings);
@@ -362,110 +317,82 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
 
 #[test]
 fn parasolid_value_scan_does_not_admit_nested_counted_candidates() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut outer = vec![0x00, 0x52];
-        outer.extend_from_slice(&4u32.to_be_bytes());
-        outer.extend_from_slice(&10u16.to_be_bytes());
-        outer.extend_from_slice(&[0x00, 0x53]);
-        outer.extend_from_slice(&1u32.to_be_bytes());
-        outer.extend_from_slice(&20u16.to_be_bytes());
-        outer.extend_from_slice(&0.25f64.to_be_bytes());
+    let mut outer = vec![0x00, 0x52];
+    outer.extend_from_slice(&4u32.to_be_bytes());
+    outer.extend_from_slice(&10u16.to_be_bytes());
+    outer.extend_from_slice(&[0x00, 0x53]);
+    outer.extend_from_slice(&1u32.to_be_bytes());
+    outer.extend_from_slice(&20u16.to_be_bytes());
+    outer.extend_from_slice(&0.25f64.to_be_bytes());
 
-        let records = crate::parasolid::value_records::entity_value_records(ctx, &outer).unwrap();
-        assert_eq!(records.integers.len(), 1);
-        assert_eq!(u32::from(records.integers[0].xmt), 10);
-        assert_eq!(records.integers[0].value.as_slice().len(), 4);
-        assert!(records.doubles.is_empty());
-    });
+    let records = crate::parasolid::value_records::entity_value_records(&outer).unwrap();
+    assert_eq!(records.integers.len(), 1);
+    assert_eq!(u32::from(records.integers[0].xmt), 10);
+    assert_eq!(records.integers[0].value.as_slice().len(), 4);
+    assert!(records.doubles.is_empty());
 }
 
 #[test]
 fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
-    crate::test_support::with_decode_context(|ctx| {
-        let tags = [
-            0x00, 0x58, 0, 0, 0, 2, 0, 24, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff,
-        ];
-        let records = crate::parasolid::value_records::entity_value_records(ctx, &tags)
-            .unwrap()
-            .tags;
-        assert_eq!(records.len(), 1);
-        assert_eq!(u32::from(records[0].xmt), 24);
-        assert_eq!(records[0].value.as_slice(), [7, u32::MAX]);
-        assert!(crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &tags[..tags.len() - 1]
-        )
+    let tags = [
+        0x00, 0x58, 0, 0, 0, 2, 0, 24, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff,
+    ];
+    let records = crate::parasolid::value_records::entity_value_records(&tags)
         .unwrap()
-        .tags
-        .is_empty());
-
-        let code_units = [u16::from(b'N'), u16::from(b'X'), 0xd83d, 0xde80];
-        let mut unicode = vec![0x00, 0x62, 0xff];
-        unicode.extend_from_slice(&4u32.to_be_bytes());
-        unicode.extend_from_slice(&[0xff, 0xff, 0x00, 0x01]);
-        for code_unit in code_units {
-            unicode.extend_from_slice(&code_unit.to_be_bytes());
-        }
-        let records = crate::parasolid::value_records::entity_value_records(ctx, &unicode)
+        .tags;
+    assert_eq!(records.len(), 1);
+    assert_eq!(u32::from(records[0].xmt), 24);
+    assert_eq!(records[0].value.as_slice(), [7, u32::MAX]);
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&tags[..tags.len() - 1])
             .unwrap()
-            .unicode;
-        assert_eq!(records.len(), 1);
-        assert_eq!(u32::from(records[0].xmt), 32_768);
-        assert_eq!(
-            records[0].value.as_str().encode_utf16().collect::<Vec<_>>(),
-            code_units
-        );
-        assert_eq!(records[0].value.as_str(), "NX🚀");
-        assert!(crate::parasolid::value_records::entity_value_records(
-            ctx,
-            &unicode[..unicode.len() - 1]
-        )
+            .tags
+            .is_empty()
+    );
+    let code_units = [u16::from(b'N'), u16::from(b'X'), 0xd83d, 0xde80];
+    let mut unicode = vec![0x00, 0x62, 0xff];
+    unicode.extend_from_slice(&4u32.to_be_bytes());
+    unicode.extend_from_slice(&[0xff, 0xff, 0x00, 0x01]);
+    for code_unit in code_units {
+        unicode.extend_from_slice(&code_unit.to_be_bytes());
+    }
+    let records = crate::parasolid::value_records::entity_value_records(&unicode)
         .unwrap()
-        .unicode
-        .is_empty());
+        .unicode;
+    assert_eq!(records.len(), 1);
+    assert_eq!(u32::from(records[0].xmt), 32_768);
+    assert_eq!(
+        records[0].value.as_str().encode_utf16().collect::<Vec<_>>(),
+        code_units
+    );
+    assert_eq!(records[0].value.as_str(), "NX🚀");
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&unicode[..unicode.len() - 1])
+            .unwrap()
+            .unicode
+            .is_empty()
+    );
 
-        let mut invalid = unicode;
-        invalid[15..17].copy_from_slice(&0xd800u16.to_be_bytes());
-        invalid[17..19].copy_from_slice(&0x0041u16.to_be_bytes());
-        assert!(
-            crate::parasolid::value_records::entity_value_records(ctx, &invalid)
-                .unwrap()
-                .unicode
-                .is_empty()
-        );
-    });
+    let mut invalid = unicode;
+    invalid[15..17].copy_from_slice(&0xd800u16.to_be_bytes());
+    invalid[17..19].copy_from_slice(&0x0041u16.to_be_bytes());
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&invalid)
+            .unwrap()
+            .unicode
+            .is_empty()
+    );
 }
 
 #[test]
 fn counted_value_identities_require_nonempty_payloads() {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_ctx| {
         for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
             let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
             assert!(
-                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
-                    .unwrap()
+                crate::parasolid::value_records::entity_value_record_identity_at(&bytes, 0)
                     .is_none()
             );
         }
     });
-}
-
-#[test]
-fn numeric_identity_probe_uses_no_payload_storage() {
-    let bytes = [0, 0x52, 0, 0, 0, 1, 0, 17, 0, 0, 0, 9];
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            assert_eq!(
-                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
-                    .unwrap(),
-                Some((0x52, 17, 12))
-            );
-        },
-    );
 }

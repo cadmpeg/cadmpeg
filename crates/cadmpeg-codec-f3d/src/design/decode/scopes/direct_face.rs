@@ -288,7 +288,6 @@ fn move_transform_layout(class_tag: &str, frame_length: usize) -> Option<(usize,
 }
 
 pub(super) fn exact_scale_operation(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -317,16 +316,13 @@ pub(super) fn exact_scale_operation(
                 {
                     return None;
                 }
-                let center = match exact_point_data_construction(
-                    ctx,
+                let center = exact_point_data_construction(
                     bytes,
                     records,
                     std::slice::from_ref(center_record_index),
                     stream_types,
-                ) {
-                    Ok(point) => point.map(|point| (point.position, point.position_offset)),
-                    Err(error) => return Some(Err(error)),
-                };
+                )
+                .map(|point| (point.position, point.position_offset));
                 (
                     *body_group_record_index,
                     *center_record_index,
@@ -353,17 +349,12 @@ pub(super) fn exact_scale_operation(
                 {
                     return None;
                 }
-                let point = match exact_point_data_construction(
-                    ctx,
+                let point = exact_point_data_construction(
                     bytes,
                     records,
                     std::slice::from_ref(center_record_index),
                     stream_types,
-                ) {
-                    Ok(Some(point)) => point,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                )?;
                 (
                     *body_group_record_index,
                     *center_record_index,

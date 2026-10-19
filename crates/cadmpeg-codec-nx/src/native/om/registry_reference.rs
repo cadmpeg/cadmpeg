@@ -3,7 +3,6 @@
 
 use super::ClassDefinition;
 use crate::container::Container;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +37,6 @@ impl RegistryReferenceDeclaration {
 }
 
 pub(super) fn join_references(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     classes: &mut [ClassDefinition],
 ) -> Result<(), CodecError> {
@@ -58,11 +56,11 @@ pub(super) fn join_references(
             start = end;
             continue;
         };
-        let Some(bytes) = container.bounded_entry_bytes(ctx, first.section_offset, span)? else {
+        let Some(bytes) = container.bounded_entry_bytes(first.section_offset, span) else {
             start = end;
             continue;
         };
-        if let Some(references) = crate::om::registry::reference_declarations(ctx, bytes)? {
+        if let Some(references) = crate::om::registry::reference_declarations(bytes) {
             for class in &mut classes[start..end] {
                 let Some(layout) = class.registry_layout() else {
                     continue;
@@ -77,10 +75,13 @@ pub(super) fn join_references(
                     .section_offset
                     .checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))
                     .ok_or_else(|| {
-                        ctx.refuse_codec_limit("nx registry reference source offset", 0, 1)
+                        CodecError::malformed(format_args!(
+                            "{} exceeds its local bound",
+                            "nx registry reference source offset"
+                        ))
                     })?;
                 class.registry_reference_declaration = Some(RegistryReferenceDeclaration {
-                    name: ctx.copy_retained_text(reference.name, "nx registry reference name")?,
+                    name: (reference.name).to_owned(),
                     code: reference.code,
                     source_offset,
                 });

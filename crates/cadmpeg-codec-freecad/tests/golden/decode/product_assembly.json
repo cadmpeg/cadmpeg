@@ -1000,7 +1000,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1013,7 +1013,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1026,7 +1026,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1039,7 +1039,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1052,7 +1052,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1065,7 +1065,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1078,7 +1078,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1091,7 +1091,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1104,7 +1104,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1117,7 +1117,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1130,7 +1130,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1143,7 +1143,7 @@
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1156,7 +1156,7 @@
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2",
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1169,7 +1169,7 @@
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4",
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "carrier": {
@@ -1182,7 +1182,7 @@
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5",
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "faces": [
@@ -1197,7 +1197,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
@@ -1210,7 +1210,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
@@ -1223,7 +1223,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
@@ -1236,7 +1236,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
@@ -1249,7 +1249,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
@@ -1262,7 +1262,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
@@ -1275,7 +1275,7 @@
           "sense": "reversed",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
@@ -1288,7 +1288,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
@@ -1301,7 +1301,7 @@
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:2",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "features": [
@@ -4034,52 +4034,52 @@
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "point": "fcstd:model:point#PinPrototype:Shape:PinPrototype.Shape.brp:1",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         },
         {
           "id": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "point": "fcstd:model:point#PinPrototype:Shape:PinPrototype.Shape.brp:3",
-          "tolerance": 1e-7
+          "tolerance": 1e-07
         }
       ],
       "view_presentations": []
@@ -6076,11 +6076,12 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 1e-06
     },
     "units": {
       "length": "millimeter"
-    }
+    },
+    "decode_depth": "full"
   },
   "report": {
     "identity": {

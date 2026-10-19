@@ -40,7 +40,7 @@ fn alias_row_retained_limit_refuses_json_record() {
     let row = native.alias_rows.first().expect("alias row");
     let arena_name = "alias_rows";
     let json_len = serde_json::to_vec(row).expect("alias JSON").len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(row))
@@ -51,7 +51,7 @@ fn alias_row_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(row))
-            .expect("service profile admits alias row");
+            .expect("store the native arena");
     });
 }
 
@@ -78,7 +78,7 @@ fn value_schema_selection_retained_limit_refuses_json_record() {
         .expect("selection");
     let arena_name = "value_schema_selections";
     let json_len = serde_json::to_vec(selection).expect("selection JSON").len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(selection))
@@ -89,120 +89,8 @@ fn value_schema_selection_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(selection))
-            .expect("service profile admits selection");
+            .expect("store the native arena");
     });
-}
-
-#[test]
-fn native_projection_refuses_catalog_header_and_flattened_entry_growth() {
-    let mut native = super::super::CatiaNative::default();
-    native.catalogs.push(super::super::CatiaCatalog {
-        id: "catia:catalog#0".to_string(),
-        byte_offset: 0,
-        byte_len: 1,
-        entries: vec![super::super::CatiaCatalogEntry {
-            id: "catia:catalog-entry#0".to_string(),
-            parent: "catia:catalog#0".to_string(),
-            ordinal: 0,
-            byte_offset: 0,
-            value: "schema".to_string(),
-        }],
-    });
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
-    })
-    .expect("service native projection budget");
-    assert_eq!(service.catalogs.len(), 1);
-    assert_eq!(service.catalog_entries.len(), 1);
-    let flattened = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
-    });
-    assert!(matches!(flattened,
-        Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
-            if limit.operation == "catia_native_flattened_arena"));
-    let header = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
-    });
-    assert!(matches!(header,
-        Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
-            if limit.operation == "catia_native_catalog_headers"));
-    let retained =
-        crate::test_support::with_retained_refusal(&[], "catia_native_catalog_header_id", |ctx| {
-            super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
-        });
-    assert!(matches!(retained,
-        Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
-            if limit.operation == "catia_native_catalog_header_id"));
-}
-
-#[test]
-fn legacy_native_projection_refuses_collection_and_retained_limits() {
-    let mut bytes = vec![0xea];
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.extend_from_slice(&[0x81, 0xfd, 0x8c]);
-    bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
-    let retained =
-        crate::test_support::with_retained_refusal(&[], "catia_native_legacy_run_id", |ctx| {
-            super::super::legacy_entity_runs(ctx, &bytes)
-        });
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_legacy_run_id")
-    );
-    let mut cap = 0;
-    let mut reached = false;
-    for _ in 0..128 {
-        match crate::test_support::with_collection_limit(cap, |ctx| {
-            super::super::legacy_entity_runs(ctx, &bytes)
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_native_legacy_identities" =>
-            {
-                reached = true;
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                cap = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("bounded fixture");
-            }
-            other => panic!("native identity limit not reached: {other:?}"),
-        }
-    }
-    assert!(reached, "native identity limit was not reached");
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::legacy_entity_runs(ctx, &bytes)
-    })
-    .expect("service profile admits one legacy entity run");
-    assert_eq!(admitted.len(), 1);
-    assert_eq!(admitted[0].identities.len(), 1);
-}
-
-#[test]
-fn native_graph_projection_refuses_caller_limits() {
-    use cadmpeg_core::CodecError;
-
-    let bytes = object_graph_stream();
-    let parsed =
-        crate::test_support::with_service_context(|ctx| crate::object_graph::parse(ctx, &bytes))
-            .expect("service profile admits object graph parsing")
-            .expect("fixture has an object graph");
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::projection::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
-    });
-    assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_graph_id"));
-    let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::projection::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
-    });
-    assert!(matches!(collection, Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::projection::native_object_graph(ctx, parsed, Vec::new(), None, None)
-    })
-    .expect("service profile admits native graph projection");
-    assert!(!admitted.0.records.is_empty());
 }
 
 #[test]
@@ -402,7 +290,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .get("value_blocks")
         .is_some_and(|blocks| blocks
             .iter()
-            .all(|block| !block.fields().contains_key("schema_selections"))));
+            .all(|block| !block.fields().unwrap().contains_key("schema_selections"))));
     assert_eq!(
         canonical_namespace
             .arenas()
@@ -456,103 +344,6 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .is_empty());
     invalid_selections.value_blocks[0].schema_selections.clear();
     assert_rejected(invalid_selections);
-}
-
-#[test]
-fn native_incoming_incidences_refuse_collection_limit() {
-    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
-    let native = crate::native::CatiaNative::decode(&file);
-    let graph = &native.object_graphs[0];
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::entity_incidences(ctx, &graph.records, &graph.id, 5)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_incoming_references")
-    );
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_incidences(ctx, &graph.records, &graph.id, 5)
-    })
-    .expect("service profile admits incoming incidences");
-    assert!(!admitted.0.is_empty());
-}
-
-#[test]
-fn native_configuration_production_propagates_retained_refusal() {
-    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
-    let native = crate::native::CatiaNative::decode(&file);
-    let graph = &native.object_graphs[0];
-    let configuration_entity = &native.entity_records[0];
-    let configuration_object = graph
-        .records
-        .iter()
-        .find(|record| record.id == configuration_entity.object_record)
-        .expect("configuration object record");
-    let row_entity = &native.entity_records[1];
-    let row_object = graph
-        .records
-        .iter()
-        .find(|record| record.id == row_entity.object_record)
-        .expect("configuration row object record");
-    let classes = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_class_index(ctx, graph.records.iter())
-    })
-    .expect("service profile admits classes");
-    let (expressions, expression_entities, entities, terminal_nulls, bindings) =
-        crate::test_support::with_service_context(|ctx| {
-            super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
-        })
-        .expect("service profile admits semantic indexes");
-    let references = super::super::CatiaEntityReferenceIndex {
-        entities: &entities,
-        classes: &classes,
-        terminal_nulls: &terminal_nulls,
-    };
-    let configuration = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::object_production(
-            ctx,
-            configuration_entity,
-            configuration_object,
-            &references,
-            &expressions,
-            &expression_entities,
-            &bindings,
-        )
-    });
-    assert!(
-        matches!(configuration, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_configuration_entry")
-    );
-    let row = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::schema_configuration_row_link(
-            ctx,
-            row_entity.entity_id,
-            row_object,
-            &entities,
-            &classes,
-            &terminal_nulls,
-        )
-    });
-    assert!(
-        matches!(row, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_reference_entity")
-    );
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::object_production(
-            ctx,
-            configuration_entity,
-            configuration_object,
-            &references,
-            &expressions,
-            &expression_entities,
-            &bindings,
-        )
-    })
-    .expect("service profile admits configuration production");
-    assert!(matches!(
-        service,
-        Some(crate::native::CatiaEntityObjectProduction::SchemaConfigurationRecord(_))
-    ));
 }
 
 #[test]
@@ -815,100 +606,6 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
         wire::coverage_count(decoded.report(), crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT.as_str()),
         0
     );
-}
-
-#[test]
-fn configuration_chain_derivation_refuses_collection_limit() {
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
-    let classes = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_class_index(
-            ctx,
-            native.object_graphs.iter().flat_map(|graph| &graph.records),
-        )
-    })
-    .expect("native class index fits service limits");
-    let (_, _, entities, terminal_nulls, _) = crate::test_support::with_service_context(|ctx| {
-        super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
-    })
-    .expect("native semantic indices fit service limits");
-    let derive = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::super::derive_schema_configuration_row_chains(
-            ctx,
-            &native.entity_records,
-            &entities,
-            &classes,
-            &terminal_nulls,
-        )
-    };
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, derive),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_configuration_row_ids"
-    ));
-    let chains = crate::test_support::with_service_context(derive)
-        .expect("service profile admits configuration chains");
-    assert_eq!(chains, native.schema_configuration_row_chains);
-}
-
-#[test]
-fn native_semantic_indices_refuse_collection_and_retained_limits() {
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
-    let records = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .collect::<Vec<_>>();
-    let class_collection = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::entity_class_index(ctx, records.iter().copied())
-    });
-    assert!(
-        matches!(class_collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_class_index")
-    );
-    let class_retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::entity_class_index(ctx, records.iter().copied())
-    });
-    assert!(
-        matches!(class_retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_class_graph")
-    );
-    let classes = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_class_index(ctx, records.iter().copied())
-    })
-    .expect("service profile admits class index");
-    assert!(!classes.is_empty());
-    let indices = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
-    });
-    assert!(
-        matches!(indices, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_entity_index")
-    );
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
-    })
-    .expect("service profile admits semantic indices");
-    assert!(!admitted.2.is_empty());
-}
-
-#[test]
-fn native_relation_signature_refuses_nested_input_limit() {
-    let source = "(#1_ : #In Length) : Real\n";
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::relation_type_signature_charged(ctx, None, source)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_signature_inputs")
-    );
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::relation_type_signature_charged(ctx, None, source)
-    })
-    .expect("service profile admits relation signature")
-    .expect("valid signature");
-    assert_eq!(service.inputs[0].parameter, "#1_");
 }
 
 #[test]
@@ -1201,44 +898,6 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
 }
 
 #[test]
-fn native_graph_catalog_link_refuses_retained_limit() {
-    let bytes = standard_catpart_with_value_block();
-    let mut found = false;
-    let mut cap = 0;
-    for _ in 0..4096 {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("fixture fits input limit");
-        match super::super::CatiaNative::decode_with_record_sources(
-            &ctx,
-            &bytes,
-            &[],
-            &mut crate::nurbs::LaneRefusals::new(),
-        ) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_native_graph_catalog_id" =>
-            {
-                found = true;
-                break;
-            }
-            Ok(native) => {
-                assert!(native.object_graphs[0].catalog.is_some());
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                assert!(limit.used + limit.additional > cap);
-                cap = limit.used + limit.additional;
-            }
-            Err(error) => panic!("unexpected fixture refusal: {error:?}"),
-        }
-    }
-    assert!(found, "retained sweep must reach the graph catalog link");
-}
-
-#[test]
 fn native_load_rejects_invalid_source_identities_and_extents() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
@@ -1470,4 +1129,282 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     let mut invalid_data = native;
     invalid_data.preview_images[0].data[0] = 0;
     assert_rejected(invalid_data);
+}
+
+#[test]
+fn arena_projection_lists_catalogs_and_their_entries() {
+    let mut native = super::super::CatiaNative::default();
+    native.catalogs.push(super::super::CatiaCatalog {
+        id: "catia:catalog#0".to_string(),
+        byte_offset: 0,
+        byte_len: 1,
+        entries: vec![super::super::CatiaCatalogEntry {
+            id: "catia:catalog-entry#0".to_string(),
+            parent: "catia:catalog#0".to_string(),
+            ordinal: 0,
+            byte_offset: 0,
+            value: "schema".to_string(),
+        }],
+    });
+    let service = super::super::CatiaArenaProjection::from_owned(native.clone());
+    assert_eq!(service.catalogs.len(), 1);
+    assert_eq!(service.catalog_entries.len(), 1);
+}
+
+#[test]
+fn legacy_entity_run_reads_catalog_manager_identity() {
+    let mut bytes = vec![0xea];
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x81, 0xfd, 0x8c]);
+    bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+    let admitted = super::super::legacy_entity_runs(&bytes);
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].identities.len(), 1);
+}
+
+#[test]
+fn object_graph_fixture_projects_nonempty_records() {
+    let bytes = object_graph_stream();
+    let parsed = crate::object_graph::parse(&bytes).expect("fixture has an object graph");
+    let admitted = super::super::projection::native_object_graph(parsed, Vec::new(), None, None);
+    assert!(!admitted.0.records.is_empty());
+}
+
+#[test]
+fn incoming_incidences_list_references_to_the_entity() {
+    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
+    let native = crate::native::CatiaNative::decode(&file);
+    let graph = &native.object_graphs[0];
+    let index = super::super::EntityIncidenceIndex::new(&graph.records, &graph.id);
+    let admitted = crate::test_support::with_service_context(|ctx| index.incidences(ctx, 5))
+        .expect("list the incidences");
+    assert!(!admitted.0.is_empty());
+
+    let class_text = admitted
+        .0
+        .iter()
+        .filter_map(|incidence| incidence.source_entity.as_ref())
+        .chain(
+            admitted
+                .1
+                .iter()
+                .filter_map(|incidence| incidence.source_entity.as_ref()),
+        )
+        .filter_map(super::super::CatiaEntityReference::class_name)
+        .map(str::len)
+        .sum::<usize>();
+    let class_text = u64::try_from(class_text).expect("fixture text fits");
+    assert!(class_text > 0);
+    let charged =
+        crate::test_support::with_retained_limit(class_text, |ctx| index.incidences(ctx, 5))
+            .expect("the source class copies fit their own length");
+    assert_eq!(charged, admitted);
+    let error =
+        crate::test_support::with_retained_limit(class_text - 1, |ctx| index.incidences(ctx, 5))
+            .expect_err("each source class copy is charged before it is made");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA schema class text"
+    ));
+}
+
+#[test]
+fn derived_configuration_row_chains_match_decoded_chains() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let classes = super::super::entity_class_index(
+        native.object_graphs.iter().flat_map(|graph| &graph.records),
+    );
+    let (_, _, entities, terminal_nulls, _) =
+        super::super::semantic_entity_indices(&native.entity_records, &classes)
+            .expect("native semantic indices fit service limits");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        terminal_nulls: &terminal_nulls,
+    };
+    let derived = crate::test_support::with_service_context(|ctx| {
+        super::super::derive_schema_configuration_row_chains(
+            ctx,
+            &native.entity_records,
+            &references,
+        )
+    })
+    .expect("derive the configuration row chains");
+    assert_eq!(derived.bounded_links, 0);
+    let chains = derived.chains;
+    assert_eq!(chains, native.schema_configuration_row_chains);
+
+    let links = chains
+        .iter()
+        .flat_map(super::super::CatiaSchemaConfigurationRowChain::links);
+    let intervening = links
+        .clone()
+        .filter_map(|link| link.intervening_entities.as_ref())
+        .flatten()
+        .collect::<Vec<_>>();
+    assert!(!intervening.is_empty());
+    let class_text = links
+        .map(|link| &link.row)
+        .chain(intervening.iter().copied())
+        .filter_map(super::super::CatiaEntityReference::class_name)
+        .map(str::len)
+        .sum::<usize>();
+    let entity_text = intervening
+        .iter()
+        .filter_map(|reference| reference.entity())
+        .map(str::len)
+        .sum::<usize>();
+    let retained = u64::try_from(class_text + entity_text).expect("fixture text fits");
+    let derive_within = |limit| {
+        crate::test_support::with_retained_limit(limit, |ctx| {
+            super::super::derive_schema_configuration_row_chains(
+                ctx,
+                &native.entity_records,
+                &references,
+            )
+        })
+    };
+    assert_eq!(
+        derive_within(retained)
+            .expect("the kept reference text fits its own length")
+            .chains,
+        chains
+    );
+    let error = derive_within(retained - 1).expect_err("every kept reference text is charged");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn configuration_row_links_past_the_intervening_allowance_keep_no_order() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let classes = super::super::entity_class_index(
+        native.object_graphs.iter().flat_map(|graph| &graph.records),
+    );
+    let (_, _, entities, terminal_nulls, _) =
+        super::super::semantic_entity_indices(&native.entity_records, &classes)
+            .expect("native semantic indices fit service limits");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        terminal_nulls: &terminal_nulls,
+    };
+    let derive_within = |allowance| {
+        crate::test_support::with_service_context(|ctx| {
+            super::super::schema_configuration_chain::derive_schema_configuration_row_chains_within(
+                ctx,
+                &native.entity_records,
+                &references,
+                allowance,
+            )
+        })
+        .expect("a bounded link is a loss, not a refusal")
+    };
+    let intervening = |chains: &[super::super::CatiaSchemaConfigurationRowChain]| {
+        chains
+            .iter()
+            .flat_map(super::super::CatiaSchemaConfigurationRowChain::links)
+            .map(|link| link.intervening_entities.as_ref().map(Vec::len))
+            .collect::<Vec<_>>()
+    };
+    let full = derive_within(3);
+    assert_eq!(full.bounded_links, 0);
+    assert_eq!(full.chains, native.schema_configuration_row_chains);
+    assert_eq!(intervening(&full.chains), [Some(1), Some(1), Some(1)]);
+
+    let bounded = derive_within(2);
+    assert_eq!(bounded.bounded_links, 1);
+    assert_eq!(intervening(&bounded.chains), [Some(1), Some(1), None]);
+    assert_eq!(
+        bounded.chains[0].terminal,
+        native.schema_configuration_row_chains[0].terminal
+    );
+
+    let empty = derive_within(0);
+    assert_eq!(empty.bounded_links, 3);
+    assert_eq!(intervening(&empty.chains), [None, None, None]);
+}
+
+#[test]
+fn semantic_indices_find_entities_in_configuration_row_chain() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let records = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .collect::<Vec<_>>();
+    let classes = super::super::entity_class_index(records.iter().copied());
+    assert!(!classes.is_empty());
+    let admitted = super::super::semantic_entity_indices(&native.entity_records, &classes)
+        .expect("compute the semantic entity indices");
+    assert!(!admitted.2.is_empty());
+}
+
+#[test]
+fn relation_signature_names_its_input_parameter() {
+    let source = "(#1_ : #In Length) : Real\n";
+    let service = super::super::relation_type_signature(None, source).expect("valid signature");
+    assert_eq!(service.inputs[0].parameter, "#1_");
+}
+
+#[test]
+fn configuration_entity_produces_a_schema_configuration_record() {
+    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
+    let native = crate::native::CatiaNative::decode(&file);
+    let graph = &native.object_graphs[0];
+    let configuration_entity = &native.entity_records[0];
+    let configuration_object = graph
+        .records
+        .iter()
+        .find(|record| record.id == configuration_entity.object_record)
+        .expect("configuration object record");
+
+    let classes = super::super::entity_class_index(graph.records.iter());
+    let (expressions, expression_entities, entities, terminal_nulls, bindings) =
+        super::super::semantic_entity_indices(&native.entity_records, &classes)
+            .expect("compute the semantic entity indices");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        terminal_nulls: &terminal_nulls,
+    };
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::object_production(
+            ctx,
+            configuration_entity,
+            configuration_object,
+            &references,
+            &expressions,
+            &expression_entities,
+            &mut super::super::RelationDependencies::new(&bindings, usize::MAX),
+        )
+    })
+    .expect("select the configuration object production");
+    assert!(matches!(
+        service,
+        Some(crate::native::CatiaEntityObjectProduction::SchemaConfigurationRecord(_))
+    ));
+}
+
+#[test]
+fn decode_links_value_block_graph_to_its_catalog() {
+    let bytes = standard_catpart_with_value_block();
+    let native = crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaNative::decode_with_record_sources(
+            ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("decode the native namespace");
+    assert!(native.object_graphs[0].catalog.is_some());
 }

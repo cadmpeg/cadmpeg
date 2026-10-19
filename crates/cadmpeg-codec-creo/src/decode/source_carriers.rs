@@ -3,8 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::decode::build::units::{malformed_refusal, not_implemented_refusal};
-
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -44,47 +42,35 @@ impl SourceUnitCarriers {
         }
     }
 
-    fn scale_product_translation(
-        &self,
-        ctx: &DecodeContext<'_>,
-        transform: &mut Transform,
-    ) -> Result<(), CodecError> {
+    fn scale_product_translation(&self, transform: &mut Transform) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
             *transform = transform.scaled_translation(scale).ok_or_else(|| {
-                not_implemented_refusal(
-                    ctx,
-                    "Creo product transform translation cannot be represented in millimeters",
+                CodecError::NotImplemented(
+                    "Creo product transform translation cannot be represented in millimeters"
+                        .into(),
                 )
             })?;
         }
         Ok(())
     }
 
-    pub(super) fn admit_body(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &mut CadIr,
-        mut body: Body,
-    ) -> Result<(), CodecError> {
+    pub(super) fn admit_body(&self, ir: &mut CadIr, mut body: Body) -> Result<(), CodecError> {
         if let Some(transform) = body.transform.as_mut() {
-            self.scale_product_translation(ctx, transform)?;
+            self.scale_product_translation(transform)?;
         }
-        ctx.reserve_vec(&mut ir.model.bodies, 1, "creo model bodies")?;
         ir.model.bodies.push(body);
         Ok(())
     }
 
     pub(super) fn admit_occurrence(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut occurrence: Occurrence,
     ) -> Result<(), CodecError> {
-        self.scale_product_translation(ctx, &mut occurrence.transform)?;
+        self.scale_product_translation(&mut occurrence.transform)?;
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
-            self.scale_product_translation(ctx, transform)?;
+            self.scale_product_translation(transform)?;
         }
-        ctx.reserve_vec(&mut ir.model.occurrences, 1, "creo model occurrences")?;
         ir.model.occurrences.push(occurrence);
         Ok(())
     }
@@ -103,7 +89,6 @@ impl SourceUnitCarriers {
             });
             result.map_err(Self::unrepresentable_length)?;
         }
-        ctx.reserve_vec(&mut ir.model.features, 1, "creo model features")?;
         ir.model.features.push(feature);
         Ok(())
     }
@@ -124,17 +109,15 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_parameter(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut parameter: DesignParameter,
     ) -> Result<(), CodecError> {
         if let (Some(scale), Some(ParameterValue::Length(length))) =
             (self.length_scale_mm, parameter.value.as_mut())
         {
-            crate::decode::build::units::scale_length(ctx, length, scale)
+            crate::decode::build::units::scale_length(length, scale)
                 .map_err(Self::unrepresentable_length)?;
         }
-        ctx.reserve_vec(&mut ir.model.parameters, 1, "creo model parameters")?;
         ir.model.parameters.push(parameter);
         Ok(())
     }
@@ -148,7 +131,6 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_sketch(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut sketch: Sketch,
     ) -> Result<(), CodecError> {
@@ -156,49 +138,34 @@ impl SourceUnitCarriers {
             (self.length_scale_mm, sketch.resolved_placement())
         {
             let origin = origin.scaled(scale).ok_or_else(|| {
-                not_implemented_refusal(ctx, "sketch origin cannot be represented in millimeters")
+                CodecError::NotImplemented(
+                    "sketch origin cannot be represented in millimeters".into(),
+                )
             })?;
             sketch.placement = sketch.placement.with_origin(origin);
         }
-        ctx.reserve_vec(&mut ir.model.sketches, 1, "creo model sketches")?;
         ir.model.sketches.push(sketch);
         Ok(())
     }
 
     pub(super) fn admit_sketch_entities(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         entities: Vec<SketchEntity>,
     ) -> Result<(), CodecError> {
         for mut entity in entities {
-            let source_id = SketchEntityId::mint(
-                ctx.copy_retained_text(entity.id().as_str(), "creo source sketch entity IDs")?,
-            )
-            .map_err(CodecError::malformed)?;
-            let source_geometry = entity
-                .geometry
-                .try_clone_for_decode(ctx, "creo source sketch geometry copy")?;
+            let source_id = SketchEntityId::mint(entity.id().as_str().to_owned())
+                .map_err(CodecError::malformed)?;
+            let source_geometry = entity.geometry.clone();
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
-                let scaled =
-                    crate::decode::build::units::scale_sketch_geometry(ctx, unscaled, scale)
-                        .map_err(Self::unrepresentable_length)?;
+                let scaled = crate::decode::build::units::scale_sketch_geometry(unscaled, scale)
+                    .map_err(Self::unrepresentable_length)?;
                 std::mem::replace(&mut entity.geometry, scaled)
             } else {
                 source_geometry
             };
-            ctx.insert_btree_map(
-                &mut self.sketch_entities,
-                source_id,
-                source_geometry,
-                "creo source sketch entity nodes",
-            )?;
-            ctx.reserve_vec(
-                &mut ir.model.sketch_entities,
-                1,
-                "creo model sketch entities",
-            )?;
+            self.sketch_entities.insert(source_id, source_geometry);
             ir.model.sketch_entities.push(entity);
         }
         Ok(())
@@ -212,23 +179,17 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_sketch_constraints(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         constraints: Vec<SketchConstraint>,
     ) -> Result<(), CodecError> {
-        ctx.reserve_vec(
-            &mut ir.model.sketch_constraints,
-            constraints.len(),
-            "creo model sketch constraints",
-        )?;
         for mut constraint in constraints {
             if let Some(scale) = self.length_scale_mm {
                 constraint.definition.scale_lengths(scale).map_err(|error| match error {
                     cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
-                        not_implemented_refusal(ctx, "Creo scaled length must be finite")
+                        CodecError::NotImplemented("Creo scaled length must be finite".into())
                     }
                     cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
-                        malformed_refusal(ctx, "invalid sketch constraint local arity or scalar value")
+                        CodecError::malformed("invalid sketch constraint local arity or scalar value")
                     }
                 })?;
             }
@@ -243,13 +204,9 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut surface: Surface,
     ) -> Result<(), CodecError> {
-        let source_id = SurfaceId::mint(
-            ctx.copy_retained_text(surface.id.as_str(), "creo source surface IDs")?,
-        )
-        .map_err(CodecError::malformed)?;
-        let source_geometry = surface
-            .geometry
-            .try_clone_for_decode(ctx, "creo source surface geometry")?;
+        let source_id =
+            SurfaceId::mint(surface.id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        let source_geometry = surface.geometry.clone();
         if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut surface.geometry)
         {
@@ -260,13 +217,7 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.surfaces,
-            source_id,
-            source_geometry,
-            "creo source surface nodes",
-        )?;
-        ctx.reserve_vec(&mut ir.model.surfaces, 1, "creo model surfaces")?;
+        self.surfaces.insert(source_id, source_geometry);
         ir.model.surfaces.push(surface);
         Ok(())
     }
@@ -277,12 +228,9 @@ impl SourceUnitCarriers {
         surface: &mut Surface,
         mut geometry: SurfaceGeometry,
     ) -> Result<(), CodecError> {
-        let source_id = SurfaceId::mint(
-            ctx.copy_retained_text(surface.id.as_str(), "creo replacement source surface IDs")?,
-        )
-        .map_err(CodecError::malformed)?;
-        let source_geometry =
-            geometry.try_clone_for_decode(ctx, "creo replacement source surface geometry")?;
+        let source_id =
+            SurfaceId::mint(surface.id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        let source_geometry = geometry.clone();
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
         {
@@ -293,12 +241,7 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.surfaces,
-            source_id,
-            source_geometry,
-            "creo replacement source surface nodes",
-        )?;
+        self.surfaces.insert(source_id, source_geometry);
         surface.geometry = geometry;
         Ok(())
     }
@@ -310,11 +253,8 @@ impl SourceUnitCarriers {
         mut curve: Curve,
     ) -> Result<(), CodecError> {
         let source_id =
-            CurveId::mint(ctx.copy_retained_text(curve.id.as_str(), "creo source curve IDs")?)
-                .map_err(CodecError::malformed)?;
-        let source_geometry = curve
-            .geometry
-            .try_clone_for_decode(ctx, "creo source curve geometry")?;
+            CurveId::mint(curve.id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        let source_geometry = curve.geometry.clone();
         if let (Some(scale), CurveGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut curve.geometry)
         {
@@ -325,13 +265,7 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.curves,
-            source_id,
-            source_geometry,
-            "creo source curve nodes",
-        )?;
-        ctx.reserve_vec(&mut ir.model.curves, 1, "creo model curves")?;
+        self.curves.insert(source_id, source_geometry);
         ir.model.curves.push(curve);
         Ok(())
     }
@@ -346,12 +280,9 @@ impl SourceUnitCarriers {
         curve: &mut Curve,
         mut geometry: CurveGeometry,
     ) -> Result<(), CodecError> {
-        let source_id = CurveId::mint(
-            ctx.copy_retained_text(curve.id.as_str(), "creo replacement source curve IDs")?,
-        )
-        .map_err(CodecError::malformed)?;
-        let source_geometry =
-            geometry.try_clone_for_decode(ctx, "creo replacement source curve geometry")?;
+        let source_id =
+            CurveId::mint(curve.id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        let source_geometry = geometry.clone();
         if let (Some(scale), CurveGeometry::Solved(solved)) = (self.length_scale_mm, &mut geometry)
         {
             crate::decode::build::units::scale_curve_geometry(ctx, solved, scale).map_err(
@@ -361,43 +292,31 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.curves,
-            source_id,
-            source_geometry,
-            "creo replacement source curve nodes",
-        )?;
+        self.curves.insert(source_id, source_geometry);
         curve.geometry = geometry;
         Ok(())
     }
 
     pub(super) fn admit_point(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut point: Point,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
             let position = point.position().scaled(scale).ok_or_else(|| {
-                not_implemented_refusal(ctx, "Creo scaled model point must be finite")
+                CodecError::NotImplemented("Creo scaled model point must be finite".into())
             })?;
             point.set_position(position);
         }
-        ctx.reserve_vec(&mut ir.model.points, 1, "creo model points")?;
         ir.model.points.push(point);
         Ok(())
     }
 
-    fn scale_tolerance(
-        &self,
-        ctx: &DecodeContext<'_>,
-        tolerance: &mut Option<PositiveReal>,
-    ) -> Result<(), CodecError> {
+    fn scale_tolerance(&self, tolerance: &mut Option<PositiveReal>) -> Result<(), CodecError> {
         if let (Some(scale), Some(current)) = (self.length_scale_mm, tolerance) {
             *current = PositiveReal::new(current.get() * scale.get()).ok_or_else(|| {
-                not_implemented_refusal(
-                    ctx,
-                    "scaled topology tolerance must be positive and finite",
+                CodecError::NotImplemented(
+                    "scaled topology tolerance must be positive and finite".into(),
                 )
             })?;
         }
@@ -406,24 +325,16 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_vertex(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut vertex: Vertex,
     ) -> Result<(), CodecError> {
-        self.scale_tolerance(ctx, &mut vertex.tolerance)?;
-        ctx.reserve_vec(&mut ir.model.vertices, 1, "creo model vertices")?;
+        self.scale_tolerance(&mut vertex.tolerance)?;
         ir.model.vertices.push(vertex);
         Ok(())
     }
 
-    pub(super) fn admit_face(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &mut CadIr,
-        mut face: Face,
-    ) -> Result<(), CodecError> {
-        self.scale_tolerance(ctx, &mut face.tolerance)?;
-        ctx.reserve_vec(&mut ir.model.faces, 1, "creo model faces")?;
+    pub(super) fn admit_face(&self, ir: &mut CadIr, mut face: Face) -> Result<(), CodecError> {
+        self.scale_tolerance(&mut face.tolerance)?;
         ir.model.faces.push(face);
         Ok(())
     }
@@ -434,7 +345,7 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut edge: Edge,
     ) -> Result<(), CodecError> {
-        self.scale_tolerance(ctx, &mut edge.tolerance)?;
+        self.scale_tolerance(&mut edge.tolerance)?;
         let source_range = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get);
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
             (self.length_scale_mm, &mut edge.carrier)
@@ -449,7 +360,7 @@ impl SourceUnitCarriers {
                 .flatten();
             if let Some(parameter_scale) = parameter_scale {
                 *interval = interval.scaled(parameter_scale).ok_or_else(|| {
-                    not_implemented_refusal(ctx, "edge param_range must be finite and ordered")
+                    CodecError::NotImplemented("edge param_range must be finite and ordered".into())
                 })?;
             }
         }
@@ -457,19 +368,11 @@ impl SourceUnitCarriers {
             if let Some(existing) = self.edge_parameter_ranges.get_mut(&edge.id) {
                 *existing = source_range;
             } else {
-                let id = EdgeId::mint(
-                    ctx.copy_retained_text(edge.id.as_str(), "creo source edge range IDs")?,
-                )
-                .map_err(CodecError::malformed)?;
-                ctx.insert_btree_map(
-                    &mut self.edge_parameter_ranges,
-                    id,
-                    source_range,
-                    "creo source edge range nodes",
-                )?;
+                let id =
+                    EdgeId::mint(edge.id.as_str().to_owned()).map_err(CodecError::malformed)?;
+                self.edge_parameter_ranges.insert(id, source_range);
             }
         }
-        ctx.reserve_vec(&mut ir.model.edges, 1, "creo model edges")?;
         ir.model.edges.push(edge);
         Ok(())
     }
@@ -505,11 +408,12 @@ impl SourceUnitCarriers {
                     .parameter_range
                     .scaled(parameter_scale)
                     .ok_or_else(|| {
-                        not_implemented_refusal(ctx, "parameter_range must be finite and ordered")
+                        CodecError::NotImplemented(
+                            "parameter_range must be finite and ordered".into(),
+                        )
                     })?;
             }
         }
-        ctx.reserve_vec(&mut ir.model.coedges, 1, "creo model coedges")?;
         ir.model.coedges.push(coedge);
         Ok(())
     }
@@ -521,24 +425,42 @@ impl SourceUnitCarriers {
         pcurve: Pcurve,
         surface_id: &SurfaceId,
     ) -> Result<(), CodecError> {
-        let surface = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == surface_id)
-            .ok_or_else(|| malformed_refusal(ctx, "Creo pcurve has no owning surface"))?;
-        let scales = self
-            .length_scale_mm
-            .and_then(|scale| {
-                self.surface_geometry(surface).solved().map(|geometry| {
-                    crate::decode::build::units::surface_parameter_scales(
-                        ctx,
-                        geometry,
-                        scale.get(),
-                    )
+        self.admit_pcurve_indexed(
+            ctx,
+            ir,
+            pcurve,
+            surface_id,
+            &crate::decode::uniqueness::ExactIdPositions::new(
+                ir.model.surfaces.iter().map(|surface| surface.id.as_str()),
+            ),
+        )
+    }
+
+    pub(super) fn admit_pcurve_indexed(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        pcurve: Pcurve,
+        surface_id: &SurfaceId,
+        surfaces: &crate::decode::uniqueness::ExactIdPositions,
+    ) -> Result<(), CodecError> {
+        let scales = {
+            let surface = surfaces
+                .first(surface_id.as_str())
+                .and_then(|position| ir.model.surfaces.get(position))
+                .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
+            self.length_scale_mm
+                .and_then(|scale| {
+                    self.surface_geometry(surface).solved().map(|geometry| {
+                        crate::decode::build::units::surface_parameter_scales(
+                            ctx,
+                            geometry,
+                            scale.get(),
+                        )
+                    })
                 })
-            })
-            .transpose()?;
+                .transpose()?
+        };
         Self::push_pcurve(ctx, ir, pcurve, scales)
     }
 
@@ -572,48 +494,43 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         if let Some(scales) = scales {
             pcurve.geometry = pcurve.geometry.scaled_coordinates_owned(ctx, scales)?
-                .map_err(|_refusal| match ctx.format_retained(
-                    format_args!("Creo pcurve cannot be represented after unit normalization with scales {scales:?}"),
-                    "creo normalized pcurve refusal text",
-                ) {
-                    Ok(message) => CodecError::NotImplemented(message),
-                    Err(error) => error,
+                .map_err(|_refusal| {
+                    CodecError::NotImplemented(format!(
+                        "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
+                    ))
                 })?;
         }
-        ctx.reserve_vec(&mut ir.model.pcurves, 1, "creo model pcurves")?;
         ir.model.pcurves.push(pcurve);
         Ok(())
     }
 
     pub(super) fn admit_procedural_surface(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         owner: &SurfaceId,
         mut procedural: ProceduralSurface,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
-            crate::decode::build::units::scale_procedural_surface(ctx, &mut procedural, scale)?;
+            crate::decode::build::units::scale_procedural_surface(&mut procedural, scale)?;
         }
 
         self.procedural_index
-            .add_surface(ctx, &mut ir.model, owner, procedural)?
+            .add_surface(&mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
     pub(super) fn admit_procedural_curve(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         owner: &CurveId,
         mut procedural: ProceduralCurve,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
-            crate::decode::build::units::scale_procedural_curve(ctx, &mut procedural, scale)?;
+            crate::decode::build::units::scale_procedural_curve(&mut procedural, scale)?;
         }
 
         self.procedural_index
-            .add_curve(ctx, &mut ir.model, owner, procedural)?
+            .add_curve(&mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -638,7 +555,6 @@ impl SourceUnitCarriers {
 #[cfg(test)]
 mod tests {
     use super::SourceUnitCarriers;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
@@ -666,10 +582,9 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
 
     #[test]
-    fn source_sketch_geometry_refuses_nurbs_copy_limit() {
+    fn source_sketch_geometry_copies_nurbs() {
         let geometry = SketchGeometry::nurbs(
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -680,31 +595,14 @@ mod tests {
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("source NURBS"),
         );
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 8;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = geometry
-            .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-            .expect_err("six knots and three poles exceed the limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source sketch geometry copy"),
-            "{error:?}"
-        );
-        let copy = crate::decode::with_test_decode_ctx(|ctx| {
-            geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-        })
-        .expect("service copy");
+        let copy = { geometry.clone() };
         assert_eq!(copy, geometry);
     }
 
     #[test]
-    fn source_sketch_geometry_refuses_text_and_native_retained_limits() {
+    fn source_sketch_geometry_copies_text_and_native() {
         let text = SketchGeometry::try_from(SketchGeometryDefinition::Text {
             text: cadmpeg_core::text::NonBlankString::new("cadmpeg").expect("text"),
             font_family: cadmpeg_core::text::NonBlankString::new("sans").expect("font"),
@@ -719,83 +617,26 @@ mod tests {
         let native = SketchGeometry::native(
             cadmpeg_core::text::NonBlankString::new("native").expect("native kind"),
         );
-        let arena = DecodeArena::new();
-        for (geometry, limit, operation) in [
-            (&text, 6, "creo source sketch geometry copy"),
-            (&text, 10, "creo source sketch geometry copy"),
-            (&native, 5, "creo source sketch geometry copy"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let error = geometry
-                .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-                .expect_err("retained source text exceeds its limit");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(resource)
-                if resource.operation == operation),
-                "{error:?}"
-            );
-        }
         for geometry in [&text, &native] {
-            let copy = crate::decode::with_test_decode_ctx(|ctx| {
-                geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-            })
-            .expect("service copy");
+            let copy = { geometry.clone() };
             assert_eq!(&copy, geometry);
         }
     }
 
     #[test]
-    fn source_sketch_geometry_refuses_external_reference_copies() {
+    fn source_sketch_geometry_copies_external_reference() {
         let geometry = SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
             document: Some("doc".to_owned()),
             object: cadmpeg_core::text::NonBlankString::new("part").expect("object"),
             subelements: vec!["face".to_owned(), "edge".to_owned()],
         })
         .expect("external source geometry");
-        let arena = DecodeArena::new();
-        let mut item_policy = DecodePolicy::service();
-        item_policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-        let error = geometry
-            .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-            .expect_err("two selectors exceed the item limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source sketch geometry copy"),
-            "{error:?}"
-        );
-        for (limit, operation) in [
-            (2, "creo source sketch geometry copy"),
-            (6, "creo source sketch geometry copy"),
-            (10, "creo source sketch geometry copy"),
-            (14, "creo source sketch geometry copy"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let error = geometry
-                .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-                .expect_err("external reference copy exceeds its retained limit");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(resource)
-                if resource.operation == operation),
-                "{error:?}"
-            );
-        }
-        let copy = crate::decode::with_test_decode_ctx(|ctx| {
-            geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-        })
-        .expect("service copy");
+        let copy = { geometry.clone() };
         assert_eq!(copy, geometry);
     }
 
     #[test]
-    fn replacement_curve_refuses_source_node_and_id_copy_limits() {
+    fn replacement_curve_records_source_geometry() {
         let mut curve = Curve {
             parameter_range: None,
             id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
@@ -803,41 +644,16 @@ mod tests {
             source_object: None,
         };
         let geometry = curve.geometry.clone();
-        let arena = DecodeArena::new();
-        let mut item_policy = DecodePolicy::service();
-        item_policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::default()
-            .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
-            .expect_err("source curve node exceeds its limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo replacement source curve nodes"),
-            "{error:?}"
-        );
-        let mut byte_policy = DecodePolicy::service();
-        byte_policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &byte_policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::default()
-            .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
-            .expect_err("source curve ID exceeds its retained limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo replacement source curve IDs"),
-            "{error:?}"
-        );
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
         })
-        .expect("service replacement");
+        .expect("replace the curve geometry");
         assert_eq!(carriers.curve_geometry(&curve), &geometry);
     }
 
     #[test]
-    fn replacement_curve_refuses_retained_geometry_copy() {
+    fn replacement_curve_records_source_geometry_with_unknown_record() {
         let id = CurveId::mint("creo:test:replacement-curve#1")
             .expect("valid test setup or admitted service result");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -848,25 +664,12 @@ mod tests {
         });
         let mut curve = Curve {
             parameter_range: None,
-            id: id.clone(),
+            id,
             geometry: geometry.clone(),
             source_object: None,
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("valid test setup or admitted service result");
-        let error = SourceUnitCarriers::default()
-            .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
-            .expect_err("source geometry copy exceeds retained limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo replacement source curve geometry"),
-            "{error:?}"
-        );
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
         })
         .expect("valid test setup or admitted service result");
@@ -874,48 +677,23 @@ mod tests {
     }
 
     #[test]
-    fn replacement_surface_refuses_source_node_and_id_copy_limits() {
+    fn replacement_surface_records_source_geometry() {
         let mut surface = Surface {
             id: SurfaceId::mint("creo:test:replacement-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         };
         let geometry = surface.geometry.clone();
-        let arena = DecodeArena::new();
-        let mut item_policy = DecodePolicy::service();
-        item_policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::default()
-            .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
-            .expect_err("source surface node exceeds its limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo replacement source surface nodes"),
-            "{error:?}"
-        );
-        let mut byte_policy = DecodePolicy::service();
-        byte_policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &byte_policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::default()
-            .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
-            .expect_err("source surface ID exceeds its retained limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo replacement source surface IDs"),
-            "{error:?}"
-        );
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
         })
-        .expect("service replacement");
+        .expect("replace the surface geometry");
         assert_eq!(carriers.surface_geometry(&surface), &geometry);
     }
 
     #[test]
-    fn replacement_surface_refuses_retained_geometry_copy() {
+    fn replacement_surface_records_source_geometry_with_unknown_record() {
         let id = SurfaceId::mint("creo:test:replacement-surface#1")
             .expect("valid test setup or admitted service result");
         let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -925,25 +703,12 @@ mod tests {
             ),
         });
         let mut surface = Surface {
-            id: id.clone(),
+            id,
             geometry: geometry.clone(),
             source_object: None,
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("valid test setup or admitted service result");
-        let error = SourceUnitCarriers::default()
-            .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
-            .expect_err("source geometry copy exceeds retained limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo replacement source surface geometry"),
-            "{error:?}"
-        );
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
         })
         .expect("valid test setup or admitted service result");
@@ -951,48 +716,19 @@ mod tests {
     }
 
     #[test]
-    fn source_curve_admission_refuses_each_outer_boundary() {
+    fn source_curve_admission_pushes_curve_and_records_source_geometry() {
         let curve = Curve {
             parameter_range: None,
             id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         };
-        let arena = DecodeArena::new();
-        for (limit, operation) in [(0, "creo source curve nodes"), (1, "creo model curves")] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let mut ir = CadIr::empty();
-            let mut carriers = SourceUnitCarriers::default();
-            let error = carriers
-                .admit_curve(&ctx, &mut ir, curve.clone())
-                .expect_err("curve collection boundary exceeds its limit");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(resource)
-                if resource.operation == operation),
-                "{error:?}"
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::default()
-            .admit_curve(&ctx, &mut CadIr::empty(), curve.clone())
-            .expect_err("source curve ID copy exceeds its limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source curve IDs"),
-            "{error:?}"
-        );
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_curve(ctx, &mut ir, curve.clone())
         })
-        .expect("service curve admission");
+        .expect("admit the curve");
         assert_eq!(ir.model.curves, vec![curve]);
         assert_eq!(
             carriers.curve_geometry(&ir.model.curves[0]),
@@ -1001,7 +737,7 @@ mod tests {
     }
 
     #[test]
-    fn source_curve_admission_refuses_retained_geometry_copy() {
+    fn source_curve_admission_records_source_geometry_with_unknown_record() {
         let id = CurveId::mint("creo:test:source-curve#1")
             .expect("valid test setup or admitted service result");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1012,26 +748,13 @@ mod tests {
         });
         let curve = Curve {
             parameter_range: None,
-            id: id.clone(),
+            id,
             geometry: geometry.clone(),
             source_object: None,
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("valid test setup or admitted service result");
-        let error = SourceUnitCarriers::default()
-            .admit_curve(&ctx, &mut CadIr::empty(), curve.clone())
-            .expect_err("source geometry copy exceeds retained limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source curve geometry"),
-            "{error:?}"
-        );
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_curve(ctx, &mut ir, curve.clone())
         })
         .expect("valid test setup or admitted service result");
@@ -1039,47 +762,18 @@ mod tests {
     }
 
     #[test]
-    fn source_surface_admission_refuses_each_outer_boundary() {
+    fn source_surface_admission_pushes_surface_and_records_source_geometry() {
         let surface = Surface {
             id: SurfaceId::mint("creo:test:source-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         };
-        let arena = DecodeArena::new();
-        for (limit, operation) in [(0, "creo source surface nodes"), (1, "creo model surfaces")] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let mut ir = CadIr::empty();
-            let mut carriers = SourceUnitCarriers::default();
-            let error = carriers
-                .admit_surface(&ctx, &mut ir, surface.clone())
-                .expect_err("surface collection boundary exceeds its limit");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(resource)
-                if resource.operation == operation),
-                "{error:?}"
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::default()
-            .admit_surface(&ctx, &mut CadIr::empty(), surface.clone())
-            .expect_err("source surface ID copy exceeds its limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source surface IDs"),
-            "{error:?}"
-        );
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
-        .expect("service surface admission");
+        .expect("admit the surface");
         assert_eq!(ir.model.surfaces, vec![surface]);
         assert_eq!(
             carriers.surface_geometry(&ir.model.surfaces[0]),
@@ -1088,7 +782,7 @@ mod tests {
     }
 
     #[test]
-    fn source_surface_admission_refuses_retained_geometry_copy() {
+    fn source_surface_admission_records_source_geometry_with_unknown_record() {
         let id = SurfaceId::mint("creo:test:source-surface#1")
             .expect("valid test setup or admitted service result");
         let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -1098,159 +792,17 @@ mod tests {
             ),
         });
         let surface = Surface {
-            id: id.clone(),
+            id,
             geometry: geometry.clone(),
             source_object: None,
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("valid test setup or admitted service result");
-        let error = SourceUnitCarriers::default()
-            .admit_surface(&ctx, &mut CadIr::empty(), surface.clone())
-            .expect_err("source geometry copy exceeds retained limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source surface geometry"),
-            "{error:?}"
-        );
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
         .expect("valid test setup or admitted service result");
         assert_eq!(carriers.surface_geometry(&ir.model.surfaces[0]), &geometry);
-    }
-
-    #[test]
-    fn feature_admission_refuses_before_model_vector_growth() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut ir = CadIr::empty();
-        let error = SourceUnitCarriers::default()
-            .admit_feature(
-                &ctx,
-                &mut ir,
-                source_feature(FeatureDefinition::Operation(
-                    FeatureOperation::StoredGeometry {},
-                )),
-            )
-            .expect_err("one feature needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model features"));
-        assert!(ir.model.features.is_empty());
-    }
-
-    #[test]
-    fn parameter_admission_refuses_before_model_vector_growth() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut ir = CadIr::empty();
-        let error = SourceUnitCarriers::default()
-            .admit_parameter(&ctx, &mut ir, source_length_parameter(2.0))
-            .expect_err("one parameter needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model parameters"));
-        assert!(ir.model.parameters.is_empty());
-    }
-
-    fn zero_collection_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        run(&ctx)
-    }
-
-    #[test]
-    fn point_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let point = Point::new(
-            cadmpeg_ir::ids::PointId::mint("creo:test:point#0").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("finite point"),
-            None,
-        );
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_point(ctx, &mut ir, point)
-        })
-        .expect_err("one point needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model points"));
-        assert!(ir.model.points.is_empty());
-    }
-
-    #[test]
-    fn vertex_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let vertex = Vertex {
-            id: cadmpeg_ir::ids::VertexId::mint("creo:test:vertex#0").expect("identity grammar"),
-            point: cadmpeg_ir::ids::PointId::mint("creo:test:point#0").expect("identity grammar"),
-            tolerance: None,
-        };
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_vertex(ctx, &mut ir, vertex)
-        })
-        .expect_err("one vertex needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model vertices"));
-        assert!(ir.model.vertices.is_empty());
-    }
-
-    #[test]
-    fn face_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let face = Face {
-            id: cadmpeg_ir::ids::FaceId::mint("creo:test:face#0").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("creo:test:shell#0").expect("identity grammar"),
-            surface: SurfaceId::mint("creo:test:surface#0").expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        };
-        let error =
-            zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_face(ctx, &mut ir, face))
-                .expect_err("one face needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model faces"));
-        assert!(ir.model.faces.is_empty());
-    }
-
-    #[test]
-    fn coedge_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let id = cadmpeg_ir::ids::CoedgeId::mint("creo:test:coedge#0").expect("identity grammar");
-        let coedge = Coedge {
-            id: id.clone(),
-            owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:test:loop#0")
-                .expect("identity grammar"),
-            edge: cadmpeg_ir::ids::EdgeId::mint("creo:test:edge#0").expect("identity grammar"),
-            radial_next: id,
-            sense: Sense::Forward,
-            pcurves: Vec::new(),
-            use_curve: None,
-        };
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_coedge(ctx, &mut ir, coedge)
-        })
-        .expect_err("one coedge needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model coedges"));
-        assert!(ir.model.coedges.is_empty());
     }
 
     fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {
@@ -1265,194 +817,6 @@ mod tests {
             ),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, None, None),
         }
-    }
-
-    fn admission_plane() -> SurfaceGeometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("source plane"),
-        ))
-    }
-
-    #[test]
-    fn pcurve_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let surface_id = SurfaceId::mint("creo:test:surface#0").expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
-            geometry: admission_plane(),
-            source_object: None,
-        });
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_pcurve(
-                ctx,
-                &mut ir,
-                admission_pcurve(),
-                &surface_id,
-            )
-        })
-        .expect_err("one pcurve needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model pcurves"));
-        assert!(ir.model.pcurves.is_empty());
-    }
-
-    #[test]
-    fn source_surface_pcurve_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_pcurve_with_source_surface(
-                ctx,
-                &mut ir,
-                admission_pcurve(),
-                &admission_plane(),
-            )
-        })
-        .expect_err("one source-surface pcurve needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model pcurves"));
-        assert!(ir.model.pcurves.is_empty());
-    }
-
-    fn admission_edge(range: Option<[f64; 2]>) -> Edge {
-        let vertex =
-            cadmpeg_ir::ids::VertexId::mint("creo:test:vertex#0").expect("identity grammar");
-        Edge {
-            id: cadmpeg_ir::ids::EdgeId::mint("creo:test:edge#0").expect("identity grammar"),
-            carrier: EdgeCarrier::new(
-                Some(CurveId::mint("creo:test:curve#0").expect("identity grammar")),
-                range,
-            )
-            .expect("source edge carrier"),
-            start: vertex.clone(),
-            end: vertex,
-            tolerance: None,
-        }
-    }
-
-    #[test]
-    fn edge_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_edge(ctx, &mut ir, admission_edge(None))
-        })
-        .expect_err("one edge needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model edges"));
-        assert!(ir.model.edges.is_empty());
-    }
-
-    #[test]
-    fn bounded_edge_admission_refuses_before_source_range_node() {
-        let mut ir = CadIr::empty();
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_edge(ctx, &mut ir, admission_edge(Some([0.0, 1.0])))
-        })
-        .expect_err("one bounded edge needs one source range node");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo source edge range nodes"));
-        assert!(ir.model.edges.is_empty());
-    }
-
-    #[test]
-    fn bounded_edge_admission_refuses_before_source_range_id_copy() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut ir = CadIr::empty();
-        let error = SourceUnitCarriers::default()
-            .admit_edge(&ctx, &mut ir, admission_edge(Some([0.0, 1.0])))
-            .expect_err("source range key needs retained bytes");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo source edge range IDs"));
-        assert!(ir.model.edges.is_empty());
-    }
-
-    #[test]
-    fn body_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_body(
-                ctx,
-                &mut ir,
-                Body {
-                    id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
-                        .expect("identity grammar"),
-                    kind: BodyKind::Solid,
-                    regions: Vec::new(),
-                    transform: None,
-                    name: None,
-                    color: None,
-                    visible: None,
-                },
-            )
-        })
-        .expect_err("one body needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model bodies"));
-        assert!(ir.model.bodies.is_empty());
-    }
-
-    #[test]
-    fn occurrence_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_occurrence(
-                ctx,
-                &mut ir,
-                source_occurrence(translated_product_transform(0.0), None),
-            )
-        })
-        .expect_err("one occurrence needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model occurrences"));
-        assert!(ir.model.occurrences.is_empty());
-    }
-
-    #[test]
-    fn sketch_admission_refuses_before_model_vector_growth() {
-        let mut ir = CadIr::empty();
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_sketch(
-                ctx,
-                &mut ir,
-                source_sketch(Point3::new(0.0, 0.0, 0.0)),
-            )
-        })
-        .expect_err("one sketch needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model sketches"));
-        assert!(ir.model.sketches.is_empty());
-    }
-
-    #[test]
-    fn sketch_constraint_admission_refuses_before_counted_model_rows() {
-        let mut ir = CadIr::empty();
-        let error = zero_collection_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_sketch_constraints(
-                ctx,
-                &mut ir,
-                vec![source_distance_constraint(2.0)],
-            )
-        })
-        .expect_err("one constraint needs one model vector row");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model sketch constraints"));
-        assert!(ir.model.sketch_constraints.is_empty());
     }
 
     fn source_feature(definition: FeatureDefinition) -> Feature {
@@ -1557,18 +921,13 @@ mod tests {
     fn planar_sketch_lengths_are_in_millimeters_at_admission() {
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch(ctx, &mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0)))
-        })
-        .expect("sketch admission");
-        crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch_entities(ctx, &mut ir, vec![source_sketch_line(1.0)])
-        })
-        .expect("entity admission");
-        crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch_constraints(ctx, &mut ir, vec![source_distance_constraint(2.0)])
-        })
-        .expect("constraint admission");
+        { carriers.admit_sketch(&mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0))) }
+            .expect("sketch admission");
+        carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)])
+            .expect("entity admission");
+        { carriers.admit_sketch_constraints(&mut ir, vec![source_distance_constraint(2.0)]) }
+            .expect("constraint admission");
         assert_eq!(
             ir.model.sketches[0]
                 .resolved_placement()
@@ -1603,10 +962,9 @@ mod tests {
     fn sketch_origin_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch(ctx, &mut ir, source_sketch(Point3::new(f64::MAX, 0.0, 0.0)))
-        })
-        .expect_err("millimeter placement cannot be represented");
+        let error =
+            { carriers.admit_sketch(&mut ir, source_sketch(Point3::new(f64::MAX, 0.0, 0.0))) }
+                .expect_err("millimeter placement cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketches.is_empty());
     }
@@ -1615,65 +973,20 @@ mod tests {
     fn sketch_entity_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch_entities(ctx, &mut ir, vec![source_sketch_line(f64::MAX)])
-        })
-        .expect_err("millimeter line cannot be represented");
+        let error = carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(f64::MAX)])
+            .expect_err("millimeter line cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketch_entities.is_empty());
-    }
-
-    #[test]
-    fn sketch_entity_admission_refuses_each_source_and_model_boundary() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let arena = DecodeArena::new();
-        for (limit, operation) in [
-            (0, "creo source sketch entity nodes"),
-            (1, "creo model sketch entities"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let mut ir = CadIr::empty();
-            let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-            let error = carriers
-                .admit_sketch_entities(&ctx, &mut ir, vec![source_sketch_line(1.0)])
-                .expect_err("one sketch entity exceeds its collection limit");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(resource)
-                if resource.operation == operation),
-                "{error:?}"
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let mut ir = CadIr::empty();
-        let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = carriers
-            .admit_sketch_entities(&ctx, &mut ir, vec![source_sketch_line(1.0)])
-            .expect_err("source identity copy exceeds retained-byte limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source sketch entity IDs"),
-            "{error:?}"
-        );
     }
 
     #[test]
     fn sketch_constraint_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch_constraints(
-                ctx,
-                &mut ir,
-                vec![source_distance_constraint(f64::MAX)],
-            )
-        })
+        let error = {
+            carriers.admit_sketch_constraints(&mut ir, vec![source_distance_constraint(f64::MAX)])
+        }
         .expect_err("millimeter constraint cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketch_constraints.is_empty());
@@ -1683,7 +996,7 @@ mod tests {
     fn datum_offset_distance_is_in_millimeters_at_feature_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_feature(
                 ctx,
                 &mut ir,
@@ -1708,7 +1021,7 @@ mod tests {
     fn post_process_fuzzy_tolerance_is_in_millimeters_at_feature_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_feature(
                 ctx,
                 &mut ir,
@@ -1737,7 +1050,7 @@ mod tests {
     fn feature_length_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             carriers.admit_feature(
                 ctx,
                 &mut ir,
@@ -1759,10 +1072,8 @@ mod tests {
     fn parameter_length_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_parameter(ctx, &mut ir, source_length_parameter(f64::MAX))
-        })
-        .expect_err("millimeter parameter cannot be represented");
+        let error = { carriers.admit_parameter(&mut ir, source_length_parameter(f64::MAX)) }
+            .expect_err("millimeter parameter cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.parameters.is_empty());
     }
@@ -1800,9 +1111,8 @@ mod tests {
     fn product_transform_translations_are_in_millimeters_at_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        {
             carriers.admit_body(
-                ctx,
                 &mut ir,
                 Body {
                     id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
@@ -1815,18 +1125,17 @@ mod tests {
                     visible: None,
                 },
             )
-        })
+        }
         .expect("body admission");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        {
             carriers.admit_occurrence(
-                ctx,
                 &mut ir,
                 source_occurrence(
                     translated_product_transform(2.0),
                     Some(translated_product_transform(3.0)),
                 ),
             )
-        })
+        }
         .expect("occurrence admission");
         assert_eq!(
             ir.model.bodies[0]
@@ -1849,13 +1158,12 @@ mod tests {
     fn product_transform_translation_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(1000.0));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = {
             carriers.admit_occurrence(
-                ctx,
                 &mut ir,
                 source_occurrence(translated_product_transform(f64::MAX), None),
             )
-        })
+        }
         .expect_err("a non-finite translation has no transform");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(
@@ -1881,7 +1189,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             source_carriers.admit_surface(ctx, &mut ir, surface)
         })
         .expect_err("millimeter radius cannot be represented");
@@ -1904,7 +1212,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(ctx, &mut ir, curve)
         })
         .expect_err("millimeter origin cannot be represented");
@@ -1930,7 +1238,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let scale = PositiveReal::new(25.4).expect("inch scale");
         let mut source_carriers = SourceUnitCarriers::new(Some(scale));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_surface(ctx, &mut ir, surface)
         })
         .expect("surface admission");
@@ -1948,10 +1256,9 @@ mod tests {
             ),
             None,
         );
-        crate::decode::with_test_decode_ctx(|ctx| {
-            source_carriers.admit_procedural_surface(ctx, &mut ir, &surface_id, procedural)
-        })
-        .expect("procedural attachment");
+        source_carriers
+            .admit_procedural_surface(&mut ir, &surface_id, procedural)
+            .expect("procedural attachment");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
         else {
@@ -1970,34 +1277,31 @@ mod tests {
     fn procedural_surface_without_owner_is_malformed_at_attachment() {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| source_carriers
-            .admit_procedural_surface(
-                ctx,
-                &mut ir,
-                &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1")
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Extrusion(
-                        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                            CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
-                            None,
-                            Vector3::new(0.0, 0.0, 1.0),
-                            None,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
-                        )
-                        .expect("valid extrusion fixture"),
-                    ),
-                    None,
+        let error = (source_carriers.admit_procedural_surface(
+            &mut ir,
+            &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1").expect("identity grammar"),
+                ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
+                        None,
+                        Vector3::new(0.0, 0.0, 1.0),
+                        None,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                    .expect("valid extrusion fixture"),
                 ),
-            ))
-            .expect_err("missing owner must refuse attachment");
+                None,
+            ),
+        ))
+        .expect_err("missing owner must refuse attachment");
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
         assert!(ir.model.procedural_surfaces.is_empty());
     }
 
     #[test]
-    fn procedural_surface_attachment_refuses_arena_growth() {
+    fn procedural_surface_attachment_stores_construction() {
         let owner = SurfaceId::mint("creo:visibgeom:surface#1")
             .expect("valid test setup or admitted service result");
         let procedural = ProceduralSurface::new(
@@ -2015,30 +1319,14 @@ mod tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Admit the owner-index bucket and entry, but no construction row.
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        SourceUnitCarriers::default()
+            .admit_procedural_surface(&mut ir, &owner, procedural)
             .expect("valid test setup or admitted service result");
-        let error = SourceUnitCarriers::default()
-            .admit_procedural_surface(&ctx, &mut ir, &owner.clone(), procedural.clone())
-            .expect_err("procedural surface arena exceeds limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "store procedural surface constructions"),
-            "{error:?}"
-        );
-        assert!(ir.model.procedural_surfaces.is_empty());
-        crate::decode::with_test_decode_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_procedural_surface(ctx, &mut ir, &owner, procedural)
-        })
-        .expect("valid test setup or admitted service result");
         assert_eq!(ir.model.procedural_surfaces.len(), 1);
     }
 
     #[test]
-    fn procedural_curve_attachment_refuses_arena_growth() {
+    fn procedural_curve_attachment_stores_construction() {
         let owner = CurveId::mint("creo:visibgeom:curve#1")
             .expect("valid test setup or admitted service result");
         let procedural = ProceduralCurve::new(
@@ -2053,25 +1341,9 @@ mod tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Admit the owner-index bucket and entry, but no construction row.
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        SourceUnitCarriers::default()
+            .admit_procedural_curve(&mut ir, &owner, procedural)
             .expect("valid test setup or admitted service result");
-        let error = SourceUnitCarriers::default()
-            .admit_procedural_curve(&ctx, &mut ir, &owner.clone(), procedural.clone())
-            .expect_err("procedural curve arena exceeds limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "store procedural curve constructions"),
-            "{error:?}"
-        );
-        assert!(ir.model.procedural_curves.is_empty());
-        crate::decode::with_test_decode_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_procedural_curve(ctx, &mut ir, &owner, procedural)
-        })
-        .expect("valid test setup or admitted service result");
         assert_eq!(ir.model.procedural_curves.len(), 1);
     }
 
@@ -2080,7 +1352,7 @@ mod tests {
         let curve_id = CurveId::mint("creo:depdb:curve#1").expect("identity grammar");
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(
                 ctx,
                 &mut ir,
@@ -2093,9 +1365,8 @@ mod tests {
             )
         })
         .expect("curve admission");
-        crate::decode::with_test_decode_ctx(|ctx| {
-            source_carriers.admit_procedural_curve(
-                ctx,
+        source_carriers
+            .admit_procedural_curve(
                 &mut ir,
                 &curve_id,
                 ProceduralCurve::new(
@@ -2117,8 +1388,7 @@ mod tests {
                     ),
                 ),
             )
-        })
-        .expect("helix attachment");
+            .expect("helix attachment");
         let ProceduralCurveDefinition::Helix(helix) = ir.model.procedural_curves[0].definition()
         else {
             panic!("helix construction changed family");
@@ -2137,7 +1407,8 @@ mod tests {
                 .expect("finite source point"),
             None,
         );
-        crate::decode::with_test_decode_ctx(|ctx| source_carriers.admit_point(ctx, &mut ir, point))
+        source_carriers
+            .admit_point(&mut ir, point)
             .expect("point admission");
         assert_eq!(
             ir.model.points[0].position().get(),
@@ -2150,7 +1421,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(
                 ctx,
                 &mut ir,
@@ -2178,7 +1449,7 @@ mod tests {
             end: vertex,
             tolerance: PositiveReal::new(0.1),
         };
-        crate::decode::with_test_decode_ctx(|ctx| source_carriers.admit_edge(ctx, &mut ir, edge))
+        crate::decode::with_service_context(|ctx| source_carriers.admit_edge(ctx, &mut ir, edge))
             .expect("edge admission");
         assert_eq!(
             ir.model.edges[0]
@@ -2200,7 +1471,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(
                 ctx,
                 &mut ir,
@@ -2227,7 +1498,7 @@ mod tests {
         let (mut ir, mut source_carriers, curve_id) = source_line_for_range_tests();
         let vertex =
             cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1").expect("identity grammar");
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             source_carriers.admit_edge(
                 ctx,
                 &mut ir,
@@ -2249,7 +1520,7 @@ mod tests {
 
     #[test]
     fn coedge_line_use_range_overflow_refuses_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let (mut ir, source_carriers, curve_id) = source_line_for_range_tests();
             let coedge_id = cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1")
                 .expect("identity grammar");
@@ -2281,11 +1552,11 @@ mod tests {
 
     #[test]
     fn vertex_face_tolerances_and_coedge_line_range_are_in_millimeters_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 source_carriers.admit_curve(
                     ctx,
                     &mut ir,
@@ -2306,7 +1577,6 @@ mod tests {
             .expect("curve admission");
             source_carriers
                 .admit_vertex(
-                    ctx,
                     &mut ir,
                     Vertex {
                         id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
@@ -2319,7 +1589,6 @@ mod tests {
                 .expect("vertex admission");
             source_carriers
                 .admit_face(
-                    ctx,
                     &mut ir,
                     Face {
                         id: cadmpeg_ir::ids::FaceId::mint("creo:visibgeom:face#1")
@@ -2379,12 +1648,11 @@ mod tests {
 
     #[test]
     fn topology_tolerance_overflow_refuses_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        {
             let mut ir = CadIr::empty();
             let source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let error = source_carriers
                 .admit_vertex(
-                    ctx,
                     &mut ir,
                     Vertex {
                         id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
@@ -2397,16 +1665,16 @@ mod tests {
                 .expect_err("millimeter tolerance cannot be represented");
             assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
             assert!(ir.model.vertices.is_empty());
-        });
+        };
     }
 
     #[test]
     fn plane_pcurve_coordinates_are_in_millimeters_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 source_carriers.admit_surface(
                     ctx,
                     &mut ir,
@@ -2460,7 +1728,7 @@ mod tests {
 
     #[test]
     fn pcurve_without_owning_surface_is_malformed_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let error = source_carriers
@@ -2491,11 +1759,11 @@ mod tests {
 
     #[test]
     fn plane_pcurve_coordinate_overflow_refuses_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 source_carriers.admit_surface(
                     ctx,
                     &mut ir,
@@ -2541,78 +1809,19 @@ mod tests {
     }
 
     #[test]
-    fn pcurve_normalization_failure_text_refuses_below_retained_limit() {
-        let make_pcurve = || cadmpeg_ir::geometry::pcurve::Pcurve {
-            id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
-                .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
-                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    cadmpeg_ir::math::Point2::new(f64::MAX, 0.0),
-                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                )
-                .expect("finite pcurve"),
-            ),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, None, None),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = SourceUnitCarriers::push_pcurve(
-            &ctx,
-            &mut CadIr::empty(),
-            make_pcurve(),
-            Some([25.4, 25.4]),
-        )
-        .expect_err("text refused before formatting");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo normalized pcurve refusal text"));
-
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = SourceUnitCarriers::push_pcurve(
-            &ctx,
-            &mut CadIr::empty(),
-            make_pcurve(),
-            Some([25.4, 25.4]),
-        )
-        .expect_err("overflow remains not implemented");
-        assert_eq!(error.to_string(), "not implemented yet: Creo pcurve cannot be represented after unit normalization with scales [25.4, 25.4]");
-    }
-    #[test]
-    fn source_sketch_nurbs_copy_refuses_knots_and_poles_separately() {
+    fn source_sketch_nurbs_copy_preserves_plain_and_rational_weights() {
         for rational in [false, true] {
             let geometry = SketchGeometry::nurbs(
                 cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![cadmpeg_ir::math::Point2::new(0.0, 0.0); 2],
                     rational.then(|| vec![1.0, 2.0]),
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .expect("curve"),
             );
-            for cap in [3, 5] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                assert!(
-                    matches!(geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy"),
-                    Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo source sketch geometry copy")
-                );
-            }
-            assert_eq!(
-                crate::decode::with_test_decode_ctx(
-                    |ctx| geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-                )
-                .expect("service"),
-                geometry
-            );
+            assert_eq!((geometry.clone()), geometry);
         }
     }
 

@@ -5,11 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::DecodePolicy;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
-use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CompositeCurveSegment;
@@ -497,12 +493,8 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
         None,
     );
-    let (reversed, range) = reverse_nurbs(
-        &cadmpeg_test_support::service_decode_context(),
-        curve,
-        [2.0, 5.0],
-    )
-    .expect("a bounded subrange reverses exactly");
+    let (reversed, range) =
+        reverse_nurbs(curve, [2.0, 5.0]).expect("a bounded subrange reverses exactly");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
         cadmpeg_ir::eval::decode::nurbs_curve_point_at(
@@ -534,13 +526,9 @@ fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
         None,
     );
-    let error = reverse_nurbs(
-        &cadmpeg_test_support::service_decode_context(),
-        curve,
-        [-1.0, 5.0],
-    )
-    .expect_err("an interval outside the child's own domain is refused")
-    .to_string();
+    let error = reverse_nurbs(curve, [-1.0, 5.0])
+        .expect_err("an interval outside the child's own domain is refused")
+        .to_string();
     assert!(
         error.contains("outside its domain [0, 10]"),
         "the refusal names the interval and the domain: {error}"
@@ -580,8 +568,8 @@ fn decode_concatenates_ordered_composite_curve_children() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -635,7 +623,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         outside_resolution.ir(),
         outside_resolution.report().losses.clone(),
     )
-    .expect("resource allocation did not fail");
+    .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let at_or_beyond_resolution = IgesCodec
@@ -715,36 +703,9 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn composite_analytic_child_refuses_arc_lane_before_projection() {
-    let bytes = mixed_analytic_composite_curve_file();
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges analytic arc weighted poles" {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected analytic child collection refusal: {other:?}"),
-        }
-    }
-    panic!("analytic child weighted-pole refusal was not reached");
 }
 
 #[test]
@@ -773,8 +734,8 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -832,8 +793,8 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -880,8 +841,8 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
             .count(),
         1
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

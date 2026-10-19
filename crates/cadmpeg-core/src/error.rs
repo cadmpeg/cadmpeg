@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Errors returned by codec parsing and resource enforcement.
 
-use crate::decode::{ResourceLimit, SourceLocation};
+use crate::decode::{DecodeDepth, ResourceLimit, SourceLocation};
 use crate::dialect::DialectLayers;
 use crate::target::TargetRefusal;
 
@@ -69,6 +69,18 @@ pub enum CodecError {
     /// The encoder could not resolve or deliver a write target.
     #[error("{0}")]
     UnsupportedTarget(Box<TargetRefusal>),
+    /// The document records less of its source than the encoder plans from.
+    #[error(
+        "the {format} encoder needs a {needed}-depth document; this one records {recorded} depth"
+    )]
+    InsufficientDepth {
+        /// Output format of the refusing encoder.
+        format: &'static str,
+        /// The least depth the encoder plans from.
+        needed: DecodeDepth,
+        /// The depth the document records.
+        recorded: DecodeDepth,
+    },
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),
@@ -109,10 +121,7 @@ impl From<TargetRefusal> for CodecError {
 /// that refuses the whole property set reports it as a malformed container.
 impl From<crate::text::NamedEntryError> for CodecError {
     fn from(refused: crate::text::NamedEntryError) -> Self {
-        match refused {
-            crate::text::NamedEntryError::ResourceRefusal(limit) => Self::ResourceLimit(limit),
-            refused => Self::malformed(refused),
-        }
+        Self::malformed(refused)
     }
 }
 
