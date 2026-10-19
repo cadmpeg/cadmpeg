@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::snapshot_active_configuration;
-use cadmpeg_core::CodecError;
+use crate::history::configuration::normalize_configuration_differences;
 use cadmpeg_ir::features::patterns::{
     CompositePattern, PatternKind, PatternSeed, PatternStage, PatternTransform,
 };
 use cadmpeg_ir::features::{
-    ConfigurationEvaluation, ConfigurationId, DesignConfiguration, DistinctMembers, Feature,
-    FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    ConfigurationId, DesignConfiguration, Feature, FeatureContent, FeatureDefinition,
+    FeatureEvaluation, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
-fn run() -> Result<(), CodecError> {
+fn run() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let dependency = FeatureId::mint("synthetic:test:id#snapshot-dependency").unwrap();
     let stages = vec![
@@ -20,7 +19,10 @@ fn run() -> Result<(), CodecError> {
             pattern: Box::new(
                 PatternKind::new(PatternTransform::LinearOffsets {
                     direction: None,
-                    offsets: vec![Length::new(0.0).unwrap(), Length::new(2.0).unwrap()],
+                    offsets: vec![
+                        cadmpeg_ir::Dimension::Literal(Length::new(0.0).unwrap()),
+                        Length::new(2.0).unwrap().into(),
+                    ],
                 })
                 .unwrap(),
             ),
@@ -41,7 +43,7 @@ fn run() -> Result<(), CodecError> {
             kind: "Native snapshot operation".into(),
             parameters: BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("Snapshot parameter"),
-                "Snapshot parameter text".into(),
+                cadmpeg_ir::Dimension::Literal("Snapshot parameter text".into()),
             )]),
         }),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -66,6 +68,7 @@ fn run() -> Result<(), CodecError> {
             source_tag: None,
             source_text: None,
             source_content: FeatureContent::default(),
+            needs_recompute: false,
             evaluation: FeatureEvaluation::new(
                 definition,
                 cadmpeg_ir::features::DistinctMembers::try_from(vec![
@@ -94,27 +97,14 @@ fn run() -> Result<(), CodecError> {
         native_ref: None,
     });
     let features = ir.model.features.clone();
-    snapshot_active_configuration(&mut ir)?;
+    normalize_configuration_differences(&mut ir);
     assert_eq!(ir.model.features, features);
-    assert_eq!(
-        ir.model.configurations[0].feature_states.len(),
-        features.len()
-    );
-    for feature in features {
-        let state = &ir.model.configurations[0].feature_states[&feature.id];
-        assert_eq!(&state.definition, feature.evaluation.definition());
-        assert_eq!(state.dependencies, feature.dependencies);
-        let outputs: DistinctMembers<cadmpeg_ir::ids::BodyId> =
-            feature.evaluation.outputs().iter().cloned().collect();
-        assert_eq!(
-            state.evaluation,
-            ConfigurationEvaluation::Active { outputs }
-        );
-    }
-    Ok(())
+    assert!(ir.model.configurations[0].feature_states.is_empty());
+    assert!(ir.model.configurations[0].parameter_values.is_empty());
+    assert!(ir.model.configurations[0].parameter_overrides.is_empty());
 }
 
 #[test]
-fn active_feature_snapshot_copies_feature_states() {
-    run().unwrap();
+fn active_configuration_does_not_copy_feature_states() {
+    run();
 }

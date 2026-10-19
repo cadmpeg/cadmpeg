@@ -155,7 +155,7 @@ fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
             ordinal: 0,
             transform: cadmpeg_ir::transform::Transform::identity(),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
             name: None,
             visible: None,
             link: None,

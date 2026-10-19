@@ -160,7 +160,13 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
         panic!("native history operation");
     };
     assert_eq!(kind.as_str(), "00000000-0000-0000-0000-00000000000c");
-    assert_eq!(parameters["value_7"], "2.5");
+    assert_eq!(
+        parameters["value_7"]
+            .literal()
+            .and_then(|expression| expression.literal_text())
+            .as_deref(),
+        Some("2.5")
+    );
     assert_eq!(
         ir.model.features[1].source_properties["antecedent_objects"],
         id(40).to_string()
@@ -427,8 +433,20 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     else {
         panic!("native history operation");
     };
-    assert_eq!(parameters["value_7"], "2.5");
-    assert_eq!(parameters["value_7_1"], "3.5");
+    assert_eq!(
+        parameters["value_7"]
+            .literal()
+            .and_then(|expression| expression.literal_text())
+            .as_deref(),
+        Some("2.5")
+    );
+    assert_eq!(
+        parameters["value_7_1"]
+            .literal()
+            .and_then(|expression| expression.literal_text())
+            .as_deref(),
+        Some("3.5")
+    );
 }
 
 #[test]

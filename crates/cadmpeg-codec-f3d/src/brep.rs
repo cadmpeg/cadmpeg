@@ -593,7 +593,9 @@ fn generic_tag_payload(attribute: &SourceAttribute) -> Option<GenericTagPayload<
     })
 }
 
-fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
+pub(crate) fn creation_timestamp_value(
+    attribute: &SourceAttribute,
+) -> Option<cadmpeg_ir::scalar::FiniteReal> {
     let family = attribute_family(attribute, "Timestamp_attrib_def")?;
     let marker = attribute.values.get(family + 1)?;
     if !matches!(marker, AttributeValue::Integer(1)) {
@@ -602,12 +604,17 @@ fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> 
     let Some(AttributeValue::Float(unix_microseconds)) = attribute.values.get(family + 2) else {
         return None;
     };
+    Some(*unix_microseconds)
+}
+
+fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
+    let unix_microseconds = creation_timestamp_value(attribute)?;
     let record_index = attribute_key(attribute).parse().ok()?;
     Some(CreationTimestamp {
         id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
         target: attribute.target.clone(),
         record_index,
-        unix_microseconds: *unix_microseconds,
+        unix_microseconds,
     })
 }
 

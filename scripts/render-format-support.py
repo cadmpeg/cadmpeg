@@ -80,6 +80,10 @@ class Format:
     fmt: str
     level: int | None
     rows: tuple[Row, ...]
+    delivered_scope: tuple[str, ...] | None = None
+    write_paths: tuple[str, ...] | None = None
+    dropped_arenas: tuple[str, ...] | None = None
+    omitted_arenas: tuple[str, ...] | None = None
 
     @property
     def headline(self) -> str:
@@ -114,10 +118,19 @@ def load_formats(root: Path) -> dict[str, Format]:
     for fmt, rows in grouped.items():
         block = format_levels.get(fmt)
         level = block.get("level") if isinstance(block, dict) else None
+        contract = {}
+        if isinstance(block, dict):
+            for key in ("delivered_scope", "write_paths", "dropped_arenas", "omitted_arenas"):
+                if key in block:
+                    values = block[key]
+                    if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values):
+                        raise RenderError(f"{SUPPORT_REL}: format.{fmt}.{key} must be an array of non-empty strings")
+                    contract[key] = tuple(values)
         result[fmt] = Format(
             fmt=fmt,
             level=level if isinstance(level, int) else None,
             rows=tuple(rows),
+            **contract,
         )
     return result
 
@@ -182,7 +195,12 @@ def format_section(fmt: str, formats: dict[str, Format]) -> str:
     entry = formats[fmt]
     rows = [(f"`{row.dialect}`", row.read, row.write) for row in entry.rows]
     header = ("Dialect", "Read", "Write")
-    return f"\n**Ladder: {entry.headline}.**\n\n{_table(header, rows)}\n"
+    result = f"\n**Ladder: {entry.headline}.**\n\n{_table(header, rows)}\n"
+    for label, values in (("Delivered full-decode scope", entry.delivered_scope), ("Write paths", entry.write_paths), ("Synthesized dropped arenas", entry.dropped_arenas), ("Synthesized omitted arenas", entry.omitted_arenas)):
+        if values is not None:
+            cell = ", ".join(f"`{value}`" for value in values) if values else "none"
+            result += f"\n**{label}:** {cell}.\n"
+    return result
 
 
 def readme_lines(formats: dict[str, Format], profiles: dict[str, Profile]) -> str:

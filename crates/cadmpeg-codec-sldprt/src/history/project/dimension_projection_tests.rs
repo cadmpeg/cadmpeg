@@ -68,7 +68,9 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     assert_eq!(
         *extent,
         Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(13.2).unwrap()
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(13.2).unwrap()
+            )
         })
     );
 
@@ -427,9 +429,13 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
+            diameter: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()
+            )),
             extent: Some(CosmeticThreadExtent::Blind {
-                length: cadmpeg_ir::scalar::PositiveLength::new(16.0).unwrap(),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(16.0).unwrap()
+                ),
             }),
         })
     );
@@ -456,7 +462,9 @@ fn cosmetic_thread_without_blind_length_is_through() {
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
+            diameter: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()
+            )),
             extent: Some(CosmeticThreadExtent::Through {}),
         })
     );
@@ -488,7 +496,9 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
             *projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: FaceSelection::Unresolved,
-                diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(4.9).unwrap()),
+                diameter: Some(cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(4.9).unwrap()
+                )),
                 extent: Some(CosmeticThreadExtent::Through {}),
             })
         );
@@ -573,8 +583,8 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
         .push(crate::records::FeatureInputSurfaceSelection {
             id: "selection".into(),
             parent: lane.id.clone(),
-            ordinal: 0,
-            offset: 0,
+            ordinal: 0, sequence: 0,
+            offset: Some(0),
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "thread-name".into(),

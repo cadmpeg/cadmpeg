@@ -21,7 +21,7 @@ use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
 use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
 use crate::test_support::protein_test::generated_instance_properties_for;
 use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_attribute_smbh,
@@ -62,6 +62,7 @@ fn raw_body_map_pair(
 }
 
 fn resolved_body_binding(
+    map_ordinal: u32,
     stream: &str,
     asm_key_offset: u64,
     entity_suffix: u64,
@@ -70,6 +71,7 @@ fn resolved_body_binding(
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire {
+            map_ordinal: map_ordinal,
             id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
             stream: stream.into(),
             pair_count: 1,
@@ -309,6 +311,7 @@ fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
 fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let first = resolved_body_binding(
+        0,
         stream,
         25,
         100,
@@ -317,7 +320,14 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     );
     let second_body =
         cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
-    let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", second_body.as_str());
+    let second = resolved_body_binding(
+        1,
+        stream,
+        125,
+        200,
+        "BREP.second.smbh",
+        second_body.as_str(),
+    );
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
@@ -335,19 +345,24 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         textures: Vec::new(),
     };
     let assignment = crate::records::references::DesignMaterialAssignment {
+        body_binding_id: second
+            .id()
+            .clone()
+            .try_into()
+            .expect("typed binding identity"),
         id: owner,
         asm_body_key: 7,
-        asm_body_key_offset: 125,
+        asm_body_key_offset: Some(125),
 
-        entity_suffix_offset: 133,
+        entity_suffix_offset: Some(133),
         entity_id: crate::records::identity::DesignEntityId::try_from("0_200".to_owned())
             .expect("valid entity ID"),
-        entity_id_offset: 500,
+        entity_id_offset: Some(500),
         visual_guid: crate::records::references::DesignVisualToken::try_from(
             visual_guid.to_owned(),
         )
         .unwrap(),
-        visual_guid_offset: 600,
+        visual_guid_offset: Some(600),
         physical_token: None,
         visual_preset: None,
     };
@@ -386,19 +401,23 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         textures: Vec::new(),
     };
     let mut assignment = crate::records::references::DesignMaterialAssignment {
+        body_binding_id: "f3d:design:design-body-binding#25"
+            .to_owned()
+            .try_into()
+            .expect("typed binding identity"),
         id: "f3d:design:material-assignment#1".into(),
         asm_body_key: 7,
-        asm_body_key_offset: 25,
+        asm_body_key_offset: Some(25),
 
-        entity_suffix_offset: 33,
+        entity_suffix_offset: Some(33),
         entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
-        entity_id_offset: 500,
+        entity_id_offset: Some(500),
         visual_guid: crate::records::references::DesignVisualToken::try_from(
             "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
         )
         .unwrap(),
-        visual_guid_offset: 600,
+        visual_guid_offset: Some(600),
         physical_token: None,
         visual_preset: None,
     };
@@ -424,7 +443,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     .unwrap();
     assignment.visual_preset = Some(crate::records::identity::RecordedValue {
         value: "Prism-017".into(),
-        offset: 0,
+        offset: None,
     });
     appearance.name = Some("Prism-017".into());
     assert!(
@@ -1273,7 +1292,7 @@ fn a_sketch_link_decodes_in_every_payload_form() {
 }
 
 #[test]
-fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
+fn an_unconstrained_sketch_link_serializer_retains_its_source_spelling() {
     use crate::records::sketch_links::SketchCurveLink;
 
     let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
@@ -1302,9 +1321,8 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         closure: 3,
     }];
     let mut encoded = Vec::new();
-    F3dCodec
-        .encode(&source_less, &mut encoded)
-        .expect("source-less sketch-link encode");
+    crate::writer::generate::write_new(&source_less, &mut encoded)
+        .expect("typed sketch-link serializer");
     assert!(
         encoded
             .windows(b"113 0 4294967295 0 2 3".len())
@@ -1494,7 +1512,10 @@ fn protein_revision_suffix_distinguishes_visual_record_identity() {
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \

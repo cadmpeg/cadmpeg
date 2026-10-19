@@ -21,7 +21,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
             AsmDeltaState {
                 id: format!("state-{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -119,7 +119,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     let revision_change = |new_ref| AsmEntityChange {
         id: format!("revision-700-to-{new_ref}"),
         parent: "board".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         kind: AsmEntityChangeKind::Update {
             old: 700,
             new: new_ref,
@@ -129,7 +129,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     reconstructed_revision_history.states_mut()[0].bulletin_boards = vec![AsmBulletinBoard {
         id: "board".into(),
         parent: reconstructed_revision_history.states()[0].id.clone(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         owner_ref: 0,
         number: 2,
         changes: vec![revision_change(42)],
@@ -252,7 +252,7 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
             AsmDeltaState {
                 id: "state-3".into(),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 3,
                 version_flag: 1,
                 state_flag: 0,
@@ -314,7 +314,7 @@ fn partially_bound_history_resolves_no_reconstructed_revision() {
             AsmDeltaState {
                 id: format!("state-{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -341,13 +341,13 @@ fn partially_bound_history_resolves_no_reconstructed_revision() {
     history.states_mut()[0].bulletin_boards = vec![AsmBulletinBoard {
         id: "board".into(),
         parent: "state-3".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         owner_ref: 0,
         number: 2,
         changes: vec![AsmEntityChange {
             id: "revision-700-to-42".into(),
             parent: "board".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             kind: AsmEntityChangeKind::Update { old: 700, new: 42 },
         }],
     }];

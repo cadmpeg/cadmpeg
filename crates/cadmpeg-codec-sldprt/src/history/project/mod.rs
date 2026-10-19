@@ -25,11 +25,12 @@ use crate::history::classify::{
 use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame};
 use crate::records::FeatureSource;
 
+pub(crate) mod consumed;
 #[cfg(test)]
 mod content_tests;
 #[cfg(test)]
 mod custom_property_tests;
-pub(super) mod datum;
+mod datum;
 #[cfg(test)]
 mod dimension_projection_tests;
 #[cfg(test)]
@@ -48,7 +49,7 @@ mod surface;
 use self::datum::{
     project_composite_curve, project_datum_axis, project_datum_coordinate_system,
     project_datum_plane, project_datum_point, project_equation_curve, project_helix,
-    project_native_axis_helix, project_offset_plane, project_projected_curve, project_wrap,
+    project_native_axis_helix, project_projected_curve, project_wrap,
 };
 use self::modify::{
     project_chamfer, project_combine, project_cut_with_surface, project_delete_body,
@@ -136,6 +137,7 @@ impl FeatureProjection {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn into_model(
         self,
     ) -> Result<
@@ -215,6 +217,13 @@ pub(crate) fn project_feature_model(
                 } else {
                     None
                 };
+                let definition = project_definition(
+                    feature,
+                    &by_source,
+                    &native_by_source,
+                    &features_by_source,
+                    &history.features,
+                )?;
                 let projected = cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id)?,
                     ordinal: source_ordered
@@ -225,18 +234,13 @@ pub(crate) fn project_feature_model(
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: Some(feature.suppressed),
                     dependencies: project_feature_dependencies(feature, &by_source)?,
-                    source_properties: feature.properties.clone(),
+                    source_properties: consumed::properties(feature, &definition),
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
                     source_content: project_feature_content(feature, &by_native)?,
+                    needs_recompute: false,
                     evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                        project_definition(
-                            feature,
-                            &by_source,
-                            &native_by_source,
-                            &features_by_source,
-                            &history.features,
-                        )?,
+                        definition,
                     ),
                     native_ref: Some(feature.id.clone()),
                 };
@@ -280,7 +284,22 @@ pub(crate) fn project_feature_model(
                 }
             });
     }
-    bind_offset_plane_references(&mut features);
+    for feature in &mut features {
+        if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
+        ) {
+            feature.source_content = feature
+                .source_content
+                .iter()
+                .filter(|content| !matches!(content, FeatureSourceContent::Feature(_)))
+                .cloned()
+                .collect::<Vec<_>>()
+                .try_into()
+                .map_err(CodecError::malformed)?;
+        }
+    }
+    bind_offset_plane_references(&mut features, histories);
     bind_native_construction_features(&mut features, histories);
     Ok(FeatureProjection {
         features,
@@ -339,7 +358,10 @@ pub(crate) fn project_semantic_notes(
     Ok(notes)
 }
 
-pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+pub(super) fn bind_offset_plane_references(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+) {
     fn canonical_plane_id<'a>(
         id: &'a FeatureId,
         parents: &'a HashMap<FeatureId, FeatureId>,
@@ -467,7 +489,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             displacement.y - reference.1.y * signed_distance / reference_normal_length,
             displacement.z - reference.1.z * signed_distance / reference_normal_length,
         );
-        same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.get().abs())
+        same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance, distance.get())
     };
     let mut ordinals = HashMap::new();
     for feature in features.iter() {
@@ -514,7 +536,9 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         else {
             continue;
         };
-        if same_scalar(distance.get(), 0.0) {
+        if source_dimension_value(distance, histories)
+            .is_some_and(|distance| same_scalar(distance.get(), 0.0))
+        {
             let id = feature.id.clone();
             let reference = reference.clone();
             zero_offset_parents.insert(id, reference);
@@ -547,7 +571,15 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                         reference_frame
                             .zip(result_frame)
                             .map(|(reference_frame, result_frame)| {
-                                offset_frame_matches(reference_frame, result_frame, *distance)
+                                source_dimension_value(distance, histories).is_some_and(
+                                    |distance| {
+                                        offset_frame_matches(
+                                            reference_frame,
+                                            result_frame,
+                                            distance,
+                                        )
+                                    },
+                                )
                             });
                     let explicit_principal_identity_without_face_fallback =
                         explicit_native_reference
@@ -625,6 +657,9 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             let Some(&(origin, normal, u_axis)) = frames.get(reference) else {
                 continue;
             };
+            let Some(distance) = source_dimension_value(distance, histories) else {
+                continue;
+            };
             let normal_length = normal.norm();
             let id = feature.id.clone();
             frames.insert(
@@ -658,6 +693,9 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 continue;
             }
             let Some((origin, normal, _)) = stored_frame(feature) else {
+                continue;
+            };
+            let Some(distance) = source_dimension_value(distance, histories) else {
                 continue;
             };
             if same_scalar(distance.get(), 0.0) {
@@ -715,43 +753,36 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                             - candidate_normal.z * signed_distance / candidate_normal_length,
                     );
                     (same_scalar(tangent.norm(), 0.0)
-                        && same_scalar(signed_distance.abs(), distance.get().abs()))
-                    .then_some((
-                        &candidate.id,
-                        distance.get().abs().copysign(signed_distance),
-                    ))
+                        && same_scalar(signed_distance, distance.get()))
+                    .then_some(&candidate.id)
                 });
             let mut candidates_by_root = HashMap::new();
-            for (candidate, distance) in candidates {
+            for candidate in candidates {
                 let root = canonical_plane_id(candidate, &zero_offset_parents);
-                candidates_by_root.entry(root).or_insert(distance);
+                candidates_by_root.insert(root, ());
             }
             let mut candidates = candidates_by_root.into_iter();
-            let Some((reference, distance)) = candidates.next() else {
+            let Some((reference, ())) = candidates.next() else {
                 continue;
             };
             if candidates.next().is_some() {
                 continue;
             }
             let reference = reference.clone();
-            bindings.push((index, (reference, distance)));
+            bindings.push((index, reference));
         }
-        for (index, (reference, distance)) in bindings {
-            let Some(distance) = Length::new(distance) else {
-                continue;
-            };
+        for (index, reference) in bindings {
             let reference_copy = reference.clone();
             let mut bound = false;
             features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference: slot,
-                    distance: stored_distance,
+                    ..
                 }) = definition
                 {
                     *slot = Some(DatumPlaneReference::Feature {
                         feature: reference_copy,
                     });
-                    *stored_distance = distance;
                     bound = true;
                 }
             });
@@ -1382,9 +1413,66 @@ pub(super) fn neutral_parameter_id(
     ParameterId::mint(id).map_err(CodecError::malformed)
 }
 
+/// A source dimension is represented once, by its canonical parameter identity.
+pub(crate) fn parameter_dimension<Q>(
+    feature: &Feature,
+    names: &[&str],
+) -> Option<cadmpeg_ir::features::Dimension<Q>> {
+    let projected = projected_parameter_names(feature);
+    names.iter().find_map(|name| {
+        let ordinal = projected.iter().position(|candidate| candidate == name)?;
+        neutral_parameter_id(feature, ordinal)
+            .ok()
+            .map(cadmpeg_ir::features::Dimension::Parameter)
+    })
+}
+
+/// Resolve a source-projected control while constructing source-owned caches.
+/// This helper does not select authority after decode; neutral writers resolve
+/// the canonical parameter before regenerating the native records passed here.
+pub(crate) fn source_dimension_value<Q: cadmpeg_ir::features::DimensionValue>(
+    dimension: &cadmpeg_ir::features::Dimension<Q>,
+    histories: &[FeatureHistory],
+) -> Option<Q> {
+    match dimension {
+        cadmpeg_ir::features::Dimension::Literal(value) => Some(value.clone()),
+        cadmpeg_ir::features::Dimension::Parameter(id) => histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find_map(|feature| {
+                projected_parameter_names(feature)
+                    .into_iter()
+                    .enumerate()
+                    .find_map(|(ordinal, name)| {
+                        if neutral_parameter_id(feature, ordinal).ok().as_ref() != Some(id) {
+                            return None;
+                        }
+                        let value =
+                            crate::history::parameters::source_parameter_value(feature, &name)?;
+                        Q::from_parameter_value(&value)
+                    })
+            }),
+    }
+}
+
 fn native_definition(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Native {
         kind: feature.kind.clone().into(),
-        parameters: feature.parameters.clone(),
+        parameters: feature
+            .parameters
+            .iter()
+            .map(|(name, expression)| {
+                (
+                    name.clone(),
+                    parameter_dimension(feature, &[name.as_str()]).unwrap_or_else(|| {
+                        cadmpeg_ir::features::Dimension::Literal(
+                            cadmpeg_ir::features::Expression::text(expression),
+                        )
+                    }),
+                )
+            })
+            .collect(),
     })
 }
+
+pub(in crate::history) use datum::project_offset_plane;

@@ -42,18 +42,18 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     bytes.extend_from_slice(&100u32.to_le_bytes());
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned()).unwrap(),
         record_index: 100,
     };
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#172".into(),
-        byte_offset: 1000,
+        byte_offset: Some(1000),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
@@ -77,7 +77,10 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     assert_eq!(profile.scope_reference_ordinal, 4);
     assert_eq!(profile.entity_id.suffix(), 172);
     assert_eq!(profile.entity_id.as_str(), "0_172");
-    assert_eq!(profile.paired_byte_offset(), u64_from_index(paired_at));
+    assert_eq!(
+        profile.paired_byte_offset(),
+        Some(u64_from_index(paired_at))
+    );
 
     bytes.truncate(paired_at - 94);
     bytes[4..7].copy_from_slice(b"319");
@@ -114,7 +117,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     assert_eq!(compact.scope_reference_ordinal, 2);
     assert_eq!(
         compact.paired_byte_offset(),
-        u64_from_index(compact_paired_at)
+        Some(u64_from_index(compact_paired_at))
     );
 
     bytes.truncate(tail_at);
@@ -145,7 +148,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     .expect("omitted-ordinal sketch-profile operand");
     assert_eq!(
         omitted.paired_byte_offset(),
-        u64_from_index(omitted_paired_at)
+        Some(u64_from_index(omitted_paired_at))
     );
 }
 
@@ -168,16 +171,16 @@ fn sketch_profile_resolves_a_leading_zero_entity_suffix() {
     bytes.extend_from_slice(&100u32.to_le_bytes());
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned()).unwrap(),
         record_index: 100,
     };
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#172".into(),
-        byte_offset: 1000,
+        byte_offset: Some(1000),
         entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned()).unwrap(),
         class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
@@ -211,18 +214,18 @@ fn generated_base_flange_profile_frame_resolves() {
         .expect("generated BaseFlange profile");
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#1501".into(),
-        byte_offset: u64_from_index(profile_offset),
+        byte_offset: Some(u64_from_index(profile_offset)),
         class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned()).unwrap(),
         record_index: 1501,
     };
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#800".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_800".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,
@@ -291,7 +294,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     .unwrap();
     let wrapper_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#300".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("326".to_owned()).unwrap(),
         record_index: 300,
     };
@@ -311,7 +314,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     bytes.extend_from_slice(&[0; 5]);
     indexed_header(&mut bytes, *b"301", 900);
 
-    let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
+    let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header, 0)
         .expect("identity chain");
     assert_eq!(
         identity
@@ -327,16 +330,16 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             .iter()
             .map(|wrapper| wrapper.byte_offset)
             .collect::<Vec<_>>(),
-        [0, 24]
+        [Some(0), Some(24)]
     );
     assert_eq!(identity.following_record_index(), 400);
-    assert_eq!(identity.following_byte_offset(), 48);
+    assert_eq!(identity.following_byte_offset(), Some(48));
     let persistent = identity
         .persistent_identity()
         .expect("fixed persistent identity leaf");
     assert_eq!(persistent.local_id, 586);
     assert_eq!(persistent.next_record_index, 900);
-    assert_eq!(persistent.next_byte_offset(), 238);
+    assert_eq!(persistent.next_byte_offset(), Some(238));
 
     let mut expanded_bytes = bytes[..233].to_vec();
     expanded_bytes.extend_from_slice(&[0; 4]);
@@ -344,26 +347,33 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     expanded_bytes.extend_from_slice(&900u32.to_le_bytes());
     expanded_bytes.extend_from_slice(&[0; 6]);
     indexed_header(&mut expanded_bytes, *b"301", 900);
-    let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header)
+    let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header, 0)
         .expect("identity chain with expanded tail reference");
     let persistent = expanded
         .persistent_identity()
         .expect("expanded persistent identity leaf");
-    assert_eq!(persistent.tail_slot_offset(), 233);
+    assert_eq!(persistent.tail_slot_offset(), Some(233));
     assert_eq!(persistent.next_record_index, 900);
-    assert_eq!(persistent.next_byte_offset(), 248);
+    assert_eq!(persistent.next_byte_offset(), Some(248));
 
     let mut bound_group = group;
     let mut terminating_identity = identity;
     terminating_identity.id =
         "f3d:Design/BulkStream.dat:design-construction-operand-identity#200".into();
-    let mut draft = terminating_identity.into_draft();
+    let mut draft = terminating_identity
+        .into_draft()
+        .expect("actual scanner identity layout");
     for wrapper in &mut draft.wrappers {
-        wrapper.byte_offset += 200;
+        *wrapper
+            .byte_offset
+            .as_mut()
+            .expect("actual scanner wrapper location") += 200;
     }
     draft.following_byte_offset += 200;
     if let Some(persistent) = draft.persistent_identity.take() {
-        let mut leaf = persistent.into_draft();
+        let mut leaf = persistent
+            .into_draft()
+            .expect("actual scanner persistent layout");
         leaf.local_id_offset += 200;
         leaf.asset_id_offset += 200;
         leaf.context_id_offset += 200;
@@ -471,7 +481,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned()).unwrap(),
         record_index: 100,
     };
@@ -672,7 +682,7 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
     let selection =
         parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
     assert_eq!(selection.record_index, 103);
-    assert_eq!(selection.byte_offset, u64_from_index(selection_at));
+    assert_eq!(selection.byte_offset, Some(u64_from_index(selection_at)));
     assert_eq!(selection.class_tag.as_str(), "327");
     assert_eq!(selection.companion_class_tag.as_str(), "261");
     assert_eq!(

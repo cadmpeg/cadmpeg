@@ -460,7 +460,6 @@ pub(crate) fn project_occurrences(
             ordinal: ordinal_at(ordinal)?,
             transform: crate::design::components::neutral_transform(transform)?,
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

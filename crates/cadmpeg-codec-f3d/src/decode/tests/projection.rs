@@ -69,7 +69,10 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         .expect("active face operand"),
     );
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -106,7 +109,10 @@ fn history_past_its_binding_bound_reports_a_loss() {
             Vec::new(),
         ));
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -172,7 +178,10 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
         });
     native.design_face_operands.push(operand);
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -228,7 +237,10 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
     }
     native.design_parameter_scopes.push(scope);
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -272,6 +284,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         })
         .unwrap();
     let mut features = vec![Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:model:feature#mesh-import").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -285,7 +298,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Base Mesh Feature".into(),
-                parameters: std::collections::BTreeMap::new(),
+                parameters: (std::collections::BTreeMap::new()).into(),
             }),
         ),
         native_ref: Some(scope_id.into()),
@@ -396,7 +409,7 @@ fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native {
                 kind: kind.into(),
-                parameters: std::collections::BTreeMap::new(),
+                parameters: (std::collections::BTreeMap::new()).into(),
             },
         )
     };
@@ -415,6 +428,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:model:feature#full-round").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1024,17 +1038,17 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
             )
             .unwrap(),
         },
-        diameter: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
+        diameter: (cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()).into(),
         extent: CoilExtent::RevolutionsHeight {
-            revolutions: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
-            height: Length::new(5.0).unwrap(),
+            revolutions: (cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap()).into(),
+            height: (Length::new(5.0).unwrap()).into(),
         },
         section: CoilSection::Circular {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()).into(),
         },
         section_placement: CoilSectionPlacement::Center,
         clockwise: false,
-        taper: Angle::new(0.0).unwrap(),
+        taper: (Angle::new(0.0).unwrap()).into(),
     };
     let definition = |construction, result| {
         FeatureDefinition::Operation(FeatureOperation::Coil {
@@ -1071,6 +1085,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#coil")
             .expect("identity grammar"),
         ordinal: 0,
@@ -1173,6 +1188,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:model:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1199,6 +1215,7 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1212,7 +1229,7 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: kind.into(),
-                parameters: std::collections::BTreeMap::new(),
+                parameters: (std::collections::BTreeMap::new()).into(),
             }),
         ),
         native_ref: None,

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `UFRx` document states and their owned child records.
 
-use cadmpeg_ir::native::bytes::NativeBytes;
-
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 
@@ -139,7 +137,7 @@ pub(crate) struct UfrxRepresentationRecord {
     prefix: u16,
     pub(crate) active_representation: Option<(NonBlankString, NonBlankString)>,
     secondary_active_lod_state: [u16; 2],
-    active_model_state: NonBlankString,
+    pub(crate) active_model_state: NonBlankString,
     active_model_state_state: [u16; 2],
 }
 
@@ -212,13 +210,13 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "UfrxModelStateRecordWire")]
 pub(crate) struct UfrxModelStateRecord {
-    id: String,
+    pub(crate) id: String,
     pub(crate) ordinal: u32,
     prefix: u8,
-    name: NonBlankString,
+    pub(crate) name: NonBlankString,
     state: [u16; 2],
     prefix_count: u32,
-    parameters: Vec<UfrxModelStateParameterRecord>,
+    pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
     suffix_sha256: Sha256Digest,
 }
 
@@ -712,26 +710,26 @@ impl ExternalReferenceRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "EmbeddedReferenceRecordWire")]
 pub(crate) struct EmbeddedReferenceRecord {
-    id: String,
+    pub(crate) id: String,
     pub(crate) ordinal: u32,
     value_0: u32,
     filetime: u64,
     value_1: u32,
     extended_value: Option<u32>,
     value_2: u32,
-    path: String,
+    pub(crate) path: String,
     library_id: i32,
     library_name: String,
     state: u16,
-    display_name: String,
-    state_values: NativeBytes<[u8; 8]>,
+    pub(crate) display_name: String,
+    state_values_sha256: Sha256Digest,
     record_len: NonZeroU64,
     record_sha256: Sha256Digest,
 }
 
 impl Serialize for EmbeddedReferenceRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut fields = serializer.serialize_struct("EmbeddedReferenceRecordWire", 15)?;
+        let mut fields = serializer.serialize_struct("EmbeddedReferenceRecordWire", 16)?;
         fields.serialize_field("id", &self.id)?;
         fields.serialize_field("ordinal", &self.ordinal)?;
         fields.serialize_field("value_0", &self.value_0)?;
@@ -744,7 +742,8 @@ impl Serialize for EmbeddedReferenceRecord {
         fields.serialize_field("library_name", &self.library_name)?;
         fields.serialize_field("state", &self.state)?;
         fields.serialize_field("display_name", &self.display_name)?;
-        fields.serialize_field("state_values", &self.state_values)?;
+        fields.serialize_field("state_values_len", &8_u64)?;
+        fields.serialize_field("state_values_sha256", &self.state_values_sha256)?;
         fields.serialize_field("record_len", &self.record_len.get())?;
         fields.serialize_field("record_sha256", &self.record_sha256)?;
         fields.end()
@@ -765,7 +764,8 @@ pub(crate) struct EmbeddedReferenceRecordWire {
     pub(crate) library_name: String,
     pub(crate) state: u16,
     pub(crate) display_name: String,
-    pub(crate) state_values: NativeBytes<[u8; 8]>,
+    pub(crate) state_values_len: u64,
+    pub(crate) state_values_sha256: String,
     pub(crate) record_len: u64,
     pub(crate) record_sha256: String,
 }
@@ -775,6 +775,9 @@ impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
     fn try_from(wire: EmbeddedReferenceRecordWire) -> Result<Self, Self::Error> {
         if let Some(issue) = embedded_reference_issue(wire.record_len) {
             return Err(issue.into());
+        }
+        if wire.state_values_len != 8 {
+            return Err("state_values_len must equal 8".into());
         }
         Ok(Self {
             id: wire.id,
@@ -789,7 +792,8 @@ impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
             library_name: wire.library_name,
             state: wire.state,
             display_name: wire.display_name,
-            state_values: (wire.state_values),
+            state_values_sha256: Sha256Digest::try_from(wire.state_values_sha256)
+                .map_err(|error| format!("state_values_sha256: {error}"))?,
             record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
             record_sha256: Sha256Digest::try_from(wire.record_sha256)
                 .map_err(|error| format!("record_sha256: {error}"))?,
@@ -1002,7 +1006,7 @@ mod tests {
             "value_0": 0, "filetime": 0, "value_1": 0, "extended_value": null,
             "value_2": 0, "path": "", "library_id": 0,
             "library_name": "", "state": 0, "display_name": "",
-            "state_values": "0000000000000000", "record_len": 1,
+            "state_values_len": 8, "state_values_sha256": cadmpeg_ir::hash::sha256_hex(&[0; 8]), "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
         let record: EmbeddedReferenceRecord =
@@ -1169,7 +1173,7 @@ mod tests {
             "id": "embedded", "ordinal": 0, "value_0": 0, "filetime": 0,
             "value_1": 0, "extended_value": null, "value_2": 0, "path": "",
             "library_id": 0, "library_name": "", "state": 0, "display_name": "",
-            "state_values": "0000000000000000", "record_len": 1,
+            "state_values_len": 8, "state_values_sha256": cadmpeg_ir::hash::sha256_hex(&[0; 8]), "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
         let admitted: UfrxOccurrenceRecord =

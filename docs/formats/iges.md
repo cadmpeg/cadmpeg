@@ -4,6 +4,27 @@
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/iges.md`](../layouts/iges.md), generated from `docs/layouts/iges.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
+## cadmpeg output contract
+
+The IGES writer consumes the document's neutral model. Unsupported design,
+appearance, attribute, product, PMI, tessellation, and other arenas are
+reported as dropped export content rather than refusing the document.
+An unsupported entity is omitted with a loss; structurally degraded geometry
+uses Error severity. Independent carriers remain exportable when an owning
+wire or solid cannot be emitted. A model with no exportable solids still
+produces valid empty IGES and a `NoExportableSolids` loss; the CLI's
+`--allow-empty` policy decides whether to accept that result.
+
+An intact matching source image can be replayed only when
+`SourceFidelity.unrepresented` is empty. A changed document, missing source,
+unrepresented records, or native records without a synthesis encoding selects
+neutral-first synthesis with a reported `PatchDeclined` cause. Synthesized
+output consumes typed document content and no retained source bytes. Native
+records that cannot be regenerated are omitted with an informational native
+loss. An off-catalog target still needs an eligible source replay; an
+unresolvable target, malformed references or topology, and format capacity
+limits remain preconditions that can refuse output.
+
 ## Physical representation
 
 The representation flag is in the first 80 bytes. A `C` in byte 73 identifies Compressed ASCII. The other bytes of its flag record are printable ASCII. An `S` in byte 73 identifies Fixed ASCII.
@@ -706,9 +727,9 @@ The Type 502, 504, 508, 510, and 514 primary Parameter Data spans place trailing
 
 For CADIR B-rep projection, a Type 508 edge use may obtain its neutral source Edge range only from exactly one source occurrence whose curve identity matches the Type 504 carrier and whose retained parameter-interval endpoints agree with the Type 504 start and terminate vertices within the Global minimum resolution. Zero matches or multiple matches refuse the topology candidate. The decoder does not select a source occurrence by Edge List order. The Type 504 carrier and the Type 508 use semantics are defined by [IGES 5.3 §§4.144–4.145](https://paulbourke.net/dataformats/iges/IGES.pdf).
 
-A Form 0 Bounded Surface Entity (Type 143) has one `TYPE` representation value for all of its Boundary Entities. `TYPE=0` requires every Boundary Entity to contain model-space curves only; `TYPE=1` requires every Boundary Entity to contain model-space curves and associated parameter-space curve collections. These requirements are defined by [IGES 5.3 §§4.31 and 4.33](https://paulbourke.net/dataformats/iges/IGES.pdf). Semantic output rejects an unclassified face whose boundary loops do not all have the same parameter-curve presence; it does not select the value from loop order or alter a loop's representation.
+A Form 0 Bounded Surface Entity (Type 143) has one `TYPE` representation value for all of its Boundary Entities. `TYPE=0` requires every Boundary Entity to contain model-space curves only; `TYPE=1` requires every Boundary Entity to contain model-space curves and associated parameter-space curve collections. These requirements are defined by [IGES 5.3 §§4.31 and 4.33](https://paulbourke.net/dataformats/iges/IGES.pdf). Semantic output cannot emit an unclassified face whose boundary loops have mixed parameter-curve presence. The writer reports the unsupported boundary and omits the affected face or containing solid rather than selecting a value from loop order.
 
-A Form 1 Face Entity (Type 510) stores a support-surface pointer, a positive loop count, an outer-loop logical, and the ordered loop pointers. When the logical is true, the first loop is the sender-selected outer loop and the remaining loops are the other bounds. When it is false, no outer loop is identified. The semantic writer emits the logical only from an explicit `outer` role, refuses a mixture of classified and unclassified B-rep loops, and emits false for an entirely unclassified face. The decoder maps a false logical to `Unspecified`; it does not invent an inner role. A cylindrical face boundary loop that repeats one seam edge without an axial boundary does not delimit a finite region and is refused by the semantic writer.
+A Form 1 Face Entity (Type 510) stores a support-surface pointer, a positive loop count, an outer-loop logical, and the ordered loop pointers. When the logical is true, the first loop is the sender-selected outer loop and the remaining loops are the other bounds. When it is false, no outer loop is identified. The semantic writer emits the logical only from an explicit `outer` role, cannot encode a mixture of classified and unclassified B-rep loops, and emits false for an entirely unclassified face. The decoder maps a false logical to `Unspecified`; it does not invent an inner role. A cylindrical face boundary loop that repeats one seam edge without an axial boundary does not delimit a finite region and cannot be emitted as a valid boundary. These unsupported entity cases produce an Error-severity export loss and omission of the affected face or containing solid.
 
 Boundary and curve-on-surface entities are valid independent entities and do not require a bounded-surface or trimmed-surface owner. When a bounded-surface or trimmed-surface entity consumes them, they carry face-local boundaries and produce sheet regions whose loops, coedges, edges, and vertices are owned by the source face. No cross-face edge sharing is inferred without a shared source topology entity. A topology candidate is attached only after the complete neutral ownership and reference graph validates. A failed topology candidate records a loss only on its owning bounded-surface or trimmed-surface entity.
 
@@ -732,7 +753,7 @@ Type 142 Form 0 has five primary Parameter Data fields at indexes 1 through 5: `
 
 Type 141 and Type 142 model-curve pointers identify curve carriers, not Type 504 edge occurrences. Projection validates each candidate occurrence by evaluating its retained parameter interval against its start and terminate vertices. A parameter-curve collection selects a candidate only when its oriented composed endpoints agree with exactly one validated occurrence. A model-preferred item without an agreeing parameter collection selects only one validated occurrence; no collection or multiple validated occurrences do not select by edge-list order and refuse the topology candidate.
 
-Semantic Type 141 output sets `TYPE=0` when its model-space boundary has no parameter curves and `TYPE=1` when every coedge has a parameter-curve collection; the writer refuses a mixed loop. It sets `PREF=1` because the neutral edge carrier is the authoritative trimming curve. Semantic Type 142 output sets creation method `0` because neutral IR does not identify projection, intersection, or isoparametric provenance, and sets `PREF=2` because the model-space edge carrier is authoritative while the parameter curve is accepted within the declared topology tolerance. These selected values are the IGES values defined in [IGES 5.3 §§4.31–4.32](https://paulbourke.net/dataformats/iges/IGES.pdf). The semantic Type 508 writer emits the required `ISOP` logical from explicit neutral `PcurveUse.isoparametric = Some(false)` or `Some(true)`. It refuses `None` because the missing source declaration is not false or true. The generated status values follow the four fields in [IGES 5.3 §2.2.4.4.9](https://paulbourke.net/dataformats/iges/IGES.pdf): Type 141, Type 142, Type 502, Type 508, Type 510, and Type 514 Form 1 constituent records use `00010000` (physically dependent, entity-use `00`, hierarchy `00`); Type 504 uses `00010001` (physically dependent, entity-use `00`, hierarchy `01`), as required by [IGES 5.3 §4.144.1](https://paulbourke.net/dataformats/iges/IGES.pdf), so its subordinate records retain their own display attributes; and independent geometry, Type 514 Form 2, and Type 186 use `00000000` (independent, entity-use `00`, hierarchy `00`). Type 514 Form 1 is physically dependent on its parent under [IGES 5.3 §4.147](https://paulbourke.net/dataformats/iges/IGES.pdf). Parameter-space curve entities use `00010500` (physically dependent, entity-use `05`, hierarchy `00`).
+Semantic Type 141 output sets `TYPE=0` when its model-space boundary has no parameter curves and `TYPE=1` when every coedge has a parameter-curve collection; a mixed loop cannot be emitted by that encoding and is reported as degraded or omitted boundary content. It sets `PREF=1` because the neutral edge carrier is the authoritative trimming curve. Semantic Type 142 output sets creation method `0` because neutral IR does not identify projection, intersection, or isoparametric provenance, and sets `PREF=2` because the model-space edge carrier is authoritative while the parameter curve is accepted within the declared topology tolerance. These selected values are the IGES values defined in [IGES 5.3 §§4.31–4.32](https://paulbourke.net/dataformats/iges/IGES.pdf). The semantic Type 508 writer emits the required `ISOP` logical from explicit neutral `PcurveUse.isoparametric = Some(false)` or `Some(true)`. For `None`, the writer drops the unsupported UV image with an Error-severity pcurve loss; the missing declaration supplies neither logical value. The generated status values follow the four fields in [IGES 5.3 §2.2.4.4.9](https://paulbourke.net/dataformats/iges/IGES.pdf): Type 141, Type 142, Type 502, Type 508, Type 510, and Type 514 Form 1 constituent records use `00010000` (physically dependent, entity-use `00`, hierarchy `00`); Type 504 uses `00010001` (physically dependent, entity-use `00`, hierarchy `01`), as required by [IGES 5.3 §4.144.1](https://paulbourke.net/dataformats/iges/IGES.pdf), so its subordinate records retain their own display attributes; and independent geometry, Type 514 Form 2, and Type 186 use `00000000` (independent, entity-use `00`, hierarchy `00`). Type 514 Form 1 is physically dependent on its parent under [IGES 5.3 §4.147](https://paulbourke.net/dataformats/iges/IGES.pdf). Parameter-space curve entities use `00010500` (physically dependent, entity-use `05`, hierarchy `00`).
 
 The semantic export census names every emitted standard entity type, including each physically dependent Direction Entity as `123_direction`. `unknown_entity` counts only an emitted type with no standard census mapping.
 
@@ -770,22 +791,19 @@ Every non-null Directory Entry has one retained native identity and one
 `transfer_ledger` disposition, and so does every quarantined record. A
 supported entity without neutral projection has a stable namespaced loss code,
 source provenance, and its retained native record. A projected entity with reduced fidelity records the reduction on the
-same source identity. Salvage mode records every loss in the decode report.
-A full strict decode refuses through the shared decode gate: a loss causes
-refusal when its shared taxonomy defines a strict severity floor and the loss
-severity reaches that floor. For the current IGES loss set that is exactly
-`iges/graph.pointer-unresolved`, `iges/curve.composite-carrier-degraded`,
-`iges/source.dialect-unverified`,
-`iges/global.semantic-context-substituted`,
-`iges/global.numeric-syntax-recovered`,
-`iges/global.length-unit-unresolved`,
-`iges/global.noncanonical-framing`,
-`iges/directory.record-quarantined`, `iges/parameter.data-quarantined`,
-`iges/parameter.count-overdeclared`, and
-`iges/card.framing-recovered`. Every other IGES loss is recorded in the
-decode report in both modes. A full strict decode therefore refuses a
-structurally defective file, and salvage mode recovers it with the losses the
-record quarantine section states.
+same source identity. The decoder records losses and returns as much content as
+it can deliver. Full and Geometry requests deliver model and empty-design
+scope when projection succeeds; Container delivers no neutral class. A class
+that totally fails is absent from scope, and the wrapper reports any missing
+requested class with `decode/depth.not-delivered`.
+
+`reject_invalid_semantic_ir` is a decoder correctness precondition: after
+projection, a neutral-validation finding at Error severity or higher refuses
+that self-inconsistent CADIR as `Malformed`. This gate checks the produced
+document, independently of loss acceptance. Loss acceptance belongs to the
+caller. The CLI uses `--reject-lossy` and `--reject-lossy-floor` to reject
+current decode or export losses; its default writes available content and
+reports losses.
 
 A container inspection has no loss channel, because a container summary carries
 notes only. The inspection therefore reports each loss it resolves as one

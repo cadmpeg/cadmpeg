@@ -44,7 +44,7 @@ pub(super) fn exact_draft_operation_with_owners(
             }
             let mut owners = parameter_owners.iter().filter(|owner| {
                 owner.record_index() == *record_index
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && scope_stream.is_none_or(|stream| native_stream(owner.id()) == Some(stream))
             });
             let owner = owners.next()?;
@@ -53,9 +53,9 @@ pub(super) fn exact_draft_operation_with_owners(
             }
             Some((
                 *record_index,
-                owner.local_ordinal(),
+                owner.local_ordinal()?,
                 owner.evaluated_value(),
-                owner.evaluated_value_offset(),
+                owner.evaluated_value_offset()?,
             ))
         });
     let (Some(mut first), Some(mut second), None) = (lanes.next(), lanes.next(), lanes.next())

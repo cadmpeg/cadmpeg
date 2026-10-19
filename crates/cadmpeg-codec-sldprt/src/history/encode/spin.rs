@@ -28,11 +28,11 @@ pub(super) struct SweepDefinition<'a> {
     pub(super) transformation: Option<&'a SweepTransformation>,
     pub(super) path_tangent: bool,
     pub(super) linearize: bool,
-    pub(super) twist: Option<&'a Angle>,
+    pub(super) twist: Option<&'a cadmpeg_ir::features::Dimension<Angle>>,
     pub(super) path_extent: Option<&'a SweepPathExtent>,
     pub(super) guide_rail: Option<&'a SweepGuideRail>,
-    pub(super) taper: Option<&'a Angle>,
-    pub(super) scale: Option<&'a cadmpeg_ir::scalar::PositiveReal>,
+    pub(super) taper: Option<&'a cadmpeg_ir::features::Dimension<Angle>>,
+    pub(super) scale: Option<&'a cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveReal>>,
     pub(super) allow_multi_profile_faces: Option<bool>,
 }
 
@@ -58,7 +58,7 @@ pub(super) struct LoftDefinition<'a> {
     pub(super) op: &'a BooleanOp,
     pub(super) form: LoftForm,
     pub(super) interpolation: LoftInterpolation,
-    pub(super) max_degree: Option<&'a std::num::NonZeroU32>,
+    pub(super) max_degree: Option<&'a cadmpeg_ir::features::Dimension<std::num::NonZeroU32>>,
     pub(super) allow_multi_profile_faces: Option<bool>,
 }
 
@@ -82,26 +82,24 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || construction.fuse_order().is_some()
                 || construction.allow_multi_profile_faces().is_some()
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} uses unsupported revolution construction controls",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_revolve(record)) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported revolution semantics",
                     feature.id
                 )));
             }
             if existing.is_none() && (!construction.is_resolved() || op == BooleanOp::Unresolved) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved revolution construction",
                     feature.id
                 )));
             }
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
+            let mut parameters = self.base_parameters();
             let mut properties = feature.source_properties.clone();
             if let Some(extent) = construction.extent() {
                 parameters.remove("Angle");
@@ -116,7 +114,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle"),
-                            format_angle_rad((*angle).into()),
+                            format_angle_rad(self.dimension(angle)?.into()),
                         );
                     }
                     RevolveExtent::Symmetric {
@@ -128,7 +126,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle"),
-                            format_angle_rad((*angle).into()),
+                            format_angle_rad(self.dimension(angle)?.into()),
                         );
                     }
                     RevolveExtent::TwoSided {
@@ -141,15 +139,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle"),
-                            format_angle_rad((*first).into()),
+                            format_angle_rad(self.dimension(first)?.into()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle2"),
-                            format_angle_rad((*second).into()),
+                            format_angle_rad(self.dimension(second)?.into()),
                         );
                     }
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} uses a linear revolution extent",
                             feature.id
                         )));
@@ -182,7 +180,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 let profile_source =
                     planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
+                            CodecError::UnsupportedContent(format!(
                                 "SLDPRT feature {} references a missing revolution profile",
                                 feature.id
                             ))
@@ -233,19 +231,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || taper.is_some()
                 || allow_multi_profile_faces.is_some()
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported sweep construction semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_sweep(record)) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id
                 )));
             }
             if shape.generated_section().is_some() {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} uses an unsupported generated sweep section",
                     feature.id
                 )));
@@ -267,7 +265,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(profile) => Some(
                     planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
+                            CodecError::UnsupportedContent(format!(
                                 "SLDPRT feature {} references a missing sweep profile",
                                 feature.id
                             ))
@@ -278,7 +276,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let path_source = match path {
                 Some(path) => Some(
                     path_source(path, record_sources, sketch_sources).ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} references a missing sweep path",
                             feature.id
                         ))
@@ -287,25 +285,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 None => None,
             };
             if existing.is_none() && (profile_source.is_none() || path_source.is_none()) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved sweep operands",
                     feature.id
                 )));
             }
             if existing.is_none() && matches!(shape.mode(), SweepMode::Unresolved { .. }) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved sweep result semantics",
                     feature.id
                 )));
             }
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
+            let mut parameters = self.base_parameters();
             match twist {
                 Some(twist) => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Twist"),
-                        format_angle_rad(*twist),
+                        format_angle_rad(self.dimension(twist)?),
                     );
                 }
                 None => {
@@ -316,7 +312,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(scale) => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Scale"),
-                        scale.get().to_string(),
+                        self.dimension(scale)?.get().to_string(),
                     );
                 }
                 None => {
@@ -390,7 +386,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature_sources = self.feature_sources;
         let sketch_sources = self.sketch_sources;
         let cadmpeg_ir::features::LoftGuidance::Guides(guides) = guidance else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes unsupported loft result semantics",
                 feature.id
             )));
@@ -402,19 +398,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || max_degree.is_some()
                 || allow_multi_profile_faces.is_some()
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported loft result semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_loft(record)) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported loft semantics",
                     feature.id
                 )));
             }
             if existing.is_none() && (sections.len() < 2 || *op == BooleanOp::Unresolved) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved loft construction semantics",
                     feature.id
                 )));
@@ -423,7 +419,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .iter()
                 .any(|section| matches!(section, cadmpeg_ir::features::LoftSection::Point(_)))
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} uses a point loft section",
                     feature.id
                 )));
@@ -439,7 +435,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 })
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    CodecError::UnsupportedContent(format!(
                         "SLDPRT feature {} references a missing loft profile",
                         feature.id
                     ))
@@ -449,7 +445,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|path| path_source(path, record_sources, sketch_sources))
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    CodecError::UnsupportedContent(format!(
                         "SLDPRT feature {} references a missing loft guide",
                         feature.id
                     ))
@@ -483,9 +479,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Loft".into(), |record| record.kind.clone()),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties,
             }
         })

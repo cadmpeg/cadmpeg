@@ -84,6 +84,16 @@ macro_rules! rewrite_native_record_field {
 macro_rules! rewrite_record {
     ($type:ty, [$($generic:ident $(: $bound:path)?),*]; {$($field:ident),* $(,)?}) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
+            fn validate_dimensions(&self, ir: &crate::CadIr, ctx: &cadmpeg_core::decode::DecodeContext<'_>, errors: &mut Vec<crate::features::DimensionResolutionError>) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+                let _depth = ctx.enter_nested_limit("check dimensional record")?;
+                $(crate::schema::rewrite::typed::RewriteIdentities::validate_dimensions(&self.$field, ir, ctx, errors)?;)*
+                Ok(())
+            }
+            fn resolve_dimensions(self, ir: &crate::CadIr, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, crate::features::DimensionResolutionError> {
+                let _depth = ctx.enter_nested_limit("resolve dimensional record")?;
+                let Self { $($field),* } = self;
+                Ok(Self { $($field: crate::schema::rewrite::typed::RewriteIdentities::resolve_dimensions($field, ir, ctx)?),* })
+            }
             fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk native typed fields")?;
                 $(rewrite_native_record_field!($field, ctx, value, map, Self)?;)*
@@ -104,6 +114,17 @@ macro_rules! rewrite_record {
     };
     ($type:ty, [$($generic:ident $(: $bound:path)?),*]; ($($field:ident),* $(,)?)) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
+            fn validate_dimensions(&self, ir: &crate::CadIr, ctx: &cadmpeg_core::decode::DecodeContext<'_>, errors: &mut Vec<crate::features::DimensionResolutionError>) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+                let _depth = ctx.enter_nested_limit("check dimensional tuple owner")?;
+                let Self($($field),*) = self;
+                $(crate::schema::rewrite::typed::RewriteIdentities::validate_dimensions($field, ir, ctx, errors)?;)*
+                Ok(())
+            }
+            fn resolve_dimensions(self, ir: &crate::CadIr, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, crate::features::DimensionResolutionError> {
+                let _depth = ctx.enter_nested_limit("resolve dimensional tuple owner")?;
+                let Self($($field),*) = self;
+                Ok(Self($(crate::schema::rewrite::typed::RewriteIdentities::resolve_dimensions($field, ir, ctx)?),*))
+            }
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk typed reference fields")?;
                 let Self($($field),*) = self;
@@ -128,6 +149,25 @@ macro_rules! rewrite_enum {
         $($variant:ident $(($($tuple:ident),*))? $({$($field:ident),*})?),* $(,)?
     }) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
+            fn validate_dimensions(&self, ir: &crate::CadIr, ctx: &cadmpeg_core::decode::DecodeContext<'_>, errors: &mut Vec<crate::features::DimensionResolutionError>) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+                let _depth = ctx.enter_nested_limit("check dimensional variant")?;
+                match self {
+                    $(Self::$variant $(($($tuple),*))? $({$($field),*})? => {
+                        $($(crate::schema::rewrite::typed::RewriteIdentities::validate_dimensions($tuple, ir, ctx, errors)?;)*)?
+                        $($(crate::schema::rewrite::typed::RewriteIdentities::validate_dimensions($field, ir, ctx, errors)?;)*)?
+                        Ok(())
+                    },)*
+                }
+            }
+            fn resolve_dimensions(self, ir: &crate::CadIr, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, crate::features::DimensionResolutionError> {
+                let _depth = ctx.enter_nested_limit("resolve dimensional variant")?;
+                match self {
+                    $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
+                        $(($(crate::schema::rewrite::typed::RewriteIdentities::resolve_dimensions($tuple, ir, ctx)?),*))?
+                        $({$($field: crate::schema::rewrite::typed::RewriteIdentities::resolve_dimensions($field, ir, ctx)?),*})?
+                    ),)*
+                }
+            }
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk typed reference fields")?;
                 match self {

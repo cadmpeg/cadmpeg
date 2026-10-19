@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod content_scope;
 mod metadata_recovery;
 
 use super::FcstdCodec;
@@ -201,7 +202,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
     crate::mutation::replace_entry(&mut ir, "Payload.bin", b"second payload".to_vec()).unwrap();
 
     let mut bytes = Vec::new();
-    FcstdCodec
+    let report = FcstdCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
@@ -215,8 +216,12 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
             .iter()
             .find(|entry| entry.name() == "Payload.bin")
             .map(crate::native::EntryRecord::data),
-        Some(b"second payload".as_slice())
+        None
     );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
     assert_valid(&round_trip);
 }
 
@@ -291,7 +296,7 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
 }
 
 #[test]
-fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
+fn public_cc0_fixtures_decode_deterministically_and_report_unprojected_native_history() {
     let fixtures: [(&str, &[u8]); 12] = [
         (
             "external_component.FCStd",
@@ -391,11 +396,9 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
             "{name} is nondeterministic"
         );
         assert!(
-            first
-                .report()
-                .losses
-                .iter()
-                .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Blocking),
+            first.report().losses.iter().all(|loss| loss.severity
+                < cadmpeg_ir::report::Severity::Blocking
+                || loss.code.local_code() == "feature.object-unprojected"),
             "{name}: {:#?}",
             first.report().losses
         );

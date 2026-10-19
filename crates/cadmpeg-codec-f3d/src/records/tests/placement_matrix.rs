@@ -33,10 +33,10 @@ fn placement_matrix_rejects_nonfinite_projective_scaled_and_sheared_forms() {
         let mut rows = SketchPlacementMatrix::IDENTITY.rows();
         rows[row][column] = value;
         assert!(SketchPlacementMatrix::try_from(rows).is_err());
-        assert!(serde_json::from_value::<SketchPlacementMatrix>(
-            serde_json::to_value(rows).unwrap()
-        )
-        .is_err());
+        assert!(
+            serde_json::from_value::<SketchPlacementMatrix>(serde_json::to_value(rows).unwrap())
+                .is_err()
+        );
     }
 }
 

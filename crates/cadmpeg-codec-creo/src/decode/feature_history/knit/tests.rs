@@ -115,6 +115,7 @@ fn feature_result_topology_emits_one_row_per_result_surface() {
     scan.surfaces.rows = rows;
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("creo:model:feature#17").expect("fixture identity"),
         ordinal: 0,
         name: None,

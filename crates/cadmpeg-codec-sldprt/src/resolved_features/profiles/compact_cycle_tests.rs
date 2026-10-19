@@ -14,11 +14,11 @@ fn compact_cycle_projection_orders_closed_cycle() {
         lane.native_payload.extend([0xff; 4]);
         lane.native_payload.extend([0; 4]);
     }
-    lane.classes.push(crate::records::FeatureInputClass {
+    lane.classes.push(crate::records::FeatureInputClass { feature_ref: None,
         id: "line-class".into(),
         parent: lane.id.clone(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         name: "sgLineHandle".into(),
     });
     let arena = cadmpeg_core::decode::DecodeArena::new();

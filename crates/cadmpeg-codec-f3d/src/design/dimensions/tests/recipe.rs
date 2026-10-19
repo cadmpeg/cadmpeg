@@ -116,14 +116,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         recipe_ordinal: ordinal,
         recipe_id: format!("{stream}:construction-recipe#{record_index}"),
         recipe_kind: ConstructionRecipeKind::Edge,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index,
-        frame_length: 10,
-        prefix_offset: 0,
+        frame_length: Some(10),
+        prefix_offset: Some(0),
         prefix_bytes: Vec::new().into(),
         references: Vec::new(),
-        program_offset: 0,
+        program_offset: Some(0),
         program: vec![-1],
         matching_edge_operand_ids: Vec::new(),
     };
@@ -287,8 +287,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         record_index: 51,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(51).unwrap(),
         secondary_id: 0,
@@ -309,42 +309,42 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let annotation_group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#60"),
         companion_record_index: 22,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 60,
-        frame_length: 100,
+        frame_length: Some(100),
         loci: vec![
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 50,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 50,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 2,
-                role_offset: 0,
+                role_offset: Some(0),
             },
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 51,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 51,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 2,
-                role_offset: 0,
+                role_offset: Some(0),
             },
         ],
         owner_reference: 100,
-        owner_reference_offset: 0,
+        owner_reference_offset: Some(0),
         owner_role: 1,
-        owner_role_offset: 0,
+        owner_role_offset: Some(0),
         state: 0,
-        state_offset: 0,
+        state_offset: Some(0),
         next_class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
             .unwrap(),
         next_record_index: 61,
-        next_byte_offset: 100,
+        next_byte_offset: Some(100),
     };
     let extension_constraints = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -384,8 +384,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         record_index,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
         secondary_id: 0,
@@ -398,42 +398,42 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let relation_group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#40"),
         companion_record_index: 22,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 40,
-        frame_length: 100,
+        frame_length: Some(100),
         loci: vec![
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 40,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 40,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 0,
-                role_offset: 0,
+                role_offset: Some(0),
             },
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 41,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 41,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 0,
-                role_offset: 0,
+                role_offset: Some(0),
             },
         ],
         owner_reference: 100,
-        owner_reference_offset: 0,
+        owner_reference_offset: Some(0),
         owner_role: 0,
-        owner_role_offset: 0,
+        owner_role_offset: Some(0),
         state: 0,
-        state_offset: 0,
+        state_offset: Some(0),
         next_class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
             .unwrap(),
         next_record_index: 42,
-        next_byte_offset: 100,
+        next_byte_offset: Some(100),
     };
     let with_independent_relation = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -1197,8 +1197,7 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
         .iter_mut()
         .find(|parameter| parameter.name == "Half")
         .expect("Half parameter")
-        .dependencies
-        .clear();
+        .expression = cadmpeg_ir::features::Expression::text("unbound");
     assert_eq!(
         unresolved_parameter_expression_dependency_count(&native, &projected),
         1

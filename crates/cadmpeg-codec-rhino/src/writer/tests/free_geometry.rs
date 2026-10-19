@@ -110,12 +110,12 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("invalid tolerance must not be serialized");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
     assert_eq!(output, [0xaa]);
 }
 
 #[test]
-fn rejection_occurs_before_output() {
+fn unsupported_curve_is_omitted_with_error() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
@@ -126,15 +126,22 @@ fn rejection_occurs_before_output() {
         )),
         source_object: None,
     });
-    let mut output = vec![0xaa];
-    assert!(RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .is_err());
-    assert_eq!(output, [0xaa]);
+        .expect("unsupported curve does not refuse the document");
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    let mut output = Vec::new();
+    plan.write_to(&mut output)
+        .expect("empty native archive is valid");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("native output decodes");
+    assert!(decoded.ir().model.curves.is_empty());
 }
 
 #[test]
@@ -392,13 +399,23 @@ fn standalone_mesh_round_trips_across_archive_versions() {
             triangles: vec![0],
         }])
         .expect("valid triangle group partition");
-    assert!(matches!(
-        RhinoCodec.plan(
+    let plan = RhinoCodec
+        .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        ),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("triangle grouping is reduced without losing the mesh");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("mesh archive writes");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("mesh archive decodes");
+    assert_eq!(written.ir().model.tessellations.len(), 1);
 }
 
 #[test]
@@ -420,7 +437,7 @@ fn admitted_mesh_values_outside_rhino_float_range_are_a_writer_limit() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
 }
 
 #[test]
@@ -747,20 +764,24 @@ fn unsupported_retained_native_records_are_refused_before_output() {
             .expect("valid native identity"),
         );
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+        .expect("native material omission does not refuse the document");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("valid native archive");
+    assert!(!output.is_empty());
 }
 
 #[test]
-fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
+fn noncanonical_nurbs_periodicity_is_omitted_with_error() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
@@ -781,15 +802,22 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
         )),
         source_object: None,
     });
-    let mut output = vec![0xaa];
-    assert!(RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .is_err());
-    assert_eq!(output, [0xaa]);
+        .expect("unsupported curve does not refuse the document");
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    let mut output = Vec::new();
+    plan.write_to(&mut output)
+        .expect("empty native archive is valid");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("native output decodes");
+    assert!(decoded.ir().model.curves.is_empty());
 }
 
 #[test]
@@ -811,7 +839,7 @@ fn mesh_coordinate_above_f32_max_refuses_round_down() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
 }
 
 #[test]
@@ -833,7 +861,7 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
 }
 
 #[test]
@@ -846,10 +874,6 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         format: cadmpeg_ir::CodecFormat::Iges,
         object_id: cadmpeg_core::nonblank_literal!("D1"),
         geometry_role: Some(SourceGeometryRole::Support),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut ir = CadIr::empty();

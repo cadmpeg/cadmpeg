@@ -715,7 +715,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
         name: Some("Cube root".into()),
         visible: None,
         link: None,
@@ -1319,6 +1319,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        parent: None,
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
         description: Some("layer visibility".into()),
@@ -1361,6 +1362,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        parent: None,
         id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),
         description: Some("unnamed layer".into()),
@@ -1696,60 +1698,80 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
 /// The sweep vector's components are finite, and its length is past the
 /// largest finite `f64`.
 #[test]
-fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
+fn a_linear_sweep_whose_magnitude_overflows_uses_held_carrier() {
     use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::report::Severity;
 
-    let source = StepCodec::default()
-        .decode(
-            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap242_geometry.p21")),
-            &DecodeOptions::default(),
+    for held_cache in [false, true] {
+        let mut ir = CadIr::empty();
+        let directrix: CurveId = "test:model:curve#directrix".try_into().unwrap();
+        ir.model.curves.push(Curve {
+            id: directrix.clone(),
+            parameter_range: None,
+            source_object: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+        });
+        let construction = ProceduralSurface::new(
+            "test:model:procedural-surface#sweep".try_into().unwrap(),
+            ProceduralSurfaceDefinition::LinearSweep(
+                LinearSweepSurfaceConstruction::try_new(
+                    directrix,
+                    Vector3::new(1.3e308, 1.3e308, 0.0),
+                )
+                .unwrap(),
+            ),
+            None,
+        );
+        ir.model.surfaces.push(Surface {
+            id: "test:model:surface#sweep".try_into().unwrap(),
+            source_object: None,
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.id.clone(),
+                cache: held_cache.then(|| {
+                    SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    )
+                }),
+            },
+        });
+        ir.model.procedural_surfaces.push(construction);
+        let mut bytes = Vec::new();
+        let report = write_step(
+            &ir,
+            &mut bytes,
+            StepSchema::Ap242Edition3,
+            &StepWriteOptions::default(),
         )
-        .expect("decode procedural geometry");
-    let mut ir = source.ir().clone();
-    let sweep = ir
-        .model
-        .procedural_surfaces
-        .iter_mut()
-        .find(|surface| {
-            matches!(
-                surface.definition(),
-                ProceduralSurfaceDefinition::LinearSweep(_)
+        .expect("entity degradation still writes valid STEP");
+        let (code, severity) = if held_cache {
+            (StepLossCode::ProceduralReducedToCarrier, Severity::Info)
+        } else {
+            (
+                StepLossCode::ProceduralDefinitionNotWritten,
+                Severity::Error,
             )
-        })
-        .expect("the fixture states a linear sweep");
-    sweep.edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::LinearSweep(construction) = definition else {
-            panic!("the selected surface is a linear sweep");
         };
-        *construction = LinearSweepSurfaceConstruction::try_new(
-            construction.directrix().clone(),
-            Vector3::new(1.3e308, 1.3e308, 0.0),
-        )
-        .expect("finite components admit the sweep");
-    });
-
-    let mut bytes = Vec::new();
-    let written = write_step(
-        &ir,
-        &mut bytes,
-        StepSchema::Ap242Edition3,
-        &StepWriteOptions::default(),
-    );
-    let text = String::from_utf8_lossy(&bytes);
-    let error = written.expect_err(&format!(
-        "an overflowing sweep magnitude has no STEP real: {}",
-        text.lines()
-            .filter(|line| line.contains("VECTOR") || line.contains("SURFACE_OF_LINEAR"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    ));
-    assert!(
-        error
-            .to_string()
-            .contains("not implemented yet: STEP writer computed the non-finite real inf"),
-        "{error}"
-    );
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind() && loss.severity == severity));
+        let text = String::from_utf8(bytes).expect("STEP text");
+        assert!(!text.contains("inf"));
+        assert_eq!(text.contains("PLANE("), held_cache);
+        assert!(!text.contains("SURFACE_OF_LINEAR_EXTRUSION("));
+    }
 }
 
 /// The formatter states a finite number and refuses the section for any
@@ -1764,7 +1786,7 @@ fn the_part21_real_formatter_refuses_a_non_finite_value() {
             panic!("a non-finite real refuses the section: {value}");
         };
         assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
+            matches!(error, cadmpeg_core::CodecError::InvalidInput(_)),
             "{error}"
         );
     }
@@ -1839,16 +1861,12 @@ const CURVE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #10=GEOMETRIC_CURVE_SET('',(#9));
 #11=SHAPE_REPRESENTATION('',(#10),$);";
 
-/// A procedural replica refuses the file for `rows`.
+/// A non-similarity replica is omitted or reduced while the file is written.
 fn assert_replica_is_refused(exchange: &str, rows: [[f64; 4]; 3]) {
-    let written = replica_written_with(exchange, Transform::affine(rows).expect("affine"));
-    let Err(error) = written else {
-        panic!("{written:?}");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-        "{error}"
-    );
+    let text = replica_written_with(exchange, Transform::affine(rows).expect("affine"))
+        .expect("unsupported replica does not refuse independent content");
+    assert!(text.contains("END-ISO-10303-21;"));
+    assert!(!text.contains("#0"));
 }
 
 const SHEAR: [[f64; 4]; 3] = [

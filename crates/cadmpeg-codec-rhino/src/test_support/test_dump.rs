@@ -1183,7 +1183,10 @@ pub(crate) fn polyedge_segment_parameter(
     else {
         return None;
     };
-    parameters.get("segment_0_object").cloned()
+    parameters
+        .get("segment_0_object")
+        .and_then(|dimension| dimension.value_from(&result.ir().model.parameters))
+        .and_then(|expression| expression.literal_text())
 }
 
 /// Append a little-endian `i32`.

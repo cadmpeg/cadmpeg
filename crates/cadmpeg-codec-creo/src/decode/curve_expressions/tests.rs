@@ -228,12 +228,6 @@ fn curve_expression_intrinsic_dependency_text_joins_matching_names() {
     );
 }
 
-#[test]
-fn curve_expression_cyclic_dependency_text_joins_with_commas() {
-    let names = ["alpha", "beta"];
-    assert_eq!(super::join_cyclic_dependency_names(&names), "alpha,beta");
-}
-
 fn quantity_property_result() -> Result<
     std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     cadmpeg_core::CodecError,

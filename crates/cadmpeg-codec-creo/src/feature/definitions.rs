@@ -1219,7 +1219,7 @@ pub(crate) struct FeatureSavedLine {
     /// Entity references preceding or embedded in the record.
     pub(crate) references: Vec<u32>,
     /// Five-byte `eb` attribute payloads in stored order.
-    pub(crate) attributes: Vec<cadmpeg_ir::native::bytes::NativeBytes<[u8; 5]>>,
+    pub(crate) attributes: Vec<crate::source_bytes::SourceBytes<[u8; 5]>>,
     /// Two three-dimensional endpoints in the section sketch frame.
     pub(crate) endpoints: [[Option<f64>; 3]; 2],
     /// Exact row bytes through the final owned token, excluding the structural boundary.

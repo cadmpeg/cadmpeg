@@ -855,7 +855,7 @@ struct TessellationWire {
         deserialize_with = "deserialize_chordal_deflection"
     )]
     chordal_deflection: Option<f64>,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -908,7 +908,7 @@ pub struct Tessellation {
     pub faces: Vec<FaceId>,
     /// Source chordal deflection tolerance, when carried.
     chordal_deflection: Option<NonNegativeReal>,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     pub source_object: Option<SourceObjectAssociation>,
     mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
     /// Undirected geometric feature edges.

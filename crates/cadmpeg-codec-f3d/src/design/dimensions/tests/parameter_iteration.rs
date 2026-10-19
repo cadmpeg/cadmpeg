@@ -60,7 +60,7 @@ fn constraint_parameter_iteration_preserves_empty_optional_and_direction_order()
         second: cadmpeg_ir::sketches::SketchLocus::End(
             SketchEntityId::mint("test:model:sketch-entity#second").unwrap(),
         ),
-        distance: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        distance: (cadmpeg_ir::scalar::Length::new(1.0).unwrap()).into(),
         parameter: None,
     };
     assert_eq!(super::super::constraint_parameters(&definition).count(), 0);

@@ -670,6 +670,7 @@ mod tests {
         bytes.extend_from_slice(&42_u64.to_le_bytes());
         let meta = crate::metastream::MetaStream {
             types: vec![design_type(
+                256,
                 BROWSER_NODE_TYPE_GUID,
                 Some(BROWSER_NODE_BASE_TYPE_GUID),
                 BROWSER_NODE_TYPE_VERSION,
@@ -722,6 +723,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -729,6 +731,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
@@ -736,6 +739,7 @@ mod tests {
                     vec![43],
                 ),
                 design_type(
+                    258,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -743,6 +747,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    259,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -810,6 +815,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -817,6 +823,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
@@ -824,6 +831,7 @@ mod tests {
                     vec![43],
                 ),
                 design_type(
+                    258,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -831,6 +839,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    259,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -880,6 +889,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -887,6 +897,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -894,6 +905,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    258,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -950,6 +962,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -957,6 +970,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     "00000000-0000-0000-0000-000000000000",
                     None,
                     0,
@@ -964,6 +978,7 @@ mod tests {
                     vec![99],
                 ),
                 design_type(
+                    258,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -971,6 +986,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    259,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -1001,6 +1017,7 @@ mod tests {
         bytes.extend_from_slice(&42u64.to_le_bytes());
         let meta = crate::metastream::MetaStream {
             types: vec![design_type(
+                256,
                 BROWSER_NODE_TYPE_GUID,
                 Some(BROWSER_NODE_BASE_TYPE_GUID),
                 BROWSER_NODE_TYPE_VERSION,
@@ -1023,8 +1040,9 @@ mod tests {
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
         let mut types = (0..44)
-            .map(|_| {
+            .map(|ordinal| {
                 design_type(
+                    256 + ordinal,
                     "00000000-0000-0000-0000-000000000000",
                     None,
                     0,
@@ -1037,6 +1055,7 @@ mod tests {
         let node_tag = 301u32;
         types.extend([
             design_type(
+                300,
                 BODY_PRESENTATION_TYPE_GUID,
                 Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                 BODY_PRESENTATION_TYPE_VERSION,
@@ -1044,6 +1063,7 @@ mod tests {
                 vec![entity],
             ),
             design_type(
+                301,
                 BROWSER_NODE_TYPE_GUID,
                 Some(BROWSER_NODE_BASE_TYPE_GUID),
                 BROWSER_NODE_TYPE_VERSION,

@@ -162,6 +162,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
+            driving: true,
             id: cadmpeg_ir::features::ParameterId::mint(
                 "synthetic:test:id#synthetic:child-parameter".to_string(),
             )
@@ -172,7 +173,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(child_entity_id),

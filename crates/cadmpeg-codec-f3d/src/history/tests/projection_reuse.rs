@@ -15,7 +15,7 @@ fn state(state_id: i64) -> crate::test_support::history::State {
         AsmDeltaState {
             id: format!("f3d:history:state#{state_id}"),
             parent: "f3d:history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id,
             version_flag: 1,
             state_flag: 0,

@@ -246,12 +246,12 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     };
     let header = |stream: &str| DesignEntityHeader {
         id: format!("f3d:{stream}:design-entity-header#0"),
-        byte_offset: 0,
+        byte_offset: Some(0),
 
         entity_id: crate::records::identity::DesignEntityId::try_from(format!("{stream}_100"))
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        optional_slot_present: true,
+        optional_slot_present: Some(true),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
@@ -444,7 +444,11 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         })
         .expect("projected stream A Width parameter");
     assert_eq!(
-        half.dependencies.as_slice(),
+        half.expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         std::slice::from_ref(&a_width.id)
     );
     assert_eq!(

@@ -11,7 +11,6 @@ use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::{
     owned_relation_parameters, relation_display_scalar_for_parameter, LaneIds,
     RELATION_DISPLAY_SCALAR_ID_PROPERTY, RELATION_PARAMETER_ID_PROPERTY,
-    RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
 };
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
@@ -42,6 +41,19 @@ use cadmpeg_ir::{
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write;
+
+/// Retype an admitted source cache without replacing an authored expression.
+/// Literal source controls receive canonical units; parameter tokens survive.
+fn set_typed_parameter_cache(parameter: &mut DesignParameter, value: ParameterValue) {
+    let literal = parameter
+        .value
+        .as_ref()
+        .is_some_and(|old| parameter.expression.literal_value_as(old).is_some());
+    if literal {
+        parameter.expression = value.literal_expression();
+    }
+    parameter.value = Some(value);
+}
 
 const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1.0e-9;
 const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1.0e-8;
@@ -267,7 +279,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
         let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(Option<u64>, &crate::records::Feature)>::new();
         for feature in native_features.iter() {
-            let start = object_names.of(feature).map(|name| name.offset);
+            let start = object_names.of(feature).and_then(|name| name.offset);
             starts.push((start, feature));
         }
         starts.sort_by_key(|left| (left.0.is_none(), left.0));
@@ -297,7 +309,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     let name_matches = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
                         name.value == parameter.name
                             && value_only_scalar_offset(&lane.native_payload, name)
-                                != usize::try_from(scalar.offset).ok()
+                                != scalar
+                                    .offset
+                                    .and_then(|offset| usize::try_from(offset).ok())
                     });
                     if name_matches {
                         scalars.push(scalar);
@@ -359,20 +373,6 @@ pub(crate) fn bind_parameter_scalars<'a>(
                         parameter.value,
                         Some(cadmpeg_ir::features::ParameterValue::Real(_))
                     ) && !scalar_is_detached;
-                    if scalar_is_detached && length_scalars.contains(scalar.id.as_str()) {
-                        parameter.expression = crate::history::literals::format_length_mm(
-                            cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
-                                .ok_or_else(|| {
-                                    cadmpeg_core::CodecError::Malformed(
-                                        "SolidWorks projected length must be finite".into(),
-                                    )
-                                })?,
-                        );
-                    } else if scalar_is_detached && angle_scalars.contains(scalar.id.as_str()) {
-                        parameter.expression = crate::history::literals::format_angle_rad(
-                            cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
-                        );
-                    }
                     let evaluated = if length_scalars.contains(scalar.id.as_str())
                         && !scalar_is_untyped_real
                     {
@@ -413,7 +413,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
                         }
                     };
                     if let Some(evaluated) = evaluated {
-                        parameter.value = Some(evaluated);
+                        set_typed_parameter_cache(parameter, evaluated);
                     }
                 }
             }
@@ -519,7 +519,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             } else {
                 next_ordinals.insert(owner.clone(), next_ordinal);
             }
-            let candidate = names.free(owner, source_name, relation.offset)?;
+            let candidate = names.free(owner, source_name, u64::from(relation.sequence))?;
             let relation_key = relation
                 .id
                 .rsplit_once('#')
@@ -546,10 +546,6 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 scalar.id.clone(),
             );
             properties.insert(
-                cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ROLE_PROPERTY),
-                RELATION_PARAMETER_ROLE_REFERENCE.into(),
-            );
-            properties.insert(
                 cadmpeg_core::nonblank_literal!("source_name"),
                 source_name.to_string(),
             );
@@ -558,10 +554,10 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 owner: Some(owner.clone()),
                 ordinal: current_ordinal,
                 name: candidate.clone(),
-                expression,
+                expression: expression.into(),
+                driving: false,
                 display,
                 value: Some(value),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties,
                 pmi: None,
                 native_ref: None,
@@ -593,10 +589,7 @@ fn relation_display_parameter_value(
             (
                 ParameterValue::Length(millimetres),
                 Some(DimensionDisplay::Diameter),
-                format!(
-                    "<MOD-DIAM>{}",
-                    crate::history::literals::format_length_mm(millimetres)
-                ),
+                crate::history::literals::format_length_mm(millimetres),
             )
         }
         FeatureInputRelationFamily::LineLineDistance
@@ -641,8 +634,7 @@ pub(crate) fn type_display_relation_parameters(
                 // Every relation that owns the parameter is an angle relation.
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
                     let angle = cadmpeg_ir::scalar::Angle::from_assigned_real(value);
-                    parameter.expression = crate::history::literals::format_angle_rad(angle);
-                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(angle));
+                    set_typed_parameter_cache(parameter, ParameterValue::Angle(angle));
                 }
             }
             FeatureInputRelationFamily::LineLineDistance
@@ -658,15 +650,7 @@ pub(crate) fn type_display_relation_parameters(
                                 "SolidWorks projected length must be finite".into(),
                             )
                         })?;
-                    parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
-                        format!(
-                            "<MOD-DIAM>{}",
-                            crate::history::literals::format_length_mm(value)
-                        )
-                    } else {
-                        crate::history::literals::format_length_mm(value)
-                    };
-                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(value));
+                    set_typed_parameter_cache(parameter, ParameterValue::Length(value));
                 }
                 if let Some(cadmpeg_ir::features::ParameterValue::Integer(value)) =
                     parameter.value.as_ref()
@@ -680,15 +664,7 @@ pub(crate) fn type_display_relation_parameters(
                             "SolidWorks projected length must be finite".into(),
                         )
                     })?;
-                    parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
-                        format!(
-                            "<MOD-DIAM>{}",
-                            crate::history::literals::format_length_mm(value)
-                        )
-                    } else {
-                        crate::history::literals::format_length_mm(value)
-                    };
-                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(value));
+                    set_typed_parameter_cache(parameter, ParameterValue::Length(value));
                 }
                 if family == FeatureInputRelationFamily::CircleDiameter
                     && matches!(
@@ -860,7 +836,7 @@ pub(crate) fn project_compact_edge_selections_with_ids(
                                     )
                                 })?
                             };
-                            replacement_groups.push(FilletGroup { edges, radius, tangency_weight });
+                            replacement_groups.push(FilletGroup { edges, radius, tangency_weight: tangency_weight.clone() });
                         }
                         *definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
                             groups: replacement_groups
@@ -989,7 +965,9 @@ impl<'a> VariableFilletObjects<'a> {
                     let mut starts = Vec::new();
                     for candidate in features {
                         if let Some(name) = names.of(candidate) {
-                            starts.push((name.offset, candidate));
+                            if let Some(position) = name.offset {
+                                starts.push((position, candidate));
+                            }
                         }
                     }
                     starts.sort_unstable_by_key(|(left, _)| *left);
@@ -1064,22 +1042,22 @@ fn variable_fillet_radius_groups<'a>(
                 .zip(feature.parameters.get(*name).and_then(|value| {
                     crate::history::literals::parse_positive_dimension_length_mm(value)
                 }))?;
-            ordered_parameters.push(parameter);
+            ordered_parameters.push((parameter.0, parameter.1, name.as_str()));
         }
-        ordered_parameters.sort_unstable_by_key(|(left, _)| *left);
+        ordered_parameters.sort_unstable_by_key(|(left, _, _)| *left);
         if ordered_parameters
             .iter()
             .enumerate()
-            .all(|(expected, (actual, _))| expected == *actual)
+            .all(|(expected, (actual, _, _))| expected == *actual)
         {
             let mut selections = selections.to_vec();
             selections.sort_unstable_by_key(|left| left.ordinal);
             let mut points = Vec::new();
-            for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
+            for (parameter, (_, _radius, name)) in ordered_parameters.into_iter().enumerate() {
                 let parameter = f64_from_index(parameter)?;
                 points.push(VariableRadius {
                     parameter,
-                    radius: Length::from(radius),
+                    radius: crate::history::project::parameter_dimension(feature, &[name])?,
                 });
             }
             let points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()?;
@@ -1090,7 +1068,7 @@ fn variable_fillet_radius_groups<'a>(
         }
     }
 
-    let mut vertex_radii = HashMap::<[u8; 12], PositiveLength>::new();
+    let mut vertex_radii = HashMap::<[u8; 12], (PositiveLength, String)>::new();
     let mut control_names = HashSet::<String>::new();
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
@@ -1114,10 +1092,11 @@ fn variable_fillet_radius_groups<'a>(
                     })?;
                     match vertex_radii.entry(*vertex.type_signature) {
                         std::collections::hash_map::Entry::Vacant(entry) => {
-                            entry.insert(radius);
+                            entry.insert((radius, name.clone()));
                         }
                         std::collections::hash_map::Entry::Occupied(entry)
-                            if !same_dimension_length(entry.get().get(), radius.get()) =>
+                            if !same_dimension_length(entry.get().0.get(), radius.get())
+                                || entry.get().1 != name =>
                         {
                             return None;
                         }
@@ -1151,13 +1130,13 @@ fn variable_fillet_radius_groups<'a>(
                 .zip(feature.parameters.get(*name).and_then(|value| {
                     crate::history::literals::parse_positive_dimension_length_mm(value)
                 }))?;
-            ordered_parameters.push(parameter);
+            ordered_parameters.push((parameter.0, parameter.1, name.as_str()));
         }
-        ordered_parameters.sort_unstable_by_key(|(left, _)| *left);
+        ordered_parameters.sort_unstable_by_key(|(left, _, _)| *left);
         if ordered_parameters
             .iter()
             .enumerate()
-            .any(|(expected, (actual, _))| expected != *actual)
+            .any(|(expected, (actual, _, _))| expected != *actual)
             || selections.iter().any(|selection| {
                 selection
                     .references
@@ -1186,11 +1165,11 @@ fn variable_fillet_radius_groups<'a>(
         let mut selections = selections.to_vec();
         selections.sort_unstable_by_key(|left| left.ordinal);
         let mut points = Vec::new();
-        for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
+        for (parameter, (_, _radius, name)) in ordered_parameters.into_iter().enumerate() {
             let parameter = f64_from_index(parameter)?;
             points.push(VariableRadius {
                 parameter,
-                radius: Length::from(radius),
+                radius: crate::history::project::parameter_dimension(feature, &[name])?,
             });
         }
         let points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()?;
@@ -1224,10 +1203,7 @@ fn variable_fillet_radius_groups<'a>(
         }
     }
 
-    let mut groups = Vec::<(
-        (PositiveLength, PositiveLength),
-        Vec<&FeatureInputEdgeSelection>,
-    )>::new();
+    let mut groups = Vec::<((String, String), Vec<&FeatureInputEdgeSelection>)>::new();
     let mut unassigned = Vec::new();
     for &selection in selections {
         let mut endpoints = selection
@@ -1246,7 +1222,7 @@ fn variable_fillet_radius_groups<'a>(
                 else {
                     return None;
                 };
-                let pair = (*first_radius, *second_radius);
+                let pair = (first_radius.1.clone(), second_radius.1.clone());
                 if let Some((_, grouped)) =
                     groups.iter_mut().find(|(candidate, _)| *candidate == pair)
                 {
@@ -1275,11 +1251,11 @@ fn variable_fillet_radius_groups<'a>(
         let raw_points = vec![
             VariableRadius {
                 parameter: 0.0,
-                radius: Length::from(first),
+                radius: crate::history::project::parameter_dimension(feature, &[first.as_str()])?,
             },
             VariableRadius {
                 parameter: 1.0,
-                radius: Length::from(second),
+                radius: crate::history::project::parameter_dimension(feature, &[second.as_str()])?,
             },
         ];
         let points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points).ok()?;
@@ -1872,7 +1848,10 @@ pub(crate) fn project_compact_surface_selections(
 /// The edges and tangency weight of a fillet whose one group has no radius.
 fn sole_unresolved_fillet_group(
     definition: &FeatureDefinition,
-) -> Option<(&EdgeSelection, Option<cadmpeg_ir::scalar::FiniteReal>)> {
+) -> Option<(
+    &EdgeSelection,
+    Option<cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::FiniteReal>>,
+)> {
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         return None;
     };
@@ -1882,7 +1861,7 @@ fn sole_unresolved_fillet_group(
     group
         .radius
         .is_unresolved()
-        .then_some((&group.edges, group.tangency_weight))
+        .then_some((&group.edges, group.tangency_weight.clone()))
 }
 
 fn full_round_fillet_selection_triple<'a>(
@@ -2225,6 +2204,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     lanes: &[FeatureInputLane],
     faces: &[Face],
     surfaces: &[Surface],
+    parameters: &[DesignParameter],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let native_features = crate::records::HistoryFeatures::new(histories);
     let mut history_features = Vec::new();
@@ -2282,7 +2262,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             continue;
                         }
                         references.push((
-                            format!("{lane_key}:{}", selection.offset),
+                            format!("{lane_key}:{}", selection.ordinal),
                             Some(std::borrow::Cow::Borrowed(selection.components.as_slice())),
                             selection.producer_feature_refs.first().map(String::as_str),
                         ));
@@ -2304,8 +2284,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         if class.name != "moCylinderRef_w" {
                             continue;
                         }
-                        let token = usize::try_from(class.offset)
-                            .ok()
+                        let token = class
+                            .offset
+                            .and_then(|offset| usize::try_from(offset).ok())
                             .and_then(|offset| {
                                 class
                                     .name
@@ -2431,6 +2412,10 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     return Ok(());
                 }
                 let Some(diameter) = diameter else {
+                    return Ok(());
+                };
+                let Some(diameter) = super::parameters::dimension_value(diameter, parameters)
+                else {
                     return Ok(());
                 };
                 let diameter = diameter.get();

@@ -361,8 +361,13 @@ fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
 ) -> Result<(), CodecError> {
-    let mut values_by_feature =
-        HashMap::<FeatureId, BTreeMap<cadmpeg_core::text::NonBlankString, String>>::new();
+    let mut values_by_feature = HashMap::<
+        FeatureId,
+        BTreeMap<
+            cadmpeg_core::text::NonBlankString,
+            cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>,
+        >,
+    >::new();
     for parameter in &ir.model.parameters {
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
             continue;
@@ -374,7 +379,7 @@ fn assign_native_operation_parameter_values(
             let id = feature_id.clone();
             values_by_feature.insert(id, BTreeMap::new());
         }
-        let expression = parameter.expression.clone();
+        let expression = cadmpeg_ir::features::Dimension::Parameter(parameter.id.clone());
         if let Some(values) = values_by_feature.get_mut(feature_id) {
             values.insert(name, expression);
         }
@@ -397,24 +402,8 @@ fn assign_native_operation_parameter_values(
                         .evaluation
                         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
                             kind,
-                            parameters: values,
+                            parameters: (values).into(),
                         }));
-                }
-            }
-            FeatureDefinition::Operation(
-                FeatureOperation::Unresolved {
-                    family:
-                        UnresolvedFamily::Extrude | UnresolvedFamily::Revolve | UnresolvedFamily::Fillet,
-                }
-                | FeatureOperation::Pattern { .. }
-                | FeatureOperation::Sweep { .. },
-            ) => {
-                for (name, expression) in values {
-                    let key = format!("catia_parameter_{name}");
-                    let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
-                        CodecError::malformed("CATIA source parameter key is blank")
-                    })?;
-                    feature.source_properties.insert(key, expression);
                 }
             }
             _ => {}
@@ -649,6 +638,7 @@ fn transfer_principal_plane(
     let source_tag = candidate.declaration_class.to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: object.first_field_byte_offset,
         name: None,
@@ -691,6 +681,7 @@ fn transfer_reference_plane(
     let source_tag = candidate.kind.to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: object.first_field_byte_offset,
         name: None,
@@ -749,6 +740,7 @@ fn transfer_sketch(
     let feature_ref = object.id.clone();
     let source_tag = "Sketch".to_owned();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: object.first_field_byte_offset,
         name: None,
@@ -913,6 +905,7 @@ fn transfer_native_operation(
     let source_tag = kind.as_str().to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: object.first_field_byte_offset,
         name: None,

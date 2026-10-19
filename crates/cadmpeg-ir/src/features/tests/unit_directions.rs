@@ -34,8 +34,14 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
             FeatureOperation::Torus {
                 center: FinitePoint3::ZERO,
                 axis: UnitVector3::Z_AXIS,
-                major_radius: PositiveLength::new(5.0).unwrap(),
-                minor_radius: PositiveLength::new(1.0).unwrap(),
+                major_radius: (crate::features::Dimension::Literal(
+                    PositiveLength::new(5.0).unwrap(),
+                ))
+                .into(),
+                minor_radius: (crate::features::Dimension::Literal(
+                    PositiveLength::new(1.0).unwrap(),
+                ))
+                .into(),
                 op: BooleanOp::NewBody,
             },
             "axis",
@@ -55,8 +61,8 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
                 support_face: FaceSelection::Native("project:support".into()),
                 direction: UnitVector3::Z_AXIS,
                 mode: SurfaceProjectionMode::All,
-                height: NonNegativeLength::new(0.0).unwrap(),
-                offset: Length::ZERO,
+                height: crate::features::Dimension::Literal(NonNegativeLength::new(0.0).unwrap()),
+                offset: crate::features::Dimension::Literal(Length::ZERO),
             },
             "direction",
         ),
@@ -79,10 +85,14 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
         axis_origin: FinitePoint3::ZERO,
         axis_direction: UnitVector3::Z_AXIS,
         law: HelicalSweepLaw::PitchTurnsAngle,
-        pitch: NonNegativeLength::new(2.0).unwrap(),
-        travel: HelicalSweepTravel::new(Length::new(10.0).unwrap(), Length::ZERO).unwrap(),
-        turns: PositiveReal::new(5.0).unwrap(),
-        cone_angle: Angle::ZERO,
+        pitch: crate::features::Dimension::Literal(NonNegativeLength::new(2.0).unwrap()),
+        travel: HelicalSweepTravel::new(
+            crate::features::Dimension::Literal(Length::new(10.0).unwrap()),
+            Length::ZERO.into(),
+        )
+        .unwrap(),
+        turns: crate::features::Dimension::Literal(PositiveReal::new(5.0).unwrap()),
+        cone_angle: crate::features::Dimension::Literal(Angle::ZERO),
         left_handed: false,
         reversed: false,
         tolerance: None,

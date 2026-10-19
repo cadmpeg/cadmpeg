@@ -93,8 +93,8 @@ pub(crate) fn spatial_sketches(
             for (start, end) in spatial_relation_manager_ranges(lane) {
                 if lane.scalars.iter().any(|scalar| {
                     scalar.feature_ref.as_deref() == Some(native_ref)
-                        && scalar.offset > start
-                        && scalar.offset < end
+                        && scalar.offset.is_some_and(|position| position > start)
+                        && scalar.offset.is_some_and(|position| position < end)
                 }) {
                     relation_ranges.push((start, end));
                 }
@@ -106,17 +106,20 @@ pub(crate) fn spatial_sketches(
                 {
                     continue;
                 }
-                let Ok(offset) = usize::try_from(marker.offset()) else {
+                let Some(offset) = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())
+                else {
                     continue;
                 };
                 if !relation_ranges.is_empty()
-                    && (!relation_ranges
-                        .iter()
-                        .any(|(start, end)| marker.offset() > *start && marker.offset() < *end)
-                        || !matches!(
-                            marker_native_code(&lane.native_payload, offset),
-                            Some(1..=85)
-                        ))
+                    && (!relation_ranges.iter().any(|(start, end)| {
+                        marker.offset().is_some_and(|position| position > *start)
+                            && marker.offset().is_some_and(|position| position < *end)
+                    }) || !matches!(
+                        marker_native_code(&lane.native_payload, offset),
+                        Some(1..=85)
+                    ))
                 {
                     continue;
                 }
@@ -227,7 +230,7 @@ pub(crate) fn spatial_sketches(
             let Some(name) = names.of(record) else {
                 continue;
             };
-            let Some(start) = usize::try_from(name.offset).ok() else {
+            let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok()) else {
                 continue;
             };
             let end = starts.end(name.offset, lane.native_payload.len());
@@ -315,7 +318,7 @@ fn spatial_line_vertices(
     (names, starts): &(FeatureObjectNames<'_>, FeatureObjectStarts),
 ) -> Option<SpatialLineVertices> {
     let name = names.of(record)?;
-    let Ok(start) = usize::try_from(name.offset) else {
+    let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok()) else {
         return None;
     };
     let end = starts.end(name.offset, lane.native_payload.len());
@@ -1158,7 +1161,7 @@ pub(crate) fn relation_bindings(
             .map_err(|_| CodecError::malformed("SLDPRT relation binding ordinal overflows u32"))?;
         let id = format!(
             "sldprt:feature-input:relation-binding#{lane_key}:{}",
-            class.offset
+            class.ordinal
         );
         let parent = parent.to_owned();
         let class_ref = class.id.clone();
@@ -1168,6 +1171,7 @@ pub(crate) fn relation_bindings(
             id,
             parent,
             ordinal,
+            sequence: ordinal,
             offset: class.offset,
             class_ref,
             family,
@@ -1193,6 +1197,7 @@ pub(crate) fn reference_cells(
                 parent,
                 feature_ref,
                 ordinal: 0,
+                sequence: 0,
                 offset: operand.offset,
                 kind: operand.kind,
                 class_ref: None,
@@ -1208,14 +1213,16 @@ pub(crate) fn reference_cells(
     }
     let mut classes_at = HashMap::<(&str, u64), Vec<&FeatureInputClass>>::new();
     for class in classes {
-        classes_at
-            .entry((class.parent.as_str(), class.offset))
-            .or_default()
-            .push(class);
+        if let Some(position) = class.offset {
+            classes_at
+                .entry((class.parent.as_str(), position))
+                .or_default()
+                .push(class);
+        }
     }
     let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
     for cell in &cells {
-        let Some(class_offset) = cell.offset.checked_add(12) else {
+        let Some(class_offset) = cell.offset.and_then(|offset| offset.checked_add(12)) else {
             continue;
         };
         if let Some(declared) = classes_at.get(&(cell.parent.as_str(), class_offset)) {
@@ -3273,7 +3280,9 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     markers: &[&SketchInputEntity],
 ) -> Option<[u64; 2]> {
     let curve_index = (|| {
-        let offset = usize::try_from(curve.offset()).ok()?;
+        let offset = curve
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())?;
         let curve_index = u16::try_from(curve.object_index()?).ok()?;
         if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
             || marker_native_code(payload, offset) != Some(1)
@@ -3290,7 +3299,10 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         if marker.feature_ref != curve.feature_ref {
             continue;
         }
-        let Ok(marker_offset) = usize::try_from(marker.offset()) else {
+        let Some(marker_offset) = marker
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             return None;
         };
         let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
@@ -3302,8 +3314,8 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
             }
             by_selector
                 .entry(selector)
-                .and_modify(|offsets| offsets.include_offset(marker.offset()))
-                .or_insert(ReverseIncidenceOffsets::One(marker.offset()));
+                .and_modify(|offsets| offsets.include_offset(u64_from_index(marker_offset)))
+                .or_insert(ReverseIncidenceOffsets::One(u64_from_index(marker_offset)));
         }
     }
     let mut candidates = by_selector

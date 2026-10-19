@@ -36,10 +36,13 @@ fn timeline_id_binds_a_design_stream_and_frame_offset() {
     for id in invalid {
         assert!(make(id).is_err());
     }
-    reject_changed_id(
-        make("f3d:Design/BulkStream.dat:design-feature-timeline#200").unwrap(),
-        &invalid,
-    );
+    let source = make("f3d:Design/BulkStream.dat:design-feature-timeline#200").unwrap();
+    reject_changed_id(source.clone(), &[invalid[0], invalid[1], invalid[3]]);
+    let mut wire = serde_json::to_value(source).unwrap();
+    wire["id"] = "f3d:Design/BulkStream.dat:design-feature-timeline#authored".into();
+    let document: DesignFeatureTimeline = serde_json::from_value(wire.clone()).unwrap();
+    assert!(document.byte_offset().is_none());
+    assert_eq!(serde_json::to_value(document).unwrap(), wire);
 }
 
 #[test]

@@ -455,52 +455,176 @@ pub(super) fn check_references(
             {
                 ref_error(findings, &owner, "tessellation", tessellation);
             }
+            AppearanceTarget::Occurrence(id)
+                if !ir.model.occurrences.iter().any(|record| record.id == *id) =>
+            {
+                ref_error(findings, &owner, "occurrence", id.as_str());
+            }
             AppearanceTarget::Source { .. } => {}
             _ => {}
         }
     }
+    let source_objects: std::collections::HashSet<&str> = ir
+        .model
+        .curves
+        .iter()
+        .filter_map(|record| record.source_object.as_ref())
+        .chain(
+            ir.model
+                .surfaces
+                .iter()
+                .filter_map(|record| record.source_object.as_ref()),
+        )
+        .chain(
+            ir.model
+                .points
+                .iter()
+                .filter_map(|record| record.source_object.as_ref()),
+        )
+        .chain(
+            ir.model
+                .tessellations
+                .iter()
+                .filter_map(|record| record.source_object.as_ref()),
+        )
+        .map(|association| association.object_id.as_str())
+        .collect();
     for attribute in &ir.model.attributes {
         use crate::attributes::AttributeTarget;
-
-        let owner = attribute.id.as_str();
-        match &attribute.target {
-            AttributeTarget::Document => {}
-            AttributeTarget::Body(id)
-                if ids
-                    .bodies(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "body", id.as_str());
-            }
-            AttributeTarget::Face(id)
-                if ids
-                    .faces(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "face", id.as_str());
-            }
-            AttributeTarget::Coedge(id)
-                if ids
-                    .coedges(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "coedge", id.as_str());
-            }
-            AttributeTarget::Edge(id)
-                if ids
-                    .edges(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "edge", id.as_str());
-            }
-            AttributeTarget::Vertex(id)
-                if ids
-                    .vertices(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "vertex", id.as_str());
-            }
-            _ => {}
+        let missing = match &attribute.target {
+            AttributeTarget::Document => None,
+            AttributeTarget::Body(id) => (!ir
+                .model
+                .bodies
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("body", id.as_str())),
+            AttributeTarget::Region(id) => (!ir
+                .model
+                .regions
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("region", id.as_str())),
+            AttributeTarget::Face(id) => (!ir
+                .model
+                .faces
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("face", id.as_str())),
+            AttributeTarget::Shell(id) => (!ir
+                .model
+                .shells
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("shell", id.as_str())),
+            AttributeTarget::Loop(id) => (!ir
+                .model
+                .loops
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("loop", id.as_str())),
+            AttributeTarget::Coedge(id) => (!ir
+                .model
+                .coedges
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("coedge", id.as_str())),
+            AttributeTarget::Edge(id) => (!ir
+                .model
+                .edges
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("edge", id.as_str())),
+            AttributeTarget::Vertex(id) => (!ir
+                .model
+                .vertices
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("vertex", id.as_str())),
+            AttributeTarget::Surface(id) => (!ir
+                .model
+                .surfaces
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("surface", id.as_str())),
+            AttributeTarget::Curve(id) => (!ir
+                .model
+                .curves
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("curve", id.as_str())),
+            AttributeTarget::Point(id) => (!ir
+                .model
+                .points
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("point", id.as_str())),
+            AttributeTarget::Feature(id) => (!ir
+                .model
+                .features
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("feature", id.as_str())),
+            AttributeTarget::Sketch(id) => (!ir
+                .model
+                .sketches
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("sketch", id.as_str())),
+            AttributeTarget::Parameter(id) => (!ir
+                .model
+                .parameters
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("parameter", id.as_str())),
+            AttributeTarget::ProductDefinition(id) => (!ir
+                .model
+                .product_definitions
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("product definition", id.as_str())),
+            AttributeTarget::Occurrence(id) => (!ir
+                .model
+                .occurrences
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("occurrence", id.as_str())),
+            AttributeTarget::Pmi(id) => (!ir
+                .model
+                .pmi
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("PMI annotation", id.as_str())),
+            AttributeTarget::SemanticAnnotation(id) => (!ir
+                .model
+                .semantic_annotations
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("semantic annotation", id.as_str())),
+            AttributeTarget::Drawing(id) => (!ir
+                .model
+                .drawings
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("drawing", id.as_str())),
+            AttributeTarget::ViewPresentation(id) => (!ir
+                .model
+                .view_presentations
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("view presentation", id.as_str())),
+            AttributeTarget::Tessellation(id) => (!ir
+                .model
+                .tessellations
+                .iter()
+                .any(|record| record.id.as_str() == id.as_str()))
+            .then_some(("tessellation", id.as_str())),
+            AttributeTarget::Source { source_id } => (!ids.native_record_owns(source_id)
+                && !source_objects.contains(source_id.as_str()))
+            .then_some(("source object", source_id.as_str())),
+        };
+        if let Some((kind, id)) = missing {
+            ref_error(findings, attribute.id.as_str(), kind, id);
         }
     }
     for s in &ir.model.surfaces {
@@ -1929,12 +2053,6 @@ pub(super) fn check_references(
             add(feature.id.as_str(), ());
         }
     });
-    let feature_ordinals = BorrowedIdentities::build(|add| {
-        for feature in &ir.model.features {
-            let (identity, value) = (feature.id.as_str(), feature.ordinal);
-            add(identity, value);
-        }
-    });
     let parameters = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
             let (identity, value) = (
@@ -1997,41 +2115,13 @@ pub(super) fn check_references(
                 ),
             );
         }
-        for dependency in &parameter.dependencies {
-            let Some((owner, ordinal)) = parameters.get(dependency.as_str()) else {
+        for dependency in parameter.expression.dependencies() {
+            if !parameters.contains(dependency.as_str()) {
                 ref_error(
                     findings,
                     parameter.id.as_str(),
                     "parameter dependency",
                     dependency.as_str(),
-                );
-                continue;
-            };
-            let precedes = if same_feature_owner(*owner, parameter.owner.as_ref()) {
-                *ordinal < parameter.ordinal
-            } else {
-                match (*owner, parameter.owner.as_ref()) {
-                    (None, Some(_)) => true,
-                    (Some(dependency_owner), Some(parameter_owner)) => feature_ordinals
-                        .get(dependency_owner.as_str())
-                        .zip(feature_ordinals.get(parameter_owner.as_str()))
-                        .is_some_and(|(dependency_owner, parameter_owner)| {
-                            dependency_owner < parameter_owner
-                        }),
-                    (Some(_) | None, None) => false,
-                }
-            };
-            if !precedes {
-                super::record_related_finding(
-                    findings,
-                    Check::ReferentialIntegrity,
-                    Severity::Error,
-                    parameter.id.as_str(),
-                    &[dependency.as_str()],
-                    format_args!(
-                        "parameter dependency `{}` does not precede its consumer",
-                        dependency.as_str()
-                    ),
                 );
             }
         }
@@ -2225,12 +2315,10 @@ pub(super) fn check_references(
                 constraint_entities.extend([locus_entity(point), first, second]);
                 None
             }
-            Definition::Offset {
-                pairs, parameter, ..
-            } => {
+            Definition::Offset { pairs, .. } => {
                 constraint_entities
                     .extend(pairs.iter().flat_map(|pair| [&pair.source, &pair.result]));
-                parameter.as_ref().map(|parameter| parameter.id.as_str())
+                None
             }
             Definition::PointOnObject { point, entity } => {
                 constraint_entities.extend([locus_entity(point), entity]);
@@ -2244,51 +2332,11 @@ pub(super) fn check_references(
                 constraint_entities.extend([locus_entity(first), locus_entity(second), axis]);
                 None
             }
-            Definition::DistanceLoci {
-                first,
-                second,
-                parameter,
-            }
-            | Definition::PolarDistance {
-                first,
-                second,
-                distance_parameter: Some(parameter),
-                ..
-            }
-            | Definition::DistanceLociValue {
-                first,
-                second,
-                parameter: Some(parameter),
-                ..
-            }
-            | Definition::HorizontalDistance {
-                first,
-                second,
-                parameter,
-            }
-            | Definition::VerticalDistance {
-                first,
-                second,
-                parameter,
-            } => {
-                constraint_entities.extend([locus_entity(first), locus_entity(second)]);
-                Some(parameter.as_str())
-            }
-            Definition::PolarDistance {
-                first,
-                second,
-                distance_parameter: None,
-                ..
-            } => {
-                constraint_entities.extend([locus_entity(first), locus_entity(second)]);
-                None
-            }
-            Definition::DistanceLociValue {
-                first,
-                second,
-                parameter: None,
-                ..
-            } => {
+            Definition::DistanceLoci { first, second, .. }
+            | Definition::PolarDistance { first, second, .. }
+            | Definition::DistanceLociValue { first, second, .. }
+            | Definition::HorizontalDistance { first, second, .. }
+            | Definition::VerticalDistance { first, second, .. } => {
                 constraint_entities.extend([locus_entity(first), locus_entity(second)]);
                 None
             }
@@ -2305,7 +2353,7 @@ pub(super) fn check_references(
             }
             Definition::RepeatedDistance {
                 measurements,
-                parameter,
+                parameter: _,
             } => {
                 constraint_entities.extend(measurements.iter().flat_map(|measurement| {
                     use crate::sketches::SketchDistanceMeasurement as Measurement;
@@ -2316,72 +2364,66 @@ pub(super) fn check_references(
                     };
                     [locus_entity(first), locus_entity(second)]
                 }));
-                Some(parameter.as_str())
+                None
             }
             Definition::RepeatedLength {
                 entities,
-                parameter,
+                parameter: _,
             } => {
                 constraint_entities.extend(entities.iter());
-                Some(parameter.as_str())
+                None
             }
             Definition::ParallelLineSetDistance {
                 first,
                 second,
-                parameter,
+                parameter: _,
             } => {
                 constraint_entities.extend(first.iter().chain(second));
-                Some(parameter.as_str())
+                None
             }
             Definition::Angle {
                 first,
                 second,
-                parameter,
+                parameter: _,
             } => {
                 constraint_entities.extend([first, second]);
-                Some(parameter.as_str())
+                None
             }
-            Definition::AngleToAxis {
-                entity, parameter, ..
-            } => {
+            Definition::AngleToAxis { entity, .. } => {
                 constraint_entities.extend([entity]);
-                Some(parameter.as_str())
+                None
             }
             Definition::RepeatedRadius {
                 entities,
-                parameter,
+                parameter: _,
             }
             | Definition::RepeatedDiameter {
                 entities,
-                parameter,
+                parameter: _,
             } => {
                 constraint_entities.extend(entities.iter());
-                Some(parameter.as_str())
+                None
             }
-            Definition::Radius { entity, parameter }
-            | Definition::Diameter { entity, parameter }
-            | Definition::Weight { entity, parameter } => {
+            Definition::Radius { entity, .. }
+            | Definition::Diameter { entity, .. }
+            | Definition::Weight { entity, .. } => {
                 constraint_entities.extend([entity]);
-                Some(parameter.as_str())
+                None
             }
             Definition::SnellsLaw {
                 incident,
                 refracted,
                 interface,
-                parameter,
+                parameter: _,
             } => {
                 constraint_entities.extend([
                     locus_entity(incident),
                     locus_entity(refracted),
                     interface,
                 ]);
-                Some(parameter.as_str())
+                None
             }
         };
-        let parameter = parameter.or(match constraint.definition.kind() {
-            Definition::Distance { parameter, .. } => Some(parameter.as_str()),
-            _ => None,
-        });
         for entity in constraint_entities {
             if !sketch_entities.contains(entity.as_str()) {
                 ref_error(
@@ -2412,41 +2454,22 @@ pub(super) fn check_references(
                 ref_error(findings, constraint.id.as_str(), "parameter", parameter);
             }
         }
-        if let Definition::RectangularPattern { pattern } = constraint.definition.kind() {
-            for parameter in pattern.directions().iter().flat_map(|direction| {
-                [
-                    direction
-                        .distance
-                        .as_ref()
-                        .map(crate::sketches::SketchPatternDistance::parameter),
-                    direction.count_parameter.as_ref(),
-                ]
-                .into_iter()
-                .flatten()
-            }) {
-                if !parameters.contains(parameter.as_str()) {
-                    ref_error(
-                        findings,
-                        constraint.id.as_str(),
-                        "parameter",
-                        parameter.as_str(),
-                    );
-                }
+        for canonical_parameter in constraint
+            .definition
+            .kind()
+            .dimension_parameters()
+            .map_err(|error| CodecError::malformed(error.to_string()))?
+        {
+            if parameter == Some(canonical_parameter.as_str()) {
+                continue;
             }
-        }
-        if let Definition::CircularPattern { pattern } = constraint.definition.kind() {
-            for parameter in [pattern.angle_parameter(), pattern.count_parameter()]
-                .into_iter()
-                .flatten()
-            {
-                if !parameters.contains(parameter.as_str()) {
-                    ref_error(
-                        findings,
-                        constraint.id.as_str(),
-                        "parameter",
-                        parameter.as_str(),
-                    );
-                }
+            if !parameters.contains(canonical_parameter.as_str()) {
+                ref_error(
+                    findings,
+                    constraint.id.as_str(),
+                    "parameter",
+                    canonical_parameter.as_str(),
+                );
             }
         }
     }
@@ -2562,26 +2585,27 @@ fn check_feature_references(
                 );
             }
         }
-        let suppressed_features = BorrowedIdentities::build(|add| {
-            for (feature, state) in &configuration.feature_states {
-                if state.evaluation.is_suppressed() {
-                    add(feature.as_str(), ());
-                }
-            }
-        });
-        if configuration.active {
-            for feature in &ir.model.features {
-                if feature.suppressed.is_some_and(|suppressed| {
-                    suppressed_features.contains(feature.id.as_str()) != suppressed
-                }) {
-                    super::record_finding(
+        if configuration.active
+            && (!configuration.parameter_overrides.is_empty()
+                || !configuration.parameter_values.is_empty()
+                || !configuration.feature_states.is_empty())
+        {
+            super::record_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                Some(configuration.id.as_str()),
+                format_args!("active configuration must use the base state without overrides"),
+            );
+        }
+        for expression in configuration.parameter_overrides.values() {
+            for parameter in expression.dependencies() {
+                if !parameter_ids.contains(parameter.as_str()) {
+                    ref_error(
                         findings,
-                        Check::ReferentialIntegrity,
-                        Severity::Error,
-                        Some(configuration.id.as_str()),
-                        format_args!(
-                            "active configuration suppression disagrees with current feature state"
-                        ),
+                        configuration.id.as_str(),
+                        "configuration expression parameter",
+                        parameter.as_str(),
                     );
                 }
             }
@@ -2618,90 +2642,22 @@ fn check_feature_references(
                     feature.as_str(),
                 );
             }
-            for dependency in &state.dependencies {
-                match features.get(dependency.as_str()) {
-                    None => ref_error(
-                        findings,
-                        configuration.id.as_str(),
-                        "configuration feature dependency",
-                        dependency.as_str(),
-                    ),
-                    Some(dependency_ordinal)
-                        if feature_ordinal.is_some_and(|feature_ordinal| {
-                            *dependency_ordinal >= feature_ordinal
-                        }) =>
-                    {
-                        super::record_related_finding(
+            if let Some(definition) = state.definition() {
+                for reference in regeneration_references(definition.operation()) {
+                    match features.get(reference.as_str()) {
+                        None => ref_error(
                             findings,
-                            Check::ReferentialIntegrity,
-                            Severity::Error,
                             configuration.id.as_str(),
-                            &[dependency.as_str(), feature.as_str()],
-                            format_args!(
-                                "configuration feature dependency `{}` does not precede `{}`",
-                                dependency.as_str(),
-                                feature.as_str()
-                            ),
-                        );
+                            "configuration definition feature",
+                            reference.as_str(),
+                        ),
+
+                        Some(_) => {}
                     }
-                    Some(_) => {}
-                }
-            }
-            for reference in regeneration_references(state.definition.operation()) {
-                match features.get(reference.as_str()) {
-                    None => ref_error(
-                        findings,
-                        configuration.id.as_str(),
-                        "configuration definition feature",
-                        reference.as_str(),
-                    ),
-                    Some(reference_ordinal)
-                        if feature_ordinal.is_some_and(|feature_ordinal| {
-                            *reference_ordinal >= feature_ordinal
-                        }) =>
-                    {
-                        super::record_related_finding(
-                            findings,
-                            Check::ReferentialIntegrity,
-                            Severity::Error,
-                            configuration.id.as_str(),
-                            &[reference.as_str(), feature.as_str()],
-                            format_args!(
-                                "configuration definition feature `{}` does not precede `{}`",
-                                reference.as_str(),
-                                feature.as_str()
-                            ),
-                        );
-                    }
-                    Some(_)
-                        if !state
-                            .dependencies
-                            .iter()
-                            .any(|dependency| dependency.as_str() == reference.as_str()) =>
-                    {
-                        super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, configuration.id.as_str(), &[feature.as_str(), reference.as_str()], format_args!(
-                                "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-                                feature.as_str(), reference.as_str()
-                            ));
-                    }
-                    Some(_) => {}
-                }
-            }
-            for output in state.evaluation.outputs() {
-                if ids
-                    .bodies(output.as_str(), crate::index::StandardIndex)
-                    .is_none()
-                {
-                    ref_error(
-                        findings,
-                        configuration.id.as_str(),
-                        "configuration feature output",
-                        output.as_str(),
-                    );
                 }
             }
         }
-        check_configuration_state_closure(configuration, findings);
+        check_configuration_state_closure(ir, configuration, findings);
     }
     if active_configurations > 1 {
         super::record_finding(
@@ -2892,17 +2848,7 @@ fn check_feature_references(
                     "dependency feature",
                     dependency.as_str(),
                 ),
-                Some(ordinal) if *ordinal >= feature.ordinal => super::record_related_finding(
-                    findings,
-                    Check::ReferentialIntegrity,
-                    Severity::Error,
-                    feature.id.as_str(),
-                    &[dependency.as_str()],
-                    format_args!(
-                        "dependency feature `{}` does not precede its consumer",
-                        dependency.as_str()
-                    ),
-                ),
+
                 Some(_) => {}
             }
         }
@@ -2942,16 +2888,13 @@ fn check_feature_references(
                         "content child",
                         child.as_str(),
                     ),
-                    Some(ordinal) if *ordinal <= feature.ordinal => super::record_related_finding(
+                    Some(_) if *child == feature.id => super::record_related_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         Severity::Error,
                         feature.id.as_str(),
                         &[child.as_str()],
-                        format_args!(
-                            "content child `{}` does not follow its parent",
-                            child.as_str()
-                        ),
+                        format_args!("content child `{}` is its owning feature", child.as_str()),
                     ),
                     Some(_) => {}
                 },
@@ -3328,19 +3271,7 @@ fn check_feature_references(
                                 "seed feature",
                                 seed.as_str(),
                             ),
-                            Some(ordinal) if *ordinal >= feature.ordinal => {
-                                super::record_related_finding(
-                                    findings,
-                                    Check::ReferentialIntegrity,
-                                    Severity::Error,
-                                    feature.id.as_str(),
-                                    &[seed.as_str()],
-                                    format_args!(
-                                        "seed feature `{}` does not precede its pattern",
-                                        seed.as_str()
-                                    ),
-                                );
-                            }
+
                             Some(_)
                                 if !feature
                                     .dependencies
@@ -3457,19 +3388,7 @@ fn check_feature_references(
                                 "binder target feature",
                                 target.as_str(),
                             ),
-                            Some(ordinal) if *ordinal >= feature.ordinal => {
-                                super::record_related_finding(
-                                    findings,
-                                    Check::ReferentialIntegrity,
-                                    Severity::Error,
-                                    feature.id.as_str(),
-                                    &[target.as_str()],
-                                    format_args!(
-                                        "binder target feature `{}` does not precede its binder",
-                                        target.as_str()
-                                    ),
-                                );
-                            }
+
                             Some(_) => {}
                         }
                     }
@@ -3561,22 +3480,23 @@ fn check_feature_references(
                                         "datum-point plane reference does not name a plane",
                                     );
                                 }
-                                Some(record) if record.ordinal >= feature.ordinal => {
-                                    geometry_error(
-                                        findings,
-                                        feature.id.as_str(),
-                                        "datum-point plane does not precede the point",
-                                    );
-                                }
+
                                 Some(_)
                                     if !feature.dependencies.iter().any(|dependency| {
                                         dependency.as_str() == reference.as_str()
                                     }) =>
                                 {
-                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
+                                    super::record_related_finding(
+                                        findings,
+                                        Check::ReferentialIntegrity,
+                                        Severity::Error,
+                                        feature.id.as_str(),
+                                        &[reference.as_str()],
+                                        format_args!(
                                             "datum point omits plane feature `{}` from its dependencies",
                                             reference.as_str()
-                                        ));
+                                        ),
+                                    );
                                 }
                                 Some(_) => {}
                             }
@@ -3602,11 +3522,7 @@ fn check_feature_references(
                             "sketch block",
                             block.as_str(),
                         ),
-                        Some(ordinal) if *ordinal >= feature.ordinal => geometry_error(
-                            findings,
-                            feature.id.as_str(),
-                            "sketch block does not precede its instance",
-                        ),
+
                         Some(_) if !block_definition_ids.contains(block.as_str()) => {
                             geometry_error(
                                 findings,
@@ -3620,10 +3536,17 @@ fn check_feature_references(
                                 .iter()
                                 .any(|dependency| dependency.as_str() == block.as_str()) =>
                         {
-                            super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[block.as_str()], format_args!(
+                            super::record_related_finding(
+                                findings,
+                                Check::ReferentialIntegrity,
+                                Severity::Error,
+                                feature.id.as_str(),
+                                &[block.as_str()],
+                                format_args!(
                                     "sketch block instance omits block feature `{}` from its dependencies",
                                     block.as_str()
-                                ));
+                                ),
+                            );
                         }
                         Some(_) => {}
                     }
@@ -3636,17 +3559,7 @@ fn check_feature_references(
                     "source feature",
                     source.as_str(),
                 ),
-                Some(ordinal) if *ordinal >= feature.ordinal => super::record_related_finding(
-                    findings,
-                    Check::ReferentialIntegrity,
-                    Severity::Error,
-                    feature.id.as_str(),
-                    &[source.as_str()],
-                    format_args!(
-                        "source feature `{}` does not precede its derived geometry",
-                        source.as_str()
-                    ),
-                ),
+
                 Some(_)
                     if !feature
                         .dependencies
@@ -3698,21 +3611,23 @@ fn check_feature_references(
                                         "datum-plane feature reference does not name a plane",
                                     );
                                 }
-                                Some(record) if record.ordinal >= feature.ordinal => {
-                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
-                                            "reference plane `{}` does not precede its offset plane",
-                                            reference.as_str()
-                                        ));
-                                }
+
                                 Some(_)
                                     if !feature.dependencies.iter().any(|dependency| {
                                         dependency.as_str() == reference.as_str()
                                     }) =>
                                 {
-                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
+                                    super::record_related_finding(
+                                        findings,
+                                        Check::ReferentialIntegrity,
+                                        Severity::Error,
+                                        feature.id.as_str(),
+                                        &[reference.as_str()],
+                                        format_args!(
                                             "offset plane omits reference feature `{}` from its dependencies",
                                             reference.as_str()
-                                        ));
+                                        ),
+                                    );
                                 }
                                 Some(_) => {}
                             }
@@ -3757,26 +3672,23 @@ fn check_feature_references(
                         "profile feature",
                         producer.as_str(),
                     ),
-                    Some(ordinal)
-                        if *ordinal >= feature.ordinal
-                            || !feature
-                                .dependencies
-                                .iter()
-                                .any(|dependency| dependency.as_str() == producer.as_str()) =>
+                    Some(_)
+                        if !feature
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency.as_str() == producer.as_str()) =>
                     {
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "profile feature is not a preceding dependency",
+                            "profile feature is absent from the consumer's dependencies",
                         );
                     }
                     Some(_) => {}
                 },
                 PlanarProfileRef::Generated { curves, .. }
                     if curves.iter().any(|curve| {
-                        features
-                            .get(curve.feature.as_str())
-                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                        !features.contains(curve.feature.as_str())
                             || !feature
                                 .dependencies
                                 .iter()
@@ -3876,9 +3788,7 @@ fn check_feature_references(
         for (selection, consumer) in vertex_selections {
             match selection {
                 crate::features::VertexSelection::Generated { vertex, .. } => {
-                    if features
-                        .get(vertex.feature.as_str())
-                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                    if !features.contains(vertex.feature.as_str())
                         || !feature
                             .dependencies
                             .iter()
@@ -4194,7 +4104,7 @@ fn check_historical_members<'a, I, F, M>(
     }
 }
 
-fn regeneration_references(
+pub(super) fn regeneration_references(
     definition: &crate::features::FeatureOperation,
 ) -> Vec<&crate::features::FeatureId> {
     let mut references = BorrowedIdentities::new();
@@ -4386,48 +4296,41 @@ fn definition_terminations(
 }
 
 fn check_configuration_state_closure(
+    ir: &CadIr,
     configuration: &crate::features::DesignConfiguration,
     findings: &mut Vec<Finding>,
 ) {
-    if configuration.feature_states.is_empty() {
-        return;
-    }
-    let states = BorrowedIdentities::build(|add| {
-        for (feature, state) in &configuration.feature_states {
-            add(feature.as_str(), state);
-        }
-    });
-    let mut closure = BorrowedIdentities::new();
-    let mut pending = Vec::new();
-    for (feature, state) in &configuration.feature_states {
-        if !state.evaluation.is_suppressed() && closure.insert_unique(feature.as_str(), ()) {
-            pending.push(feature.as_str());
-        }
-    }
-    while let Some(feature) = pending.pop() {
-        let Some(state) = states.get(feature) else {
+    for feature in &ir.model.features {
+        let state = configuration.feature_states.get(&feature.id);
+        if state.is_some_and(crate::features::ConfigurationFeatureState::is_suppressed)
+            || (state.is_none() && feature.suppressed == Some(true))
+        {
             continue;
-        };
-        for dependency in &state.dependencies {
-            match states.get(dependency.as_str()) {
-                None => {}
-                Some(dependency_state) if dependency_state.evaluation.is_suppressed() => {
-                    super::record_related_finding(
-                        findings,
-                        Check::ReferentialIntegrity,
-                        Severity::Error,
-                        configuration.id.as_str(),
-                        &[dependency.as_str()],
-                        format_args!(
-                            "configuration state closure uses suppressed dependency state `{}`",
-                            dependency.as_str()
-                        ),
-                    );
-                }
-                Some(_) if closure.insert_unique(dependency.as_str(), ()) => {
-                    pending.push(dependency.as_str());
-                }
-                Some(_) => {}
+        }
+        let definition = state
+            .and_then(crate::features::ConfigurationFeatureState::definition)
+            .unwrap_or_else(|| feature.evaluation.definition());
+        for dependency in regeneration_references(definition.operation()) {
+            let suppressed = configuration.feature_states.get(dependency).map_or_else(
+                || {
+                    ir.model.features.iter().any(|candidate| {
+                        candidate.id == *dependency && candidate.suppressed == Some(true)
+                    })
+                },
+                crate::features::ConfigurationFeatureState::is_suppressed,
+            );
+            if suppressed {
+                super::record_related_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    Severity::Error,
+                    configuration.id.as_str(),
+                    &[dependency.as_str(), feature.id.as_str()],
+                    format_args!(
+                        "configuration state closure uses suppressed feature `{}`",
+                        dependency.as_str()
+                    ),
+                );
             }
         }
     }
@@ -4464,17 +4367,7 @@ fn check_plane_feature_reference(
                 "feature reference does not name a datum plane",
             );
         }
-        Some(record) if record.ordinal >= feature.ordinal => super::record_related_finding(
-            findings,
-            Check::ReferentialIntegrity,
-            Severity::Error,
-            feature.id.as_str(),
-            &[reference.as_str()],
-            format_args!(
-                "{reference_kind} `{}` does not precede its consuming feature",
-                reference.as_str()
-            ),
-        ),
+
         Some(_)
             if !feature
                 .dependencies
@@ -4688,27 +4581,6 @@ fn check_feature_sketch_references(
                 "datum-point sketch-point selection is invalid",
             );
         }
-        let sketch_id = match point {
-            SketchPointSelection::Planar { sketch, .. } => Some(sketch.as_str()),
-            SketchPointSelection::Spatial { sketch, .. } => Some(sketch.as_str()),
-            SketchPointSelection::Native(_) | SketchPointSelection::Unresolved => None,
-        };
-        if let Some(sketch_id) = sketch_id {
-            if let Some((owner, ordinal)) = owners.get(sketch_id) {
-                if *ordinal >= feature.ordinal {
-                    super::record_related_finding(
-                        findings,
-                        Check::ReferentialIntegrity,
-                        Severity::Error,
-                        feature.id.as_str(),
-                        &[owner],
-                        format_args!(
-                            "sketch owner `{owner}` does not precede its datum-point consumer"
-                        ),
-                    );
-                }
-            }
-        }
     }
 
     for feature in &ir.model.features {
@@ -4789,19 +4661,6 @@ fn check_feature_sketch_references(
                     format_args!("{sketch_kind} profile"),
                     sketch,
                 );
-            } else if let Some((owner, ordinal)) = owners.get(sketch) {
-                if *ordinal >= feature.ordinal {
-                    super::record_related_finding(
-                        findings,
-                        Check::ReferentialIntegrity,
-                        Severity::Error,
-                        feature.id.as_str(),
-                        &[owner],
-                        format_args!(
-                            "{sketch_kind} owner `{owner}` does not precede its profile consumer"
-                        ),
-                    );
-                }
             }
             match profile {
                 ProfileReference::SpatialSketchProfiles { sketch, profiles } => {
@@ -4865,7 +4724,11 @@ fn check_feature_sketch_references(
                         }
                     });
                     if invalid {
-                        geometry_error(findings, feature.id.as_str(), "sketch regions have empty, repeated, invalid, or out-of-range boundaries");
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "sketch regions have empty, repeated, invalid, or out-of-range boundaries",
+                        );
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
@@ -4874,7 +4737,11 @@ fn check_feature_sketch_references(
                             .get(entity.as_str())
                             .is_none_or(|owner| *owner != sketch.as_str())
                     }) {
-                        geometry_error(findings, feature.id.as_str(), "sketch profile entities are empty, repeated, missing, or owned by another sketch");
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "sketch profile entities are empty, repeated, missing, or owned by another sketch",
+                        );
                     }
                 }
                 ProfileReference::Planar(
@@ -4917,7 +4784,11 @@ fn check_feature_sketch_references(
                             .is_none_or(|owner| *owner != sketch.as_str())
                     });
                     if invalid {
-                        geometry_error(findings, feature.id.as_str(), "spatial sketch path curves are empty, repeated, missing, or owned by another sketch");
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "spatial sketch path curves are empty, repeated, missing, or owned by another sketch",
+                        );
                     }
                     (
                         sketch.as_str(),
@@ -4932,17 +4803,6 @@ fn check_feature_sketch_references(
             };
             if !known_sketches.contains(sketch) {
                 ref_error(findings, feature.id.as_str(), description, sketch);
-            } else if let Some((owner, ordinal)) = owners.get(sketch) {
-                if *ordinal >= feature.ordinal {
-                    super::record_related_finding(
-                        findings,
-                        Check::ReferentialIntegrity,
-                        Severity::Error,
-                        feature.id.as_str(),
-                        &[owner],
-                        format_args!("sketch owner `{owner}` does not precede its path consumer"),
-                    );
-                }
             }
         }
     }

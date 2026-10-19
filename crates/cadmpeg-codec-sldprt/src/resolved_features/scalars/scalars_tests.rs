@@ -251,11 +251,11 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
     use crate::records::{FeatureInputName, ObjectId};
 
     let mut names = (0u32..1000)
-        .map(|index| FeatureInputName {
+        .map(|index| FeatureInputName { feature_ref: None,
             id: format!("name#{index}"),
             parent: "lane".into(),
-            ordinal: index,
-            offset: u64::from(index),
+            ordinal: index, sequence: index,
+            offset: Some(u64::from(index)),
             object_id: ObjectId::from_value(index + 1),
             value: format!("F{index}"),
         })
@@ -293,11 +293,11 @@ fn indexed_feature_objects_match_the_linear_scans() {
         native_payload: vec![0; PAYLOAD_LEN].into(),
         classes: Vec::new(),
         names: (0u32..400)
-            .map(|index| FeatureInputName {
+            .map(|index| FeatureInputName { feature_ref: None,
                 id: format!("name#{index}"),
                 parent: "lane".into(),
-                ordinal: index,
-                offset: u64::from(next(2_000)),
+                ordinal: index, sequence: index,
+                offset: Some(u64::from(next(2_000))),
                 object_id: if next(4) == 0 {
                     None
                 } else {

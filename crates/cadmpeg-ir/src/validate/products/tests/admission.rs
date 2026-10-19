@@ -17,7 +17,6 @@ fn occurrence(id: &str, parent: Option<&str>, ordinal: u32) -> Occurrence {
         ordinal,
         transform: Transform::identity(),
         linked_prototype: None,
-        scale: [crate::scalar::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,

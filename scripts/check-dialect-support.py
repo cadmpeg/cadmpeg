@@ -50,7 +50,10 @@ EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 
 ROW_KEYS = frozenset({"dialect", "read", "write", "refusal", "reason"})
 REQUIRED_ROW_KEYS = ("dialect", "read", "write")
-FORMAT_KEYS = frozenset({"level", "scored"})
+FORMAT_KEYS = frozenset({"level", "scored", "delivered_scope", "write_paths", "dropped_arenas", "omitted_arenas"})
+SCOPE_VALUES = frozenset({"model", "design"})
+WRITE_PATH_VALUES = frozenset({"synthesized", "patched", "verbatim_replay"})
+ARENA_NAME = re.compile(r"[a-z][a-z0-9_]*\Z")
 REQUIRED_FORMAT_KEYS = ("level", "scored")
 EVALUATION_KEYS = frozenset({"dialect", "date", "level", "files", "result"})
 REQUIRED_EVALUATION_KEYS = ("dialect", "date", "level", "files", "result")
@@ -219,6 +222,31 @@ def check_formats(value: object, known: set[str], failures: list[str]) -> dict[s
                 failures.append(f"{label}: missing {key}")
         for key in sorted(set(block) - FORMAT_KEYS):
             failures.append(f"{label}: unknown key {key}")
+        for key, vocabulary in (("delivered_scope", SCOPE_VALUES), ("write_paths", WRITE_PATH_VALUES), ("dropped_arenas", None), ("omitted_arenas", None)):
+            if key not in block:
+                continue
+            entries = block[key]
+            if not isinstance(entries, list):
+                failures.append(f"{label}: {key} must be an array of strings")
+                continue
+            seen: set[str] = set()
+            for entry in entries:
+                if not isinstance(entry, str) or not entry:
+                    failures.append(f"{label}: {key} entry must be a non-empty string")
+                elif entry in seen:
+                    failures.append(f"{label}: {key} has duplicate {entry}")
+                else:
+                    seen.add(entry)
+                    if vocabulary is not None and entry not in vocabulary:
+                        failures.append(f"{label}: {key} entry {entry} is outside the closed vocabulary {', '.join(sorted(vocabulary))}")
+                    elif vocabulary is None and not ARENA_NAME.fullmatch(entry):
+                        failures.append(f"{label}: {key} entry {entry} must be an arena field name")
+        dropped = block.get("dropped_arenas", [])
+        omitted = block.get("omitted_arenas", [])
+        if isinstance(dropped, list) and isinstance(omitted, list):
+            overlap = {entry for entry in dropped if isinstance(entry, str)} & {entry for entry in omitted if isinstance(entry, str)}
+            for arena in sorted(overlap):
+                failures.append(f"{label}: arena {arena} is both dropped and omitted")
         level = block.get("level")
         if not isinstance(level, int) or isinstance(level, bool) or not 0 <= level <= 9:
             failures.append(f"{label}: level must be an integer from 0 through 9")

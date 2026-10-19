@@ -30,13 +30,15 @@ fn distinguishes_stored_base_and_application_owned_features() {
             &DecodeOptions::default(),
         )
         .expect("stored and derived features");
-    let source = result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Source"))
-        .expect("stored source");
+    assert!(
+        result
+            .ir()
+            .model
+            .features
+            .iter()
+            .all(|feature| feature.name.as_deref() != Some("Source")),
+        "a plain Part::Feature is model content, without a stored-geometry design wrapper"
+    );
     let base = result
         .ir()
         .model
@@ -44,21 +46,10 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("base feature");
-    assert!(matches!(
-        source.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::StoredGeometry {}
-        )
-    ));
-    assert!(matches!(
-        base.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DerivedGeometry { source })
-            if source.as_str() == "fcstd:design:feature#Source"
-    ));
-    assert_eq!(
-        base.dependencies.as_slice(),
-        std::slice::from_ref(&source.id)
+    assert!(
+        matches!(base.evaluation.definition().operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "PartDesign::FeatureBase")
     );
+    assert!(base.dependencies.is_empty());
     assert!(result.ir().model.features.iter().all(|feature| {
         !matches!(
             feature.name.as_deref(),
@@ -82,11 +73,61 @@ fn distinguishes_stored_base_and_application_owned_features() {
     let census = namespace
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 2);
-    assert!(census
+    assert_eq!(census.len(), 1);
+    assert_eq!(
+        census[0].object,
+        crate::native::native_id("object", "BaseFeature")
+    );
+    assert_eq!(census[0].type_name, "PartDesign::FeatureBase");
+    assert_eq!(census[0].feature, base.id.as_str());
+    assert_eq!(census[0].semantic_kind, "native");
+    assert!(!census[0].neutral());
+    assert!(!census[0].post_processed);
+    assert_eq!(result.report().losses.len(), 3);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code.local_code() == "feature.object-unprojected"
+                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
+            )
+            .count(),
+        2
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code.local_code() == "feature.native-kind-retained"
+                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
+            )
+            .count(),
+        1
+    );
+    assert!(
+        result.source_fidelity().unrepresented().is_empty(),
+        "typed native objects/properties retain the design content"
+    );
+    assert!(objects
         .iter()
-        .all(crate::native::DesignCensusRecord::neutral));
-    assert!(result.report().losses.is_empty());
+        .any(|object| object.name() == "Source" && object.type_name == "Part::Feature"));
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("typed properties");
+    for text in ["part-owned", "design-owned"] {
+        assert!(properties
+            .iter()
+            .any(|property| property.name == "ProxyState"
+                && property.values().iter().any(|value| value.tag == "String"
+                    && value
+                        .attributes
+                        .get("value")
+                        .is_some_and(|value| value == text))));
+    }
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
     let derived = corrupted
@@ -191,6 +232,17 @@ fn keeps_extension_types_out_of_exact_design_dispatch() {
     assert!(!feature_names.contains(&"RevolutionLike"));
     assert!(!feature_names.contains(&"BodyLike"));
     assert!(!feature_names.contains(&"SheetLike"));
+    let unprojected: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "feature.object-unprojected")
+        .collect();
+    assert_eq!(unprojected.len(), 5);
+    assert!(unprojected
+        .iter()
+        .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
+    assert!(result.clone().into_parts().2.unrepresented().is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -416,7 +468,28 @@ fn transfers_stored_and_external_part_feature_families() {
     assert!(census
         .iter()
         .all(crate::native::DesignCensusRecord::neutral));
-    assert!(result.report().losses.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(
+            |loss| loss.code.local_code() == "feature.object-unprojected"
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
+                && loss.message.contains("PlanarExtension")
+        ));
+    assert!(result.source_fidelity().unrepresented().is_empty());
+    let objects = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("typed objects");
+    assert!(objects
+        .iter()
+        .any(|object| object.name() == "PlanarExtension"
+            && object.type_name == "Part::Part2DObjectPython"));
     assert_valid_document(result.ir());
 }
 
@@ -548,10 +621,15 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
             cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
         ))
     );
-    assert_eq!(
-        width.properties.get("address").map(String::as_str),
-        Some("A1")
-    );
+    assert!(!width.properties.contains_key("address"));
+    assert!(!width.properties.contains_key("alias"));
+    assert!(result
+        .ir()
+        .model
+        .spreadsheets
+        .iter()
+        .flat_map(|sheet| sheet.cells())
+        .any(|cell| cell.parameter == width.id && cell.address.a1() == "A1"));
     let pad = result
         .ir()
         .model
@@ -566,7 +644,14 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&pad.id) && parameter.name == "Length")
         .expect("pad length");
-    assert_eq!(length.dependencies.as_slice(), vec![width.id.clone()]);
+    assert_eq!(
+        length
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![width.id.clone()]
+    );
     let width_position = result
         .ir()
         .model
@@ -853,7 +938,7 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
 }
 
 #[test]
-fn retains_cycle_affected_expression_links_only_in_native_properties() {
+fn retains_expression_cycles_in_canonical_tokens_and_native_records() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">
 <ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
@@ -890,9 +975,16 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         .filter(|parameter| parameter.name == "Length")
         .collect::<Vec<_>>();
     assert_eq!(parameters.len(), 2);
-    assert!(parameters
-        .iter()
-        .all(|parameter| parameter.dependencies.is_empty()));
+    for parameter in &parameters {
+        let other = parameters
+            .iter()
+            .find(|other| other.id != parameter.id)
+            .unwrap();
+        assert_eq!(
+            parameter.expression.dependencies().collect::<Vec<_>>(),
+            vec![&other.id]
+        );
+    }
     let properties = result
         .ir()
         .native
@@ -901,10 +993,22 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
     assert!(properties.iter().any(|property| {
-        property.name == "ExpressionEngine" && property.xml.text().contains("Second.Length")
+        property.name == "ExpressionEngine"
+            && property.values().iter().any(|value| {
+                value
+                    .attributes
+                    .get("expression")
+                    .is_some_and(|expression| expression == "Second.Length")
+            })
     }));
     assert!(properties.iter().any(|property| {
-        property.name == "ExpressionEngine" && property.xml.text().contains("First.Length")
+        property.name == "ExpressionEngine"
+            && property.values().iter().any(|value| {
+                value
+                    .attributes
+                    .get("expression")
+                    .is_some_and(|expression| expression == "First.Length")
+            })
     }));
     assert_eq!(
         result
@@ -920,7 +1024,7 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
 }
 
 #[test]
-fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
+fn retains_spreadsheet_cycles_in_canonical_tokens_and_native_records() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet"/></Objects>
 <ObjectData Count="1"><Object name="Sheet"><Properties Count="1">
@@ -944,7 +1048,10 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
         .expect("sheet feature");
     assert!(matches!(
         sheet.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+            ..
+        })
     ));
     assert!(sheet.dependencies.is_empty());
     let parameters = result
@@ -955,9 +1062,16 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
         .filter(|parameter| parameter.owner.as_ref() == Some(&sheet.id))
         .collect::<Vec<_>>();
     assert_eq!(parameters.len(), 2);
-    assert!(parameters
-        .iter()
-        .all(|parameter| parameter.dependencies.is_empty()));
+    for parameter in &parameters {
+        let other = parameters
+            .iter()
+            .find(|other| other.id != parameter.id)
+            .unwrap();
+        assert_eq!(
+            parameter.expression.dependencies().collect::<Vec<_>>(),
+            vec![&other.id]
+        );
+    }
     assert_eq!(
         result
             .report()
@@ -974,9 +1088,15 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
         .expect("namespace")
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
-    assert!(properties
-        .iter()
-        .any(|property| { property.name == "cells" && property.xml.text().contains("=second") }));
+    assert!(properties.iter().any(|property| {
+        property.name == "cells"
+            && property.values().iter().any(|value| {
+                value
+                    .attributes
+                    .get("content")
+                    .is_some_and(|content| content == "=second")
+            })
+    }));
     assert_valid_document(result.ir());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
@@ -984,8 +1104,8 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
 #[test]
 fn encodes_feature_names_into_neutral_identity_keys() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="Source#part" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Source#part"><Properties Count="0"/></Object></ObjectData>
+<Objects Count="1"><Object type="PartDesign::Feature" name="Source#part" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Source#part"><Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Shown source"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let result = FcstdCodec
         .decode(
@@ -994,7 +1114,7 @@ fn encodes_feature_names_into_neutral_identity_keys() {
         )
         .expect("source names are encoded into neutral identities");
     let feature = result.ir().model.features.first().expect("feature");
-    assert_eq!(feature.name.as_deref(), Some("Source#part"));
+    assert_eq!(feature.name.as_deref(), Some("Shown source"));
     assert_eq!(feature.id.as_str(), "fcstd:design:feature#Source%23part");
     assert_eq!(
         feature.native_ref.as_deref(),

@@ -49,7 +49,9 @@ fn container_only_result_reports_notes_and_scan_loss() {
     let mut scan = crate::test_support::test_dump::scan_with_objects(&[]);
     scan.warnings = crate::loss::Diagnostics::new();
     scan.warnings.push("fixture warning");
-    let decoded = super::container_only_result(&scan).expect("compute the container only result");
+    let decoded =
+        super::container_only_result(&cadmpeg_test_support::service_decode_context(), &scan)
+            .expect("compute the container only result");
     assert_eq!(decoded.body.notes.len(), 2);
     assert_eq!(decoded.body.losses.len(), 1);
 }

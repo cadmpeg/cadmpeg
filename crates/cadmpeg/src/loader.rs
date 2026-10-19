@@ -138,7 +138,7 @@ mod tests {
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
             "identity": {"classification": "unclassified", "format": "test"},
-            "transfer": {"transfer": "full", "geometry_transferred": false},
+            "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": false},
             "losses": [],
             "notes": [],
         }))
@@ -162,6 +162,8 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(outcome.origin, LoadOrigin::Restored { .. }));
+        assert!(outcome.current_decode_report().is_none());
+        assert!(outcome.decode_report().is_some());
         assert_eq!(outcome.input_bytes, u64::try_from(text.len()).unwrap());
 
         std::fs::write(&path, format!("{text}\n")).unwrap();

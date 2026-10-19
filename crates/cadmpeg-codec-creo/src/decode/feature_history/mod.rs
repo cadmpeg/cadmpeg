@@ -2,6 +2,7 @@
 //! Feature history transfer: dimensions, recipes, result topology, and named definitions.
 
 pub(super) mod axes;
+pub(super) mod bindings;
 pub(super) mod dependencies;
 pub(super) mod dimensions;
 pub(super) mod draft;

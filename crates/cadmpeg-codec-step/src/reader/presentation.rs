@@ -220,6 +220,7 @@ pub(super) fn decode(
             append_presentation_items(id, exchange, topology, &entity_ids, indices, &mut items);
         }
         ir.model.presentation_layers.push(PresentationLayer {
+            parent: None,
             id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
             description,

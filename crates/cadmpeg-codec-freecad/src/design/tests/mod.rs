@@ -99,3 +99,109 @@ fn extrusion_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDef
         .evaluation
         .definition()
 }
+
+/// Native feature fallback retains typed records; unreadable payloads also
+/// charge their own Warning and explicitly block design patch/replay.
+fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: usize) {
+    use crate::native::{ObjectRecord, PropertyBody, PropertyRecord};
+    use cadmpeg_ir::features::FeatureOperation;
+    let namespace = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace");
+    let objects = namespace
+        .arena_as::<ObjectRecord>("objects")
+        .expect("typed objects");
+    let properties = namespace
+        .arena_as::<PropertyRecord>("properties")
+        .expect("typed properties");
+    let native = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition().operation(),
+                FeatureOperation::Native { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(native.len(), expected);
+    for feature in native {
+        let owner = feature.native_ref.as_ref().expect("native feature object");
+        let object = objects
+            .iter()
+            .find(|object| object.id().as_str() == owner.as_str())
+            .expect("retained typed native object");
+        assert!(
+            matches!(feature.evaluation.definition().operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == object.type_name)
+        );
+    }
+    let unreadable = properties
+        .iter()
+        .filter(|property| matches!(property.body, PropertyBody::Unreadable(_)))
+        .collect::<Vec<_>>();
+    let losses = &result.report().losses;
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking)
+            .count(),
+        expected
+    );
+    for property in &unreadable {
+        assert!(property.values().is_empty());
+        assert!(
+            !property.xml.text().is_empty(),
+            "unreadable source XML remains diagnostic data"
+        );
+        let owner = format!("{}/{}", property.owner, property.name);
+        assert!(
+            losses.iter().any(|loss| loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "metadata.persistence-payload-unresolved"
+                && loss.severity == cadmpeg_ir::report::Severity::Warning
+                && loss.message.contains(&owner)),
+            "unreadable {owner} needs its own loss: {losses:?}"
+        );
+    }
+    assert_eq!(losses.len(), expected + unreadable.len(), "{losses:?}");
+    let unrepresented = if unreadable.is_empty() {
+        cadmpeg_ir::ArenaClasses::new()
+    } else {
+        [cadmpeg_ir::ArenaClass::Design].into()
+    };
+    assert_eq!(result.source_fidelity().unrepresented(), unrepresented);
+    assert!(result.ir().scope.design, "partial projection holds design");
+}
+
+fn assert_unreadable_properties(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    expected: &[(&str, &str)],
+) {
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("typed properties");
+    let actual = properties
+        .iter()
+        .filter(|property| matches!(property.body, crate::native::PropertyBody::Unreadable(_)))
+        .map(|property| (property.owner.clone(), property.name.clone()))
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected: std::collections::BTreeSet<_> = expected
+        .iter()
+        .map(|(object, property)| {
+            (
+                crate::native::native_id("object", object),
+                (*property).to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(actual, expected);
+}

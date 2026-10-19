@@ -20,7 +20,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use cadmpeg_ir::math::Point2;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9: f64 = 1.0e-9;
 const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1.0e-9;
@@ -280,6 +280,91 @@ pub(crate) fn project_sketch_constraints(
     Ok(constraints)
 }
 
+/// Canonical bound dimensions own their driving state on the parameter. A
+/// projected parameter-backed solver relation denotes a driving dimension;
+/// an explicit source reference flag overrides that relation's default.
+pub(crate) fn canonicalize_parameter_driving(
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    planar: &mut [cadmpeg_ir::sketches::SketchConstraint],
+    spatial: &[cadmpeg_ir::sketches::SpatialSketchConstraint],
+) {
+    let mut states = BTreeMap::new();
+    for constraint in planar {
+        let ids = crate::design::dimensions::constraint_parameters(constraint.definition.kind())
+            .cloned()
+            .collect::<Vec<_>>();
+        if ids.is_empty() {
+            continue;
+        }
+        let driving = constraint.driving.take().unwrap_or(true);
+        for id in ids {
+            states.entry(id).or_insert(driving);
+        }
+    }
+    for constraint in spatial {
+        for id in
+            crate::design::dimensions::spatial_constraint_parameters(constraint.definition.kind())
+        {
+            states.entry(id.clone()).or_insert(true);
+        }
+    }
+    for parameter in parameters {
+        if let Some(driving) = states.get(&parameter.id) {
+            parameter.driving = *driving;
+        }
+    }
+}
+
+/// Preserve the integer quantity of count parameters from typed pattern fields.
+/// Numeric parameter records alone do not state whether a scalar is a count.
+pub(crate) fn bind_pattern_count_caches(
+    projected: &mut [cadmpeg_ir::features::DesignParameter],
+    native: &[DesignParameter],
+    relations: &[SketchRelation],
+) {
+    use crate::records::sketch_relations::SketchPatternDefinition;
+    let mut bind = |scope: &str, owner: u32, count: u32| {
+        let mut candidates = native.iter().filter(|parameter| {
+            native_stream(&parameter.id) == Some(scope)
+                && parameter.owner_record_index() == Some(owner)
+        });
+        let Some(source) = candidates.next() else {
+            return;
+        };
+        if candidates.next().is_some() {
+            return;
+        }
+        let id = crate::ids::neutral_parameter_id(source);
+        if let Some(parameter) = projected.iter_mut().find(|parameter| parameter.id == id) {
+            parameter.value = Some(cadmpeg_ir::features::ParameterValue::Integer(i64::from(
+                count,
+            )));
+        }
+    };
+    for relation in relations {
+        let Some(scope) = native_stream(&relation.id) else {
+            continue;
+        };
+        match relation.definition.pattern() {
+            Some(SketchPatternDefinition::Rectangular { directions }) => {
+                for direction in directions {
+                    bind(
+                        scope,
+                        direction.count_parameter,
+                        direction.evaluated_count.get(),
+                    );
+                }
+            }
+            Some(SketchPatternDefinition::Circular {
+                count_parameter,
+                evaluated_count,
+                ..
+            }) => bind(scope, *count_parameter, evaluated_count.get()),
+            _ => {}
+        }
+    }
+}
+
 struct RectangularPatternSourceDirection {
     direction: [f64; 2],
     count: u32,
@@ -380,8 +465,7 @@ fn exact_rectangular_pattern(
     let Some(directions) = rectangular_pattern_directions(&source, distance_form)? else {
         return Ok(None);
     };
-    let counts = source.each_ref().map(|direction| direction.count);
-    let Some(rows) = exact_rectangular_pattern_instances(&directions, counts, entities) else {
+    let Some(rows) = exact_rectangular_pattern_instances(&source, distance_form, entities) else {
         return Ok(None);
     };
     Ok(
@@ -408,26 +492,30 @@ fn rectangular_pattern_directions(
         if !spacing.is_finite() || spacing < 0.0 {
             return Ok(None);
         }
-        let distance = source
-            .distance_parameter
-            .clone()
-            .map(|parameter| match distance_form {
-                RectangularPatternDistanceForm::AdjacentSpacing => {
-                    cadmpeg_ir::sketches::SketchPatternDistance::Spacing { parameter }
+        let dimension = source.distance_parameter.clone().map_or_else(
+            || cadmpeg_ir::scalar::Length::from(source.distance).into(),
+            cadmpeg_ir::features::Dimension::Parameter,
+        );
+        let distance = match distance_form {
+            RectangularPatternDistanceForm::AdjacentSpacing => {
+                cadmpeg_ir::sketches::SketchPatternDistance::Spacing {
+                    distance: (dimension).into(),
                 }
-                RectangularPatternDistanceForm::SeedToFinalSpan => {
-                    cadmpeg_ir::sketches::SketchPatternDistance::Span { parameter }
+            }
+            RectangularPatternDistanceForm::SeedToFinalSpan => {
+                cadmpeg_ir::sketches::SketchPatternDistance::Span {
+                    distance: (dimension).into(),
                 }
-            });
-        let count_parameter = source.count_parameter.clone();
+            }
+        };
+        let count = source.count_parameter.clone().map_or_else(
+            || source.count.into(),
+            cadmpeg_ir::features::Dimension::Parameter,
+        );
         Ok(cadmpeg_ir::sketches::SketchPatternDirection::new(
             source.direction,
-            match cadmpeg_ir::scalar::Length::new(spacing) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
             distance,
-            count_parameter,
+            count,
         ))
     };
     let Some(first) = make(&source[0])? else {
@@ -440,10 +528,18 @@ fn rectangular_pattern_directions(
 }
 
 fn exact_rectangular_pattern_instances(
-    directions: &[cadmpeg_ir::sketches::SketchPatternDirection; 2],
-    counts: [u32; 2],
+    directions: &[RectangularPatternSourceDirection; 2],
+    distance_form: RectangularPatternDistanceForm,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<Vec<Vec<cadmpeg_ir::sketches::SketchPatternInstance>>> {
+    let counts = directions.each_ref().map(|direction| direction.count);
+    let spacings = directions.each_ref().map(|direction| match distance_form {
+        RectangularPatternDistanceForm::AdjacentSpacing => direction.distance.get(),
+        RectangularPatternDistanceForm::SeedToFinalSpan if direction.count > 1 => {
+            direction.distance.get() / f64::from(direction.count - 1)
+        }
+        RectangularPatternDistanceForm::SeedToFinalSpan => 0.0,
+    });
     let instance_count = usize::try_from(counts[0]).ok().and_then(|first| {
         usize::try_from(counts[1])
             .ok()
@@ -478,18 +574,10 @@ fn exact_rectangular_pattern_instances(
             for second in 0..counts[1] {
                 let indices = [first, second];
                 let translation = Point2::new(
-                    f64::from(indices[0])
-                        * directions[0].spacing().get()
-                        * directions[0].direction().get()[0]
-                        + f64::from(indices[1])
-                            * directions[1].spacing().get()
-                            * directions[1].direction().get()[0],
-                    f64::from(indices[0])
-                        * directions[0].spacing().get()
-                        * directions[0].direction().get()[1]
-                        + f64::from(indices[1])
-                            * directions[1].spacing().get()
-                            * directions[1].direction().get()[1],
+                    f64::from(indices[0]) * spacings[0] * directions[0].direction[0]
+                        + f64::from(indices[1]) * spacings[1] * directions[1].direction[0],
+                    f64::from(indices[0]) * spacings[0] * directions[0].direction[1]
+                        + f64::from(indices[1]) * spacings[1] * directions[1].direction[1],
                 );
                 if seed.iter().zip(instance).all(|(source, result)| {
                     translated_sketch_geometry_matches(
@@ -747,7 +835,17 @@ fn exact_circular_pattern(
         let second_divisor = (evaluated_count.get() > 1)
             .then(|| f64::from(evaluated_count.get() - 1))
             .filter(|second| !scalar_close(first_divisor, *second));
-        for divisor in [Some(first_divisor), second_divisor].into_iter().flatten() {
+        for (divisor, distribution) in [
+            Some((
+                first_divisor,
+                cadmpeg_ir::CircularPatternDistribution::Periodic,
+            )),
+            second_divisor
+                .map(|divisor| (divisor, cadmpeg_ir::CircularPatternDistribution::Inclusive)),
+        ]
+        .into_iter()
+        .flatten()
+        {
             // The seed is the first chunk; it is not an instance, and the
             // instances carry only their nonzero rotations.
             let mut instances = Vec::new();
@@ -780,7 +878,7 @@ fn exact_circular_pattern(
             if valid {
                 let seed_entities: Vec<_> = seed.iter().map(|entity| entity.id().clone()).collect();
                 let center = center.id().clone();
-                candidates.push((center, seed_entities, instances));
+                candidates.push((center, seed_entities, instances, distribution));
             }
         }
     }
@@ -788,12 +886,28 @@ fn exact_circular_pattern(
     if candidates.len() != 1 {
         return None;
     }
-    let (center, seed_entities, instances) = candidates.pop()?;
+    let (center, seed_entities, instances, distribution) = candidates.pop()?;
     let pattern = SketchCircularPattern::new(
         center,
-        angle,
-        angle_parameter.map(crate::ids::neutral_parameter_id),
-        count_parameter.map(crate::ids::neutral_parameter_id),
+        cadmpeg_ir::PatternAngle::Span {
+            angle: angle_parameter.map_or_else(
+                || angle.into(),
+                |parameter| {
+                    cadmpeg_ir::features::Dimension::Parameter(crate::ids::neutral_parameter_id(
+                        parameter,
+                    ))
+                },
+            ),
+            distribution,
+        },
+        count_parameter.map_or_else(
+            || evaluated_count.get().into(),
+            |parameter| {
+                cadmpeg_ir::features::Dimension::Parameter(crate::ids::neutral_parameter_id(
+                    parameter,
+                ))
+            },
+        ),
         seed_entities,
         instances,
     );

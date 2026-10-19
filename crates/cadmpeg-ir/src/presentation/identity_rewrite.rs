@@ -22,7 +22,7 @@ rewrite_enum!(PresentationItem, []; {
     Tessellation {tessellation},
     Source {source_id},
 });
-rewrite_record!(PresentationLayer, []; {id, name, description, visible, items});
+rewrite_record!(PresentationLayer, []; {id, name, parent, description, visible, items});
 rewrite_record!(PresentationState, []; {kind, order, attributes, assets});
 rewrite_enum!(PresentationStateKind, []; {
     Camera(field0),

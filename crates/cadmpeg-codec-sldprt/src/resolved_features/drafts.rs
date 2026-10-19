@@ -294,8 +294,9 @@ fn unique_declared_plane_reference_token(lane: &FeatureInputLane) -> Option<[u8;
         if class.name != "moPlaneRef_w" {
             return None;
         }
-        let body = usize::try_from(class.offset)
-            .ok()?
+        let body = class
+            .offset
+            .and_then(|offset| usize::try_from(offset).ok())?
             .checked_add(6 + class.name.len())?;
         let value = View::u16_le_at(&lane.native_payload, body)?;
         is_class_token(value).then_some(value.to_le_bytes())
@@ -404,8 +405,8 @@ pub(super) fn draft_operand_candidates(
     let names = FeatureObjectNames::new(&lane.names);
     let mut objects = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        if let Some(name) = names.of(feature) {
-            objects.push((name.offset, feature));
+        if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+            objects.push((position, feature));
         }
     }
     objects.sort_unstable_by_key(|(left, _)| *left);
@@ -738,6 +739,7 @@ mod tests {
             source_tag: Some("Draft".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Draft {
                     faces: FaceSelection::Unresolved,

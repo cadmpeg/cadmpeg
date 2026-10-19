@@ -6,12 +6,14 @@ fn per_edge_flange_widths_remain_positive_through_mutation_and_serde() {
     };
 
     let mut widths = SheetMetalFlangeEdgeWidths::new(vec![SheetMetalFlangeTwoSidedWidth {
-        first: PositiveLength::new(3.0).unwrap(),
-        second: PositiveLength::new(1.5).unwrap(),
+        first: crate::features::Dimension::Literal(PositiveLength::new(3.0).unwrap()),
+        second: crate::features::Dimension::Literal(PositiveLength::new(1.5).unwrap()),
     }])
     .unwrap();
-    widths.as_mut_slice()[0].first = PositiveLength::new(4.0).unwrap();
-    widths.as_mut_slice()[0].second = PositiveLength::new(2.0).unwrap();
+    widths.as_mut_slice()[0].first =
+        crate::features::Dimension::Literal(PositiveLength::new(4.0).unwrap());
+    widths.as_mut_slice()[0].second =
+        crate::features::Dimension::Literal(PositiveLength::new(2.0).unwrap());
     let wire = serde_json::json!([{"first": 4.0, "second": 2.0}]);
     assert_eq!(serde_json::to_value(&widths).unwrap(), wire);
     assert_eq!(

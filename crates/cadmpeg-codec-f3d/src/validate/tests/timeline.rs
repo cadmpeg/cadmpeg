@@ -5,7 +5,7 @@ fn design_type(
     type_guid: &str,
     entities: &[u64],
 ) -> crate::records::entity_header::SegmentType {
-    use crate::records::entity_header::{BaseTypeGuid, SegmentType, DESIGN_MODULE_FUSION};
+    use crate::records::entity_header::{BaseTypeGuid, DESIGN_MODULE_FUSION, SegmentType};
     let is_timeline = type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID;
     SegmentType::try_new(
         id.into(),
@@ -66,25 +66,27 @@ fn native() -> crate::native::F3dNative {
                 &[17, 101],
             ),
         ],
-        design_feature_timelines: vec![DesignFeatureTimeline::try_new(
-            crate::ids::native_design_feature_timeline_id(bulk, 200),
-            DesignTimelineFrame::new(
-                200,
-                60,
-                220,
-                240,
-                vec![Located {
-                    value: 101,
-                    offset: 245,
-                }],
+        design_feature_timelines: vec![
+            DesignFeatureTimeline::try_new(
+                crate::ids::native_design_feature_timeline_id(bulk, 200),
+                DesignTimelineFrame::new(
+                    200,
+                    60,
+                    220,
+                    240,
+                    vec![Located {
+                        value: 101,
+                        offset: 245,
+                    }],
+                )
+                .unwrap(),
+                DesignClassTag::try_from("256".to_owned()).unwrap(),
+                std::num::NonZeroU64::new(35).unwrap(),
+                0,
+                std::num::NonZeroU64::new(17).unwrap(),
             )
             .unwrap(),
-            DesignClassTag::try_from("256".to_owned()).unwrap(),
-            std::num::NonZeroU64::new(35).unwrap(),
-            0,
-            std::num::NonZeroU64::new(17).unwrap(),
-        )
-        .unwrap()],
+        ],
         ..crate::native::F3dNative::default()
     }
 }
@@ -108,7 +110,9 @@ fn history_scope(
 ) -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let mut scope = DesignParameterScope::empty(
-        &format!("f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#{record_index}"),
+        &format!(
+            "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#{record_index}"
+        ),
         DesignFeatureKind::Hole,
         record_index,
     );

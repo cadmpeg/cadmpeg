@@ -35,11 +35,14 @@ pub(crate) struct Graph {
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
+    /// The GUI stream was not admitted into typed records.
+    pub(crate) untyped: bool,
 }
 
 #[derive(Default)]
 struct AppearancePlan {
     body_updates: Vec<BodyUpdate>,
+    body_visibility_owners: HashSet<String>,
     appearances: Vec<Appearance>,
     bindings: Vec<AppearanceBinding>,
     remove_appearances: HashSet<AppearanceId>,
@@ -193,6 +196,7 @@ pub(crate) fn transfer(
 
 fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Graph {
     let mut graph = Graph::default();
+    graph.untyped = true;
     graph.documents.push(GuiDocumentRecord {
         id: ("fcstd:gui:document#0").to_owned(),
         schema_version: schema_declaration.map(ToOwned::to_owned),
@@ -301,7 +305,8 @@ fn transfer_schema_one(
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
-    if camera_count != 1 {
+    // Absence declares no camera state; it does not omit a source record.
+    if camera_count > 1 {
         losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
             format!("GuiDocument.xml contains {camera_count} Camera records; camera selection is unresolved")
         ));
@@ -437,6 +442,9 @@ fn transfer_schema_one(
                     .map(|(_, _, payload)| *payload),
             )
         };
+        if !body_ids.is_empty() {
+            plan.body_visibility_owners.insert(object_id.to_owned());
+        }
         for body_id in &body_ids {
             push_body_update(
                 &mut plan,
@@ -551,12 +559,20 @@ fn transfer_schema_one(
                 &mut losses,
             )?;
         }
-        let Some(packed_color) = packed_color else {
+        // ShapeColor is the display colour stored on each body. A physical
+        // material has a distinct colour and must not inherit that display fact.
+        let Some(material) = material else {
             continue;
         };
+        let material_color = material
+            .attribute("diffuseColor")
+            .and_then(|value| value.parse::<u32>().ok())
+            .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
+            .map(|packed| decode_color(packed, None))
+            .transpose()?;
         let appearance_id = object_appearance_id(&provider_key)?;
         let mut material_properties = BTreeMap::new();
-        if let Some(material) = material {
+        {
             for (source, target) in [
                 ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
                 (
@@ -582,7 +598,7 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: Some(decode_color(packed_color, transparency)?),
+            base_color: material_color,
             textures: Vec::new(),
             properties: material_properties,
         });
@@ -605,6 +621,7 @@ fn transfer_schema_one(
         providers: native_providers,
         properties: native_properties,
         losses,
+        untyped: false,
     };
     let material_lists =
         validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
@@ -803,11 +820,13 @@ fn transfer_neutral_presentation(
             .transpose()?;
         let (provider_properties, refused) = gui_named_entries(
             || provider.id.clone(),
-            owned.iter().map(|property| {
-                (
-                    property.name.as_str(),
-                    gui_property_value(property).unwrap_or_else(|| property.xml.text()),
-                )
+            owned.iter().filter_map(|property| {
+                // Dedicated neutral fields own these values. Keeping another
+                // textual copy would make independent edits disagree.
+                if presentation_property_type(&property.name).is_some() {
+                    return None;
+                }
+                gui_property_value(property).map(|value| (property.name.as_str(), value))
             }),
         );
         note_refused_gui_keys(losses, &refused);
@@ -829,7 +848,15 @@ fn transfer_neutral_presentation(
                 ))
             })?,
             expanded: provider.expanded,
-            visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
+            visible: if provider
+                .object
+                .as_ref()
+                .is_some_and(|object| plan.body_visibility_owners.contains(object.as_str()))
+            {
+                None
+            } else {
+                property_value("Visibility", "App::PropertyBool").and_then(parse_bool)
+            },
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
             selection_style: property_value("SelectionStyle", "App::PropertyEnumeration")
@@ -1166,18 +1193,24 @@ fn gui_state(
     node: roxmltree::Node<'_, '_>,
 ) -> Result<GuiStateRecord, CodecError> {
     let mut values = Vec::new();
+    let mut value_indices = HashMap::new();
     for (value_order, value) in node
         .descendants()
         .filter(|value| value.is_element() && *value != node)
         .enumerate()
     {
+        value_indices.insert(value.id(), value_order);
         values.push(ValueRecord {
+            parent: value
+                .parent()
+                .and_then(|parent| value_indices.get(&parent.id()).copied()),
             tag: value.tag_name().name().to_owned(),
             order: value_order,
             attributes: value
                 .attributes()
                 .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
                 .collect::<Result<_, CodecError>>()?,
+            decoded_json: None,
             text: value.text().map(ToOwned::to_owned),
             raw_xml: text[value.range()].to_owned(),
         });
@@ -1305,12 +1338,17 @@ fn append_native_provider(
         })?;
         validate_gui_property(property, property_name, type_name)?;
         let mut values = Vec::new();
+        let mut value_indices = HashMap::new();
         for (value_order, value) in property
             .descendants()
             .filter(|value| value.is_element() && *value != property)
             .enumerate()
         {
+            value_indices.insert(value.id(), value_order);
             values.push(ValueRecord {
+                parent: value
+                    .parent()
+                    .and_then(|parent| value_indices.get(&parent.id()).copied()),
                 tag: value.tag_name().name().to_owned(),
                 order: value_order,
                 attributes: value
@@ -1319,6 +1357,7 @@ fn append_native_provider(
                         Ok((attribute.name().to_owned(), attribute.value().to_owned()))
                     })
                     .collect::<Result<_, CodecError>>()?,
+                decoded_json: None,
                 text: value.text().map(ToOwned::to_owned),
                 raw_xml: text[value.range()].to_owned(),
             });

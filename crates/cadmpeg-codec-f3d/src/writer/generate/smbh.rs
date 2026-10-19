@@ -51,7 +51,19 @@ pub(super) fn encode_smbh(
             .iter()
             .any(|shell| !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty())
         {
-            return Err(CodecError::NotImplemented(
+            if target.model.bodies.is_empty()
+                && target.model.surfaces.is_empty()
+                && target.model.curves.is_empty()
+                && target.model.points.is_empty()
+            {
+                let mut bytes = native_smbh_header(target)?;
+                native_ident(&mut bytes, "asmheader")?;
+                native_string(&mut bytes, "231.6.3.65535")?;
+                bytes.push(0x11);
+                native_history_tail(&mut bytes, native)?;
+                return Ok(bytes);
+            }
+            return Err(CodecError::UnsupportedContent(
                 "source-less F3D generation requires owned face topology or a nonempty wire shell"
                     .into(),
             ));
@@ -109,13 +121,13 @@ impl<'a> NativeRecordPlan<'a> {
                 PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(form),
                 PcurveMetadata::General { form } => {
                     if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "pcurve {} has non-ASM wrapper or tolerance metadata",
                             pcurve.id
                         )));
                     }
                     let range = form.parameter_range().ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        CodecError::UnsupportedContent(format!(
                             "ref-form pcurve {} has no parameter range",
                             pcurve.id
                         ))
@@ -139,7 +151,7 @@ impl<'a> NativeRecordPlan<'a> {
             .len()
             .checked_add(ref_pcurve_count)
             .ok_or_else(|| {
-                CodecError::NotImplemented("pcurve record count overflows usize".into())
+                CodecError::InvalidInput("pcurve record count overflows usize".into())
             })?;
         let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
         let wire_coedge_start = native_record_index(coedge_start, model.coedges.len())?;
@@ -336,7 +348,7 @@ fn encode_wire_body_smbh(
             .iter()
             .any(|body| body.kind != cadmpeg_ir::topology::BodyKind::Wire)
     {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D wire generation requires face-less wire bodies with nonempty wire shells"
                 .into(),
         ));
@@ -631,7 +643,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 records.extend_from_slice(&[0x0b, 0x0b]);
             }
             _ => {
-                return Err(CodecError::NotImplemented(
+                return Err(CodecError::UnsupportedContent(
                     "source-less F3D does not support this curve carrier".into(),
                 ))
             }
@@ -692,7 +704,7 @@ fn encode_face_topology_smbh(
         || model.faces.is_empty()
         || model.loops.len() < model.faces.len()
     {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D generation requires owned face topology".into(),
         ));
     }
@@ -934,7 +946,7 @@ fn encode_face_topology_smbh(
                 CodecError::malformed(format_args!("shell does not own face {}", face.id))
             })?;
         let first_loop = face.loops.iter().next().ok_or_else(|| {
-            CodecError::NotImplemented(
+            CodecError::UnsupportedContent(
                 "source-less F3D face generation requires every face to own a loop".into(),
             )
         })?;
@@ -966,7 +978,20 @@ fn encode_face_topology_smbh(
                 attribute_start,
             )?,
         );
-        native_i64(&mut records, -1);
+        let face_key = topology
+            .face_native_keys
+            .get(face.id.as_str())
+            .and_then(|record| record.asm_face_key)
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| {
+                CodecError::InvalidInput(format!(
+                    "F3D face {} join key exceeds its signed 64-bit native slot",
+                    face.id,
+                ))
+            })?
+            .unwrap_or(-1);
+        native_i64(&mut records, face_key);
         native_ref(&mut records, -1);
         native_ref(
             &mut records,
@@ -1195,20 +1220,20 @@ fn encode_face_topology_smbh(
                 records.extend_from_slice(&[0x0b; 5]);
             }
             Some(SolvedSurfaceGeometry::Polygonal(_)) => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "source-less F3D face generation does not support polygonal surface carrier {}",
                     surface.id
                 )));
             }
             Some(SolvedSurfaceGeometry::Transformed(_)) => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "source-less F3D face generation does not support transformed surface carrier {}",
                     surface.id
                 )));
             }
             None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
                 if !native_cacheless_procedural_surface(&mut records, target, surface)? {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(CodecError::UnsupportedContent(format!(
                         "source-less F3D face generation does not support surface carrier {}",
                         surface.id
                     )));
@@ -1233,7 +1258,7 @@ fn encode_face_topology_smbh(
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
         if coedge.pcurves.len() > 1 {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "coedge {} has an ordered pcurve collection",
                 coedge.id
             )));
@@ -1679,7 +1704,7 @@ fn native_wire_side(
         (None, _) => cadmpeg_asm::brep::records::WireSide::Out,
         (Some(wire), None) => wire.side,
         (Some(_), Some(_)) => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::malformed(format_args!(
                 "source-less F3D generation has duplicate native wire metadata on shell {shell}"
             )))
         }

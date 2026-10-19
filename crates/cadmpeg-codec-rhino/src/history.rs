@@ -132,7 +132,6 @@ impl serde::Serialize for UuidList<'_> {
 #[derive(serde::Serialize)]
 struct NativeHistoryRecord<'a> {
     id: &'a str,
-    source_offset: u64,
     source_uuid: Option<UuidText<'a>>,
     command_uuid: UuidText<'a>,
     record_version: i32,
@@ -2092,6 +2091,7 @@ pub(crate) fn project(
             ordinal: cadmpeg_core::decode::u64_from_index(index),
             name: None,
             suppressed: Some(false),
+            needs_recompute: false,
             dependencies,
             source_properties: properties,
             source_tag: Some(source_tag),
@@ -2101,7 +2101,17 @@ pub(crate) fn project(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: kind.into(),
-                    parameters,
+                    parameters: parameters
+                        .into_iter()
+                        .map(|(name, expression)| {
+                            (
+                                name,
+                                cadmpeg_ir::features::Dimension::Literal(
+                                    cadmpeg_ir::features::Expression::text(expression),
+                                ),
+                            )
+                        })
+                        .collect(),
                 }),
             ),
             native_ref: Some(native_ref),
@@ -2112,7 +2122,7 @@ pub(crate) fn project(
         .enumerate()
         .map(|(index, record)| NativeHistoryRecord {
             id: &native_ids[index],
-            source_offset: cadmpeg_core::decode::u64_from_index(record.source_range.start),
+
             source_uuid: (!record.id.is_nil()).then_some(UuidText(&record.id)),
             command_uuid: UuidText(&record.command_id),
             record_version: record.version,

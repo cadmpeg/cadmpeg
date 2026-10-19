@@ -166,7 +166,7 @@ fn surface_stitch_fixture() -> StitchFixture {
             AsmDeltaState {
                 id: format!("{history_id}:state#{state_id}"),
                 parent: history_id.clone(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -192,6 +192,7 @@ fn surface_stitch_fixture() -> StitchFixture {
     );
     let feature_id = FeatureId::mint("f3d:model:feature#42").expect("identity grammar");
     let mut feature = Feature {
+        needs_recompute: false,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -206,7 +207,8 @@ fn surface_stitch_fixture() -> StitchFixture {
                 faces: FaceSelection::Native(scope_id.clone()),
                 merge_entities: Some(true),
                 create_solid: Some(true),
-                gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
+                gap_tolerance: (Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()))
+                    .map(Into::into),
             }),
         ),
         native_ref: None,

@@ -6,9 +6,9 @@
 //! [`cadmpeg_ir::codec::write::Encoder`]. Decoding produces a
 //! [`CadIr`] document with B-rep topology, analytic and cached NURBS geometry,
 //! body transforms, design and sketch records, construction history, and
-//! appearances. Encoding replays an unchanged decoded archive byte for byte,
-//! applies supported semantic edits to retained source data, or creates an
-//! archive from the supported source-less profile.
+//! appearances. Encoding authors document content from neutral and supported
+//! typed native records. Retained bytes may select layout when all source
+//! content is represented; unsupported patches fall back to synthesis.
 //!
 //! <!-- generated: capability f3d -->
 //! Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
@@ -60,8 +60,9 @@
 //! # }
 //! ```
 //!
-//! Encoding with the retained `source_fidelity` sidecar replays or patches the
-//! source archive. Omitting `fidelity` writes the source-less profile.
+//! Retained `source_fidelity` permits replay or patch when source content is
+//! fully represented and the output agrees with synthesis. Omitting `fidelity`
+//! authors an archive from the document. Export losses report local reductions.
 //!
 //! # Data flow
 //!
@@ -117,11 +118,10 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
@@ -147,15 +147,11 @@ impl F3dCodec {
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
+        expected: &str,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
-        let expected = ir
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
-            .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
-        if decode::document_local_sha256(ir)? != *expected {
+        if decode::document_local_sha256(ir)? != expected {
             writer::patch::write_semantic(ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
@@ -231,7 +227,7 @@ impl EncoderBackend for F3dCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Patches the retained source, so the history and design records it rewrites
     /// must be present.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

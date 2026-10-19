@@ -9,6 +9,7 @@ use cadmpeg_core::dialect::DialectId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::codec::write::{ArenaCoverage, NativeDispositions, SynthesisCause};
 use crate::document::CensusKey;
 use crate::report::loss::LossNote;
 
@@ -21,6 +22,17 @@ pub struct ExportReport {
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
     write_path: WritePath,
+    /// Neutral arena coverage declared by the actual output path.
+    pub coverage: ArenaCoverage,
+    /// Typed native coverage declared by the actual output path.
+    pub native_dispositions: NativeDispositions,
+    /// The reason synthesis replaced a patch, when applicable.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_synthesis_cause"
+    )]
+    pub(crate) synthesis_cause: Option<SynthesisCause>,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
@@ -87,13 +99,14 @@ pub enum WritePath {
         /// How the replay resolved decode-time source fidelity.
         fidelity: ReplayFidelity,
     },
-    /// The writer ran and consumed retained source content, rewriting part of a
-    /// container it did not author in full.
+    /// The writer used retained source layout, rewriting part of the container.
+    /// All output content is represented by the document.
     Patched {
         /// How the patch resolved decode-time source fidelity.
         fidelity: FidelityResolution,
     },
-    /// The writer ran over neutral IR content alone, authoring every output byte.
+    /// The writer authored output from neutral arenas and its own typed native
+    /// namespace, consuming no retained source bytes.
     Synthesized {
         /// How the synthesized write resolved decode-time source fidelity.
         fidelity: SynthesisFidelity,
@@ -222,6 +235,11 @@ impl ExportReport {
         &self.write_path
     }
 
+    /// The reason synthesis replaced a patch, when applicable.
+    pub const fn synthesis_cause(&self) -> Option<&SynthesisCause> {
+        self.synthesis_cause.as_ref()
+    }
+
     /// Returns the native format namespace, or `"cadir"` for neutral CADIR.
     #[must_use]
     pub fn format(&self) -> &str {
@@ -244,6 +262,9 @@ impl ExportReport {
             identity: ExportIdentity::Cadir {},
             census,
             write_path,
+            coverage: ArenaCoverage::Complete,
+            native_dispositions: NativeDispositions::default(),
+            synthesis_cause: None,
             losses,
             notes,
         }
@@ -263,6 +284,9 @@ impl ExportReport {
             identity: ExportIdentity::Native { target },
             census,
             write_path,
+            coverage: ArenaCoverage::Complete,
+            native_dispositions: NativeDispositions::default(),
+            synthesis_cause: None,
             losses,
             notes,
         }
@@ -271,3 +295,10 @@ impl ExportReport {
 
 #[cfg(test)]
 mod tests;
+
+// Absent is the one spelling of no synthesis cause.
+cadmpeg_core::named_optional_field!(
+    deserialize_synthesis_cause,
+    SynthesisCause,
+    "synthesis_cause"
+);

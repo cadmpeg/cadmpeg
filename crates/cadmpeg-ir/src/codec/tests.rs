@@ -24,7 +24,10 @@ use cadmpeg_core::CodecError;
 fn decoded(ir: CadIr) -> Decoded {
     Decoded {
         ir,
-        body: DecodeBody::new(crate::report::decode::DecodeTransfer::full(true)),
+        body: DecodeBody::new(crate::report::decode::DecodeTransfer {
+            scope: crate::document::ContentScope::full(),
+            geometry_transferred: true,
+        }),
         source_fidelity: SourceFidelity::default(),
     }
 }
@@ -40,9 +43,9 @@ fn with_parameter(mut ir: CadIr) -> CadIr {
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -78,7 +81,12 @@ impl CodecBackend for RejectFloorCodec {
     fn decode_impl(&self, ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
         let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
         if ctx.container_only() {
-            decoded.body.transfer = crate::report::decode::DecodeTransfer::ContainerOnly {};
+            decoded.ir = CadIr::empty();
+            decoded.ir.scope = crate::ContentScope::container();
+            decoded.body.transfer = crate::report::decode::DecodeTransfer {
+                scope: crate::document::ContentScope::container(),
+                geometry_transferred: false,
+            };
         }
         decoded
             .body
@@ -116,8 +124,14 @@ impl CodecBackend for GeometryOnlyCodec {
         _root: View<'_>,
     ) -> Result<Decoded, CodecError> {
         let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
-        decoded.body.transfer =
-            crate::report::decode::DecodeTransfer::at(DecodeDepth::Geometry, true);
+        decoded
+            .ir
+            .set_scope(crate::ContentScope::geometry())
+            .unwrap();
+        decoded.body.transfer = crate::report::decode::DecodeTransfer {
+            scope: crate::document::ContentScope::geometry(),
+            geometry_transferred: true,
+        };
         Ok(decoded)
     }
 }
@@ -131,7 +145,7 @@ fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
     let result = GeometryOnlyCodec
         .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &options)
         .unwrap();
-    assert_eq!(result.ir().decode_depth(), DecodeDepth::Geometry);
+    assert_eq!(result.ir().scope, crate::ContentScope::geometry());
     assert_eq!(depth_losses(&result).len(), 1);
 
     let error = GeometryOnlyCodec
@@ -412,8 +426,11 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
 }
 
 #[test]
-fn a_decode_result_keeps_the_body_it_was_given() {
-    let mut body = DecodeBody::new(crate::report::decode::DecodeTransfer::ContainerOnly {});
+fn a_decode_result_keeps_report_details_and_derives_scope_from_document() {
+    let mut body = DecodeBody::new(crate::report::decode::DecodeTransfer {
+        scope: crate::document::ContentScope::container(),
+        geometry_transferred: false,
+    });
     body.notes.push("kept".into());
     body.coverage
         .record(crate::report::decode::CoverageKey::new("entities"), 3);
@@ -428,7 +445,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
     )
     .unwrap();
 
-    assert!(result.report().container_only());
+    assert_eq!(result.report().scope(), crate::ContentScope::full());
     assert!(result.report().losses.is_empty());
     assert_eq!(result.report().notes, ["kept"]);
     assert_eq!(wire::coverage(result.report())["entities"], 3);
@@ -448,44 +465,57 @@ fn depth_losses(result: &DecodeResult) -> Vec<&LossNote> {
 }
 
 #[test]
-fn the_document_records_the_depth_the_backend_reported() {
-    use crate::report::decode::DecodeTransfer;
-
-    for transfer in [
-        DecodeTransfer::ContainerOnly {},
-        DecodeTransfer::at(DecodeDepth::Geometry, false),
-        DecodeTransfer::at(DecodeDepth::Geometry, true),
-        DecodeTransfer::full(false),
-        DecodeTransfer::full(true),
+fn the_report_derives_scope_from_the_document() {
+    for scope in [
+        crate::ContentScope::container(),
+        crate::ContentScope::geometry(),
+        crate::ContentScope::full(),
+        crate::ContentScope {
+            model: false,
+            design: true,
+        },
     ] {
-        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
-        decoded.body.transfer = transfer;
+        let mut ir = CadIr::empty();
+        ir.set_scope(scope).unwrap();
+        let mut decoded = decoded(ir);
+        // Contradictory backend body cannot override document state.
+        decoded.body.transfer.scope = crate::ContentScope::full();
         let result =
             DecodeResult::new(decoded, FormatId::new("test"), DecodeDepth::Container).unwrap();
-        assert_eq!(result.ir().decode_depth(), transfer.depth());
-        assert_eq!(result.report().depth(), transfer.depth());
-        assert_eq!(
-            result.report().geometry_transferred(),
-            transfer.geometry_transferred()
-        );
+        assert_eq!(result.ir().scope, scope);
+        assert_eq!(result.report().scope(), scope);
         assert!(depth_losses(&result).is_empty());
     }
 }
 
 #[test]
-fn the_wrapper_flags_a_depth_shallower_than_requested() {
-    for (delivered, requested) in [
-        (DecodeDepth::Container, DecodeDepth::Geometry),
-        (DecodeDepth::Container, DecodeDepth::Full),
-        (DecodeDepth::Geometry, DecodeDepth::Full),
+fn the_wrapper_names_missing_requested_classes_including_total_failure() {
+    for (scope, requested, classes) in [
+        (
+            crate::ContentScope::container(),
+            DecodeDepth::Geometry,
+            "model",
+        ),
+        (
+            crate::ContentScope::container(),
+            DecodeDepth::Full,
+            "model, design",
+        ),
+        (crate::ContentScope::geometry(), DecodeDepth::Full, "design"),
+        (
+            crate::ContentScope {
+                model: false,
+                design: true,
+            },
+            DecodeDepth::Full,
+            "model",
+        ),
     ] {
-        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
-        decoded.body.transfer = crate::report::decode::DecodeTransfer::at(delivered, true);
-        let result = DecodeResult::new(decoded, FormatId::new("test"), requested).unwrap();
-
-        assert_eq!(result.ir().decode_depth(), delivered);
+        let mut ir = CadIr::empty();
+        ir.set_scope(scope).unwrap();
+        let result = DecodeResult::new(decoded(ir), FormatId::new("test"), requested).unwrap();
         let [loss] = depth_losses(&result)[..] else {
-            panic!("expected one depth loss: {:?}", result.report().losses);
+            panic!("expected one missing-class loss")
         };
         assert_eq!(loss.severity, crate::report::Severity::Error);
         assert_eq!(
@@ -495,27 +525,28 @@ fn the_wrapper_flags_a_depth_shallower_than_requested() {
         assert!(loss
             .message
             .contains(&format!("requested {requested} depth")));
-        assert!(loss
-            .message
-            .contains(&format!("delivered {delivered} depth")));
+        assert!(loss.message.contains(&format!("classes: {classes}")));
     }
 }
 
 #[test]
-fn the_wrapper_refuses_design_records_below_full_depth() {
-    let ir = with_parameter(unit_cube().expect("valid unit cube fixture"));
-    for depth in [DecodeDepth::Container, DecodeDepth::Geometry] {
-        let mut decoded = decoded(ir.clone());
-        decoded.body.transfer = crate::report::decode::DecodeTransfer::at(depth, true);
-        let error = DecodeResult::new(decoded, FormatId::new("test"), depth).unwrap_err();
+fn the_wrapper_refuses_any_populated_class_excluded_from_scope() {
+    for (mut ir, scope, arena) in [
+        (
+            unit_cube().unwrap(),
+            crate::ContentScope::container(),
+            "bodies",
+        ),
+        (
+            with_parameter(CadIr::empty()),
+            crate::ContentScope::geometry(),
+            "parameters",
+        ),
+    ] {
+        ir.scope = scope;
+        let error =
+            DecodeResult::new(decoded(ir), FormatId::new("test"), DecodeDepth::Full).unwrap_err();
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
-        assert!(
-            error.to_string().contains("design arena `parameters`"),
-            "{error}"
-        );
+        assert!(error.to_string().contains(arena), "{error}");
     }
-
-    let result = decode_result(ir);
-    assert_eq!(result.ir().decode_depth(), DecodeDepth::Full);
-    assert_eq!(result.ir().model.parameters.len(), 1);
 }

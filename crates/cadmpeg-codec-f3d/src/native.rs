@@ -27,10 +27,10 @@ use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
-use crate::decode::design_intent::DesignIntentFailure;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmHistoricalTransition, AsmHistory,
 };
+use crate::records::act_table::ActTable;
 use crate::records::{
     act::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference},
     bodies::{BodyVisibility, DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
@@ -106,6 +106,8 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_registry_channels",
     "act_root_components",
     "act_table_references",
+    "act_tables",
+    "act_types",
     "asm_bulletin_boards",
     "asm_delta_states",
     "asm_entity_changes",
@@ -144,7 +146,6 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_face_source_groups",
     "design_feature_timelines",
     "design_fillet_radius_groups",
-    "design_intent_failures",
     "design_loft_legacy_body_carriers",
     "design_material_assignments",
     "design_mesh_features",
@@ -186,11 +187,6 @@ type F3dFamilyRow = FamilyRow<F3dNative, (), cadmpeg_ir::NativeNamespace, ()>;
 #[derive(Serialize)]
 struct FlatAsmHistory<'a> {
     id: &'a str,
-    byte_offset: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stream_size: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    history_entry_count: Option<i64>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     binding_budget_exceeded: bool,
     #[serde(skip_serializing_if = "crate::history_records::is_default")]
@@ -202,9 +198,6 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
     fn from(history: &'a AsmHistory) -> Self {
         Self {
             id: &history.id,
-            byte_offset: history.byte_offset,
-            stream_size: history.stream_size(),
-            history_entry_count: history.history_entry_count(),
             binding_budget_exceeded: history.binding_budget_exceeded,
             topology_scope: history.topology_scope,
             states: EmptyList,
@@ -216,7 +209,6 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
 pub(crate) struct FlatAsmDeltaState<'a> {
     id: &'a str,
     parent: &'a str,
-    byte_offset: u64,
     state_id: i64,
     version_flag: i64,
     state_flag: i64,
@@ -239,7 +231,6 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
         Self {
             id: &state.id,
             parent: &state.parent,
-            byte_offset: state.byte_offset,
             state_id: state.state_id,
             version_flag: state.version_flag,
             state_flag: state.state_flag,
@@ -259,7 +250,6 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
 struct FlatAsmBulletinBoard<'a> {
     id: &'a str,
     parent: &'a str,
-    byte_offset: u64,
     owner_ref: i64,
     number: i64,
     changes: EmptyList,
@@ -270,7 +260,6 @@ impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
         Self {
             id: &board.id,
             parent: &board.parent,
-            byte_offset: board.byte_offset,
             owner_ref: board.owner_ref,
             number: board.number,
             changes: EmptyList,
@@ -430,6 +419,22 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.body_visibilities)
         },
         len: |model| model.body_visibilities.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "act_tables",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.act_tables),
+        len: |model| model.act_tables.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "act_types",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.act_types),
+        len: |model| model.act_types.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -699,16 +704,6 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_fillet_radius_groups)
         },
         len: |model| model.design_fillet_radius_groups.len(),
-        counts_toward_emptiness: true,
-    },
-    F3dFamilyRow {
-        arena: "design_intent_failures",
-        exactness: (),
-        phase: Phase::ArenaOnly,
-        emit: |ctx, model, row, namespace| {
-            namespace.set_arena(ctx, row.arena, &model.design_intent_failures)
-        },
-        len: |model| model.design_intent_failures.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1196,6 +1191,8 @@ pub(crate) struct F3dNative {
     pub(crate) body_visibilities: Vec<BodyVisibility>,
     /// Design `MetaStream` type-table entries.
     #[serde(default)]
+    pub(crate) act_tables: Vec<ActTable>,
+    pub(crate) act_types: Vec<SegmentType>,
     pub(crate) design_types: Vec<SegmentType>,
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
@@ -1272,10 +1269,6 @@ pub(crate) struct F3dNative {
     /// Radius parameters paired with counted Fillet edge groups.
     #[serde(default)]
     pub(crate) design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
-    /// Contained design-intent decode failures. A document with one holds
-    /// none of the records design-intent decoding produces.
-    #[serde(default)]
-    pub(crate) design_intent_failures: Vec<DesignIntentFailure>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub(crate) design_parameter_companions: Vec<DesignParameterCompanion>,
@@ -1453,6 +1446,8 @@ impl F3dNative {
             act_table_references: read_arena!("act_table_references"),
             body_native_keys: read_arena!("body_native_keys"),
             body_visibilities: read_arena!("body_visibilities"),
+            act_tables: read_arena!("act_tables"),
+            act_types: read_arena!("act_types"),
             design_types: read_arena!("design_types"),
             design_canvas_images: read_arena!("design_canvas_images"),
             design_decal_images: read_arena!("design_decal_images"),
@@ -1490,7 +1485,6 @@ impl F3dNative {
             design_extrude_selection_groups: read_arena!("design_extrude_selection_groups"),
             design_extrude_selection_members: read_arena!("design_extrude_selection_members"),
             design_fillet_radius_groups: read_arena!("design_fillet_radius_groups"),
-            design_intent_failures: read_arena!("design_intent_failures"),
             design_parameter_companions: read_arena!("design_parameter_companions"),
             design_parameter_owners: read_arena!("design_parameter_owners"),
             design_parameter_scopes: read_arena!("design_parameter_scopes"),
@@ -1596,6 +1590,311 @@ impl F3dNative {
             *history.states_mut() = states;
         }
         Ok(native)
+    }
+
+    /// Collect transient source frames before storing the typed native document.
+    /// The retained bytes are the sole home of undecoded history payloads.
+    pub(crate) fn retained_fidelity(
+        &self,
+    ) -> Result<cadmpeg_ir::SourceFidelity, cadmpeg_core::CodecError> {
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        for header in &self.design_record_headers {
+            if let Some(offset) = header.byte_offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.byte_offset", header.id), offset.to_string());
+            }
+        }
+        for root in &self.act_root_components {
+            root.retain_source(&mut fidelity);
+        }
+        for guid in &self.act_guids {
+            for (field, offset) in [
+                ("byte_offset", guid.byte_offset()),
+                ("guid_offset", guid.guid_offset()),
+            ] {
+                if let Some(offset) = offset {
+                    fidelity
+                        .metadata
+                        .insert(format!("{}.{}", guid.id(), field), offset.to_string());
+                }
+            }
+        }
+        for reference in &self.act_table_references {
+            for (field, offset) in [
+                ("byte_offset", reference.byte_offset()),
+                ("target_record_offset", reference.target_record_offset()),
+            ] {
+                if let Some(offset) = offset {
+                    fidelity
+                        .metadata
+                        .insert(format!("{}.{}", reference.id(), field), offset.to_string());
+                }
+            }
+        }
+        for channel in &self.act_registry_channels {
+            for (field, offset) in [
+                ("byte_offset", channel.byte_offset()),
+                ("name_offset", channel.name_offset()),
+                ("guid_offset", channel.guid_offset()),
+            ] {
+                if let Some(offset) = offset {
+                    fidelity
+                        .metadata
+                        .insert(format!("{}.{}", channel.id(), field), offset.to_string());
+                }
+            }
+        }
+        for owner in &self.design_parameter_owners {
+            owner.retain_source(&mut fidelity);
+        }
+        for frame in &self.design_dimension_presentation_frames {
+            frame.retain_source(&mut fidelity)?;
+        }
+        for group in &self.design_dimension_locus_groups {
+            group.retain_source(&mut fidelity);
+        }
+        for frame in &self.design_dimension_annotation_frames {
+            frame.retain_source(&mut fidelity)?;
+        }
+        for pair in self
+            .design_dimension_locus_pairs
+            .iter()
+            .chain(self.design_dimension_null_locus_pairs.iter())
+        {
+            pair.retain_source(&mut fidelity);
+        }
+        for image in &self.design_canvas_images {
+            image.retain_source(&mut fidelity);
+        }
+        for image in &self.design_decal_images {
+            image.retain_source(&mut fidelity);
+        }
+        for placement in &self.design_sketch_placements {
+            placement.retain_source(&mut fidelity);
+        }
+        for member in &self.design_body_members {
+            member.retain_source(&mut fidelity);
+        }
+        for bounds in &self.design_body_bounds {
+            bounds.retain_source(&mut fidelity);
+        }
+        for binding in &self.design_body_bindings {
+            binding.retain_source(&mut fidelity);
+        }
+        for visibility in &self.body_visibilities {
+            visibility.retain_source(&mut fidelity);
+        }
+        for reference in &self.persistent_references {
+            reference.retain_source(&mut fidelity);
+        }
+        for reference in &self.lost_edge_references {
+            reference.retain_source(&mut fidelity);
+        }
+        for material in &self.design_material_assignments {
+            material.retain_source(&mut fidelity);
+        }
+        for scope in &self.design_parameter_scopes {
+            for (role, profile) in [
+                ("extrude_profile", scope.extrude_profile()),
+                ("sweep_profile", scope.sweep_profile()),
+                ("base_flange_profile", scope.base_flange_profile()),
+            ] {
+                if let Some(profile) = profile {
+                    profile.retain_source(&mut fidelity, &scope.id, role);
+                }
+            }
+        }
+        for group in &self.design_construction_operand_groups {
+            group.retain_source(&mut fidelity);
+        }
+        for identity in &self.design_construction_operand_identities {
+            identity.retain_source(&mut fidelity);
+        }
+        for operand in &self.design_edge_identity_operands {
+            operand.retain_source(&mut fidelity);
+        }
+        for operand in &self.design_body_recipe_operands {
+            operand.retain_source(&mut fidelity)?;
+        }
+
+        for recipe in &self.construction_recipes {
+            recipe.retain_source(&mut fidelity);
+        }
+        for naming in &self.design_component_naming_spaces {
+            naming.retain_source(&mut fidelity);
+        }
+        for relation in &self.sketch_relations {
+            relation.retain_source(&mut fidelity)?;
+        }
+        for header in &self.design_entity_headers {
+            header.retain_source(&mut fidelity);
+        }
+        for timeline in &self.design_feature_timelines {
+            timeline.retain_source(&mut fidelity);
+        }
+        for record in self.act_types.iter().chain(&self.design_types) {
+            record.retain_source(&mut fidelity);
+        }
+        for companion in &self.design_parameter_companions {
+            companion.retain_source(&mut fidelity);
+        }
+        for parameter in &self.design_parameters {
+            parameter.retain_source(&mut fidelity);
+        }
+        for entity in &self.act_entities {
+            entity.retain_source(&mut fidelity)?;
+        }
+        for history in &self.asm_histories {
+            for (field, value) in [
+                (
+                    "byte_offset",
+                    history.byte_offset.map(|value| value.to_string()),
+                ),
+                (
+                    "stream_size",
+                    history.stream_size().map(|value| value.to_string()),
+                ),
+                (
+                    "history_entry_count",
+                    history.history_entry_count().map(|value| value.to_string()),
+                ),
+            ] {
+                if let Some(value) = value {
+                    fidelity
+                        .metadata
+                        .insert(format!("{}.{}", history.id, field), value);
+                }
+            }
+            for state in history.states() {
+                if let Some(offset) = state.byte_offset {
+                    fidelity
+                        .metadata
+                        .insert(format!("{}.byte_offset", state.id), offset.to_string());
+                }
+                for board in &state.bulletin_boards {
+                    if let Some(offset) = board.byte_offset {
+                        fidelity
+                            .metadata
+                            .insert(format!("{}.byte_offset", board.id), offset.to_string());
+                    }
+                    for change in &board.changes {
+                        if let Some(offset) = change.byte_offset {
+                            fidelity
+                                .metadata
+                                .insert(format!("{}.byte_offset", change.id), offset.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        for record in self
+            .asm_histories
+            .iter()
+            .flat_map(AsmHistory::states)
+            .flat_map(|state| &state.records)
+        {
+            if let Some(offset) = record.byte_offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.byte_offset", record.id), offset.to_string());
+            }
+            record.raw_bytes.retain(
+                &mut fidelity,
+                &record.id,
+                crate::ids::native_stream(&record.id)
+                    .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "ASM history frame has no source stream identity",
+                        )
+                    })?,
+                record.byte_offset,
+                if record.raw_bytes.is_empty() {
+                    Default::default()
+                } else {
+                    [cadmpeg_ir::document::ArenaClass::Design].into()
+                },
+            )?;
+        }
+        for curve in &self.sketch_curve_identities {
+            if let Some(offset) = curve.byte_offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.byte_offset", curve.id), offset.to_string());
+            }
+            if let Some(offset) = curve.geometry_offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.geometry_offset", curve.id), offset.to_string());
+            }
+        }
+        for text in &self.sketch_texts {
+            if let Some(offset) = text.byte_offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.byte_offset", text.id), offset.to_string());
+            }
+            text.raw_bytes.retain(
+                &mut fidelity,
+                &text.id,
+                crate::ids::native_stream(&text.id)
+                    .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "sketch text frame has no source stream identity",
+                        )
+                    })?,
+                text.byte_offset,
+                Default::default(),
+            )?;
+        }
+        for record in &self.design_dimension_recipe_records {
+            for (name, offset) in [
+                ("byte_offset", record.byte_offset),
+                ("frame_length", record.frame_length),
+                ("prefix_offset", record.prefix_offset),
+                ("program_offset", record.program_offset),
+            ] {
+                if let Some(offset) = offset {
+                    fidelity
+                        .metadata
+                        .insert(format!("{}.{}", record.id, name), offset.to_string());
+                }
+            }
+            for (index, reference) in record.references.iter().enumerate() {
+                for (name, offset) in [
+                    ("selector_offset", reference.selector_offset),
+                    ("token_offset", reference.token_offset),
+                    ("design_reference_offset", reference.design_reference_offset),
+                ] {
+                    if let Some(offset) = offset {
+                        fidelity.metadata.insert(
+                            format!("{}.references.{index}.{name}", record.id),
+                            offset.to_string(),
+                        );
+                    }
+                }
+            }
+            record.prefix_bytes.retain(
+                &mut fidelity,
+                &format!("{}:prefix", record.id),
+                crate::ids::native_stream(&record.id)
+                    .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "dimension recipe frame has no source stream identity",
+                        )
+                    })?,
+                record.prefix_offset,
+                if record.prefix_bytes.is_empty() {
+                    Default::default()
+                } else {
+                    [cadmpeg_ir::document::ArenaClass::Design].into()
+                },
+            )?;
+        }
+        Ok(fidelity)
     }
 
     pub(crate) fn store(

@@ -129,11 +129,11 @@ fn scope_face_findings(
             id: format!("{stream}:design-record-header#100"),
             record_index: 100,
             class_tag,
-            byte_offset: recipe_byte_offset - 47,
+            byte_offset: Some(recipe_byte_offset - 47),
         }];
         native.construction_recipes = vec![ConstructionRecipe {
             id: recipe_id.clone(),
-            byte_offset: recipe_byte_offset,
+            byte_offset: Some(recipe_byte_offset),
             kind,
             design: None,
             recipe_index: 0,

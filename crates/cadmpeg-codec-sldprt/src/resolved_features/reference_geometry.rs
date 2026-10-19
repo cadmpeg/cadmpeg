@@ -128,8 +128,8 @@ pub(crate) fn enrich_history_reference_planes(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = names.of(feature) {
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                    starts.push((position, history_index, feature_index));
                 }
             }
         }
@@ -238,7 +238,9 @@ pub(crate) fn enrich_history_reference_planes(
             let mut anchored_frames = Vec::new();
             for class in &lane.classes {
                 let frame = (|| {
-                    let offset = usize::try_from(class.offset).ok()?;
+                    let offset = class
+                        .offset
+                        .and_then(|offset| usize::try_from(offset).ok())?;
                     (start..end).contains(&offset).then(|| {
                         constraint_reference_plane_frame(&lane.native_payload, offset, &class.name)
                     })?
@@ -523,8 +525,8 @@ pub(crate) fn enrich_history_reference_points(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = names.of(feature) {
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                    starts.push((position, history_index, feature_index));
                 }
             }
         }
@@ -578,7 +580,9 @@ fn resolved_reference_point(
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let object_id = name.object_id.and_then(ObjectId::value)?;
-    let name_start = usize::try_from(name.offset).ok()?;
+    let name_start = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let name_end = name_start
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -658,8 +662,8 @@ pub(crate) fn enrich_history_coordinate_systems(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = names.of(feature) {
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                    starts.push((position, history_index, feature_index));
                 }
             }
         }
@@ -1447,9 +1451,12 @@ pub(crate) fn enrich_history_sketch_block_references(
                 };
                 let end = instance_names
                     .get(position + 1)
-                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
+                    .and_then(|(next, _)| {
+                        next.offset.and_then(|offset| usize::try_from(offset).ok())
+                    })
                     .unwrap_or(lane.native_payload.len());
-                let Some(start) = usize::try_from(name.offset).ok() else {
+                let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok())
+                else {
                     continue;
                 };
                 let Some(local_id) = sketch_block_record_local_id(&lane.native_payload, start, end)
@@ -1464,9 +1471,12 @@ pub(crate) fn enrich_history_sketch_block_references(
             for (position, (name, instance_index)) in instance_names.iter().enumerate() {
                 let end = instance_names
                     .get(position + 1)
-                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
+                    .and_then(|(next, _)| {
+                        next.offset.and_then(|offset| usize::try_from(offset).ok())
+                    })
                     .unwrap_or(lane.native_payload.len());
-                let Some(start) = usize::try_from(name.offset).ok() else {
+                let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok())
+                else {
                     continue;
                 };
                 if let Some(origin) = sketch_block_record_origin(&lane.native_payload, start, end)
@@ -1505,7 +1515,9 @@ pub(crate) fn enrich_history_sketch_block_references(
             for (position, (name, instance_index)) in instance_names.iter().enumerate() {
                 let end = instance_names
                     .get(position + 1)
-                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
+                    .and_then(|(next, _)| {
+                        next.offset.and_then(|offset| usize::try_from(offset).ok())
+                    })
                     .unwrap_or(lane.native_payload.len());
                 let Some(local_id) = sketch_block_compact_local_id(&lane.native_payload, name, end)
                 else {
@@ -1659,7 +1671,9 @@ fn sketch_block_compact_local_id(
     name: &FeatureInputName,
     record_end: usize,
 ) -> Option<u16> {
-    let name_start = usize::try_from(name.offset).ok()?;
+    let name_start = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let name_end = name_start
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -1686,8 +1700,8 @@ pub(crate) fn enrich_history_reference_axes(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = names.of(feature) {
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                    starts.push((position, history_index, feature_index));
                 }
             }
         }
@@ -1719,15 +1733,17 @@ pub(crate) fn enrich_history_reference_axes(
                 if matches!(
                     class.name.as_str(),
                     "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
-                ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                {
+                ) && class.offset.is_some_and(|position| {
+                    (u64_from_index(start)..u64_from_index(end)).contains(&position)
+                }) {
                     axis_data_classes.push(class);
                 }
             }
             let mut anchored_frames = Vec::new();
             for class in &axis_data_classes {
-                let Some(body) = usize::try_from(class.offset)
-                    .ok()
+                let Some(body) = class
+                    .offset
+                    .and_then(|offset| usize::try_from(offset).ok())
                     .and_then(|offset| offset.checked_add(6 + class.name.len()))
                 else {
                     continue;

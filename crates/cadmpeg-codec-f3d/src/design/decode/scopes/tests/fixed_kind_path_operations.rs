@@ -975,7 +975,7 @@ pub(super) fn fixed_kind_path_operations(
         id: "f3d:native:record-header#55".into(),
         record_index: 55,
         class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: 70,
+        byte_offset: Some(70),
     };
     assert_eq!(
         companion_owned_interval(
@@ -1003,7 +1003,7 @@ pub(super) fn fixed_kind_path_operations(
     );
     let recipe = ConstructionRecipe {
         id: "f3d:native:construction-recipe#60".into(),
-        byte_offset: 60,
+        byte_offset: Some(60),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
@@ -1043,12 +1043,12 @@ pub(super) fn fixed_kind_path_operations(
     }
     let entity = crate::records::entity_header::DesignEntityHeader {
         id: "f3d:native:design-entity-header#70".into(),
-        byte_offset: 70,
+        byte_offset: Some(70),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_99".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("366".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some("MSketch".into()),
             None,

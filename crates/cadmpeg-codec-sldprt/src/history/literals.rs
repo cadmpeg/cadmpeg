@@ -3,11 +3,7 @@
 
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
-    features::{
-        edge_treatments::ChamferSpec, patterns::PatternTransform, BooleanOp, DimensionDisplay,
-        FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
-        ParameterValue,
-    },
+    features::{BooleanOp, DimensionDisplay, FinitePoint3, FiniteVector3, ParameterValue},
     scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
 };
 
@@ -164,7 +160,7 @@ pub(crate) fn parse_point3_mm(value: &str) -> Option<FinitePoint3> {
     ))
 }
 
-pub(super) fn parse_vector3_mm(value: &str) -> Option<FiniteVector3> {
+pub(crate) fn parse_vector3_mm(value: &str) -> Option<FiniteVector3> {
     let [x, y, z] = parse_length_components_mm(value)?;
     Some(FiniteVector3::from_components(
         x.magnitude(),
@@ -314,48 +310,6 @@ fn strip_radius_modifier(expression: &str) -> Option<&str> {
     expression
         .strip_prefix("<MOD-RHO>")
         .or_else(|| expression.strip_prefix("&lt;MOD-RHO&gt;"))
-}
-
-pub(super) fn parse_neutral_parameter_literal(
-    feature: &cadmpeg_ir::features::Feature,
-    name: &str,
-    expression: &str,
-) -> Option<ParameterValue> {
-    let positional_length = match name {
-        "D1" => matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(
-                FeatureOperation::Extrude { .. }
-                    | FeatureOperation::Fillet { .. }
-                    | FeatureOperation::Chamfer { .. }
-                    | FeatureOperation::Shell { .. }
-                    | FeatureOperation::Thicken { .. }
-                    | FeatureOperation::DatumOffsetPlane { .. }
-                    | FeatureOperation::MoveFace {
-                        motion: FaceMotion::Offset { .. } | FaceMotion::Translate { .. },
-                        ..
-                    }
-            )
-        ),
-        "D2" => matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
-                if groups.iter().any(|group| matches!(group.spec, ChamferSpec::TwoDistances { .. }))
-        ),
-        "D3" => matches!(&(feature.evaluation.definition()),
-            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                pattern: admitted_pattern,
-                ..
-            }) if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::CurveDriven { .. })
-        ),
-        _ => false,
-    };
-    if positional_length {
-        return parse_positive_dimension_length_mm(expression)
-            .map(Length::from)
-            .map(ParameterValue::Length);
-    }
-    parse_parameter_literal(expression)
 }
 
 pub(super) fn format_parameter_value(value: &ParameterValue) -> String {

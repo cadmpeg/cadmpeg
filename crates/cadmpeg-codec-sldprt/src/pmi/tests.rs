@@ -11,13 +11,14 @@ use crate::SldprtCodec;
 use cadmpeg_ir::{
     features::{
         DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue, PmiDimensionSubtype,
+        ParameterValue,
     },
     scalar::Length,
 };
 
 use super::{
     dimension_subtype, exact_count, neutral_parameter_is_count, patch_payload, patch_slots,
+    DimensionSubtype,
 };
 
 fn parse_payload(
@@ -32,6 +33,53 @@ fn parse_payload(
     )
     .expect("PMI test input fits service policy");
     super::parse_payload(&ctx, payload, losses).expect("PMI test input fits service policy")
+}
+
+fn write_with_regenerated_pmi(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+    output: &mut Vec<u8>,
+) {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .expect("semantic PMI is regenerated from the document");
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(
+            |loss| loss.code.local_code() == "writer.native-records-omitted"
+                && loss.message.contains("native PMI dimension")
+        ));
+    plan.write_to(output)
+        .expect("write solved part and neutral scalars");
+}
+
+fn assert_written_scalar_with_pmi(decoded: &cadmpeg_ir::codec::DecodeResult) {
+    assert!(!sldprt_native(decoded.ir()).pmi_dimensions.is_empty());
+    let parameter = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .expect("neutral scalar survives PMI omission");
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(50.0).unwrap()))
+    );
+    let id = parameter.pmi.as_ref().expect("PMI link survives synthesis");
+    assert!(decoded
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .any(|annotation| &annotation.id == id));
 }
 
 fn pmi_limit_refusal(
@@ -94,22 +142,22 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
     PmiDimension {
         id: "dimension".into(),
         parent: "block".into(),
-        offset: 0,
+        offset: Some(0),
         guid: "guid".into(),
         cad_text: "D1@Pattern1".into(),
         item_count: std::num::NonZeroU32::MIN,
         subtype: subtype.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test dimension"),
-        value_offset: 0,
+        value_offset: Some(0),
         precision: 0,
-        precision_offset: 0,
+        precision_offset: Some(0),
         display_text: None,
         basic: false,
-        basic_offset: 0,
+        basic_offset: Some(0),
         inspection: false,
-        inspection_offset: 0,
+        inspection_offset: Some(0),
         reference_only: false,
-        reference_only_offset: 0,
+        reference_only_offset: Some(0),
     }
 }
 
@@ -124,6 +172,7 @@ fn named_feature(id: &str, name: &str) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
@@ -136,12 +185,12 @@ fn empty_subtype_requires_established_count_semantics() {
     let record = dimension("", 2.0);
     assert_eq!(
         dimension_subtype(&record, false),
-        PmiDimensionSubtype::Native(String::new())
+        DimensionSubtype::Native(String::new())
     );
-    assert_eq!(dimension_subtype(&record, true), PmiDimensionSubtype::Count);
+    assert_eq!(dimension_subtype(&record, true), DimensionSubtype::Count);
     assert_eq!(
         dimension_subtype(&dimension("", 2.5), true),
-        PmiDimensionSubtype::Native(String::new())
+        DimensionSubtype::Native(String::new())
     );
 }
 
@@ -164,13 +213,14 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::new(PatternTransform::Linear {
                     direction: None,
                     spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                    count: 2,
+                    count: cadmpeg_ir::Dimension::Literal(2),
                     second: None,
                 })
                 .unwrap(),
@@ -189,6 +239,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#keywords-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
@@ -196,17 +247,18 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
         expression: "12mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("keywords-dimension".into()),
     }];
     let record = dimension("Linear", 0.034);
 
-    super::apply_to_parameters(&mut parameters, &[feature], &[record]).unwrap();
+    let projected =
+        super::apply_to_parameters(&mut parameters, &[feature], std::slice::from_ref(&record))
+            .unwrap();
 
     let parameter = &parameters[0];
-    assert_eq!(parameter.expression, "12mm");
+    assert_eq!(parameter.expression.literal_text().as_deref(), Some("12mm"));
     assert_eq!(parameter.display, None);
     assert_eq!(
         parameter.value,
@@ -214,13 +266,10 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     );
     assert_eq!(parameter.native_ref.as_deref(), Some("keywords-dimension"));
     assert_eq!(
-        parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
-        Some(&PmiDimensionSubtype::Linear)
+        parameter.pmi.as_ref(),
+        Some(&super::annotation_id(&record).unwrap())
     );
-    assert_eq!(
-        parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
-        Some("dimension")
-    );
+    assert!(projected.annotations.iter().any(|annotation| matches!(&annotation.definition, cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) if dimension.kind() == &cadmpeg_ir::pmi::DimensionKind::Size && dimension.nominal().and_then(cadmpeg_ir::Dimension::parameter) == Some(&parameter.id))));
 }
 
 #[test]
@@ -246,16 +295,14 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
     alias.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
+    let canonical_id = super::annotation_id(&canonical).unwrap();
     super::apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]).unwrap();
 
     let [parameter] = parameters.as_slice() else {
         panic!("one PMI-backed parameter");
     };
-    assert_eq!(parameter.expression, "34mm");
-    assert_eq!(
-        parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
-        Some("dimension")
-    );
+    assert_eq!(parameter.expression.literal_text().as_deref(), Some("34mm"));
+    assert_eq!(parameter.pmi.as_ref(), Some(&canonical_id));
 }
 
 #[test]
@@ -642,7 +689,7 @@ fn decode_extracts_pmi_semantic_dimension() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("PMI-backed parameter");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(parameter.expression.literal_text().as_deref(), Some("25mm"));
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -650,11 +697,8 @@ fn decode_extracts_pmi_semantic_dimension() {
         ))
     );
     let semantic = parameter.pmi.as_ref().expect("PMI semantics");
-    assert_eq!(
-        semantic.subtype,
-        cadmpeg_ir::features::PmiDimensionSubtype::Linear
-    );
-    assert_eq!(semantic.native_ref, dimension.id);
+    assert_eq!(semantic, &super::annotation_id(dimension).unwrap());
+    assert!(decoded.ir().model.pmi.iter().any(|annotation| &annotation.id == semantic && matches!(&annotation.definition, cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) if dimension.kind() == &cadmpeg_ir::pmi::DimensionKind::Size && dimension.nominal().and_then(cadmpeg_ir::Dimension::parameter) == Some(&parameter.id))));
     crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -663,45 +707,54 @@ fn decode_extracts_pmi_semantic_dimension() {
     .unwrap();
 
     {
+        let id = parameter.id.clone();
+        let semantic = semantic.clone();
         let mut ir = decoded.ir_mut();
-        let parameter = ir
-            .model
-            .parameters
-            .iter_mut()
-            .find(|parameter| parameter.name == "D1")
-            .expect("editable PMI-backed parameter");
-        parameter.expression = "50mm".into();
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
-        ));
-        let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
-        semantic.precision = 4;
-        semantic.display_text = Some("50.000 mm".into());
-        semantic.basic = false;
-        semantic.inspection = true;
-        semantic.reference_only = false;
+        ir.set_parameter_expression(
+            &id,
+            "50mm".into(),
+            Some(ParameterValue::Length(Length::new(50.0).unwrap())),
+        )
+        .unwrap();
+        for attribute in &mut ir.model.attributes {
+            if attribute.target != cadmpeg_ir::attributes::AttributeTarget::Pmi(semantic.clone()) {
+                continue;
+            }
+            attribute.values = vec![match attribute.name.as_str() {
+                "precision" => cadmpeg_ir::attributes::AttributeValue::Integer(4),
+                "basic" | "reference_only" => {
+                    cadmpeg_ir::attributes::AttributeValue::Boolean(false)
+                }
+                "inspection" => cadmpeg_ir::attributes::AttributeValue::Boolean(true),
+                _ => continue,
+            }];
+        }
+        for annotation in &mut ir.model.pmi {
+            if let cadmpeg_ir::pmi::PmiDefinition::Presentation {
+                text, semantics, ..
+            } = &mut annotation.definition
+            {
+                if semantics.contains(&semantic) {
+                    *text = Some("50.000 mm".into());
+                }
+            }
+        }
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    assert_written_scalar_with_pmi(&regenerated);
     let native = sldprt_native(regenerated.ir());
-    let [dimension] = native.pmi_dimensions.as_slice() else {
-        panic!("one regenerated PMI dimension");
-    };
-    assert_eq!(dimension.value.get(), 0.05);
-    assert_eq!(dimension.precision, 4);
-    assert_eq!(dimension.display_text(), Some("50.000 mm"));
-    assert!(!dimension.basic);
-    assert!(dimension.inspection);
-    assert!(!dimension.reference_only);
+    let record = &native.pmi_dimensions[0];
+    assert_eq!(record.value.get(), 0.05);
+    assert_eq!(record.precision, 4);
+    assert_eq!(record.display_text(), Some("50.000 mm"));
+    assert!(!record.basic);
+    assert!(record.inspection);
+    assert!(!record.reference_only);
 }
 
 #[test]
@@ -836,7 +889,7 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
 }
 
 #[test]
-fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
+fn duplicate_pmi_records_share_one_parameter_and_report_annotation_loss() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -874,21 +927,11 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(regenerated.ir());
-    assert_eq!(native.pmi_dimensions.len(), 2);
-    assert!(native
-        .pmi_dimensions
-        .iter()
-        .all(|dimension| dimension.value.get() == 0.05));
+    assert_written_scalar_with_pmi(&regenerated);
 }
 
 #[test]
@@ -920,11 +963,8 @@ fn semantically_distinct_pmi_records_remain_unbound() {
 }
 
 #[test]
-fn ordinate_pmi_dimensions_round_trip_typed_values() {
-    use cadmpeg_ir::{
-        features::{ParameterValue, PmiDimensionSubtype},
-        scalar::Length,
-    };
+fn ordinate_pmi_values_survive_reported_annotation_omission() {
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -946,44 +986,44 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
-        let mut ir = decoded.ir_mut();
-        let ordinate = ir
+        let ordinate = decoded
+            .ir()
             .model
             .parameters
-            .iter_mut()
+            .iter()
             .find(|parameter| parameter.name == "D1")
             .expect("ordinate parameter");
         assert_eq!(
             ordinate.value,
             Some(ParameterValue::Length(Length::new(25.0).unwrap()))
         );
-        assert_eq!(
-            ordinate.pmi.as_ref().map(|pmi| &pmi.subtype),
-            Some(&PmiDimensionSubtype::Ordinate)
+        let annotation = decoded
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| Some(&annotation.id) == ordinate.pmi.as_ref())
+            .unwrap();
+        assert!(
+            matches!(&annotation.definition, cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) if dimension.kind() == &cadmpeg_ir::pmi::DimensionKind::Location)
         );
-        ordinate.expression = "50mm".into();
-        ordinate.value = Some(ParameterValue::Length(Length::new(50.0).unwrap()));
+        let id = ordinate.id.clone();
+        decoded
+            .ir_mut()
+            .set_parameter_expression(
+                &id,
+                "50mm".into(),
+                Some(ParameterValue::Length(Length::new(50.0).unwrap())),
+            )
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(regenerated.ir());
-    assert_eq!(
-        native
-            .pmi_dimensions
-            .iter()
-            .find(|dimension| dimension.cad_text == "D1@Sketch1")
-            .map(|dimension| dimension.value.get()),
-        Some(0.05)
-    );
+    assert_written_scalar_with_pmi(&regenerated);
 }
 
 #[test]
@@ -1027,7 +1067,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if actual_length.get() == 25.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 25.0
     ));
     let parameter = decoded
         .ir()
@@ -1037,7 +1077,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         .find(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[0].id))
         .expect("PMI extrusion parameter");
     assert_eq!(parameter.name, "D1");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(parameter.expression.literal_text().as_deref(), Some("25mm"));
     assert!(parameter.pmi.is_some());
 }
 
@@ -1077,6 +1117,7 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
     let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#other-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: u32::MAX,
@@ -1084,7 +1125,6 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
         expression: "12mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("other-dimension".into()),
@@ -1109,7 +1149,7 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+        br#"<Keywords><Pattern Name="Sketch1" Type="LinearPattern" id="7" Direction="1,0,0"><Dimension Name="D1">2</Dimension><Dimension Name="D3">1mm</Dimension></Pattern></Keywords>"#,
     ));
     source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
     let decoded = SldprtCodec
@@ -1118,14 +1158,31 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
     let parent = sldprt_native(decoded.ir()).pmi_dimensions[0].parent.clone();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
-        let mut ir = decoded.ir_mut();
-        let parameter = &mut ir.model.parameters[0];
-        parameter.value = Some(ParameterValue::Integer((1_i64 << 53) + 1));
-        parameter.pmi.as_mut().unwrap().subtype = PmiDimensionSubtype::Count;
+        let id = decoded
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "D1")
+            .unwrap()
+            .id
+            .clone();
+        decoded
+            .ir_mut()
+            .set_parameter_expression(
+                &id,
+                ((1_i64 << 53) + 1).to_string().into(),
+                Some(ParameterValue::Integer((1_i64 << 53) + 1)),
+            )
+            .unwrap();
     }
+
     let mut patched = payload;
     let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
 }
 
 #[test]

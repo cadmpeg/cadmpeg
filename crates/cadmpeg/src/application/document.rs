@@ -89,6 +89,15 @@ impl LoadedDocument {
         }
     }
 
+    /// Returns losses from this input decode. CADIR parsing is lossless;
+    /// restored sidecars describe history only.
+    pub(crate) const fn current_decode_report(&self) -> Option<&DecodeReport> {
+        match &self.origin {
+            LoadOrigin::Decoded { report, .. } => Some(report),
+            LoadOrigin::Neutral | LoadOrigin::Restored { .. } => None,
+        }
+    }
+
     /// Returns source fidelity, when this document has decoded origin.
     pub(crate) const fn fidelity(&self) -> Option<&SourceFidelity> {
         match &self.origin {

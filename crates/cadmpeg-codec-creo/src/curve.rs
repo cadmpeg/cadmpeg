@@ -664,7 +664,7 @@ pub(crate) struct FcCurveCoordinateToken {
     /// Decoded model length in millimeters.
     pub(crate) value_mm: f64,
     /// Exact source bytes occupied by the token.
-    pub(crate) raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
+    pub(crate) raw: crate::source_bytes::SourceBytes<Vec<u8>>,
     /// Token offset relative to the complete curve parameter body.
     pub(crate) offset: usize,
 }
@@ -685,7 +685,7 @@ impl serde::Serialize for FcCurveCoordinateToken {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FcCurveOpaqueSpan {
     /// Exact source bytes in the span.
-    raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
+    raw: crate::source_bytes::SourceBytes<Vec<u8>>,
     /// Span offset relative to the complete curve parameter body.
     offset: usize,
 }
@@ -694,7 +694,10 @@ impl serde::Serialize for FcCurveOpaqueSpan {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut wire = serializer.serialize_struct("FcCurveOpaqueSpan", 3)?;
-        wire.serialize_field("raw", &self.raw)?;
+        wire.serialize_field(
+            "raw",
+            &self.raw.clone().with_untyped(cadmpeg_ir::ArenaClass::Model),
+        )?;
         wire.serialize_field("offset", &self.offset)?;
         wire.serialize_field("length", &self.raw.len())?;
         wire.end()
@@ -1293,6 +1296,20 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
 }
 
 fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &str) -> Option<()> {
+    for span in expression_parameter_spans(expression)? {
+        let dependency = &expression[span];
+        if !dependencies
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(dependency))
+        {
+            dependencies.push(dependency.to_owned());
+        }
+    }
+    Some(())
+}
+
+pub(crate) fn expression_parameter_spans(expression: &str) -> Option<Vec<std::ops::Range<usize>>> {
+    let mut spans = Vec::new();
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -1352,19 +1369,14 @@ fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &s
             let function =
                 bytes.get(following) == Some(&b'(') && creo_relation_function(dependency).is_some();
             let constant = reserved_relation_scalar(dependency).is_some();
-            if !function
-                && !constant
-                && !dependencies
-                    .iter()
-                    .any(|existing| existing.eq_ignore_ascii_case(dependency))
-            {
-                dependencies.push(dependency.to_owned());
+            if !function && !constant {
+                spans.push(start..cursor);
             }
         } else {
             cursor += 1;
         }
     }
-    Some(())
+    Some(spans)
 }
 
 fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {

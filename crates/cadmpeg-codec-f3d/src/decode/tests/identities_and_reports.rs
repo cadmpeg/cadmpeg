@@ -45,9 +45,11 @@ fn failed_mesh_resource_limit_propagates() {
         operation: "synthetic mesh refusal",
     });
     let mut bodies = Vec::new();
-    let mut report = cadmpeg_ir::codec::DecodeBody::new(
-        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-    );
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::container(),
+            geometry_transferred: false,
+        });
     let error = super::super::collect_mesh_outcome(
         &mut bodies,
         &mut report,

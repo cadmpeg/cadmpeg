@@ -67,6 +67,35 @@ fallback.
   `(map(.*.) | add) | sqrt`, `atan2(y; x)`. For real numeric work use
   `python3`; it is installed, `ruby` is not.
 
+## Recipe: inspect content scope and decode history
+
+CADIR wire version 7 requires a boolean for each neutral arena class. Inspect
+that state before interpreting an empty arena:
+
+```sh
+jq '{ir_version, scope}' doc.json
+jq -r '.scope | to_entries[] | select(.value) | .key' doc.json
+```
+
+`scope.design = false` means no neutral design is held. An empty feature
+arena with `scope.design = true` means the document holds the design class
+and contains no features. Typed native records remain document content under
+either declaration.
+
+A decode report carries the same declaration at `.transfer.scope`; it also
+reports whether any B-rep was transferred:
+
+```sh
+jq '.transfer | {scope, geometry_transferred}' report.json
+```
+
+The report describes that decode event. A restored sidecar report is history;
+`--reject-lossy=decode` evaluates the current input decode, including a
+lossless CADIR parse. The sidecar's source-fidelity `unrepresented` array
+identifies classes that cannot safely use retained source bytes for patch or
+replay. It is separate from `scope` and does not change when a neutral class
+is authored or deleted.
+
 ## Recipe: annotate one arena with another (INDEX join)
 
 Faces carry a `surface` id; surfaces live in their own arena. Build the

@@ -98,32 +98,21 @@ impl From<DigestError> for cadmpeg_core::CodecError {
     }
 }
 
-/// The source-attribute key under which a codec records
-/// [`document_local_sha256`].
+/// Fidelity metadata key for the document fingerprint used by byte reuse.
 ///
-/// This one key gates the whole-document write decision: an encoder that finds
-/// the recorded value still equal to a freshly computed one replays its retained
-/// bytes, and otherwise runs its writer. Other `_local_sha256` attributes answer
-/// narrower questions — which lane changed, and how — so they are not
-/// interchangeable with this one and removing them does not move the same
-/// branch.
-pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
+/// This is a fact about a retained source image, never a document attribute.
+pub const DOCUMENT_FINGERPRINT_METADATA_KEY: &str = "document_local_sha256";
 
-/// Returns the machine-local content digest of `ir` as seen by the `format`
-/// codec, for recording as the `document_local_sha256` source attribute.
+/// Returns the machine-local content digest of the document for byte reuse.
 ///
-/// Covers the document in canonical arena order with two normalizations: the
-/// recorded `document_local_sha256` attribute is dropped, and the `format`
-/// unknown arena is reduced to identities and links with `source_image_id`
-/// excluded. Retained source bytes never reach the digest. `source` states
-/// the metadata to include, including metadata not assigned to `ir` yet.
-/// Normalization, ordering, serialization and hashing use `ctx`.
+/// Covers scope, source identity, all document attributes, and canonical arena
+/// order. Native unknowns are reduced to typed identities and links; the source
+/// image marker is excluded. Retained bytes and their fingerprints live in
+/// source fidelity and never enter this digest. `source` permits callers to
+/// include classified metadata before assigning it to the document.
 ///
-/// Bitwise SHA-256 for the write path's edit oracle. Not portable across
-/// platforms (libm last-place drift) and not tolerance-aware (tolerant equality
-/// is not transitive). Attributes with these properties use
-/// [`crate::compare::LOCAL_DIGEST_SUFFIX`]; see
-/// [`crate::document::SourceMeta`].
+/// This bitwise digest is local to one machine's evaluation. It is not a
+/// tolerance-aware equivalence relation or a source of document content.
 pub fn document_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -152,7 +141,8 @@ pub fn document_local_sha256_without_carried(
     let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
             ir_version: ir.ir_version(),
-            source: source.map(SourceMeta::normalized_digest_copy),
+            scope: ir.scope,
+            source: source.cloned(),
             units: CanonicalUnitsWire::default(),
             tolerances: &ir.tolerances,
             model: ir.model.sorted()?,
@@ -187,12 +177,11 @@ fn reduced_unknowns(
 
 /// A document as the semantic digest sees it.
 ///
-/// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can,
-/// except `decode_depth`: decoders take this digest before the decode wrapper
-/// records the depth.
+/// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can.
 #[derive(Serialize)]
 struct NormalizedDocument<'a> {
     ir_version: &'a str,
+    scope: crate::document::ContentScope,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<SourceMeta>,
     units: CanonicalUnitsWire,
@@ -276,10 +265,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::finite_json::CanonicalJsonError;
-    use super::{
-        canonical_json_sha256, document_local_sha256, sha256_hex, DigestError,
-        DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
-    };
+    use super::{canonical_json_sha256, document_local_sha256, sha256_hex, DigestError};
     use crate::document::CadIr;
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
@@ -358,6 +344,20 @@ mod tests {
         assert_eq!(
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn content_scope_changes_both_document_and_local_digests() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut ir = CadIr::empty();
+        let digest = canonical_json_sha256(&ctx, &ir).unwrap();
+        let local = document_local_sha256(&ctx, &ir, None, "test", "test:source#image").unwrap();
+        ir.set_scope(crate::ContentScope::geometry()).unwrap();
+        assert_ne!(digest, canonical_json_sha256(&ctx, &ir).unwrap());
+        assert_ne!(
+            local,
+            document_local_sha256(&ctx, &ir, None, "test", "test:source#image").unwrap()
         );
     }
 
@@ -600,7 +600,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "224e96104fea391ebe17d8c507a485d8f1cdf55d32cd079624246bec39ae1b72"
+            "6a17994ee61ee190b959138a3bf08b2b08b19ec9f516bb2e3ed0715623b19c21"
         );
         assert_eq!(
             document_local_sha256(
@@ -611,7 +611,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "ab55b3269d93d9cf9a76ba6b0ffe0166598d143349b52f545569bfe77768366b"
+            "70cec9f217114881897976ced01f8b366042c19d277531263cafb047f4025a9e"
         );
     }
 
@@ -636,9 +636,7 @@ mod tests {
         ctx.finish_session().unwrap();
     }
 
-    /// The pinned document with the source metadata a decoded document carries:
-    /// one recorded baseline the digest must drop, and one ordinary attribute it
-    /// must keep.
+    /// The pinned document with one document attribute included in the digest.
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
         ir.source = Some(crate::document::SourceMeta::classified(
@@ -647,24 +645,17 @@ mod tests {
                     "pin:test"
                 )),
             ),
-            [
-                (
-                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                    "stale".to_owned(),
-                ),
-                (
-                    cadmpeg_core::nonblank_literal!("file_size"),
-                    "4096".to_owned(),
-                ),
-            ]
+            [(
+                cadmpeg_core::nonblank_literal!("file_size"),
+                "4096".to_owned(),
+            )]
             .into_iter()
             .collect(),
         ));
         ir
     }
 
-    /// Pins normalization over source metadata: the recorded baseline attribute
-    /// is dropped before hashing and every other attribute is kept.
+    /// Pins source identity and all document attributes in the content digest.
     ///
     /// The pin covers the canonical JSON of the normalized document, in which
     /// the source block reads
@@ -697,7 +688,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "28da9611ed9814d3fcd50f95d90199f4dfa0bf578a430e8356d735a428539cb8"
+            "6ab5ae4804a9eaee89250f1b2e1b5e439e1f15210575ab52fca3e24500505007"
         );
         assert_eq!(
             document_local_sha256(
@@ -754,16 +745,12 @@ mod tests {
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }
 
-    /// Copy the document, finalize order, drop the recorded digest and retained
-    /// source image, and hash the serialized string.
+    /// Copy the document, finalize order, exclude the source image marker, and
+    /// hash the serialized string.
     fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
         let mut normalized = ir.clone();
         normalized.finalize();
-        normalized.source = ir.source.as_ref().map(|source| {
-            let mut source = source.clone();
-            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-            source
-        });
+        normalized.source = ir.source.clone();
         let unknowns = ir
             .native_unknowns(format)
             .expect("the normalization fixture has admitted product unknowns")
@@ -778,13 +765,11 @@ mod tests {
             )
             .unwrap();
         let text = normalized.to_canonical_json().unwrap();
-        let depth = "\n  \"decode_depth\": \"full\",";
-        assert_eq!(text.matches(depth).count(), 1, "{text}");
-        crate::hash::sha256_hex(text.replacen(depth, "", 1).as_bytes())
+        crate::hash::sha256_hex(text.as_bytes())
     }
 
-    /// A document with an unordered model, a recorded digest, two native
-    /// namespaces, and a retained source image among the unknown records.
+    /// A document with an unordered model, two native namespaces, and a retained
+    /// source image marker among the unknown records.
     fn local_digest_fixture_with_source_image(
         source_image: UnknownRecord,
     ) -> (CadIr, crate::SourceFidelity) {
@@ -797,16 +782,10 @@ mod tests {
                     "synthetic:test"
                 )),
             ),
-            [
-                (
-                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                    "stale".to_owned(),
-                ),
-                (
-                    cadmpeg_core::nonblank_literal!("active_brep"),
-                    "body#0".to_owned(),
-                ),
-            ]
+            [(
+                cadmpeg_core::nonblank_literal!("active_brep"),
+                "body#0".to_owned(),
+            )]
             .into_iter()
             .collect(),
         ));
@@ -883,7 +862,7 @@ mod tests {
     }
 
     #[test]
-    fn document_local_sha256_ignores_the_recorded_digest_and_retained_bytes() {
+    fn document_local_sha256_is_independent_of_fidelity_fingerprints_and_retained_bytes() {
         let source_image = "synthetic:file:source-image#0";
         let (ir, _source_fidelity) = local_digest_fixture();
         let hash = document_local_sha256(
@@ -895,9 +874,9 @@ mod tests {
         )
         .unwrap();
 
-        let (mut recorded, _source_fidelity) = local_digest_fixture();
-        recorded.source.as_mut().unwrap().attributes.insert(
-            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+        let (recorded, mut fidelity) = local_digest_fixture();
+        fidelity.metadata.insert(
+            super::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
             hash.clone(),
         );
         assert_eq!(

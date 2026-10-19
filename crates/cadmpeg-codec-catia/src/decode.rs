@@ -32,6 +32,8 @@ use crate::native::schema_configuration_chain::CatiaSchemaConfigurationRowChain;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::pmi;
 use crate::sketch;
+mod native_projection;
+mod source_layout;
 
 fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
     (
@@ -83,8 +85,20 @@ fn decode_over_routes(
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
         let mut report = build_container_report(&scan);
-        report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
-        return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
+        report.transfer = cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::container(),
+            geometry_transferred: false,
+        };
+        return decode_result(
+            ctx,
+            &scan,
+            &matched,
+            ir,
+            report,
+            annotations,
+            unknowns,
+            cadmpeg_ir::ArenaClasses::default(),
+        );
     }
 
     let applicable = routes
@@ -223,6 +237,7 @@ fn finish_decode(
         fell_through,
         refusal,
     } = inputs;
+    let mut source_untyped = cadmpeg_ir::ArenaClasses::default();
 
     // Drain before the first fallible step: every refusal a route stated is in
     // the `report` value. The `Ok` route returns that value, so the notes reach
@@ -234,7 +249,10 @@ fn finish_decode(
         let message = statement.to_owned();
         report
             .losses
-            .push(CatiaLossCode::SourceRouteFellThrough.note(message));
+            .push(CatiaLossCode::SourceRouteFellThrough.note({
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                message
+            }));
     }
     for note in refusal.take_notes() {
         report.losses.push(note);
@@ -245,7 +263,7 @@ fn finish_decode(
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
-    let native = CatiaNative::decode_with_record_sources(
+    let mut native = CatiaNative::decode_with_record_sources(
         ctx,
         &scan.data,
         &consolidated_record_sources,
@@ -303,6 +321,9 @@ fn finish_decode(
         &mut annotations,
         &modeling_graph_scope,
     )?;
+    report
+        .losses
+        .extend(formula_transfer.tokenization_losses.iter().cloned());
     design_feature_transfer.assign_parameter_owners(&mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
         ctx,
@@ -3554,19 +3575,24 @@ fn finish_decode(
     if modeling_scope_is_unresolved {
         report
             .losses
-            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note(format!(
+            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note({
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
                 "CATIA outer declarations do not unambiguously select one object graph physically \
              contained by the declared CATPrtCont stream; \
              {retained_unscoped_object_graph_count} retained object graph(s) with \
              {retained_unscoped_object_record_count} field record(s) remain outside the \
              modeling scope, and feature, formula, sketch, constraint, configuration, and \
              history authorship remains unresolved."
-            )));
+            )
+            }));
     }
     if unresolved_object_record_count != 0 {
         report
             .losses
-            .push(CatiaLossCode::HistoryObjectRecordsUnresolved.note(format!(
+            .push(CatiaLossCode::HistoryObjectRecordsUnresolved.note({
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
             "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), \
              {object_record_count} object-graph field record(s), including \
              {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, \
@@ -3696,12 +3722,15 @@ fn finish_decode(
             transferred_formula_design_records.len(),
             transferred_principal_plane_records.len(),
             ir.model.sketches.len(),
-        )));
+        )
+            }));
     }
     if !native.legacy_entity_runs.is_empty() {
         report
             .losses
-            .push(CatiaLossCode::HistoryLegacyRunsUnresolved.note(format!(
+            .push(CatiaLossCode::HistoryLegacyRunsUnresolved.note({
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
             "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} \
              complete compact schema program(s), containing {legacy_schema_identifier_count} \
              complete identifier packet(s), and {legacy_entity_identity_count} source-ordered \
@@ -3732,7 +3761,8 @@ fn finish_decode(
             formula_transfer.legacy_parameter_count,
             formula_transfer.legacy_selector_parameter_count,
             formula_transfer.legacy_formula_count,
-        )));
+        )
+            }));
     }
     if unresolved_dimension_quantity_count != 0 {
         report.losses.push(
@@ -3744,7 +3774,7 @@ fn finish_decode(
         );
     }
     if !native.value_blocks.is_empty() {
-        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note(format!(
+        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note({ source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
                 "CATIA native data retains {} visualization value block(s), {value_field_count} \
                  encoded field(s), and {value_selection_count} schema-selected presentation \
                  value(s); {} display-color packet(s) remain without a proven typed face or body \
@@ -3752,10 +3782,27 @@ fn finish_decode(
                 native.value_blocks.len(),
                 appearance_transfer.unresolved_packets(),
                 appearance_transfer.transferred_packets(),
-            )));
+            ) }));
     }
+    native.display_colors = appearance_transfer.source_colors;
+    native_projection::project(
+        ctx,
+        &mut ir,
+        &native,
+        &mut report.losses,
+        &mut source_untyped,
+    )?;
     native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
-    decode_result(ctx, scan, matched, ir, report, annotations, unknowns)
+    decode_result(
+        ctx,
+        scan,
+        matched,
+        ir,
+        report,
+        annotations,
+        unknowns,
+        source_untyped,
+    )
 }
 
 /// Modeling scope of a part's decoded object graphs.
@@ -3826,7 +3873,25 @@ fn decode_result(
     mut body: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    mut source_untyped: cadmpeg_ir::ArenaClasses,
 ) -> Result<Decoded, CodecError> {
+    ir.scope = if ctx.container_only() {
+        cadmpeg_ir::ContentScope::container()
+    } else {
+        cadmpeg_ir::ContentScope {
+            model: body.transfer.geometry_transferred
+                || ir
+                    .model
+                    .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                    .is_some(),
+            design: body.transfer.geometry_transferred
+                || ir
+                    .model
+                    .populated_arena(cadmpeg_ir::ArenaClass::Design)
+                    .is_some(),
+        }
+    };
+    body.transfer.scope = ir.scope;
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {
@@ -3834,6 +3899,26 @@ fn decode_result(
     }
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
+    if ctx.container_only()
+        && (scan.main_data_stream().is_some() || !scan.outer_container_declarations.is_empty())
+    {
+        source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+        source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+    }
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(scan.data.len()),
+        "retain CATIA source image outside CADIR",
+    )?;
+    source_fidelity.insert_retained_record(
+        cadmpeg_ir::ids::UnknownId::mint("catia:source:image#whole")
+            .map_err(CodecError::malformed)?,
+        cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole(
+            "catia:source",
+            scan.data.to_vec(),
+        )
+        .with_untyped(source_untyped),
+    )?;
+    source_layout::move_layout(&mut ir, &mut source_fidelity)?;
     Ok(Decoded {
         ir,
         body,

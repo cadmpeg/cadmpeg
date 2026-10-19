@@ -16,6 +16,8 @@ use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod layers;
+
 #[derive(Clone, Copy)]
 struct TextFontDefinition {
     supersedes: Option<u32>,
@@ -248,6 +250,7 @@ pub(super) fn project(
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
+    decoded.extend(layers::project(ir, directory, &records, sequences, ctx, &mut losses)?);
     let mut defined = BTreeMap::new();
     let mut text_fonts = BTreeMap::new();
     for entry in directory
@@ -577,21 +580,50 @@ pub(super) fn project(
         }
     }
 
-    for curve in &mut ir.model.curves {
-        if let Some(source) = &mut curve.source_object {
-            source.color = sequences
-                .curve(&curve.id)
-                .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| entry.color.and_then(resolve_color));
-        }
-    }
-    for surface in &mut ir.model.surfaces {
-        if let Some(source) = &mut surface.source_object {
-            source.color = sequences
-                .surface(&surface.id)
-                .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| entry.color.and_then(resolve_color));
-        }
+    let carrier_targets = ir
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| {
+            Some((
+                AppearanceTarget::Curve(curve.id.clone()),
+                sequences.curve(&curve.id)?,
+            ))
+        })
+        .chain(ir.model.surfaces.iter().filter_map(|surface| {
+            Some((
+                AppearanceTarget::Surface(surface.id.clone()),
+                sequences.surface(&surface.id)?,
+            ))
+        }))
+        .chain(ir.model.points.iter().filter_map(|point| {
+            Some((
+                AppearanceTarget::Point(point.id.clone()),
+                sequences.point(&point.id)?,
+            ))
+        }))
+        .collect::<Vec<_>>();
+    for (index, (target, sequence)) in carrier_targets.into_iter().enumerate() {
+        let Some(entry) = entries.get(&sequence) else {
+            continue;
+        };
+        let Some((appearance_id, color)) = entry.color.map(resolve).transpose()?.flatten() else {
+            continue;
+        };
+        appearance(ir, appearance_id.clone(), None, color, ctx)?;
+        ctx.charge_entities(1, "iges_geometry_presentation")?;
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: crate::ids::appearance_binding(
+                &crate::ids::Stem::word_directory(crate::ids::Word::FreeGeometry, sequence)
+                    .slot(index),
+            ),
+            target,
+            appearance: appearance_id,
+            source_entity_id: None,
+            object_type: None,
+            visible: (!entry.status.is_visible()).then_some(false),
+            channels: BTreeMap::new(),
+        });
     }
 
     for index in 0..ir.model.bodies.len() {
@@ -608,7 +640,6 @@ pub(super) fn project(
         };
         let body = &mut ir.model.bodies[index];
         let body_id = body.id.clone();
-        body.color = Some(color);
         body.visible = Some(visible);
         appearance(ir, appearance_id.clone(), None, color, ctx)?;
 
@@ -687,7 +718,6 @@ pub(super) fn project(
         };
         let face = &mut ir.model.faces[index];
         let face_id = face.id.clone();
-        face.color = Some(color);
         appearance(ir, appearance_id.clone(), None, color, ctx)?;
 
         ctx.charge_entities(1, "iges_geometry_presentation")?;

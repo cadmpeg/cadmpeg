@@ -253,7 +253,7 @@ fn pairwise_feature_ordinals<'a>(
                 .flat_map(|property| property.values())
                 .filter_map(|value| value.attributes.get("expression"))
                 .flat_map(|expression| expression_identifiers(expression))
-                .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
+                .filter_map(|(_, identifier)| identifier.split_once('.').map(|(owner, _)| owner))
                 .filter_map(|owner| object_by_name.get(owner))
                 .all(|dependency| {
                     dependency.id() == object.id() || emitted.contains(dependency.id().as_str())
@@ -411,13 +411,15 @@ fn parameter(id: usize, owner: usize, dependencies: &[usize]) -> DesignParameter
         owner: Some(FeatureId::mint(format!("test:test:feature#{owner}")).expect("feature id")),
         ordinal: 0,
         name: format!("P{id}"),
-        expression: String::new(),
+        expression: cadmpeg_ir::features::Expression {
+            tokens: dependencies
+                .iter()
+                .map(|&index| cadmpeg_ir::features::ExpressionToken::Parameter(parameter_id(index)))
+                .collect(),
+        },
         display: None,
         value: None,
-        dependencies: dependencies
-            .iter()
-            .map(|&index| parameter_id(index))
-            .collect(),
+        driving: true,
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -437,8 +439,8 @@ fn pairwise_parameter_order(parameters: &mut Vec<DesignParameter>) -> BTreeSet<F
     while !remaining.is_empty() {
         let Some(index) = remaining.iter().position(|parameter| {
             parameter
-                .dependencies
-                .iter()
+                .expression
+                .dependencies()
                 .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
         }) else {
             cycle_features.extend(

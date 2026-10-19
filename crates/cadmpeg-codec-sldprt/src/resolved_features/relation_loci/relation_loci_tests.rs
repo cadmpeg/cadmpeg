@@ -52,8 +52,8 @@ fn dynamic_relation(
     FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -67,7 +67,7 @@ fn dynamic_relation(
             .into_iter()
             .enumerate()
             .map(|(index, entity_index)| FeatureInputOperand {
-                offset: cadmpeg_core::decode::u64_from_index(index),
+                offset: Some(cadmpeg_core::decode::u64_from_index(index)),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 entity_index,
@@ -79,6 +79,7 @@ fn dynamic_relation(
 
 fn length_parameter(value: f64) -> DesignParameter {
     DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -86,7 +87,6 @@ fn length_parameter(value: f64) -> DesignParameter {
         expression: value.to_string(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -116,6 +116,7 @@ fn point_operand_requires_one_profile_locus() {
 fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -123,7 +124,6 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -217,8 +217,8 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
+        ordinal: 0, sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -237,6 +237,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         }],
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -244,7 +245,6 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

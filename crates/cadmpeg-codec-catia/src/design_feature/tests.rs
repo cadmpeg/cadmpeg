@@ -38,6 +38,7 @@ mod reference_planes;
 
 fn feature(id: &str, native_ref: &str) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -289,16 +290,17 @@ fn malformed_compact_root_does_not_promote_an_operation() {
 
 fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
     cadmpeg_ir::features::DesignParameter {
+        driving: true,
         id: ParameterId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         owner: None,
         ordinal: 99,
         name: id.to_string(),
-        expression: "1 mm".to_string(),
+        expression: ("1 mm".to_string()).into(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(native_ref.to_string()),
@@ -1053,6 +1055,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
 fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1066,7 +1069,7 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Prism_ThickThin1".into(),
-                parameters: BTreeMap::new(),
+                parameters: (BTreeMap::new()).into(),
             }),
         ),
         native_ref: Some("native-feature".to_string()),
@@ -1118,6 +1121,7 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
 fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1389,6 +1393,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
+            driving: true,
             id: cadmpeg_ir::features::ParameterId::mint(
                 "synthetic:test:id#synthetic:parameter".to_string(),
             )
@@ -1399,7 +1404,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
@@ -1708,7 +1713,7 @@ fn native_operation_map_holds_owned_parameter_value_by_name() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Other("Custom".to_string()),
-            parameters: BTreeMap::new(),
+            parameters: (BTreeMap::new()).into(),
         }));
     ir.model.features.push(owner);
     let mut value = parameter("one", "native-parameter");

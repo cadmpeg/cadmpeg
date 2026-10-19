@@ -41,13 +41,19 @@ fn feature_operation_code(
     class: Option<&str>,
     form_padding: Option<usize>,
 ) -> Option<u32> {
-    let name_offset = usize::try_from(name.offset).ok()?;
-    let direct_class = lane
-        .classes
-        .iter()
-        .find(|class| class.offset + 6 + u64_from_index(class.name.len()) == name.offset);
+    let name_offset = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
+    let direct_class = lane.classes.iter().find(|class| {
+        class
+            .offset
+            .and_then(|offset| offset.checked_add(6 + u64_from_index(class.name.len())))
+            == name.offset
+    });
     if let Some(class) = direct_class {
-        let class_offset = usize::try_from(class.offset).ok()?;
+        let class_offset = class
+            .offset
+            .and_then(|offset| usize::try_from(offset).ok())?;
         if lane
             .native_payload
             .get(class_offset.checked_sub(4)?..class_offset)
@@ -266,7 +272,9 @@ pub(super) fn feature_inline_operation_fields(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
 ) -> Option<(u16, u8)> {
-    let name_offset = usize::try_from(name.offset).ok()?;
+    let name_offset = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
     let trailer = name_offset.checked_add(6 + name_bytes)?;
     let bytes = lane.native_payload.get(trailer..trailer + 19)?;
@@ -529,7 +537,9 @@ pub(crate) fn enrich_history_split_lines(
                 .classes
                 .iter()
                 .filter(|class| {
-                    class.name == "moPLineProject_c" && class.offset >= *start && class.offset < end
+                    class.name == "moPLineProject_c"
+                        && class.offset.is_some_and(|position| position >= *start)
+                        && class.offset.is_some_and(|position| position < end)
                 })
                 .count();
             if let Some(observation) = observations.get_mut(&feature.id) {

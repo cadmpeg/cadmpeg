@@ -22,7 +22,12 @@ fn append_design_intent_losses(
     ir: &cadmpeg_ir::document::CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    crate::decode::report::append_design_intent_losses(ir, losses).unwrap();
+    crate::decode::report::append_design_intent_losses(
+        &mut cadmpeg_ir::ArenaClasses::default(),
+        ir,
+        losses,
+    )
+    .unwrap();
 }
 
 fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
@@ -30,6 +35,7 @@ fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: ParameterId::mint("test:model:parameter#incomplete")
             .expect("parameter identity grammar"),
         owner: None,
@@ -38,7 +44,7 @@ fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
         expression: "p2".into(),
         display: None,
         value: None,
-        dependencies: Default::default(),
+
         properties: Default::default(),
         pmi: None,
         native_ref: None,
@@ -108,14 +114,14 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             vec![axis.clone()],
             None,
             LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                length: (cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()).into(),
             },
         ),
         (
             vec![axis],
             Some(HoleKind::Chamfer {
-                diameter: cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap(),
-                angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+                diameter: (cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap()).into(),
+                angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
             }),
             LinearTermination::ThroughAll {},
         ),
@@ -174,21 +180,21 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 
     for kind in [
         HoleKind::Chamfer {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()).into(),
+            angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
         HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
-            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()).into(),
+            depth: (cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()).into(),
         },
         HoleKind::CounterboreDrilled {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()).into(),
+            depth: (cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()).into(),
+            drill_point_angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
         HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()).into(),
+            angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
         HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
@@ -197,8 +203,8 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             )
             .unwrap(),
 
-            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            depth: (cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()).into(),
+            angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
     ] {
         assert!(hole_feature_is_incomplete(
@@ -342,7 +348,7 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         ),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
+        thickness: (Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap())).map(Into::into),
         side: Some(RibSide::Centered),
         draft: RibDraft::None,
     };
@@ -410,8 +416,10 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
         ),
-        spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-        count: 3,
+        distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+            distance: (cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()).into(),
+        },
+        count: 3_u32.into(),
         second: None,
     })
     .unwrap();
@@ -420,8 +428,10 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Linear {
                 direction: None,
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                count: 3,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: (cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()).into()
+                },
+                count: 3_u32.into(),
                 second: None,
             }
         )
@@ -434,8 +444,10 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
                         .unwrap()
                 ),
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                count: 1,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: (cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()).into()
+                },
+                count: 1_u32.into(),
                 second: None,
             }
         )
@@ -445,8 +457,10 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::CurveDriven {
                 path: Some(PathRef::Native("nx:path".into())),
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                count: 3,
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0)
+                    .unwrap()
+                    .into(),
+                count: 3_u32.into(),
             }
         )
         .unwrap()
@@ -457,8 +471,11 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 pattern: Box::new(
                     PatternKind::new(PatternTransform::Linear {
                         direction: None,
-                        spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                        count: 3,
+                        distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                            distance: (cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap())
+                                .into()
+                        },
+                        count: 3_u32.into(),
                         second: None,
                     })
                     .unwrap()
@@ -607,6 +624,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         })
     };
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -637,7 +655,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
@@ -653,7 +671,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         None,
     ));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
@@ -669,7 +687,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         None,
     ));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -782,7 +800,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap(),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap()).into(),
                     },
                     draft: None,
                 },
@@ -801,6 +819,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         Some(true),
     );
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -819,7 +838,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     for incomplete in [
@@ -841,7 +860,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     ] {
         ir.model.features[0].evaluation.set_definition(incomplete);
         losses.clear();
-        append_design_intent_losses(&ir, &mut losses);
+        append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("extrude (1)"));
     }
@@ -851,7 +870,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         outputs.clear();
     });
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("extrude (1)"));
 
@@ -874,7 +893,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         .unwrap(),
     );
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -900,7 +919,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         },
         extent: RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                angle: (cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap()).into(),
             },
         },
         solid: Some(true),
@@ -1016,6 +1035,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
 
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#revolve").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1036,13 +1056,13 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         native_ref: None,
     });
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0].evaluation.edit(|_, outputs| {
         outputs.clear();
     });
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("revolve (1)"));
 }
@@ -1105,6 +1125,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
     };
     let incomplete = |profile, face| {
         hole_feature_is_incomplete(
+            &cadmpeg_ir::CadIr::empty(),
             profile,
             face,
             Some(std::slice::from_ref(&placement)),
@@ -1132,6 +1153,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let sketch_id = SketchId::mint("test:test:sketch#0").unwrap();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#sketch").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1199,7 +1221,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message
@@ -1255,25 +1277,26 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
     ir.model.configurations[0].bodies =
         Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies).unwrap());
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.configurations[0].active = false;
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
     ir.model.configurations[0].active = true;
     let output = ir.model.bodies[0].id.clone();
     let feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#base").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1297,7 +1320,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     };
     ir.model.features.push(feature.clone());
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
@@ -1315,10 +1338,11 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         },
     );
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("test:test:parameter#length").expect("identity grammar"),
         owner: Some(feature.id),
         ordinal: 0,
@@ -1328,14 +1352,14 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
         )),
-        dependencies: Default::default(),
+
         properties: Default::default(),
         pmi: None,
         native_ref: None,
     };
     ir.model.parameters.push(parameter.clone());
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
@@ -1343,10 +1367,11 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         .parameter_values
         .insert(parameter.id, parameter.value.expect("evaluated parameter"));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     let suppressed = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#suppressed").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -1370,7 +1395,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     };
     ir.model.features.push(suppressed.clone());
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains("1 NX design configuration")));
@@ -1384,7 +1409,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         },
     );
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -1400,6 +1425,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#block").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1412,11 +1438,12 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Block {
-                dimensions: Some([
+                dimensions: (Some([
                     cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-                ]),
+                ]))
+                .map(|values| values.map(Into::into)),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             }),
@@ -1425,7 +1452,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
@@ -1434,7 +1461,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone()]).unwrap(),
     );
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
@@ -1443,13 +1470,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             .is_err()
     );
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
     ir.model.features[0].suppressed = Some(true);
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0]
@@ -1465,7 +1492,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             max_degree: None,
             allow_multi_profile_faces: None,
         }));
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
@@ -1483,11 +1510,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+            angle: (Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap())).map(Into::into),
             outward: Some(false),
         }));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("draft (1)"));
 
@@ -1507,7 +1534,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle,
+            angle: (angle).map(Into::into),
             outward,
         })
     };
@@ -1530,7 +1557,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     ] {
         ir.model.features[0].evaluation.set_definition(incomplete);
         losses.clear();
-        append_design_intent_losses(&ir, &mut losses);
+        append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("draft (1)"));
     }
@@ -1540,11 +1567,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::DatumOffsetPlane {
                 reference: None,
-                distance: Length::new(5.0).unwrap(),
+                distance: (Length::new(5.0).unwrap()).into(),
             },
         ));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
@@ -1556,16 +1583,17 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
                     feature: datum.clone(),
                 }),
-                distance: Length::new(5.0).unwrap(),
+                distance: (Length::new(5.0).unwrap()).into(),
             },
         ));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
     ir.model.features[0].ordinal = 1;
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: datum.clone(),
         ordinal: 0,
         name: None,
@@ -1584,13 +1612,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         native_ref: None,
     });
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
     ir.model.features[0].dependencies.insert(datum);
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0].suppressed = Some(false);
@@ -1607,10 +1635,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             ))
             .try_into()
             .unwrap(),
-            gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
+            gap_tolerance: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()))
+                .map(Into::into),
         }));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("sew bodies (1)"));
 
@@ -1624,10 +1653,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             .unwrap())
             .try_into()
             .unwrap(),
-            gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
+            gap_tolerance: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()))
+                .map(Into::into),
         }));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("sew bodies (1)"));
 
@@ -1652,7 +1682,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             keep_tools: false,
         }));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("body combine (1)"));
 
@@ -1664,7 +1694,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             },
         ));
     losses.clear();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("base feature (1)"));
 
@@ -1734,6 +1764,7 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#initial-bodies").expect("identity grammar"),
         ordinal: 0,
         name: Some("Retained history input".into()),
@@ -1756,7 +1787,7 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
 
     assert!(losses.is_empty());
 }
@@ -1771,6 +1802,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#snapshot").expect("identity grammar"),
         ordinal: 0,
         name: Some("MASTER SNAPSHOT BODY".into()),
@@ -1793,7 +1825,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
 
     assert!(losses.is_empty());
 }
@@ -1812,6 +1844,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     let second = second_body.id.clone();
     ir.model.bodies.push(second_body);
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#sew").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1838,7 +1871,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
     assert!(losses.is_empty());
 }
 

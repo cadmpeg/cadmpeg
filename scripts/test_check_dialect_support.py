@@ -430,6 +430,28 @@ class TestReasons(SupportCase):
 
 
 class TestFormatBlocks(SupportCase):
+    def test_optional_content_contract_arrays(self):
+        extra = 'delivered_scope = ["model", "design"]\nwrite_paths = ["synthesized", "patched"]\ndropped_arenas = ["features"]\nomitted_arenas = []\n'
+        self.assertClean(GOOD_SUPPORT.replace('[format.demo]\n', '[format.demo]\n' + extra))
+
+    def test_content_contract_rejects_unknown_scope_and_path(self):
+        for key, value in [("delivered_scope", "full"), ("write_paths", "patch")]:
+            with self.subTest(key=key):
+                support = GOOD_SUPPORT.replace('[format.demo]\n', f'[format.demo]\n{key} = ["{value}"]\n')
+                self.assertFires(support, "outside the closed vocabulary")
+
+    def test_contract_arrays_reject_non_arrays_duplicates_and_non_strings(self):
+        for key in ["delivered_scope", "write_paths", "dropped_arenas", "omitted_arenas"]:
+            for value, message in [('"model"', "must be an array"), ('[false]', "must be a non-empty string"), ('["model", "model"]', "has duplicate")]:
+                with self.subTest(key=key, value=value):
+                    support = GOOD_SUPPORT.replace('[format.demo]\n', f'[format.demo]\n{key} = {value}\n')
+                    self.assertFires(support, message)
+
+    def test_an_arena_cannot_be_both_dropped_and_omitted(self):
+        support = GOOD_SUPPORT.replace('[format.demo]\n', '[format.demo]\ndropped_arenas = ["features"]\nomitted_arenas = ["features"]\n')
+        self.assertFires(support, "arena features is both dropped and omitted")
+
+
     def test_missing_format_table(self):
         self.assertFires(GOOD_SUPPORT.replace("[format.demo]", "[other.demo]"), "format: must be a table")
 

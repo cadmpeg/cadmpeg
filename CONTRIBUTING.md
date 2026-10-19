@@ -124,3 +124,7 @@ Rust code follows `rustfmt` defaults and must pass `clippy` with warnings denied
 ## Conduct
 
 Be respectful. Settle format interpretation disputes with evidence from the bytes. Harassment or abuse is not tolerated.
+
+## Document and writer contracts
+
+Read [the document contract](docs/document-contract.md) before changing decode or export behavior. `scope` and `unrepresented` are contracts. Adding or changing arena classes requires a wire bump. A writer refusal needs a D5 class in its doc comment: C (inconsistent input), O-capacity (format capacity), or O-target (unresolvable target). Patch limitations select synthesis; unsupported content is reduced or dropped with loss.

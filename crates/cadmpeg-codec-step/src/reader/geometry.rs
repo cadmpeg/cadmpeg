@@ -52,15 +52,61 @@ macro_rules! geometry_or_none {
     };
 }
 
-fn attach_geometry_source(
-    source: &mut Option<SourceObjectAssociation>,
+trait NamedCarrier {
+    fn name_target(&self) -> cadmpeg_ir::attributes::AttributeTarget;
+    fn association_mut(&mut self) -> &mut Option<SourceObjectAssociation>;
+}
+
+macro_rules! named_carrier {
+    ($record:ty, $target:ident) => {
+        impl NamedCarrier for $record {
+            fn name_target(&self) -> cadmpeg_ir::attributes::AttributeTarget {
+                cadmpeg_ir::attributes::AttributeTarget::$target(self.id.clone())
+            }
+            fn association_mut(&mut self) -> &mut Option<SourceObjectAssociation> {
+                &mut self.source_object
+            }
+        }
+    };
+}
+named_carrier!(Curve, Curve);
+named_carrier!(Surface, Surface);
+named_carrier!(Point, Point);
+
+fn attach_geometry_source<T: NamedCarrier>(
+    carrier: &mut T,
     id: u64,
     name: Option<&str>,
+    attributes: &mut Vec<cadmpeg_ir::attributes::SourceAttribute>,
 ) {
+    let target = carrier.name_target();
+    let source = carrier.association_mut();
     if source.is_none() {
-        let name = name.map(std::string::ToString::to_string);
-        *source = Some(super::step_source_association(id, name));
+        *source = Some(super::step_source_association(id));
+        retain_geometry_name(attributes, target, id, name);
     }
+}
+
+fn retain_geometry_name(
+    attributes: &mut Vec<cadmpeg_ir::attributes::SourceAttribute>,
+    target: cadmpeg_ir::attributes::AttributeTarget,
+    source: u64,
+    name: Option<&str>,
+) {
+    let Some(name) = name.filter(|name| !name.is_empty()) else {
+        return;
+    };
+    attributes.push(cadmpeg_ir::attributes::SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::from(ids::data(
+            kind!("geometry-name"),
+            IdentityKey::from(source).dash(attributes.len()),
+        )),
+        target,
+        name: "name".to_owned(),
+        values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+            name.to_owned(),
+        )],
+    });
 }
 
 pub(super) struct GeometryData {
@@ -637,10 +683,19 @@ pub(super) fn decode(
             continue;
         };
         let source_name = apll_point_names.remove(&id);
+        retain_geometry_name(
+            &mut ir.model.attributes,
+            cadmpeg_ir::attributes::AttributeTarget::Point(PointId::from(ids::data(
+                kind!("point"),
+                id,
+            ))),
+            id,
+            source_name.as_ref().and_then(|name| name.as_deref()),
+        );
         ir.model.points.push(Point::new(
             PointId::from(ids::data(kind!("point"), id)),
             position,
-            source_name.map(|name| super::step_source_association(id, name)),
+            source_name.map(|_| super::step_source_association(id)),
         ));
     }
     for (id, record) in exchange.entities("VECTOR") {
@@ -2337,12 +2392,18 @@ fn decode_tessellated_curve_sets(
             .ok() else {
                 continue;
             };
-            let source_name = source_name.clone();
+            let curve_id = CurveId::from(ids::data(kind!("curve"), curve_key));
+            retain_geometry_name(
+                &mut ir.model.attributes,
+                cadmpeg_ir::attributes::AttributeTarget::Curve(curve_id.clone()),
+                id,
+                source_name.as_deref(),
+            );
             ir.model.curves.push(Curve {
                 parameter_range: None,
-                id: CurveId::from(ids::data(kind!("curve"), curve_key)),
+                id: curve_id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
-                source_object: Some(super::step_source_association(id, source_name)),
+                source_object: Some(super::step_source_association(id)),
             });
         }
         for source_id in [id, coordinates_id] {
@@ -2437,9 +2498,10 @@ pub(super) fn associate_free_geometric_set_members(
                     continue;
                 }
                 attach_geometry_source(
-                    &mut ir.model.curves[index.0].source_object,
+                    &mut ir.model.curves[index.0],
                     member,
                     name.as_deref(),
+                    &mut ir.model.attributes,
                 );
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
@@ -2447,9 +2509,10 @@ pub(super) fn associate_free_geometric_set_members(
                     continue;
                 }
                 attach_geometry_source(
-                    &mut ir.model.points[index.0].source_object,
+                    &mut ir.model.points[index.0],
                     member,
                     name.as_deref(),
+                    &mut ir.model.attributes,
                 );
             }
             if let Some(index) = index.surfaces.get(&member) {
@@ -2457,9 +2520,10 @@ pub(super) fn associate_free_geometric_set_members(
                     continue;
                 }
                 attach_geometry_source(
-                    &mut ir.model.surfaces[index.0].source_object,
+                    &mut ir.model.surfaces[index.0],
                     member,
                     name.as_deref(),
+                    &mut ir.model.attributes,
                 );
             }
         }
@@ -2506,27 +2570,30 @@ pub(super) fn associate_free_representation_members(
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
                     attach_geometry_source(
-                        &mut ir.model.curves[index.0].source_object,
+                        &mut ir.model.curves[index.0],
                         member,
                         source_name.as_deref(),
+                        &mut ir.model.attributes,
                     );
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
                     attach_geometry_source(
-                        &mut ir.model.points[index.0].source_object,
+                        &mut ir.model.points[index.0],
                         member,
                         source_name.as_deref(),
+                        &mut ir.model.attributes,
                     );
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
                     attach_geometry_source(
-                        &mut ir.model.surfaces[index.0].source_object,
+                        &mut ir.model.surfaces[index.0],
                         member,
                         source_name.as_deref(),
+                        &mut ir.model.attributes,
                     );
                 }
             }
@@ -2601,27 +2668,30 @@ fn associate_presentation_carrier(
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
             attach_geometry_source(
-                &mut ir.model.curves[index.0].source_object,
+                &mut ir.model.curves[index.0],
                 source_id,
                 name.as_deref(),
+                &mut ir.model.attributes,
             );
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
             attach_geometry_source(
-                &mut ir.model.points[index.0].source_object,
+                &mut ir.model.points[index.0],
                 source_id,
                 name.as_deref(),
+                &mut ir.model.attributes,
             );
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
             attach_geometry_source(
-                &mut ir.model.surfaces[index.0].source_object,
+                &mut ir.model.surfaces[index.0],
                 source_id,
                 name.as_deref(),
+                &mut ir.model.attributes,
             );
         }
     }
@@ -2955,8 +3025,7 @@ pub(super) fn associate_topology_carriers(
             continue;
         }
         if ir.model.curves[index.0].source_object.is_none() {
-            ir.model.curves[index.0].source_object =
-                Some(super::step_source_association(edge_id, None));
+            ir.model.curves[index.0].source_object = Some(super::step_source_association(edge_id));
         }
     }
     for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
@@ -2971,7 +3040,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.model.surfaces[index.0].source_object.is_none() {
             ir.model.surfaces[index.0].source_object =
-                Some(super::step_source_association(face_id, None));
+                Some(super::step_source_association(face_id));
         }
     }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
@@ -2986,7 +3055,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.model.points[index.0].source_object.is_none() {
             ir.model.points[index.0].source_object =
-                Some(super::step_source_association(vertex_id, None));
+                Some(super::step_source_association(vertex_id));
         }
     }
 }
@@ -3009,7 +3078,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.model.curves[parent_index.0].source_object.is_none() {
             ir.model.curves[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(replica_id));
         }
     }
     for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
@@ -3023,7 +3092,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.model.surfaces[parent_index.0].source_object.is_none() {
             ir.model.surfaces[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(replica_id));
         }
     }
 }
@@ -3079,7 +3148,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         };
         if ir.model.surfaces[surface_index.0].source_object.is_none() {
             ir.model.surfaces[surface_index.0].source_object =
-                Some(super::step_source_association(pcurve_id, None));
+                Some(super::step_source_association(pcurve_id));
         }
     }
 }
@@ -3113,7 +3182,7 @@ pub(super) fn associate_surface_curve_supports(
         {
             if ir.model.curves[curve_index.0].source_object.is_none() {
                 ir.model.curves[curve_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(surface_curve_id));
             }
         }
         for surface_id in surface_curve_supports(record, exchange, index) {
@@ -3122,7 +3191,7 @@ pub(super) fn associate_surface_curve_supports(
             };
             if ir.model.surfaces[surface_index.0].source_object.is_none() {
                 ir.model.surfaces[surface_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(surface_curve_id));
             }
         }
     }

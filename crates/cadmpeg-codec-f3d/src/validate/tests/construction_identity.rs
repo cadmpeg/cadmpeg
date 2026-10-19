@@ -38,7 +38,7 @@ fn native(valid: bool) -> crate::native::F3dNative {
             id: "f3d:Design/BulkStream.dat:design-record-header#102".into(),
             record_index: 102,
             class_tag: DesignClassTag::try_from("395".to_owned()).unwrap(),
-            byte_offset: 1_124,
+            byte_offset: Some(1_124),
         });
     }
     native.design_construction_operand_identities.push(

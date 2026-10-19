@@ -148,7 +148,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         }) if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle }
-                }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
+                }) if (result.ir().dimension_value(&angle).expect("resolved dimension").get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
     assert!(matches!(
         definition("Fillet"),
@@ -159,7 +159,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
             edges: cadmpeg_ir::features::EdgeSelection::All,
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant { radius: actual_radius },
             tangency_weight: None,
-        }] if actual_radius.get() == 2.0)
+        }] if result.ir().dimension_value(&actual_radius).expect("resolved dimension").get() == 2.0)
     ));
     assert!(matches!(
         definition("Chamfer"),
@@ -168,7 +168,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
             flip_direction: true,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::DistanceAngle { distance: actual_distance, angle }, ..
-        }] if ((angle.get() - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12) && actual_distance.get() == 1.5)
+        }] if ((result.ir().dimension_value(&angle).expect("resolved dimension").get() - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12) && result.ir().dimension_value(&actual_distance).expect("resolved dimension").get() == 1.5)
     ));
     assert!(matches!(
         definition("LegacyChamfer"),
@@ -178,7 +178,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
                     distance: actual_distance
                 },
                 ..
-            }] if actual_distance.get() == 0.75)
+            }] if result.ir().dimension_value(&actual_distance).expect("resolved dimension").get() == 0.75)
     ));
     assert!(matches!(
         definition("Profileless"),
@@ -311,14 +311,14 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
                     definition(&result, "Chamfer"),
                     FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Chamfer"
                 ));
-                assert_eq!(result.report().losses.len(), 2);
+                crate::design::tests::assert_native_retention(&result, 2);
             } else {
                 assert_fillet(definition(&result, "Fillet"), true);
                 assert!(matches!(
                     definition(&result, "Chamfer"),
                     FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Chamfer"
                 ));
-                assert_eq!(result.report().losses.len(), 1);
+                crate::design::tests::assert_native_retention(&result, 1);
             }
             assert_valid_document(result.ir());
         }
@@ -446,12 +446,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
             extrusion_definition(result),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Extrusion"
         ));
-        assert_eq!(result.report().losses.len(), 1);
-        assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-        }));
+        crate::design::tests::assert_native_retention(result, 1);
     };
 
     for target in ["Solid", "Reversed", "Symmetric"] {
@@ -621,12 +616,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         assert!(
             matches!(definition(result, name), FeatureDefinition::Operation(FeatureOperation::Native { kind: value, .. }) if value.as_str() == kind)
         );
-        assert_eq!(result.report().losses.len(), 1);
-        assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-        }));
+        crate::design::tests::assert_native_retention(result, 1);
     };
 
     for (name, target) in [
@@ -892,8 +882,8 @@ fn transfers_non_default_revolution_branches() {
         definition("TwoAngles"),
         FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. })
             if matches!(construction.extent(), Some(RevolveExtent::TwoSided { first: AngularTermination::Angle { angle: first }, second: AngularTermination::Angle { angle: second } })
-                if (first.get() - 120_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES
-                    && (second.get() - 30_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES)
+                if (result.ir().dimension_value(&first).expect("resolved dimension").get() - 120_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES
+                    && (result.ir().dimension_value(&second).expect("resolved dimension").get() - 30_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES)
     ));
     assert!(matches!(
         definition("Midplane"),
@@ -976,24 +966,24 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     assert!(matches!(
         feature("Box"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::NewBody }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box {
+            solid, op: cadmpeg_ir::features::BooleanOp::NewBody , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box {
                 length: actual_length,
                 width: actual_width,
                 height: actual_height,
-            } if actual_length.get() == 10.0 && actual_width.get() == 20.0 && actual_height.get() == 30.0)
+            } if result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 10.0 && result.ir().dimension_value(&actual_width).expect("resolved dimension").get() == 20.0 && result.ir().dimension_value(&actual_height).expect("resolved dimension").get() == 30.0)
     ));
     assert!(matches!(
         feature("AddCylinder"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
+            solid, op: cadmpeg_ir::features::BooleanOp::Join , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
                 angle,
                 ..
-            } if (angle.get() - std::f64::consts::PI).abs() < 1.0e-12)
+            } if (result.ir().dimension_value(&angle).expect("resolved dimension").get() - std::f64::consts::PI).abs() < 1.0e-12)
     ));
     assert!(matches!(
         feature("CutCone"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
+            solid, op: cadmpeg_ir::features::BooleanOp::Cut , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
     assert!(result.report().losses.is_empty());
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
@@ -1085,16 +1075,15 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Helix {
             radius: actual_radius,
             shape: cadmpeg_ir::features::HelixShape::Conical {
-                pitch,
+                law,
                 cone_angle: angle,
             },
-            revolutions,
             clockwise: true,
             segment_turns: Some(segment_turns),
             construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Corrected),
             ..
-        }) if segment_turns.get() == 0.5 && revolutions.get() == 5.0 && ((pitch.get() - 4.0).abs() < EPS_SCALAR_ROUND_TRIP
-            && (angle.get() - 12_f64.to_radians()).abs() < 1.0e-12) && actual_radius.get() == 3.0
+        }) if result.ir().dimension_value(&segment_turns).expect("resolved dimension").get() == 0.5 && law.resolved_revolutions(result.ir()).unwrap().get() == 5.0 && ((law.resolved_pitch(result.ir()).unwrap().get() - 4.0).abs() < EPS_SCALAR_ROUND_TRIP
+            && (result.ir().dimension_value(&angle).expect("resolved dimension").get() - 12_f64.to_radians()).abs() < 1.0e-12) && result.ir().dimension_value(&actual_radius).expect("resolved dimension").get() == 3.0
     ));
     assert!(matches!(
         definition("Spiral"),
@@ -1102,12 +1091,12 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
             radius: actual_radius,
             shape: cadmpeg_ir::features::HelixShape::Spiral {
                 radial_growth: actual_radial_growth,
+                revolutions,
             },
-            revolutions,
             segment_turns: Some(segment_turns),
             construction_style: None,
             ..
-        }) if segment_turns.get() == 0.25 && revolutions.get() == 3.5 && actual_radius.get() == 5.0 && actual_radial_growth.get() == 2.0
+        }) if result.ir().dimension_value(&segment_turns).expect("resolved dimension").get() == 0.25 && result.ir().dimension_value(revolutions).unwrap().get() == 3.5 && result.ir().dimension_value(&actual_radius).expect("resolved dimension").get() == 5.0 && result.ir().dimension_value(&actual_radial_growth).expect("resolved dimension").get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1176,7 +1165,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     }) if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
         && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         && construction.left_handed && construction.reversed
-        && construction.turns.get() == 2.5 && construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.25)
+        && result.ir().dimension_value(&construction.turns).expect("resolved dimension").get() == 2.5 && construction.tolerance.as_ref().map(|value| result.ir().dimension_value(value).unwrap().get()) == Some(0.25)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(
@@ -1184,9 +1173,9 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         construction,
         op: cadmpeg_ir::features::BooleanOp::Intersect,
     }) if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
-        && construction.pitch.get() == 0.0 && construction.travel.radial_growth().get() == 2.0
+        && result.ir().dimension_value(&construction.pitch).expect("resolved dimension").get() == 0.0 && result.ir().dimension_value(&construction.travel.radial_growth()).expect("resolved dimension").get() == 2.0
         && *construction.axis_direction.as_raw() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-        && construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.1)
+        && construction.tolerance.as_ref().map(|value| result.ir().dimension_value(value).unwrap().get()) == Some(0.1)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(result.report().losses.is_empty());
@@ -1431,12 +1420,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
             matches!(actual, FeatureDefinition::Operation(FeatureOperation::Native { kind: value, .. }) if value.as_str() == kind),
             "{name} expected native {kind}, got {actual:?}"
         );
-        assert_eq!(result.report().losses.len(), 1);
-        assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-        }));
+        crate::design::tests::assert_native_retention(result, 1);
     };
 
     for (object, name) in [
@@ -1481,7 +1465,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
                 FeatureDefinition::Operation(FeatureOperation::Helix {
                     segment_turns: Some(value),
                     ..
-                }) if value.get() == 1.0
+                }) if result.ir().dimension_value(&value).expect("resolved dimension").get() == 1.0
             )),
             ("AdditiveHelix", "Mode") => assert!(matches!(
                 definition(&result, object),
@@ -1510,7 +1494,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
             ("AdditiveHelix", "Tolerance") => assert!(matches!(
                 definition(&result, object),
                 FeatureDefinition::Operation(FeatureOperation::HelicalSweep { construction, .. })
-                    if construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.1)
+                    if construction.tolerance.as_ref().map(|value| result.ir().dimension_value(value).unwrap().get()) == Some(0.1)
             )),
             ("AdditiveHelix", "AllowMultiFace") => assert!(matches!(
                 definition(&result, object),
@@ -1685,13 +1669,13 @@ fn transfers_remaining_partdesign_analytic_primitives() {
             .definition()
     };
     assert!(
-        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.get() == 5.0 && y_radius.get() == 5.0 && z_radius.get() == 3.0))
+        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.resolved_radius(result.ir()).expect("resolved radial control").get() == 5.0 && y_radius.resolved_radius(result.ir()).expect("resolved radial control").get() == 5.0 && z_radius.resolved_radius(result.ir()).expect("resolved radial control").get() == 3.0))
     );
     assert!(
-        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Prism { sides: 7, circumradius, height } if circumradius.get() == 4.0 && height.get() == 9.0))
+        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Cut , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Prism { sides, circumradius, height } if result.ir().dimension_value(sides) == Some(7) && circumradius.resolved_radius(result.ir()).expect("resolved radial control").get() == 4.0 && result.ir().dimension_value(&height).expect("resolved dimension").get() == 9.0))
     );
     assert!(
-        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if xmin.get() == -2.0 && ymax.get() == 6.0))
+        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if result.ir().dimension_value(&xmin).expect("resolved dimension").get() == -2.0 && result.ir().dimension_value(&ymax).expect("resolved dimension").get() == 6.0))
     );
     assert!(result.report().losses.is_empty());
 }

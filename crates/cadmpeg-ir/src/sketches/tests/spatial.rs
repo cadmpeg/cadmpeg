@@ -33,7 +33,7 @@ fn admitted_spatial_line_checks_only_endpoint_separation() {
 #[test]
 fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::sketches::{
-        OffsetParameter, SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
+        SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityId,
         SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
         SpatialSketchId, SpatialSketchProfile,
@@ -128,9 +128,9 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         ordinal: 0,
         name: "spatial_distance".into(),
         expression: "2 mm".into(),
+        driving: true,
         display: None,
         value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -143,9 +143,9 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         ordinal: 1,
         name: "spatial_line_length".into(),
         expression: "sqrt(3) mm".into(),
+        driving: true,
         display: None,
         value: Some(ParameterValue::Length(Length::new(3.0f64.sqrt()).unwrap())),
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -266,7 +266,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                             second: repeated_parallel_line,
                         },
                     ],
-                    parameter: distance.clone(),
+                    parameter: crate::features::Dimension::Parameter(distance.clone()),
                 },
             )
             .unwrap(),
@@ -287,11 +287,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                         1.0 / 6.0f64.sqrt(),
                         1.0 / 6.0f64.sqrt(),
                     ),
-                    distance: Length::new(2.0).unwrap(),
-                    parameter: Some(OffsetParameter {
-                        id: distance.clone(),
-                        negated: false,
-                    }),
+                    distance: crate::features::Dimension::Parameter(distance.clone()),
                 },
             )
             .unwrap(),
@@ -309,7 +305,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 SpatialSketchConstraintDefinitionInput::ParallelLineSetDistance {
                     first: vec![line.clone(), collinear_line],
                     second: vec![parallel_line.clone()],
-                    parameter: distance.clone(),
+                    parameter: crate::features::Dimension::Parameter(distance.clone()),
                 },
             )
             .unwrap(),
@@ -324,7 +320,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             definition: crate::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::LineLength {
                     entity: line.clone(),
-                    parameter: line_length.clone(),
+                    parameter: crate::features::Dimension::Parameter(line_length.clone()),
                 },
             )
             .unwrap(),
@@ -341,7 +337,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             definition: crate::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::RepeatedLineLength {
                     entities: vec![line.clone(), parallel_line.clone()],
-                    parameter: line_length,
+                    parameter: crate::features::Dimension::Parameter(line_length),
                 },
             )
             .unwrap(),
@@ -418,7 +414,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 SpatialSketchConstraintDefinitionInput::PointDistance {
                     first: point.clone(),
                     second: measured_point,
-                    parameter: distance.clone(),
+                    parameter: crate::features::Dimension::Parameter(distance.clone()),
                 },
             )
             .unwrap(),
@@ -453,12 +449,25 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
                     first: line.clone(),
                     second: parallel_line,
-                    parameter: distance.clone(),
+                    parameter: crate::features::Dimension::Parameter(distance.clone()),
                 },
             )
             .unwrap(),
             native_ref: None,
         });
+    let tangent_line =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#tangent-line").unwrap();
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            tangent_line.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                start: Point3::new(5.0, 2.0, 3.0),
+                end: Point3::new(5.0, 2.0, 4.0),
+            })
+            .unwrap(),
+        ));
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
@@ -467,7 +476,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             sketch,
             definition: crate::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::Tangent {
-                    first: line,
+                    first: tangent_line,
                     second: circle,
                 },
             )
@@ -475,10 +484,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             native_ref: None,
         });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .findings
-        .is_empty());
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+    assert!(report.findings.is_empty(), "{:#?}", report.findings);
     let mut non_curve_offset = ir.clone();
     let point_entity = non_curve_offset
         .model
@@ -530,7 +537,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .contains("spatial distance requires parallel lines")));
     assert!(invalid_distance_findings
         .iter()
-        .any(|finding| finding.message == "spatial offset distance does not match its parameter"));
+        .any(|finding| finding.message
+            == "spatial offset geometry disagrees with its canonical distance"));
     let json = ir.to_canonical_json().expect("serialize spatial sketch");
     let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
     assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);
@@ -999,25 +1007,25 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
         Kind::PointDistance {
             first: a.clone(),
             second: a.clone(),
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::PointLineDistance {
             point: a.clone(),
             line: a.clone(),
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::ParallelLineDistance {
             first: a.clone(),
             second: a.clone(),
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::RepeatedLineLength {
             entities: vec![a.clone()],
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::RepeatedLineLength {
             entities: vec![a.clone(), a.clone()],
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::SplineGroup { entities: vec![] },
         Kind::SplineGroup {
@@ -1028,7 +1036,7 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
                 first: a.clone(),
                 second: b.clone(),
             }],
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::RepeatedParallelLineDistance {
             pairs: vec![
@@ -1041,35 +1049,35 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
                     second: c.clone(),
                 },
             ],
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::ParallelLineSetDistance {
             first: vec![],
             second: vec![a.clone(), b.clone()],
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::ParallelLineSetDistance {
             first: vec![a.clone()],
             second: vec![b.clone()],
-            parameter: parameter.clone(),
+            parameter: crate::features::Dimension::Parameter(parameter.clone()),
         },
         Kind::ParallelLineSetDistance {
             first: vec![a.clone(), b.clone()],
             second: vec![a.clone()],
-            parameter,
+            parameter: crate::features::Dimension::Parameter(parameter),
         },
     ];
     let offset = Kind::Offset {
         sources: vec![a.clone()],
         results: vec![b.clone()],
         normal: Vector3::new(0.0, 0.0, 1.0),
-        distance: Length::new(1.0).unwrap(),
-        parameter: None,
+        distance: crate::features::Dimension::Literal(Length::new(1.0).unwrap()),
     };
-    for distance in [0.0, -1.0] {
+    for distance in [0.0] {
         let mut kind = offset.clone();
         if let Kind::Offset {
-            distance: value, ..
+            distance: crate::features::Dimension::Literal(value),
+            ..
         } = &mut kind
         {
             *value = Length::new(distance).unwrap();

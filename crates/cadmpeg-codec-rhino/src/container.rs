@@ -171,6 +171,8 @@ pub(crate) struct OpaqueRecord {
 /// Losses and opaque records from one native-arena install pass.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NativeInstall {
+    /// Physical positions of typed source records, retained outside CADIR.
+    pub(crate) source_layout: BTreeMap<String, String>,
     /// Losses from records that could not be transferred.
     pub(crate) losses: Vec<LossNote>,
     /// Complete records whose registered class payload was not admitted.
@@ -1531,8 +1533,87 @@ fn chunked_source_attributes(
     Ok(())
 }
 
+/// Source layout is kept beside retained records, outside document content.
+pub(crate) fn move_source_metadata(ir: &mut CadIr, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+    if let Some(source) = &mut ir.source {
+        for (key, value) in std::mem::take(&mut source.attributes) {
+            fidelity
+                .metadata
+                .insert(format!("rhino.source.{key}"), value);
+        }
+    }
+}
+
+pub(crate) fn source_layout(scan: &Scan<'_>) -> Result<BTreeMap<String, String>, CodecError> {
+    let mut unit_metadata = BTreeMap::new();
+    if let Some(units) = &scan.metadata.settings.units {
+        unit_metadata.insert(
+            "rhino.source.unit_code".to_owned(),
+            units.unit.value().to_string(),
+        );
+        if let Some(scale) = units.millimeters_per_unit() {
+            unit_metadata.insert(
+                "rhino.source.millimeters_per_unit".to_owned(),
+                scale.to_string(),
+            );
+        }
+        if let crate::settings::UnitSystem::Custom(custom) = &units.unit {
+            unit_metadata.insert(
+                "rhino.source.custom_unit_name".to_owned(),
+                custom.name().to_owned(),
+            );
+            unit_metadata.insert(
+                "rhino.source.meters_per_unit".to_owned(),
+                custom.meters_per_unit().get().to_string(),
+            );
+        }
+    }
+    let tables = scan
+        .tables
+        .iter()
+        .map(|table| {
+            (
+                table.typecode,
+                table
+                    .records
+                    .iter()
+                    .map(|record| (record.typecode, record.range.start, record.range.end))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let objects = scan
+        .objects
+        .iter()
+        .map(|object| object.range())
+        .collect::<Vec<_>>();
+    let history = scan
+        .history
+        .iter()
+        .map(|record| record.source_range.clone())
+        .collect::<Vec<_>>();
+    unit_metadata.extend(BTreeMap::from([
+        (
+            "rhino.table_layout".to_owned(),
+            serde_json::to_string(&tables).map_err(CodecError::malformed)?,
+        ),
+        (
+            "rhino.object_layout".to_owned(),
+            serde_json::to_string(&objects).map_err(CodecError::malformed)?,
+        ),
+        (
+            "rhino.history_layout".to_owned(),
+            serde_json::to_string(&history).map_err(CodecError::malformed)?,
+        ),
+    ]));
+    Ok(unit_metadata)
+}
+
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(scan: &Scan<'_>) -> Result<Decoded, CodecError> {
+pub(crate) fn container_only_result(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+) -> Result<Decoded, CodecError> {
     let mut notes = Vec::new();
     push_container_note(
         &mut notes,
@@ -1563,17 +1644,45 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Result<Decoded, CodecErr
     if let Some(loss) = crate::dialect::admission_loss(&primary) {
         losses.push(loss);
     }
-    let ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan))?);
+    let mut ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan))?);
+    ir.scope = cadmpeg_ir::ContentScope::container();
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut untyped = cadmpeg_ir::ArenaClasses::new();
+    if !scan.objects.is_empty() || !scan.opaque_records.is_empty() {
+        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+    }
+    if !scan.history.is_empty() {
+        untyped.insert(cadmpeg_ir::ArenaClass::Design);
+    }
+    if !untyped.is_empty() {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(scan.data.len()),
+            "rhino_container_source",
+        )?;
+        source_fidelity.insert_retained_record(
+            cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "file", "source-image"),
+                cadmpeg_ir::identity_key!("0"),
+            ),
+            cadmpeg_ir::RetainedSourceRecord::whole("rhino", scan.data.to_vec())
+                .with_untyped(untyped),
+        )?;
+    }
+    move_source_metadata(&mut ir, &mut source_fidelity);
+    source_fidelity.metadata.extend(source_layout(scan)?);
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: cadmpeg_ir::ContentScope::container(),
+                geometry_transferred: false,
+            },
             coverage: cadmpeg_ir::report::decode::Coverage::default(),
             losses,
             notes,
             transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity,
     })
 }
 
@@ -1617,7 +1726,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
     let scan = scan(ctx, data)?;
     if ctx.container_only() && scan.archive.is_chunked() {
-        return container_only_result(&scan);
+        return container_only_result(ctx, &scan);
     }
     crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }

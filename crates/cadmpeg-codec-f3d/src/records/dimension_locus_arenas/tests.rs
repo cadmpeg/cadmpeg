@@ -3,18 +3,14 @@ use crate::native::F3dNative;
 use crate::records::dimensions::DesignDimensionLocusPair;
 
 fn pair(null_first: bool) -> DesignDimensionLocusPair {
-    let shared = r#""id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80"#;
+    let shared = r#""id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"class_tag":"274","record_index":3"#;
     let (opaque, first) = if null_first {
         ("", 0)
     } else {
-        (r#","opaque_index":4,"opaque_index_offset":45"#, 40)
+        (r#","opaque_index":4"#, 40)
     };
-    let first_offset = if null_first { 35 } else { 50 };
-    let first_role_offset = first_offset + 10;
-    let second_offset = first_offset + 15;
-    let second_role_offset = second_offset + 10;
     let wire = format!(
-        r#"{{{shared}{opaque},"first_geometry_record_index":{first},"first_geometry_reference_offset":{first_offset},"first_role":0,"first_role_offset":{first_role_offset},"second_geometry_record_index":41,"second_geometry_reference_offset":{second_offset},"second_role":1,"second_role_offset":{second_role_offset},"paired_class_tag":"273","paired_byte_offset":90}}"#
+        r#"{{{shared}{opaque},"first_geometry_record_index":{first},"first_role":0,"second_geometry_record_index":41,"second_role":1,"paired_class_tag":"273"}}"#
     );
     serde_json::from_str(&wire).unwrap()
 }

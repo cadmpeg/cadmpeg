@@ -13,7 +13,7 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
-fn unreadable_entry_payload_uses_checked_hex() {
+fn unreadable_entry_wire_contains_only_length_and_hash_evidence() {
     let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
     let record = super::UnreadableEntry {
         id: "fcstd:native:unreadable_entry#Payload.bin".into(),
@@ -21,6 +21,8 @@ fn unreadable_entry_payload_uses_checked_hex() {
         data_start: 0,
         data_end: u64::try_from(data.len()).unwrap(),
         stored_data: data.clone().into(),
+        byte_len: u64::try_from(data.len()).unwrap(),
+        sha256: cadmpeg_ir::hash::sha256_hex(&data),
         error: "unsupported compression".into(),
     };
     crate::test_support::with_service_context(&[], |ctx| {
@@ -31,14 +33,16 @@ fn unreadable_entry_payload_uses_checked_hex() {
         let wire = namespace
             .arena_as::<serde_json::Value>("unreadable_entries")
             .unwrap();
-        assert_eq!(
-            wire[0]["stored_data"].as_str().unwrap().len(),
-            data.len() * 2
-        );
+        assert!(wire[0].get("stored_data").is_none());
+        assert!(wire[0].get("data_start").is_none());
+        assert!(wire[0].get("data_end").is_none());
+        assert_eq!(wire[0]["byte_len"], u64::try_from(data.len()).unwrap());
+        assert_eq!(wire[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&data));
         let typed = namespace
             .arena_as::<super::UnreadableEntry>("unreadable_entries")
             .unwrap();
-        assert_eq!(typed[0].stored_data, data);
+        assert!(typed[0].stored_data.is_empty());
+        assert_eq!(typed[0].byte_len, u64::try_from(data.len()).unwrap());
         for payload in [
             serde_json::json!("a"),
             serde_json::json!("gg"),
@@ -364,7 +368,7 @@ fn decode_refuses_when_max_entities_is_below_object_cardinality() {
 #[test]
 fn decode_keeps_document_objects_and_model_entities_additive() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="Stored" id="1"/></Objects>
+<Objects Count="1"><Object type="Part::Box" name="Stored" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Stored"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
     let decoded = FcstdCodec

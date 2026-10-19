@@ -307,7 +307,7 @@ pub struct Surface {
     pub id: SurfaceId,
     /// Surface shape.
     pub geometry: SurfaceGeometry,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -643,7 +643,7 @@ pub struct Curve {
         deserialize_with = "deserialize_carrier_parameter_range"
     )]
     pub parameter_range: Option<crate::topology::IncreasingParameterInterval>,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

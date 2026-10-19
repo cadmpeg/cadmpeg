@@ -36,11 +36,11 @@ fn lane_indexes_match_the_name_and_feature_scans() {
     };
     for _ in 0..64 {
         let names = (0..next(40))
-            .map(|ordinal| FeatureInputName {
+            .map(|ordinal| FeatureInputName { feature_ref: None,
                 id: format!("name-{ordinal}"),
                 parent: "lane".into(),
-                ordinal,
-                offset: u64::from(next(30)),
+                ordinal, sequence: ordinal,
+                offset: Some(u64::from(next(30))),
                 object_id: ObjectId::from_value(next(5)),
                 value: format!("Feature{ordinal}"),
             })

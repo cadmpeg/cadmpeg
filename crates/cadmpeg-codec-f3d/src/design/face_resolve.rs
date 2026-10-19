@@ -2100,7 +2100,7 @@ pub(crate) fn bind_extrude_start_planes(
             else {
                 break 'feature_edit;
             };
-            let retained_offset = *offset;
+            let retained_offset = offset.clone();
             let mut matching_groups = resolution.groups.iter().filter(|group| group.id == *native);
             let Some(group) = matching_groups.next() else {
                 break 'feature_edit;
@@ -2163,7 +2163,7 @@ pub(crate) fn bind_extrude_start_planes(
                             faces: vec![selected],
                             native,
                         },
-                        offset: retained_offset,
+                        offset: (retained_offset).map(Into::into),
                     };
                 }
             }
@@ -2259,7 +2259,7 @@ fn bind_extrude_target_face(
     else {
         return;
     };
-    let offset = *retained_offset;
+    let offset = retained_offset.clone();
     let mut matching_groups = resolution.groups.iter().filter(|group| {
         group.id == *native && group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination)
     });
@@ -2281,7 +2281,7 @@ fn bind_extrude_target_face(
                 faces: vec![face],
                 native,
             },
-            offset,
+            offset: (offset).map(Into::into),
         };
     }
 }
@@ -2489,7 +2489,8 @@ pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
         | DesignSketchFrameForm::ScopeGenesisExplicit(_)
         | DesignSketchFrameForm::MemberCompact { .. }
         | DesignSketchFrameForm::MemberExplicit { .. } => 10.0,
-        DesignSketchFrameForm::ScopeCompact
+        DesignSketchFrameForm::Authored { .. }
+        | DesignSketchFrameForm::ScopeCompact
         | DesignSketchFrameForm::ScopeLegacy305(_)
         | DesignSketchFrameForm::ScopeLegacy325(_)
         | DesignSketchFrameForm::ScopeExplicit(_) => 1.0,
@@ -2837,12 +2838,13 @@ mod tests {
 
     fn reference(slot: i64, token: &str, design_reference: i64) -> DesignRecipeReference {
         DesignRecipeReference {
+            clause_index: 0,
             selector: 1,
-            selector_offset: 0,
+            selector_offset: Some(0),
             token: token.into(),
-            token_offset: 0,
+            token_offset: Some(0),
             design_reference,
-            design_reference_offset: 0,
+            design_reference_offset: Some(0),
             candidate_faces: vec![face(slot)],
             candidate_edges: Vec::new(),
             alternate_selector_faces: Vec::new(),

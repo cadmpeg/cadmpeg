@@ -1,12 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Lossless retained-document serialization: the ZIP repack and the
-//! `Document.xml` patch.
+//! `FCStd` output authored from CADIR, with an admitted unchanged layout path.
 //!
 //! What to write is decided in [`target`], which is the one resolution gate this
 //! codec has. This module carries out what that gate settled, and gates nothing
 //! of its own.
 
+mod attributes;
+pub(crate) mod body_styles;
+mod brep;
+mod coverage;
+mod design;
+mod dispositions;
+mod geometry;
+mod names;
+mod native;
+mod native_geometry;
+pub(crate) mod ordinals;
+mod parameters;
+mod pcurves;
+mod presentation;
+pub(crate) mod products;
+mod synthesis;
+mod synthesis_graph;
 pub(crate) mod target;
+pub(crate) mod xml;
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Seek, SeekFrom, Write};
@@ -14,9 +31,7 @@ use std::io::{Seek, SeekFrom, Write};
 use cadmpeg_core::CodecError;
 use zip::write::SimpleFileOptions;
 
-use crate::native::{
-    EntryRecord, ExtensionRecord, ObjectRecord, PropertyBody, PropertyRecord, ValueRecord,
-};
+use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyBody, PropertyRecord};
 use target::Resolution;
 
 trait WriteSeek: Write + Seek {}
@@ -48,12 +63,35 @@ fn write_seekable(
     let unreadable =
         namespace.arena_as::<crate::container::UnreadableEntry>("unreadable_entries")?;
     if !unreadable.is_empty() {
-        return Err(CodecError::NotImplemented("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
+        return Err(CodecError::UnsupportedContent("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
     }
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
+    let fidelity = resolution.fidelity();
+    let mut payloads = HashMap::new();
+    for entry in &entries {
+        let retained = fidelity.retained_record(entry.id()).ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "retained entry {} is unavailable",
+                entry.name()
+            ))
+        })?;
+        let bytes = retained.data().ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "retained entry {} has evidence but no bytes",
+                entry.name()
+            ))
+        })?;
+        if retained.byte_len() != entry.byte_len() || retained.sha256() != entry.sha256() {
+            return Err(CodecError::UnsupportedContent(format!(
+                "retained entry {} disagrees with current typed evidence",
+                entry.name()
+            )));
+        }
+        payloads.insert(entry.name().to_owned(), bytes);
+    }
     validate_entry_names(&entries)?;
     let source_document = entries
         .iter()
@@ -61,7 +99,12 @@ fn write_seekable(
         .ok_or_else(|| {
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
-    let document_xml = patch_document(source_document.data(), &properties)?;
+    let document_xml = payloads
+        .get(source_document.name())
+        .ok_or_else(|| {
+            CodecError::UnsupportedContent("the source document image is unavailable".into())
+        })?
+        .to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
@@ -81,7 +124,7 @@ fn write_seekable(
     for entry in &entries {
         entry_views.insert(
             entry.name().to_owned(),
-            cadmpeg_core::decode::View::over_retained(entry.data()),
+            cadmpeg_core::decode::View::over_retained(payloads[entry.name()]),
         );
     }
     crate::persistence::resolve_side_entries(
@@ -119,7 +162,7 @@ fn write_seekable(
             archive.write_all(if entry.name() == "Document.xml" {
                 &document_xml
             } else {
-                entry.data()
+                payloads[entry.name()]
             })?;
         }
         archive.finish().map_err(|error| {
@@ -132,7 +175,7 @@ fn write_seekable(
             schema_version,
             document.file_version.as_str()
         ),
-        "unsupported retained entries and unedited XML records were preserved".into(),
+        "retained layout reused after current typed and neutral projections agreed".into(),
     ];
     Ok(WriteOutcome {
         census: cadmpeg_ir::report::export::EntityCensus {
@@ -152,7 +195,7 @@ fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
     let mut names = HashSet::new();
     for entry in entries {
         if !names.insert(entry.name()) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate FCStd output entry {}",
                 entry.name()
             )));
@@ -185,7 +228,7 @@ fn validate_declarations(
                 })
         })
     {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "object declaration edits require source-less graph regeneration".into(),
         ));
     }
@@ -194,10 +237,12 @@ fn validate_declarations(
             written_extensions
                 .iter()
                 .find(|written| written.id == expected.id)
-                == Some(expected)
+                .is_some_and(|written| {
+                    serde_json::to_value(written).ok() == serde_json::to_value(expected).ok()
+                })
         })
     {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "extension declaration edits require a typed serializer".into(),
         ));
     }
@@ -214,7 +259,7 @@ fn validate_properties(
             .insert(property.id.as_str(), property)
             .is_some()
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::malformed(format_args!(
                 "edited FCStd property graph has duplicate property {}",
                 property.id
             )));
@@ -226,26 +271,26 @@ fn validate_properties(
             .insert(property.id.as_str(), property)
             .is_some()
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::malformed(format_args!(
                 "written FCStd property graph has duplicate property {}",
                 property.id
             )));
         }
     }
     if expected_by_id.len() != written_by_id.len() {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "edited FCStd property graph changes its record count".into(),
         ));
     }
     for (id, property) in expected_by_id {
         let Some(candidate) = written_by_id.get(id).copied() else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "edited FCStd property {} is missing from the written graph",
                 property.id
             )));
         };
         if !same_property_semantics(property, candidate) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "edited FCStd property {} changes its admitted value or link graph",
                 property.id
             )));
@@ -284,10 +329,7 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
         ) => {
             left_values.len() == right_values.len()
                 && left_values.iter().zip(right_values).all(|(left, right)| {
-                    left.tag == right.tag
-                        && left.order == right.order
-                        && left.attributes == right.attributes
-                        && left.text == right.text
+                    serde_json::to_value(left).ok() == serde_json::to_value(right).ok()
                 })
                 && left_links == right_links
                 && left_side_entries == right_side_entries
@@ -295,190 +337,6 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
         }
         _ => false,
     }
-}
-
-fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8>, CodecError> {
-    let source_text = std::str::from_utf8(source)
-        .map_err(|_| CodecError::Malformed("retained Document.xml is not UTF-8".into()))?;
-    let mut ordered = properties.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|property| property.xml.start());
-    if ordered
-        .windows(2)
-        .any(|pair| pair[0].xml.end() > pair[1].xml.start())
-    {
-        return Err(CodecError::Malformed(
-            "overlapping retained FCStd property spans".into(),
-        ));
-    }
-    let mut result = Vec::new();
-    let mut cursor = 0usize;
-    for property in ordered {
-        let start = usize::try_from(property.xml.start())
-            .map_err(|_| CodecError::Malformed("property start exceeds address space".into()))?;
-        let end = usize::try_from(property.xml.end())
-            .map_err(|_| CodecError::Malformed("property end exceeds address space".into()))?;
-        if start < cursor || end > source.len() {
-            return Err(CodecError::malformed(format_args!(
-                "invalid retained span for property {}",
-                property.id
-            )));
-        }
-        let retained = source_text.get(start..end).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "retained span for property {} is not on UTF-8 boundaries",
-                property.id
-            ))
-        })?;
-        if retained != property.xml.text() {
-            return Err(CodecError::malformed(format_args!(
-                "retained bytes disagree with property {} provenance",
-                property.id
-            )));
-        }
-        result.extend_from_slice(&source[cursor..start]);
-        result.extend_from_slice(&serialize_property(property)?);
-        cursor = end;
-    }
-    result.extend_from_slice(&source[cursor..]);
-    Ok(result)
-}
-
-fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
-    validate_property_wrapper(property)?;
-    if matches!(property.body, PropertyBody::Unreadable(_)) {
-        return Ok(property.xml.text().as_bytes().to_vec());
-    }
-    let mut replacement = property.xml.text().to_owned();
-    let wrapped = format!("<Root>{}</Root>", property.xml.text());
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
-    })?;
-    let source_ranges = parsed
-        .root_element()
-        .first_element_child()
-        .into_iter()
-        .flat_map(|property| {
-            property
-                .descendants()
-                .filter(move |node| node.is_element() && *node != property)
-        })
-        .map(|node| (node.range().start - 6, node.range().end - 6))
-        .collect::<Vec<_>>();
-    if source_ranges.len() != property.values().len() {
-        return Err(CodecError::malformed(format_args!(
-            "property {} value provenance count changed",
-            property.id
-        )));
-    }
-    let mut edits = Vec::new();
-    for (value, (start, end)) in property.values().iter().zip(source_ranges) {
-        let serialized = serialize_value(value)?;
-        if serialized == value.raw_xml {
-            continue;
-        }
-        if property.xml.text()[start..end] != value.raw_xml {
-            return Err(CodecError::malformed(format_args!(
-                "property {} retained value {} disagrees with provenance",
-                property.id, value.order
-            )));
-        }
-        edits.push((start, end, serialized));
-    }
-    edits.sort_by_key(|(start, _, _)| *start);
-    if edits.windows(2).any(|pair| pair[0].1 > pair[1].0) {
-        return Err(CodecError::NotImplemented(format!(
-            "overlapping edits in nested FCStd property {}",
-            property.id
-        )));
-    }
-    for (start, end, serialized) in edits.into_iter().rev() {
-        replacement.replace_range(start..end, &serialized);
-    }
-    Ok(replacement.into_bytes())
-}
-
-fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
-    let wrapped = format!("<Root>{}</Root>", property.xml.text());
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
-    })?;
-    let element = parsed
-        .root_element()
-        .first_element_child()
-        .ok_or_else(|| CodecError::Malformed("retained property has no element".into()))?;
-    let expected_tag = if property.is_transient() {
-        "_Property"
-    } else {
-        "Property"
-    };
-    let status = element
-        .attribute("status")
-        .map(str::parse::<u64>)
-        .transpose()
-        .map_err(|_| CodecError::Malformed("retained property has invalid status".into()))?;
-    if element.tag_name().name() != expected_tag
-        || element.attribute("name") != Some(property.name.as_str())
-        || element.attribute("type") != Some(property.type_name.as_str())
-        || status != property.status
-    {
-        return Err(CodecError::NotImplemented(format!(
-            "editing FCStd property declaration {} requires a typed serializer",
-            property.id
-        )));
-    }
-    Ok(())
-}
-
-fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
-    let wrapped = format!("<Root>{}</Root>", value.raw_xml);
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property value XML: {error}"))
-    })?;
-    let original = parsed
-        .root_element()
-        .first_element_child()
-        .ok_or_else(|| CodecError::Malformed("retained property value has no element".into()))?;
-    let original_attributes = original
-        .attributes()
-        .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let original_text = original
-        .children()
-        .find_map(|node| node.text())
-        .map(str::to_owned);
-    if original.tag_name().name() == value.tag
-        && original_attributes == value.attributes
-        && original_text == value.text
-    {
-        return Ok(value.raw_xml.clone());
-    }
-    if original.children().any(|node| node.is_element()) {
-        return Err(CodecError::NotImplemented(format!(
-            "editing nested FCStd value element {} requires a typed serializer",
-            value.tag
-        )));
-    }
-    let mut serialized = String::new();
-    serialized.push('<');
-    serialized.push_str(&value.tag);
-    for (name, content) in &value.attributes {
-        serialized.push(' ');
-        serialized.push_str(name);
-        serialized.push_str("=\"");
-        escape_xml(content, &mut serialized, true);
-        serialized.push('"');
-    }
-    match &value.text {
-        Some(text) => {
-            serialized.push('>');
-            escape_xml(text, &mut serialized, false);
-            serialized.push_str("</");
-            serialized.push_str(&value.tag);
-            serialized.push('>');
-        }
-        None => serialized.push_str("/>"),
-    }
-    Ok(serialized)
 }
 
 pub(crate) fn escape_xml(value: &str, output: &mut String, attribute: bool) {

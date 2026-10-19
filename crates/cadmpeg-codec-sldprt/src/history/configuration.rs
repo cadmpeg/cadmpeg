@@ -11,7 +11,7 @@ use crate::records::FeatureHistory;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration, FaceSelection,
+        ConfigurationFeatureState, DatumPlaneReference, DesignConfiguration, FaceSelection,
         FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
@@ -42,16 +42,17 @@ fn apply_configuration_state(
     feature: &mut cadmpeg_ir::features::Feature,
     state: &cadmpeg_ir::features::ConfigurationFeatureState,
 ) {
-    let state = state.clone();
-    let (outputs, suppressed) = match state.evaluation {
-        ConfigurationEvaluation::Suppressed {} => {
-            (cadmpeg_ir::features::DistinctMembers::default(), true)
+    match state {
+        ConfigurationFeatureState::Suppressed {} => {
+            feature.suppressed = Some(true);
+            feature.evaluation.edit(|_, outputs| outputs.clear());
         }
-        ConfigurationEvaluation::Active { outputs } => (outputs, false),
-    };
-    feature.suppressed = Some(suppressed);
-    feature.dependencies = state.dependencies;
-    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::new(state.definition, outputs);
+        ConfigurationFeatureState::Active {} => feature.suppressed = Some(false),
+        ConfigurationFeatureState::Definition { definition } => {
+            feature.suppressed = Some(false);
+            feature.evaluation.set_definition(definition.clone());
+        }
+    }
 }
 
 fn copy_configuration_features(
@@ -70,11 +71,10 @@ fn copy_configuration_state_features(
 ) -> Vec<cadmpeg_ir::features::Feature> {
     let mut copied = Vec::new();
     for feature in features {
-        let Some(state) = states.get(&feature.id) else {
-            continue;
-        };
         let mut feature = feature.clone();
-        apply_configuration_state(&mut feature, state);
+        if let Some(state) = states.get(&feature.id) {
+            apply_configuration_state(&mut feature, state);
+        }
         copied.push(feature);
     }
     copied
@@ -83,20 +83,14 @@ fn copy_configuration_state_features(
 fn configuration_feature_state(
     feature: cadmpeg_ir::features::Feature,
 ) -> (FeatureId, cadmpeg_ir::features::ConfigurationFeatureState) {
-    let (definition, outputs) = feature.evaluation.into_parts();
-    let evaluation = if feature.suppressed.unwrap_or(false) {
-        ConfigurationEvaluation::Suppressed {}
+    let state = if feature.suppressed == Some(true) {
+        ConfigurationFeatureState::Suppressed {}
     } else {
-        ConfigurationEvaluation::Active { outputs }
+        ConfigurationFeatureState::Definition {
+            definition: feature.evaluation.into_parts().0,
+        }
     };
-    (
-        feature.id,
-        cadmpeg_ir::features::ConfigurationFeatureState {
-            evaluation,
-            dependencies: feature.dependencies,
-            definition,
-        },
-    )
+    (feature.id, state)
 }
 
 /// Which side of the codec drives the history-enrichment prefix.
@@ -209,7 +203,13 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::terminations::project_surface_sweep_profiles(
         features, projection, lanes,
     );
-    crate::resolved_features::holes::project_helix_axes(ctx, features, projection, lanes)?;
+    crate::resolved_features::holes::project_helix_axes(
+        ctx,
+        features,
+        projection,
+        lanes,
+        &project_parameters(ctx, projection)?,
+    )?;
     crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
         features, projection, lanes,
     );
@@ -333,6 +333,7 @@ fn project_configuration_design_states_within(
     );
     let base_definitions = configuration_definitions(&ir.model.features);
     for configuration in &mut ir.model.configurations {
+        configuration.parameter_overrides.clear();
         configuration.parameter_values.clear();
         configuration.feature_states.clear();
     }
@@ -362,12 +363,28 @@ fn project_configuration_design_states_within(
             &ir.model.features,
         );
         let mut parameter_values = BTreeMap::new();
+        let mut parameter_overrides = BTreeMap::new();
         for parameter in project_parameters(ctx, &projection)? {
-            let Some(value) = parameter.value else {
+            let Some(base) = ir
+                .model
+                .parameters
+                .iter()
+                .find(|base| base.id == parameter.id)
+            else {
                 continue;
             };
-            parameter_values.insert(parameter.id, value);
+            if parameter.expression != base.expression {
+                parameter_overrides.insert(parameter.id.clone(), parameter.expression);
+            }
+            if let Some(value) = parameter.value {
+                if base.value.as_ref() != Some(&value)
+                    || parameter_overrides.contains_key(&parameter.id)
+                {
+                    parameter_values.insert(parameter.id, value);
+                }
+            }
         }
+        ir.model.configurations[configuration_index].parameter_overrides = parameter_overrides;
         ir.model.configurations[configuration_index].parameter_values = parameter_values;
 
         let mut projection = histories.to_vec();
@@ -516,11 +533,8 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         )?;
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
-            let Some(state) = states.get_mut(&feature.id) else {
-                continue;
-            };
-            state.dependencies = feature.dependencies;
-            state.definition = feature.evaluation.into_parts().0;
+            let (id, state) = configuration_feature_state(feature);
+            states.insert(id, state);
         }
     }
 
@@ -569,10 +583,8 @@ pub(crate) fn bind_configuration_topology_selections(
         );
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
-            let Some(state) = states.get_mut(&feature.id) else {
-                continue;
-            };
-            *state = configuration_feature_state(feature).1;
+            let (id, state) = configuration_feature_state(feature);
+            states.insert(id, state);
         }
     }
 
@@ -830,10 +842,12 @@ pub(crate) fn project_configuration_sketch_states(
                 &surfaces,
                 histories,
                 scoped_lanes,
+                &parameters,
             );
             crate::resolved_features::holes::project_topological_hole_constructions(
                 &mut features,
                 &crate::resolved_features::holes::HoleTopology {
+                    parameters: &parameters,
                     surfaces: &surfaces,
                     faces: &ir.model.faces,
                     loops: &ir.model.loops,
@@ -848,6 +862,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &mut features,
                 &ir.model.sketch_entities,
                 &crate::resolved_features::holes::HoleTopology {
+                    parameters: &parameters,
                     surfaces: &surfaces,
                     faces: &ir.model.faces,
                     loops: &ir.model.loops,
@@ -869,13 +884,10 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             )?;
             for feature in features {
-                let Some(state) = ir.model.configurations[configuration_index]
+                let (id, state) = configuration_feature_state(feature);
+                ir.model.configurations[configuration_index]
                     .feature_states
-                    .get_mut(&feature.id)
-                else {
-                    continue;
-                };
-                *state = configuration_feature_state(feature).1;
+                    .insert(id, state);
             }
             Ok(())
         })();
@@ -898,15 +910,11 @@ pub(crate) fn project_configuration_sketch_states(
             continue;
         }
         for (feature_id, state) in &mut configuration.feature_states {
+            let ConfigurationFeatureState::Definition { definition } = state else {
+                continue;
+            };
             if let Some(base_definition) = base.get(feature_id).copied() {
-                inherit_configuration_shared_semantics(&mut state.definition, base_definition)?;
-                if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                    reference: Some(DatumPlaneReference::Feature { feature: reference }),
-                    ..
-                }) = &state.definition
-                {
-                    state.dependencies.insert(reference.clone());
-                }
+                inherit_configuration_shared_semantics(definition, base_definition)?;
             }
         }
     }
@@ -976,7 +984,7 @@ fn inherit_configuration_hole_semantics(
         return Ok(());
     };
     let mut construction = shape.construction().clone();
-    let mut exit_kind = *shape.exit_kind();
+    let mut exit_kind = shape.exit_kind().clone();
     let mut diameter = shape.diameter();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: base_profile,
@@ -1044,7 +1052,7 @@ fn inherit_configuration_hole_semantics(
         }
         _ => {}
     }
-    if exit_kind.is_none_or(|kind| kind.is_unresolved()) {
+    if exit_kind.as_ref().is_none_or(|kind| kind.is_unresolved()) {
         exit_kind.clone_from(base_exit_kind);
     }
     if diameter.is_none() {
@@ -1065,8 +1073,9 @@ fn inherit_configuration_hole_semantics(
     if allow_multi_profile_faces.is_none() {
         allow_multi_profile_faces.clone_from(base_allow_multi_profile_faces);
     }
-    *shape = cadmpeg_ir::features::holes::HoleShape::new(construction, exit_kind, diameter)
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+    *shape =
+        cadmpeg_ir::features::holes::HoleShape::new(construction, exit_kind, diameter.cloned())
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     Ok(())
 }
 
@@ -1147,6 +1156,7 @@ fn configuration_reference_plane_frame<'features>(
                     distance,
                 }) => configuration_reference_plane_frame(ctx, reference, features, visiting)?
                     .and_then(|(origin, normal, u_axis)| {
+                        let distance = distance.literal()?;
                         let normal_length = normal.norm();
                         (normal_length.is_finite() && normal_length > f64::EPSILON).then_some((
                             Point3::new(
@@ -1271,11 +1281,15 @@ pub(crate) fn inherit_configuration_reference_plane_states(
             let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
                 continue;
             };
+            let ConfigurationFeatureState::Definition { definition } = state else {
+                continue;
+            };
+            let mut dependencies = feature.dependencies.clone();
             inherit_configuration_reference_plane_definition(
                 ctx,
                 &feature.id,
-                &mut state.definition,
-                &mut state.dependencies,
+                definition,
+                &mut dependencies,
                 &base,
             )?;
         }
@@ -1414,6 +1428,53 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
                 return true;
             };
             std::mem::discriminant(&**canonical) == std::mem::discriminant(value)
+        });
+    }
+}
+
+/// Keep only inactive configuration differences from the active document state.
+pub(crate) fn normalize_configuration_differences(ir: &mut cadmpeg_ir::CadIr) {
+    let features = &ir.model.features;
+    let parameters = &ir.model.parameters;
+    for configuration in &mut ir.model.configurations {
+        if configuration.active {
+            configuration.parameter_overrides.clear();
+            configuration.parameter_values.clear();
+            configuration.feature_states.clear();
+            continue;
+        }
+        configuration.parameter_overrides.retain(|id, expression| {
+            parameters
+                .iter()
+                .find(|parameter| parameter.id == *id)
+                .is_none_or(|parameter| parameter.expression != *expression)
+        });
+        configuration.parameter_values.retain(|id, value| {
+            configuration.parameter_overrides.contains_key(id)
+                || parameters
+                    .iter()
+                    .find(|parameter| parameter.id == *id)
+                    .is_none_or(|parameter| parameter.value.as_ref() != Some(value))
+        });
+        configuration.feature_states.retain(|id, state| {
+            let Some(feature) = features.iter().find(|feature| feature.id == *id) else {
+                return true;
+            };
+            match state {
+                ConfigurationFeatureState::Suppressed {} => feature.suppressed != Some(true),
+                ConfigurationFeatureState::Active {} => feature.suppressed == Some(true),
+                ConfigurationFeatureState::Definition { definition }
+                    if *definition == *feature.evaluation.definition() =>
+                {
+                    if feature.suppressed == Some(true) {
+                        *state = ConfigurationFeatureState::Active {};
+                        true
+                    } else {
+                        false
+                    }
+                }
+                ConfigurationFeatureState::Definition { .. } => true,
+            }
         });
     }
 }

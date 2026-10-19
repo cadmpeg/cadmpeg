@@ -19,6 +19,7 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
@@ -134,15 +135,21 @@ fn feature_extents_round_trip_through_json() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::scalar::NonZeroLength::new(12.5).unwrap(),
+                    length: crate::features::Dimension::Literal(
+                        crate::scalar::NonZeroLength::new(12.5).unwrap(),
+                    ),
                 },
-                draft: Some(crate::scalar::SlopeAngle::new(0.1).unwrap()),
+                draft: Some(crate::features::Dimension::Literal(
+                    crate::scalar::SlopeAngle::new(0.1).unwrap(),
+                )),
             },
         },
         ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::scalar::NonZeroLength::new(25.0).unwrap(),
+                    length: crate::features::Dimension::Literal(
+                        crate::scalar::NonZeroLength::new(25.0).unwrap(),
+                    ),
                 },
                 draft: None,
             },
@@ -150,16 +157,21 @@ fn feature_extents_round_trip_through_json() {
         ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::scalar::NonZeroLength::new(10.0).unwrap(),
+                    length: crate::features::Dimension::Literal(
+                        crate::scalar::NonZeroLength::new(10.0).unwrap(),
+                    ),
                 },
-                draft: Some(crate::scalar::SlopeAngle::new(0.2).unwrap()),
+                draft: Some(crate::features::Dimension::Literal(
+                    crate::scalar::SlopeAngle::new(0.2).unwrap(),
+                )),
             },
             second: ExtrudeSide {
                 termination: LinearTermination::ToFace {
                     face: FaceSelection::Faces(vec![
                         FaceId::mint("synthetic:test:face#0").expect("valid identity")
                     ]),
-                    offset: Some(Length::new(-2.0).unwrap()),
+                    offset: (Some(Length::new(-2.0).unwrap()))
+                        .map(crate::features::Dimension::Literal),
                 },
                 draft: None,
             },
@@ -180,20 +192,28 @@ fn feature_extents_round_trip_through_json() {
     let revolve_extents = vec![
         RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(std::f64::consts::PI).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(std::f64::consts::PI).unwrap(),
+                ),
             },
         },
         RevolveExtent::Symmetric {
             termination: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                ),
             },
         },
         RevolveExtent::TwoSided {
             first: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(0.25).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(0.25).unwrap(),
+                ),
             },
             second: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(0.75).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(0.75).unwrap(),
+                ),
             },
         },
     ];
@@ -213,7 +233,9 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     assert_eq!(
         blind,
         LinearTermination::Blind {
-            length: crate::scalar::NonZeroLength::new(12.5).unwrap()
+            length: crate::features::Dimension::Literal(
+                crate::scalar::NonZeroLength::new(12.5).unwrap()
+            )
         }
     );
     assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
@@ -224,7 +246,9 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     assert_eq!(
         angle,
         AngularTermination::Angle {
-            angle: crate::scalar::PositiveAngle::new(1.25).unwrap()
+            angle: crate::features::Dimension::Literal(
+                crate::scalar::PositiveAngle::new(1.25).unwrap()
+            )
         }
     );
     assert_eq!(serde_json::to_value(angle).unwrap(), angle_wire);
@@ -275,8 +299,13 @@ fn generated_sweep_sections_round_trip_and_validate() {
             op: crate::features::SolidSweepOperation::NewBody,
             section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region: crate::features::SweepCircularRegion::new(
-                    crate::scalar::PositiveLength::new(3.0).unwrap(),
-                    Some(crate::scalar::PositiveLength::new(1.0).unwrap()),
+                    (crate::features::Dimension::Literal(
+                        crate::scalar::PositiveLength::new(3.0).unwrap(),
+                    ))
+                    .into(),
+                    Some(crate::features::Dimension::Literal(
+                        crate::scalar::PositiveLength::new(1.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
             }),
@@ -319,6 +348,8 @@ fn generated_sweep_sections_round_trip_and_validate() {
             source_text: None,
             source_content: FeatureContent::default(),
 
+            needs_recompute: false,
+
             evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -329,8 +360,11 @@ fn generated_sweep_sections_round_trip_and_validate() {
     assert!(report.is_ok(), "{report:#?}");
 
     assert!(crate::features::SweepCircularRegion::new(
-        crate::scalar::PositiveLength::new(2.0).unwrap(),
-        Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
+        (crate::features::Dimension::Literal(crate::scalar::PositiveLength::new(2.0).unwrap()))
+            .into(),
+        Some(crate::features::Dimension::Literal(
+            crate::scalar::PositiveLength::new(2.0).unwrap()
+        )),
     )
     .is_err());
     // The mode is fixed at construction: there is no mutator left to refuse a
@@ -379,6 +413,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         source_text: None,
         source_content: FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     });
@@ -408,16 +444,18 @@ fn flex_modes_round_trip_and_validate() {
 
     let modes = vec![
         FlexMode::Bending {
-            angle: Angle::new(0.5).unwrap(),
+            angle: crate::features::Dimension::Literal(Angle::new(0.5).unwrap()),
         },
         FlexMode::Twisting {
-            angle: Angle::new(1.0).unwrap(),
+            angle: crate::features::Dimension::Literal(Angle::new(1.0).unwrap()),
         },
         FlexMode::Tapering {
-            factor: crate::scalar::PositiveReal::new(1.5).unwrap(),
+            factor: crate::features::Dimension::Literal(
+                crate::scalar::PositiveReal::new(1.5).unwrap(),
+            ),
         },
         FlexMode::Stretching {
-            distance: Length::new(12.0).unwrap(),
+            distance: crate::features::Dimension::Literal(Length::new(12.0).unwrap()),
         },
     ];
     let json = serde_json::to_string(&modes).unwrap();
@@ -438,9 +476,9 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
     let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
     assert_eq!(
         kind,
-        HoleKind::PartialCounterbore(PartialPair::First(
+        HoleKind::PartialCounterbore(PartialPair::First(crate::features::Dimension::Literal(
             crate::scalar::PositiveLength::new(10.0).unwrap()
-        ))
+        )))
     );
     assert_eq!(serde_json::to_value(kind).unwrap(), counterbore);
 
@@ -1272,36 +1310,44 @@ fn every_partial_hole_pair_round_trips_under_its_own_dimension_key() {
 
     let cases = [
         (
-            HoleKind::PartialCounterbore(PartialPair::First(diameter)),
+            HoleKind::PartialCounterbore(PartialPair::First(crate::features::Dimension::Literal(
+                diameter,
+            ))),
             serde_json::json!({
                 "kind": "partial_counterbore",
-                "dimension": {"kind": "diameter", "diameter": 10.0}
+                "dimension": {"kind": "diameter", "diameter": {"kind": "literal", "value": 10.0}}
             }),
         ),
         (
-            HoleKind::PartialCounterbore(PartialPair::Second(depth)),
+            HoleKind::PartialCounterbore(PartialPair::Second(crate::features::Dimension::Literal(
+                depth,
+            ))),
             serde_json::json!({
                 "kind": "partial_counterbore",
-                "dimension": {"kind": "depth", "depth": 4.0}
+                "dimension": {"kind": "depth", "depth": {"kind": "literal", "value": 4.0}}
             }),
         ),
         (
-            HoleKind::PartialCountersink(PartialPair::First(diameter)),
+            HoleKind::PartialCountersink(PartialPair::First(crate::features::Dimension::Literal(
+                diameter,
+            ))),
             serde_json::json!({
                 "kind": "partial_countersink",
-                "dimension": {"kind": "diameter", "diameter": 10.0}
+                "dimension": {"kind": "diameter", "diameter": {"kind": "literal", "value": 10.0}}
             }),
         ),
         (
-            HoleKind::PartialCountersink(PartialPair::Second(angle)),
+            HoleKind::PartialCountersink(PartialPair::Second(crate::features::Dimension::Literal(
+                angle,
+            ))),
             serde_json::json!({
                 "kind": "partial_countersink",
-                "dimension": {"kind": "angle", "angle": 1.5}
+                "dimension": {"kind": "angle", "angle": {"kind": "literal", "value": 1.5}}
             }),
         ),
     ];
     for (kind, wire) in cases {
-        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+        assert_eq!(serde_json::to_value(&kind).unwrap(), wire);
         assert_eq!(serde_json::from_value::<HoleKind>(wire).unwrap(), kind);
     }
 }

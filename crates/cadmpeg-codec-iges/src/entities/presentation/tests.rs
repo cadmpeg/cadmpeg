@@ -759,6 +759,18 @@ fn decode_types_definition_levels_and_directory_level_links() {
         line.fields().unwrap()["level_definition"],
         "iges:presentation:definition-levels#D1"
     );
+    let projected = &result.ir().model.presentation_layers;
+    assert_eq!(projected.len(), 3);
+    for level in [2, 7, 11] {
+        let layer = projected
+            .iter()
+            .find(|layer| layer.name == level.to_string())
+            .unwrap();
+        assert!(layer.items.iter().any(|item| matches!(item,
+            cadmpeg_ir::presentation::PresentationItem::Curve { curve }
+                if curve.as_str() == "iges:model:curve#D3"
+        )));
+    }
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -947,7 +959,11 @@ fn decode_binds_the_directory_color_to_a_curve_source_object() {
         .expect("a projected line names its source entity");
     assert_eq!(source.object_id.as_str(), "D1");
     assert_eq!(
-        source.color,
+        result
+            .ir()
+            .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Curve(
+                curve.id.clone()
+            )),
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
 }

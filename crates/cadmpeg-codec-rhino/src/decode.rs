@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
+use cadmpeg_ir::draft::{DraftAccounting, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
@@ -19,12 +19,11 @@ use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
@@ -32,9 +31,14 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;
 
-fn instance_members_are_unique(members: &[crate::wire::Uuid]) -> bool {
-    let unique_members = members.iter().collect::<BTreeSet<_>>();
-    unique_members.len() == members.len()
+/// Transient interpretation of one native object's identity and display facts.
+/// Only `identity` enters source associations; display facts enter neutral homes.
+#[derive(Debug, Clone)]
+struct ObjectContext {
+    identity: SourceObjectAssociation,
+    name: Option<String>,
+    color: Option<Color>,
+    visible: Option<bool>,
 }
 
 fn insert_feature_property(
@@ -199,189 +203,6 @@ struct ReportBuckets {
     typed_losses: Vec<LossNote>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ReportCheckpoint {
-    phase_warnings: usize,
-    phase_losses: usize,
-    typed_losses: usize,
-}
-
-impl ReportBuckets {
-    fn checkpoint(&self) -> ReportCheckpoint {
-        ReportCheckpoint {
-            phase_warnings: self.phase_warnings.len(),
-            phase_losses: self.phase_losses.len(),
-            typed_losses: self.typed_losses.len(),
-        }
-    }
-
-    fn rollback(&mut self, checkpoint: ReportCheckpoint) {
-        self.phase_warnings.truncate(checkpoint.phase_warnings);
-        self.phase_losses.truncate(checkpoint.phase_losses);
-        self.typed_losses.truncate(checkpoint.typed_losses);
-    }
-}
-
-const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
-const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
-const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
-/// Member visits, copied entities, and the points, control points, mesh
-/// vertices and triangles, and cage vertices that instance expansion copies in
-/// one document. Rejected expansions stay charged, so the copy work of the
-/// document is bounded even when every reference is rolled back.
-const MAX_INSTANCE_COPY_ELEMENTS: usize = 1 << 26;
-const ENTITY_BUDGET_EXCEEDED: &str =
-    "document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)";
-const COPY_ELEMENT_BUDGET_EXCEEDED: &str =
-    "document instance copy element budget exceeded (MAX_INSTANCE_COPY_ELEMENTS)";
-
-#[derive(Debug, Clone, Copy)]
-struct ExpansionBudget {
-    references: usize,
-    members: usize,
-    entities: usize,
-    copied_elements: usize,
-    limits: [usize; 3],
-    copy_element_limit: usize,
-}
-
-impl ExpansionBudget {
-    fn new() -> Self {
-        Self {
-            references: 0,
-            members: 0,
-            entities: 0,
-            copied_elements: 0,
-            limits: [
-                MAX_INSTANCE_REFERENCES,
-                MAX_INSTANCE_MEMBERS,
-                MAX_INSTANCE_ENTITIES,
-            ],
-            copy_element_limit: MAX_INSTANCE_COPY_ELEMENTS,
-        }
-    }
-
-    /// Charges one local expansion counter. `false` means the local cap
-    /// rejects this item; the caller skips it and the decode continues.
-    fn charge(value: &mut usize, amount: usize, limit: usize) -> bool {
-        match value.checked_add(amount) {
-            Some(requested) if requested <= limit => {
-                *value = requested;
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn reference(&mut self) -> Result<(), ReferenceFailure> {
-        if Self::charge(&mut self.references, 1, self.limits[0]) {
-            Ok(())
-        } else {
-            Err(ReferenceFailure::Semantic(
-                "document instance reference budget exceeded (MAX_INSTANCE_REFERENCES)".to_owned(),
-            ))
-        }
-    }
-
-    fn member(&mut self) -> Result<(), ReferenceFailure> {
-        if Self::charge(&mut self.members, 1, self.limits[1]) {
-            Ok(())
-        } else {
-            Err(ReferenceFailure::Semantic(
-                "document instance member budget exceeded (MAX_INSTANCE_MEMBERS)".to_owned(),
-            ))
-        }
-    }
-
-    /// `false` means the local entity cap rejects this item.
-    fn entities(&mut self, amount: usize) -> bool {
-        Self::charge(&mut self.entities, amount, self.limits[2])
-    }
-
-    /// Exhausts the copy budget at the limit, so later references fail before
-    /// they decode another member.
-    fn copy_elements(&mut self, amount: usize) -> Result<(), ReferenceFailure> {
-        if Self::charge(&mut self.copied_elements, amount, self.copy_element_limit) {
-            Ok(())
-        } else {
-            self.copied_elements = self.copy_element_limit;
-            Err(ReferenceFailure::Semantic(
-                COPY_ELEMENT_BUDGET_EXCEEDED.to_owned(),
-            ))
-        }
-    }
-
-    fn copy_entity(&mut self, payload: usize) -> Result<(), ReferenceFailure> {
-        self.copy_elements(
-            payload
-                .checked_add(1)
-                .ok_or_else(|| COPY_ELEMENT_BUDGET_EXCEEDED.to_owned())?,
-        )
-    }
-}
-
-/// Source-record links and object outcomes that one top-level instance
-/// expansion added. A rejected expansion removes exactly these, so rollback
-/// work follows the expansion, not the document.
-#[derive(Debug, Default)]
-struct ExpansionUndo {
-    links: Vec<(usize, String)>,
-    outcomes: Vec<usize>,
-}
-
-impl ExpansionUndo {
-    fn absorb(&mut self, mut inner: Self) {
-        self.links.append(&mut inner.links);
-        self.outcomes.append(&mut inner.outcomes);
-    }
-}
-
-#[derive(Debug)]
-struct InstanceSelection {
-    source_order: usize,
-    key: IdentityKey,
-    path: Vec<String>,
-}
-
-struct InstanceKey<'a> {
-    path: &'a [String],
-    member: crate::wire::Uuid,
-}
-
-impl std::fmt::Display for InstanceKey<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, segment) in self.path.iter().enumerate() {
-            if index != 0 {
-                formatter.write_str(".")?;
-            }
-            formatter.write_str(segment)?;
-        }
-        write!(formatter, ".{}", self.member)
-    }
-}
-
-impl InstanceSelection {
-    fn new(
-        source_order: usize,
-        path: &[String],
-        member: crate::wire::Uuid,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let key = format!("{}", InstanceKey { path, member });
-        let key = IdentityKey::try_new(key).map_err(cadmpeg_core::CodecError::malformed)?;
-        Ok(Self {
-            source_order,
-            key,
-            path: path.to_vec(),
-        })
-    }
-}
-
-#[derive(Clone, Copy)]
-struct InstanceDisplay {
-    color: Option<Color>,
-    visible: bool,
-}
-
 /// Mutable decode state shared by metadata and geometry phases.
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
@@ -389,6 +210,7 @@ pub(crate) struct DecodeContext<'a> {
     session: cadmpeg_ir::draft::CommitSession<'a, CadIr>,
     annotations: cadmpeg_ir::Annotations,
     opaque_records: Vec<UnknownRecord>,
+    untyped_records: BTreeMap<UnknownId, cadmpeg_ir::ArenaClasses>,
     statuses: Vec<Option<GeometryOutcome>>,
     retained_bytes: usize,
     retention_limits: [usize; 2],
@@ -396,12 +218,7 @@ pub(crate) struct DecodeContext<'a> {
     geometry_transferred: bool,
     /// Transactional report buckets produced by semantic decode phases.
     report: ReportBuckets,
-    instance_selection: Option<InstanceSelection>,
-    instance_display: Option<InstanceDisplay>,
     object_candidates: HashMap<crate::wire::Uuid, Vec<usize>>,
-    definition_candidates: HashMap<crate::wire::Uuid, usize>,
-    expansion_budget: ExpansionBudget,
-    expansion_undo: Option<ExpansionUndo>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -421,11 +238,6 @@ impl<'a> DecodeContext<'a> {
                     .push(source_order);
             }
         }
-        let mut definition_candidates = HashMap::new();
-        for (index, definition) in scan.definitions.definitions().iter().enumerate() {
-            let id = definition.id();
-            definition_candidates.insert(id, index);
-        }
         let report = ReportBuckets::default();
         let ir = build_ir(scan);
         let mut context = Self {
@@ -434,32 +246,18 @@ impl<'a> DecodeContext<'a> {
             session: cadmpeg_ir::draft::CommitSession::new(ir, session, Some("rhino"))?,
             annotations: cadmpeg_ir::Annotations::default(),
             opaque_records: Vec::new(),
+            untyped_records: BTreeMap::new(),
             statuses: Vec::new(),
             retained_bytes: 0,
             retention_limits: [RETAINED_RECORD_CAP, RETAINED_DOCUMENT_CAP],
             mesh_budget: crate::mesh::MeshBudget::new(),
             geometry_transferred: false,
             report,
-            instance_selection: None,
-            instance_display: None,
             object_candidates,
-            definition_candidates,
-            expansion_budget: ExpansionBudget::new(),
-            expansion_undo: None,
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
         Ok(context)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_expansion_limits(&mut self, limits: [usize; 3]) {
-        self.expansion_budget.limits = limits;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_copy_element_limit(&mut self, limit: usize) {
-        self.expansion_budget.copy_element_limit = limit;
     }
 
     #[cfg(test)]
@@ -566,13 +364,6 @@ impl<'a> DecodeContext<'a> {
         links.extend(added.iter().map(|link| (*link).to_owned()));
         // Two sorted runs: the stable sort merges them in linear time.
         links.sort();
-        if let Some(undo) = &mut self.expansion_undo {
-            undo.links.extend(
-                added
-                    .into_iter()
-                    .map(|link| (source_order, link.to_owned())),
-            );
-        }
         Ok(())
     }
 
@@ -600,8 +391,6 @@ impl<'a> DecodeContext<'a> {
 
         let value = apply(&mut candidate, &mut annotations).map_err(Into::into)?;
         let entity_count = candidate.model.entity_count();
-        let mut budget = self.expansion_budget;
-        let expanding = self.instance_selection.is_some();
         let appended = self.session.try_admit_append(
             candidate,
             annotations,
@@ -616,19 +405,13 @@ impl<'a> DecodeContext<'a> {
                         validation,
                     ))));
                 }
-                if expanding && !budget.entities(entity_count) {
-                    return Ok(Err(CandidateError::Admission(
-                        ENTITY_BUDGET_EXCEEDED.to_string(),
-                    )));
-                }
-                session.charge_entities(u64_from_index(entity_count), "rhino_instance_entities")?;
+                session.charge_entities(u64_from_index(entity_count), "rhino_object_entities")?;
                 let annotations = annotations.prepare();
                 Ok(Ok((value, annotations)))
             },
         );
         let (value, annotations) = appended??;
         annotations.apply(&mut self.annotations);
-        self.expansion_budget = budget;
         Ok(value)
     }
 
@@ -729,24 +512,20 @@ impl<'a> DecodeContext<'a> {
         if !self.archive().is_chunked() {
             return Ok(());
         }
-        let objects = self.scan.objects.len();
-        // An instance member decode visits only the selected object.
-        let orders = match &self.instance_selection {
-            Some(selected) if selected.source_order < objects => {
-                selected.source_order..selected.source_order + 1
-            }
-            Some(_) => 0..0,
-            None => 0..objects,
-        };
-        for source_order in orders {
+        // Definitions and top-level objects each supply one local carrier.
+        // Placed uses are represented by the product occurrence tree.
+        for source_order in 0..self.scan.objects.len() {
             let Some(object) = self.scan.objects[source_order].framed() else {
                 continue;
             };
-            if self.instance_selection.is_none() && self.is_definition_member(object) {
-                continue;
-            }
             if crate::instances::is_reference_class(object.class_uuid) {
-                self.expand_reference(source_order)?;
+                match crate::instances::parse_reference(
+                    self.scan.data,
+                    object.class_data_range.clone(),
+                ) {
+                    Ok(_) => self.mark_decoded(source_order),
+                    Err(_) => self.mark_failed(source_order),
+                };
                 continue;
             }
             if crate::subd::supported_class(object.class_uuid) {
@@ -806,7 +585,7 @@ impl<'a> DecodeContext<'a> {
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
-                        association: Some(self.source_association(identity)?),
+                        association: Some(self.source_association(identity)?.identity),
                         id: crate::mesh::MeshId::Ready(
                             cadmpeg_ir::tessellation::TessellationId::mint(format!(
                                 "rhino:object:tessellation#{key}"
@@ -955,10 +734,6 @@ impl<'a> DecodeContext<'a> {
                 continue;
             };
             if !crate::dimensions::supported_class(object.class_uuid) {
-                continue;
-            }
-            if self.is_definition_member(object) {
-                self.scan_warning(source_order, format_args!("definition-member dimension retained because annotation instance expansion is unsupported"));
                 continue;
             }
             let Some(scale) = self.neutral_scale() else {
@@ -1223,9 +998,10 @@ impl<'a> DecodeContext<'a> {
         }
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(hatch.source_range.start),
+            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
+            needs_recompute: false,
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("RhinoHatch".to_string()),
@@ -1235,7 +1011,17 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "hatch".into(),
-                    parameters,
+                    parameters: parameters
+                        .into_iter()
+                        .map(|(name, expression)| {
+                            (
+                                name,
+                                cadmpeg_ir::features::Dimension::Literal(
+                                    cadmpeg_ir::features::Expression::text(expression),
+                                ),
+                            )
+                        })
+                        .collect(),
                 }),
             ),
             native_ref: Some(
@@ -1352,6 +1138,7 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name,
             suppressed: Some(false),
+            needs_recompute: false,
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
@@ -1361,7 +1148,17 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "polyedge_reference".into(),
-                    parameters,
+                    parameters: parameters
+                        .into_iter()
+                        .map(|(name, expression)| {
+                            (
+                                name,
+                                cadmpeg_ir::features::Dimension::Literal(
+                                    cadmpeg_ir::features::Expression::text(expression),
+                                ),
+                            )
+                        })
+                        .collect(),
                 }),
             ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
@@ -1454,9 +1251,10 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(detail.source_range.start),
+            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
+            needs_recompute: false,
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoDetailView".to_string()),
@@ -1466,7 +1264,17 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "detail_view".into(),
-                    parameters,
+                    parameters: parameters
+                        .into_iter()
+                        .map(|(name, expression)| {
+                            (
+                                name,
+                                cadmpeg_ir::features::Dimension::Literal(
+                                    cadmpeg_ir::features::Expression::text(expression),
+                                ),
+                            )
+                        })
+                        .collect(),
                 }),
             ),
             native_ref: Some(
@@ -1601,9 +1409,10 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(cage.source_range.start),
+            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
+            needs_recompute: false,
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: properties,
             source_tag: Some("RhinoNurbsCage".to_string()),
@@ -1613,7 +1422,17 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "nurbs_cage".into(),
-                    parameters,
+                    parameters: parameters
+                        .into_iter()
+                        .map(|(name, expression)| {
+                            (
+                                name,
+                                cadmpeg_ir::features::Dimension::Literal(
+                                    cadmpeg_ir::features::Expression::text(expression),
+                                ),
+                            )
+                        })
+                        .collect(),
                 }),
             ),
             native_ref: Some(
@@ -1804,9 +1623,10 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(construction.source_range.start),
+            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
+            needs_recompute: false,
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoCurveOnSurface".to_string()),
@@ -1816,7 +1636,17 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "curve_on_surface".into(),
-                    parameters,
+                    parameters: parameters
+                        .into_iter()
+                        .map(|(name, expression)| {
+                            (
+                                name,
+                                cadmpeg_ir::features::Dimension::Literal(
+                                    cadmpeg_ir::features::Expression::text(expression),
+                                ),
+                            )
+                        })
+                        .collect(),
                 }),
             ),
             native_ref: Some(
@@ -1868,7 +1698,7 @@ impl<'a> DecodeContext<'a> {
             candidate.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: surface_geometry,
-                source_object: Some(association),
+                source_object: Some(association.identity),
             });
             set_exactness(
                 candidate_annotations,
@@ -1910,11 +1740,6 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    fn is_definition_member(&self, object: &ObjectDescriptor) -> bool {
-        let identity = &object.identity;
-        self.scan.definitions.contains_member(identity.object_id)
-    }
-
     /// Admit the source-derived object key before composing any typed identity.
     ///
     /// Object and instance keys are source data. A malformed key rejects the
@@ -1925,9 +1750,7 @@ impl<'a> DecodeContext<'a> {
         identity: &crate::objects::SourceIdentity,
         source_order: usize,
     ) -> std::option::Option<cadmpeg_ir::ids::IdentityKey> {
-        let value = if let Some(selected) = &self.instance_selection {
-            selected.key.as_str().to_owned()
-        } else if let Some((_, key)) = identity.source_id.rsplit_once('#') {
+        let value = if let Some((_, key)) = identity.source_id.rsplit_once('#') {
             key.to_owned()
         } else {
             format!("{source_order}")
@@ -1945,464 +1768,11 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
-    fn reference_segment(
-        &self,
-        source_order: usize,
-        identity: &crate::objects::SourceIdentity,
-    ) -> Result<String, cadmpeg_core::CodecError> {
-        if !identity.object_id.is_nil()
-            && self.resolve_object(identity.object_id) == ObjectReference::Resolved(source_order)
-        {
-            Ok(format!("{}", identity.object_id))
-        } else {
-            let object = self.scan.objects.get(source_order).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("Rhino reference object is missing")
-            })?;
-            Ok(format!(
-                "record-{source_order:06}-offset-{}",
-                object.range().start
-            ))
-        }
-    }
-
     fn source_association(
         &self,
         identity: &crate::objects::SourceIdentity,
-    ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-        source_association(
-            identity,
-            self.instance_selection
-                .as_ref()
-                .map_or(&[], |selected| selected.path.as_slice()),
-            self.instance_display.and_then(|display| display.color),
-            self.instance_display.map(|display| display.visible),
-        )
-    }
-
-    fn expand_reference(&mut self, source_order: usize) -> Result<bool, cadmpeg_core::CodecError> {
-        let annotations = std::mem::take(&mut self.annotations);
-        let outcome = self.expand_reference_staged(source_order);
-        match outcome {
-            Ok(true) => {
-                let changes = std::mem::take(&mut self.annotations);
-                let prepared = annotations.prepare_overlay(changes);
-                self.annotations = annotations;
-                prepared.apply(&mut self.annotations);
-                Ok(true)
-            }
-            other => {
-                self.annotations = annotations;
-                other
-            }
-        }
-    }
-
-    fn expand_reference_staged(
-        &mut self,
-        source_order: usize,
-    ) -> Result<bool, cadmpeg_core::CodecError> {
-        let original_model = ModelCheckpoint::capture(&self.session.document().model);
-        let outer_undo = self.expansion_undo.replace(ExpansionUndo::default());
-        let original_geometry_transferred = self.geometry_transferred;
-        let report_checkpoint = self.report.checkpoint();
-        let original_selection = self.instance_selection.take();
-        let original_display = self.instance_display;
-        let original_expansion_budget = self.expansion_budget;
-        let initial_path = original_selection
-            .as_ref()
-            .map_or(&[][..], |selected| selected.path.as_slice());
-
-        let mut traversal = initial_path.to_vec();
-        let mut stack = Vec::new();
-        let parent = Transform::identity();
-        let outcome = self.expand_reference_inner(source_order, parent, &mut traversal, &mut stack);
-        self.instance_selection = original_selection;
-        // Mesh buffers stay charged in the session arena even on rollback.
-        let rejection_warning = match outcome {
-            Ok(links) => {
-                let validation = self
-                    .session
-                    .admit_appended(&self.annotations, cadmpeg_ir::RHINO_INSTANCE_CHECKS)?;
-                if validation
-                    .as_ref()
-                    .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)
-                {
-                    self.append_links(source_order, &links)?;
-                    self.mark_decoded(source_order);
-                    self.geometry_transferred = true;
-                    let undo = std::mem::replace(&mut self.expansion_undo, outer_undo);
-                    if let (Some(outer), Some(undo)) = (&mut self.expansion_undo, undo) {
-                        outer.absorb(undo);
-                    }
-                    return Ok(true);
-                }
-                let findings = match validation {
-                    Ok(report) => validation_findings(&report),
-                    Err(error) => format!("{error}"),
-                };
-                format!("instance expansion rejected atomically by IR admission: {findings}")
-            }
-            Err(ReferenceFailure::Codec(error)) => return Err(error),
-            Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),
-        };
-
-        original_model.discard_appended(self.session.edit_appended_model(&original_model)?)?;
-        let undo = std::mem::replace(&mut self.expansion_undo, outer_undo);
-        self.undo_expansion(undo.unwrap_or_default())?;
-        self.geometry_transferred = original_geometry_transferred;
-        self.report.rollback(report_checkpoint);
-        self.instance_display = original_display;
-        self.expansion_budget = ExpansionBudget {
-            copied_elements: self.expansion_budget.copied_elements,
-            ..original_expansion_budget
-        };
-        self.scan_warning(source_order, format_args!("{rejection_warning}"));
-        Ok(false)
-    }
-
-    /// Removes the links and outcomes a rejected expansion added. Links were
-    /// only inserted, each once, into sorted lists, so removing them restores
-    /// every touched record exactly.
-    fn undo_expansion(&mut self, undo: ExpansionUndo) -> Result<(), cadmpeg_core::CodecError> {
-        let mut links = undo.links;
-        links.sort_unstable();
-        for group in links.chunk_by(|left, right| left.0 == right.0) {
-            let Some((record, _)) = group.first() else {
-                continue;
-            };
-            let (_, target) = self.session.unknown_links_mut(*record)?.ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(
-                    "Rhino source record disappeared during instance expansion",
-                )
-            })?;
-            target.retain(|link| {
-                group
-                    .binary_search_by(|(_, added)| added.as_str().cmp(link))
-                    .is_err()
-            });
-        }
-        for source_order in undo.outcomes {
-            if let Some(status) = self.statuses.get_mut(source_order) {
-                *status = None;
-            }
-        }
-        Ok(())
-    }
-
-    fn expand_reference_inner(
-        &mut self,
-        source_order: usize,
-        parent: Transform,
-        path: &mut Vec<String>,
-        stack: &mut Vec<crate::wire::Uuid>,
-    ) -> Result<Vec<String>, ReferenceFailure> {
-        const MAX_INSTANCE_DEPTH: usize = 64;
-        let _nested = self.expand.ctx().enter_nested("rhino_instance_nesting")?;
-        self.expansion_budget.reference()?;
-
-        // Session recursion depth refuses through `enter_nested`; the local
-        // nesting cap retains this one reference.
-        if stack.len() >= MAX_INSTANCE_DEPTH {
-            return Err(ReferenceFailure::Semantic(
-                "instance nesting exceeds 64 levels".to_owned(),
-            ));
-        }
-        let object = self
-            .scan
-            .objects
-            .get(source_order)
-            .ok_or_else(|| "reference object is missing".to_string())?;
-        let object = object
-            .framed()
-            .ok_or_else(|| "reference identity is unavailable".to_string())?;
-        let identity = &object.identity;
-        let reference =
-            crate::instances::parse_reference(self.scan.data, object.class_data_range.clone())
-                .map_err(|error| error.to_string())?;
-        if self
-            .scan
-            .definitions
-            .is_ambiguous(reference.definition_id())
-        {
-            return Err(format!("definition {} is duplicated", reference.definition_id()).into());
-        }
-        let definitions = self.scan.definitions.definitions();
-        let definition = self
-            .definition_candidates
-            .get(&reference.definition_id())
-            .and_then(|index| definitions.get(*index))
-            .ok_or_else(|| format!("definition {} is missing", reference.definition_id()))?;
-        if matches!(definition.kind, crate::instances::DefinitionKind::Linked)
-            && definition.members.is_empty()
-        {
-            return Err(format!(
-                "linked external definition {} has no local members",
-                definition.id()
-            )
-            .into());
-        }
-        if matches!(definition.kind, crate::instances::DefinitionKind::Unset) {
-            return Err(format!("definition {} has unset type", definition.id()).into());
-        }
-        if !instance_members_are_unique(&definition.members) {
-            return Err(format!(
-                "definition {} contains duplicate member UUIDs",
-                definition.id()
-            )
-            .into());
-        }
-        if stack.contains(&definition.id()) {
-            return Err(format!("definition cycle reaches {}", definition.id()).into());
-        }
-        let binding = self.unit_binding();
-        let crate::settings::UnitBinding::Millimeters(scale) = binding else {
-            return Err(format!(
-                "document has no physical millimetre binding ({})",
-                binding.label()
-            )
-            .into());
-        };
-        let local = crate::instances::scale_translation(reference.transform(), scale)
-            .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
-        let transform = parent.compose(local).map_err(|error| error.to_string())?;
-        let definition_id = definition.id();
-        let definition_members = &definition.members;
-
-        stack.push(definition_id);
-
-        path.push(self.reference_segment(source_order, identity)?);
-        let previous_display = self.instance_display;
-        self.instance_display = Some(InstanceDisplay {
-            color: identity
-                .effective_color
-                .map(color)
-                .or(previous_display.and_then(|display| display.color)),
-            visible: previous_display.is_none_or(|display| display.visible)
-                && identity.effective_visible,
-        });
-        let mut links = Vec::new();
-        for &member_id in definition_members {
-            self.expansion_budget.member()?;
-            self.expansion_budget.copy_elements(1)?;
-
-            let member_order = match self.resolve_object(member_id) {
-                ObjectReference::Resolved(order) => order,
-                ObjectReference::Missing => {
-                    return Err(format!("definition member {member_id} is missing").into());
-                }
-                ObjectReference::Ambiguous => {
-                    return Err(format!("definition member {member_id} is ambiguous").into());
-                }
-            };
-            let member = &self.scan.objects[member_order];
-            if member
-                .class_uuid()
-                .is_some_and(crate::instances::is_reference_class)
-            {
-                let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
-                self.append_links(member_order, &nested)?;
-                self.mark_decoded(member_order);
-
-                links.extend(nested);
-                continue;
-            }
-            let before = ModelCheckpoint::capture(&self.session.document().model);
-            let selection = InstanceSelection::new(member_order, path, member_id)?;
-            let previous_selection = self.instance_selection.replace(selection);
-            let decoded = self.decode_geometry();
-            self.instance_selection = previous_selection;
-            decoded?;
-            let after = ModelCheckpoint::capture(&self.session.document().model);
-            if before.same_state(&after) {
-                return Err(format!("definition member {member_id} did not decode").into());
-            }
-            let transformed = self.transform_new_entities(&before, transform)?;
-
-            links.extend(transformed);
-        }
-        self.instance_display = previous_display;
-        path.pop();
-        stack.pop();
-        Ok(links)
-    }
-
-    fn transform_new_entities(
-        &mut self,
-        before: &ModelCheckpoint,
-        transform: Transform,
-    ) -> Result<Vec<String>, ReferenceFailure> {
-        let model = self.session.edit_appended_model(before)?;
-        let budget = &mut self.expansion_budget;
-        let mut links = Vec::new();
-        let mut derived_ids = Vec::new();
-        let bodies = before
-            .added_mut::<Body>(model)
-            .ok_or_else(|| "instance decode removed existing bodies".to_string())?;
-        budget.copy_elements(bodies.len())?;
-        for body in bodies {
-            let id = body.id.as_str().to_string();
-            links.push(id);
-
-            let id = body.id.as_str().to_string();
-            derived_ids.push(id);
-        }
-        for pcurve in before
-            .added_mut::<Pcurve>(model)
-            .ok_or_else(|| "instance decode removed existing pcurves".to_string())?
-        {
-            budget.copy_entity(match &pcurve.geometry {
-                PcurveGeometry::Nurbs { nurbs } => nurbs.pole_rows().count(),
-                _ => 0,
-            })?;
-        }
-        let points = before
-            .added_mut::<Point>(model)
-            .ok_or_else(|| "instance decode removed existing points".to_string())?;
-        budget.copy_elements(points.len())?;
-        for point in points {
-            let placed = placed_finite_point(transform, point.position())?;
-            point.set_position(placed);
-
-            let id = point.id.as_str().to_string();
-            derived_ids.push(id);
-        }
-        for curve in before
-            .added_mut::<Curve>(model)
-            .ok_or_else(|| "instance decode removed existing curves".to_string())?
-        {
-            if let Some(cache) = curve.geometry.solved_cache() {
-                curve.geometry = CurveGeometry::Solved(cache.clone());
-            }
-            budget.copy_entity(match &curve.geometry {
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => nurbs.pole_count(),
-                _ => 0,
-            })?;
-            transform_curve(self.expand.ctx(), curve, transform)?;
-
-            let id = curve.id.as_str().to_string();
-            links.push(id);
-
-            let id = curve.id.as_str().to_string();
-            derived_ids.push(id);
-        }
-        for surface in before
-            .added_mut::<Surface>(model)
-            .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
-        {
-            if let Some(cache) = surface.geometry.solved_cache() {
-                surface.geometry = SurfaceGeometry::Solved(cache.clone());
-            }
-            budget.copy_entity(match &surface.geometry {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => nurbs
-                    .u_count()
-                    .checked_mul(nurbs.v_count())
-                    .ok_or_else(|| COPY_ELEMENT_BUDGET_EXCEEDED.to_owned())?,
-                _ => 0,
-            })?;
-            transform_surface(surface, transform)?;
-
-            let id = surface.id.as_str().to_string();
-            links.push(id);
-
-            let id = surface.id.as_str().to_string();
-            derived_ids.push(id);
-        }
-        for mesh in before
-            .added_mut::<Tessellation>(model)
-            .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
-        {
-            budget.copy_entity(
-                mesh.vertex_count()
-                    .checked_add(mesh.triangle_count())
-                    .ok_or_else(|| COPY_ELEMENT_BUDGET_EXCEEDED.to_owned())?,
-            )?;
-            mesh.edit_vertices(|vertex| {
-                *vertex = transform
-                    .apply_point(*vertex)
-                    .ok_or_else(|| {
-                        cadmpeg_ir::tessellation::TessellationError::EditRefused(
-                            "instance mesh vertex transform produced a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })?
-                    .get();
-                Ok(())
-            })
-            .map_err(|error| error.to_string())?;
-            if !mesh.vertex_normals().is_empty() {
-                mesh.edit_normals(|value| {
-                    *value = transform
-                        .apply_normal(*value)
-                        .map(cadmpeg_ir::math::Vector3::from)
-                        .ok_or_else(|| {
-                            cadmpeg_ir::tessellation::TessellationError::EditRefused(
-                                "mesh normal transform could not produce a finite unit normal"
-                                    .to_string(),
-                            )
-                        })?;
-                    Ok(())
-                })
-                .map_err(|error| error.to_string())?;
-            }
-
-            let id = mesh.id.as_str().to_string();
-            links.push(id);
-
-            let id = mesh.id.as_str().to_string();
-            derived_ids.push(id);
-        }
-        for subd in before
-            .added_mut::<cadmpeg_ir::SubdSurface>(model)
-            .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
-        {
-            subd.cage
-                .edit_vertices(|vertices| {
-                    budget.copy_entity(vertices.len()).map_err(|_| {
-                        cadmpeg_ir::subd::SubdError::EditRefused(
-                            COPY_ELEMENT_BUDGET_EXCEEDED.to_owned(),
-                        )
-                    })?;
-                    for vertex in vertices {
-                        let moved =
-                            transform.apply_point(vertex.point().get()).ok_or_else(|| {
-                                cadmpeg_ir::subd::SubdError::EditRefused(
-                                "instance cage vertex transform produced a non-finite coordinate"
-                                    .to_string(),
-                            )
-                            })?;
-                        vertex.set_point(moved);
-                    }
-                    Ok(())
-                })
-                .map_err(|error| error.to_string())?;
-
-            let id = subd.id.as_str().to_string();
-            links.push(id);
-
-            let id = subd.id.as_str().to_string();
-            derived_ids.push(id);
-        }
-        let procedural_curve_start = before.arena_len::<ProceduralCurve>();
-        let procedural_surface_start = before.arena_len::<ProceduralSurface>();
-        if model.procedural_curves.len() > procedural_curve_start
-            || model.procedural_surfaces.len() > procedural_surface_start
-        {
-            let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
-            for procedure in &model.procedural_curves[procedural_curve_start..] {
-                annotations.remove_entity(procedure.id.as_str());
-            }
-            for procedure in &model.procedural_surfaces[procedural_surface_start..] {
-                annotations.remove_entity(procedure.id.as_str());
-            }
-            self.annotations = annotations.build();
-            model.procedural_curves.truncate(procedural_curve_start);
-            model.procedural_surfaces.truncate(procedural_surface_start);
-            self.report.phase_warnings.push(format_args!("instance: transformed procedural definition omitted; exact solved carrier retained"));
-        }
-        for id in derived_ids {
-            annotate_derived(&mut self.annotations, &id);
-        }
-        Ok(links)
+    ) -> Result<ObjectContext, cadmpeg_core::CodecError> {
+        source_association(identity, &[], None, None)
     }
 
     fn decode_subd(
@@ -2496,7 +1866,7 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity() else {
             return Ok(false);
         };
-        surface.source_object = Some(self.source_association(identity)?);
+        surface.source_object = Some(self.source_association(identity)?.identity);
         let id = surface.id.to_string();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
@@ -2589,6 +1959,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
+        let mut source_layout = BTreeMap::new();
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
             self.report.phase_losses.push(loss.clone());
@@ -2600,12 +1971,18 @@ impl<'a> DecodeContext<'a> {
         )?);
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
+        source_layout.extend(document_data.source_layout);
         self.report.typed_losses.extend(document_data.losses);
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        let presentation =
-            crate::presentation::install(ctx, self.scan, self.session.document_mut()?)?;
+        let presentation = crate::presentation::install(
+            ctx,
+            self.expand.root(),
+            self.scan,
+            self.session.document_mut()?,
+        )?;
+        source_layout.extend(presentation.source_layout);
         self.report.typed_losses.extend(presentation.losses);
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
@@ -2616,6 +1993,7 @@ impl<'a> DecodeContext<'a> {
             self.session.document_mut()?,
         )?);
         let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
+        source_layout.extend(views.source_layout);
         self.report.typed_losses.extend(views.losses);
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
@@ -2752,9 +2130,22 @@ impl<'a> DecodeContext<'a> {
             )
         };
         let notes = vec![note];
+        for (index, status) in self.statuses.iter().enumerate() {
+            if !matches!(status, Some(GeometryOutcome::Decoded)) {
+                self.untyped_records
+                    .entry(Self::mint_unknown_id(index))
+                    .or_default()
+                    .insert(cadmpeg_ir::ArenaClass::Model);
+            }
+        }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
+        source_fidelity.metadata.extend(source_layout);
         let (mut ir, unknowns) = self.session.into_parts();
+        ir.scope = cadmpeg_ir::ContentScope::full();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
+        losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
+        losses.extend(crate::neutral_projection::project(ctx, self.scan, &mut ir)?);
+        ir.finalize();
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
@@ -2762,7 +2153,7 @@ impl<'a> DecodeContext<'a> {
         if let Some(loss) = crate::dialect::admission_loss(&primary) {
             losses.push(loss);
         }
-        let attributes = full_source_attributes(self.scan)?;
+        let attributes = BTreeMap::new();
         ir.source = Some(crate::container::source_meta(
             primary,
             crate::container::SourceMetaDetail::Full {
@@ -2770,12 +2161,24 @@ impl<'a> DecodeContext<'a> {
                 attributes,
             },
         )?);
+        crate::container::move_source_metadata(&mut ir, &mut source_fidelity);
+        source_fidelity
+            .metadata
+            .extend(crate::container::source_layout(self.scan)?);
+        for (key, value) in &source_fidelity.metadata {
+            ctx.retain_bytes(u64_from_index(key.len()), "Rhino fidelity metadata key")?;
+            ctx.retain_bytes(u64_from_index(value.len()), "Rhino fidelity metadata value")?;
+        }
+        for (id, classes) in self.untyped_records {
+            source_fidelity.mark_untyped(id.as_str(), classes)?;
+        }
         Ok(Decoded {
             ir,
             body: DecodeBody {
-                transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(
-                    self.geometry_transferred,
-                ),
+                transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                    scope: cadmpeg_ir::ContentScope::full(),
+                    geometry_transferred: self.geometry_transferred,
+                },
                 coverage: cadmpeg_ir::report::decode::Coverage::default(),
                 losses,
                 notes,
@@ -2831,6 +2234,10 @@ impl<'a> DecodeContext<'a> {
                 IdentityKey::zero_padded(cadmpeg_core::decode::u64_from_index(range.start), 12),
             );
 
+            self.untyped_records
+                .entry(id.clone())
+                .or_default()
+                .insert(cadmpeg_ir::ArenaClass::Model);
             let retained = self.source_record(id, range.clone())?;
             self.opaque_records.push(retained);
             self.report.phase_warnings.push_coded(RhinoLossCode::HistoryGeometryNotTransferred, format_args!(
@@ -2860,6 +2267,10 @@ impl<'a> DecodeContext<'a> {
             key,
         );
 
+        self.untyped_records
+            .entry(id.clone())
+            .or_default()
+            .insert(cadmpeg_ir::ArenaClass::Model);
         let record = self.source_record(id, source.record.range.clone())?;
         self.opaque_records.push(record);
         Ok(())
@@ -2931,23 +2342,15 @@ impl<'a> DecodeContext<'a> {
             .push(format_args!("{class}: {message}"));
     }
 
-    /// Charges entities for one object. Inside an instance expansion they also
-    /// count toward `MAX_INSTANCE_ENTITIES`; `false` means that cap rejects the
-    /// object, which is reported and skipped.
+    /// Charges one local object's entities to the document decode budget.
     fn charge_entities(
         &mut self,
-        source_order: usize,
+        _source_order: usize,
         amount: usize,
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        let mut budget = self.expansion_budget;
-        if self.instance_selection.is_some() && !budget.entities(amount) {
-            self.scan_warning(source_order, format_args!("{ENTITY_BUDGET_EXCEEDED}"));
-            return Ok(false);
-        }
         self.expand
             .ctx()
-            .charge_entities(u64_from_index(amount), "rhino_instance_entities")?;
-        self.expansion_budget = budget;
+            .charge_entities(u64_from_index(amount), "rhino_object_entities")?;
         Ok(true)
     }
 
@@ -3012,7 +2415,7 @@ impl<'a> DecodeContext<'a> {
                 self.session.append_model_mut()?.points.push(Point::new(
                     point_id.clone(),
                     position,
-                    Some(association.clone()),
+                    Some(association.identity.clone()),
                 ));
                 self.session.append_model_mut()?.vertices.push(Vertex {
                     id: vertex_id.clone(),
@@ -3102,7 +2505,7 @@ impl<'a> DecodeContext<'a> {
                     self.session.append_model_mut()?.points.push(Point::new(
                         point_id.clone(),
                         position,
-                        Some(association.clone()),
+                        Some(association.identity.clone()),
                     ));
                     self.session.append_model_mut()?.vertices.push(Vertex {
                         id: vertex_id.clone(),
@@ -3206,7 +2609,7 @@ impl<'a> DecodeContext<'a> {
                     self.session.append_model_mut()?.surfaces.push(Surface {
                         id: surface_id.clone(),
                         geometry: geometry.into_geometry(),
-                        source_object: Some(association.clone()),
+                        source_object: Some(association.identity.clone()),
                     });
                     set_exactness(
                         &mut self.annotations,
@@ -3241,7 +2644,7 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         source_order: usize,
         key: &str,
-        association: SourceObjectAssociation,
+        association: ObjectContext,
         geometry: cadmpeg_ir::geometry::nurbs::NurbsSurface,
         definition: crate::surfaces::DecodedProceduralSurface,
     ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -3282,7 +2685,7 @@ impl<'a> DecodeContext<'a> {
             candidate.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
-                source_object: Some(association),
+                source_object: Some(association.identity),
             });
             let procedural_id = {
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ProceduralSurfaceId::compose(
@@ -3387,7 +2790,7 @@ impl<'a> DecodeContext<'a> {
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                         boundary.boundary.lateral.clone(),
                     )),
-                    source_object: Some(association.clone()),
+                    source_object: Some(association.identity.clone()),
                 });
                 candidate
                     .model
@@ -3424,7 +2827,7 @@ impl<'a> DecodeContext<'a> {
                     "rhino:object:tessellation#{key}.cache-{index}"
                 ))
                 .map_err(|error| error.to_string())?;
-                mesh.tessellation.source_object = Some(association.clone());
+                mesh.tessellation.source_object = Some(association.identity.clone());
                 annotate_derived(candidate_annotations, mesh.tessellation.id.as_str());
                 links.push(mesh.tessellation.id.to_string());
                 candidate.model.tessellations.push(mesh.tessellation);
@@ -3483,7 +2886,7 @@ impl<'a> DecodeContext<'a> {
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: Some(unknown.clone()),
                 }),
-                source_object: Some(association),
+                source_object: Some(association.identity),
             });
             set_exactness(candidate_annotations, &id, Exactness::Unknown);
             Ok::<_, CandidateError>(id.to_string())
@@ -3549,7 +2952,7 @@ impl<'a> DecodeContext<'a> {
             .append_prefixed(mesh.warnings, format_args!("{}", identity.source_id));
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
-        tessellation.source_object = Some(self.source_association(identity)?);
+        tessellation.source_object = Some(self.source_association(identity)?.identity);
         self.session
             .append_model_mut()?
             .tessellations
@@ -3694,27 +3097,19 @@ impl<'a> DecodeContext<'a> {
                     !draft.model().curves.is_empty() || !draft.model().surfaces.is_empty();
                 let cache_only =
                     !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
-                let entity_count = draft.entity_count();
-                let mut budget = self.expansion_budget;
-                let committed =
-                    if self.instance_selection.is_none() || budget.entities(entity_count) {
-                        match self.session.validate_source_records()? {
-                            Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
-                                Ok(()) => Ok(()),
-                                Err(error) => Err(format!("{error}")),
-                            },
-                            Err(error) => Err(format!("{error}")),
-                        }
-                    } else {
-                        Err(ENTITY_BUDGET_EXCEEDED.to_string())
-                    };
+                let committed = match self.session.validate_source_records()? {
+                    Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
+                        Ok(()) => Ok(()),
+                        Err(error) => Err(format!("{error}")),
+                    },
+                    Err(error) => Err(format!("{error}")),
+                };
                 if let Err(error) = committed {
                     self.scan_warning(
                         source_order,
                         format_args!("Brep draft rejected before commit: {error}"),
                     );
                 } else {
-                    self.expansion_budget = budget;
                     self.append_links(source_order, &links)?;
 
                     self.report.typed_losses.extend(typed_losses);
@@ -3767,9 +3162,6 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         *status = Some(next);
-        if let Some(undo) = &mut self.expansion_undo {
-            undo.outcomes.push(source_order);
-        }
         true
     }
 
@@ -3935,7 +3327,7 @@ fn stage_extrusion_caps(
     ir: &mut CadIr,
     annotations: &mut impl ExactnessTarget,
     key: &str,
-    association: &SourceObjectAssociation,
+    association: &ObjectContext,
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
 ) -> Result<String, CandidateError> {
@@ -3997,7 +3389,7 @@ fn stage_extrusion_caps(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
-            source_object: Some(association.clone()),
+            source_object: Some(association.identity.clone()),
         });
         let mut loop_ids = Vec::new();
         for (profile, committed) in boundaries.iter().enumerate() {
@@ -4024,7 +3416,7 @@ fn stage_extrusion_caps(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         boundary.end_nurbs.clone(),
                     )),
-                    source_object: Some(association.clone()),
+                    source_object: Some(association.identity.clone()),
                 });
                 annotate_derived(annotations, &id.to_string());
                 id
@@ -4117,7 +3509,7 @@ fn stage_extrusion_caps(
             ir.model.points.push(Point::new(
                 point_id.clone(),
                 endpoint,
-                Some(association.clone()),
+                Some(association.identity.clone()),
             ));
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
@@ -4191,7 +3583,7 @@ fn stage_extrusion_caps(
             },
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
             name: None,
-            color: association.color,
+            color: None,
             tolerance: None,
         });
         annotate_derived(annotations, &surface_id.to_string());
@@ -4263,7 +3655,7 @@ struct BrepTransferInput<'a> {
     writer_version: Option<i64>,
     brep: &'a crate::brep::ValidatedRawBrep,
     key: &'a str,
-    association: &'a SourceObjectAssociation,
+    association: &'a ObjectContext,
     unknown: &'a UnknownId,
     scale: MillimeterScale,
     mesh_budget: &'a mut crate::mesh::MeshBudget,
@@ -4276,7 +3668,7 @@ struct BrepCarrierInput<'a> {
     writer_version: Option<i64>,
     raw: &'a crate::brep::RawBrep,
     key: &'a str,
-    association: &'a SourceObjectAssociation,
+    association: &'a ObjectContext,
     unknown: &'a UnknownId,
     scale: MillimeterScale,
     mesh_budget: &'a mut crate::mesh::MeshBudget,
@@ -4297,7 +3689,7 @@ struct StagedBrepSurface {
 struct BrepStageContext<'a> {
     ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
     key: &'a str,
-    association: &'a SourceObjectAssociation,
+    association: &'a ObjectContext,
     unknown: &'a UnknownId,
 }
 
@@ -4408,7 +3800,7 @@ fn stage_brep_carriers(
                 archive,
                 crate::mesh::MeshDecodeOptions {
                     writer_version,
-                    association: Some(association.clone()),
+                    association: Some(association.identity.clone()),
                     id: crate::mesh::MeshId::Ready(
                         cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
                             cadmpeg_core::CodecError::Malformed(error.to_string())
@@ -4531,7 +3923,7 @@ fn stage_brep_carriers(
                 staged.draft.model_mut().surfaces.push(Surface {
                     id: id.clone(),
                     geometry: geometry.into_geometry(),
-                    source_object: Some(association.clone()),
+                    source_object: Some(association.identity.clone()),
                 });
                 staged.draft.exactness(
                     id.to_string(),
@@ -4706,7 +4098,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().points.push(Point::new(
             point_id.clone(),
             position,
-            Some(association.clone()),
+            Some(association.identity.clone()),
         ));
         staged.draft.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -5088,15 +4480,18 @@ pub(crate) fn embedded_brep_json(
         crate::brep::BrepParse::Valid(value) => value,
         crate::brep::BrepParse::SemanticInvalid { .. } => return None,
     };
-    let association = SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("embedded-history-brep".to_string())?,
+    let association = ObjectContext {
+        identity: SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id: cadmpeg_core::text::NonBlankString::new(
+                "embedded-history-brep".to_string(),
+            )?,
+            instance_path: Vec::new(),
+        },
         name: None,
         color: None,
         visible: None,
-        layer: None,
-        instance_path: Vec::new(),
     };
     let unknown = UnknownId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "history", "brep"),
@@ -5278,7 +4673,7 @@ fn stage_brep_procedural_surface(
     staged.draft.model_mut().surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
-        source_object: Some(context.association.clone()),
+        source_object: Some(context.association.identity.clone()),
     });
     let procedural_id = cadmpeg_ir::ids::ProceduralSurfaceId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "procedural-surface"),
@@ -5373,7 +4768,7 @@ fn stage_curve_tree_indexed(
         parameter_range: None,
         id: id.clone(),
         geometry,
-        source_object: Some(association.clone()),
+        source_object: Some(association.identity.clone()),
     });
     staged.draft.exactness(id.to_string(), Exactness::Derived);
     staged.links.push(id.to_string());
@@ -5862,7 +5257,7 @@ fn append_curve_warnings<P: std::fmt::Display + Copy>(
 
 struct CurveCommitSource<'a> {
     key: &'a str,
-    association: &'a SourceObjectAssociation,
+    association: &'a ObjectContext,
     record: Option<UnknownId>,
     path: &'a str,
 }
@@ -5958,7 +5353,7 @@ fn commit_curve_tree_indexed(
         parameter_range: None,
         id: id.clone(),
         geometry,
-        source_object: Some(source.association.clone()),
+        source_object: Some(source.association.identity.clone()),
     });
     set_exactness(annotations, &id, Exactness::Derived);
     if let Some(definition) = definition {
@@ -6179,110 +5574,30 @@ fn transform_curve(
     Ok(())
 }
 
-fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), ReferenceFailure> {
-    let geometry = std::mem::replace(
-        &mut surface.geometry,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-    );
-    surface.geometry = match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
-            if let Err(message) = nurbs.try_map_control_points(|_, pole| {
-                transform
-                    .apply_point(pole.get())
-                    .ok_or("instance control point transform produced a non-finite coordinate")
-            }) {
-                return Err(ReferenceFailure::Semantic(message.to_owned()));
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let source_origin = plane_surface.origin().get();
-            let u_axis = *plane_surface.frame().reference().as_raw();
-            let origin = placed_finite_point(transform, plane_surface.origin())?;
-            let unit_normal = transform
-                .apply_unit_normal(*plane_surface.frame().axis())
-                .ok_or_else(|| {
-                    "instance plane normal transform could not produce a finite unit normal"
-                        .to_string()
-                })?;
-            let normal = *unit_normal.as_raw();
-            let endpoint = placed_point(
-                transform,
-                Point3::new(
-                    source_origin.x + u_axis.x,
-                    source_origin.y + u_axis.y,
-                    source_origin.z + u_axis.z,
-                ),
-            )?;
-            let projected = cadmpeg_ir::math::Vector3::new(
-                endpoint.x - origin.x,
-                endpoint.y - origin.y,
-                endpoint.z - origin.z,
-            );
-            let dot = projected.x * normal.x + projected.y * normal.y + projected.z * normal.z;
-            let value = cadmpeg_ir::math::Vector3::new(
-                projected.x - dot * normal.x,
-                projected.y - dot * normal.y,
-                projected.z - dot * normal.z,
-            );
-            let length = PositiveReal::new(value.norm())
-                .ok_or_else(|| "instance plane transform collapsed its frame".to_string())?;
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::new(
-                    origin,
-                    UnitVector3::normalized_with_admitted_length(value, length)
-                        .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
-                        .ok_or_else(|| {
-                            "PlaneSurface.normal/u_axis must form an orthonormal frame".to_string()
-                        })?,
-                ),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record }) => {
-            surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
-            return Err("unknown free surface cannot be transformed exactly"
-                .to_string()
-                .into());
-        }
-        other => {
-            surface.geometry = other;
-            return Err(
-                "analytic surface family has no exact general-affine instance conversion"
-                    .to_string()
-                    .into(),
-            );
-        }
-    };
-    Ok(())
-}
-
 fn source_association(
     identity: &crate::objects::SourceIdentity,
     instance_path: &[String],
     parent_color: Option<Color>,
     parent_visible: Option<bool>,
-) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+) -> Result<ObjectContext, cadmpeg_core::CodecError> {
     let object_id = format!("{}", identity.object_id);
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
     let name = (!identity.name.is_empty()).then(|| identity.name.clone());
-    let layer = identity.layer.as_ref().map(|layer| match layer.id {
-        Some(id) => format!("{id}"),
-        None => layer.name.clone(),
-    });
     let mut admitted_path = Vec::new();
     for segment in instance_path {
         admitted_path.push(segment.to_owned());
     }
-    Ok(SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id,
+    Ok(ObjectContext {
+        identity: SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id,
+            instance_path: admitted_path,
+        },
         name,
         color: identity.effective_color.map(color).or(parent_color),
         visible: Some(parent_visible.unwrap_or(true) && identity.effective_visible),
-        layer,
-        instance_path: admitted_path,
     })
 }
 
@@ -6294,7 +5609,7 @@ fn body(
     identity: &crate::objects::SourceIdentity,
     id: cadmpeg_ir::ids::BodyId,
     regions: Vec<cadmpeg_ir::ids::RegionId>,
-    association: &SourceObjectAssociation,
+    association: &ObjectContext,
 ) -> Body {
     Body {
         id,
@@ -6501,147 +5816,6 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
         ir.tolerances.angular = source_units.angular_tolerance;
     }
     ir
-}
-
-fn insert_full_source_attribute(
-    attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    key: std::fmt::Arguments<'_>,
-    value: std::fmt::Arguments<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let key = key.to_string();
-    let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed("generated Rhino source attribute key is blank")
-    })?;
-    let value = value.to_string();
-    attributes.insert(key, value);
-    Ok(())
-}
-
-struct LayerAttributePrefix {
-    index: i32,
-    duplicate: Option<(usize, usize)>,
-}
-
-impl std::fmt::Display for LayerAttributePrefix {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "layer.{}", self.index)?;
-        if let Some((occurrence, offset)) = self.duplicate {
-            write!(formatter, ".record-{occurrence:06}-offset-{offset}")?;
-        }
-        Ok(())
-    }
-}
-
-/// Builds the path-specific facts available after full decoding.
-fn full_source_attributes(
-    scan: &Scan<'_>,
-) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
-    let mut attributes = BTreeMap::new();
-    macro_rules! attribute {
-        ($key:literal, $value:expr) => {
-            insert_full_source_attribute(
-                &mut attributes,
-                format_args!($key),
-                format_args!("{}", $value),
-            )?
-        };
-    }
-    let settings = &scan.metadata.settings;
-    if let Some(units) = &settings.units {
-        attribute!("unit_value", units.unit.value());
-        match &units.unit {
-            crate::settings::UnitSystem::None => attribute!("unit_system", "none"),
-            crate::settings::UnitSystem::Unset => attribute!("unit_system", "unset"),
-            crate::settings::UnitSystem::Standard(value) => {
-                attribute!("unit_system", format_args!("standard:{}", value.value()));
-            }
-            crate::settings::UnitSystem::Custom(unit) => {
-                attribute!("unit_system", format_args!("custom:{}", unit.name()));
-            }
-        }
-        if let crate::settings::UnitSystem::Custom(unit) = &units.unit {
-            attribute!("custom_unit_name", unit.name());
-            attribute!("custom_meters_per_unit", unit.meters_per_unit().get());
-        }
-        if let Some(scale) = units.millimeters_per_unit() {
-            attribute!("millimeters_per_unit", scale);
-        }
-        attribute!("absolute_tolerance_native", units.absolute_tolerance.get());
-        if let Some(value) = units.absolute_tolerance_millimeters() {
-            attribute!("absolute_tolerance_millimeters", value.get());
-        } else {
-            attribute!("absolute_tolerance_millimeters", "unresolved");
-        }
-        attribute!("angular_tolerance", units.angular_tolerance.get());
-        attribute!("relative_tolerance", units.relative_tolerance.get());
-        if let Some(display) = units.distance_display {
-            attribute!("distance_display_mode", display.mode);
-            attribute!("distance_display_precision", display.precision);
-        }
-    }
-    if let Some(application) = &scan.metadata.properties.application {
-        attribute!("application_name", application.name);
-        attribute!("application_url", application.url);
-        attribute!("application_details", application.details);
-    }
-    if let Some(current) = settings.current_layer {
-        attribute!("current_layer", current);
-    }
-    if let Some(current) = settings.current_material {
-        attribute!("current_material", current.value);
-        attribute!("current_material_source", current.source);
-    }
-    if let Some(current) = settings.current_color {
-        attribute!(
-            "current_color",
-            format_args!(
-                "{},{},{},{}",
-                current.value[0], current.value[1], current.value[2], current.value[3]
-            )
-        );
-        attribute!("current_color_source", current.source);
-    }
-    if let Some(current) = settings.current_wire_density {
-        attribute!("current_wire_density", current);
-    }
-    if let Some(current) = settings.current_font {
-        attribute!("current_font", current);
-    }
-    if let Some(current) = settings.current_dimstyle {
-        attribute!("current_dimstyle", current);
-    }
-    if let Some(url) = &settings.model_url {
-        attribute!("model_url", url);
-    }
-    let mut layer_index_counts = BTreeMap::<i32, usize>::new();
-    for layer in &scan.metadata.layers {
-        *layer_index_counts.entry(layer.index).or_default() += 1;
-    }
-    let mut layer_index_occurrences = BTreeMap::<i32, usize>::new();
-    for layer in &scan.metadata.layers {
-        let duplicate = if layer_index_counts.get(&layer.index) == Some(&1) {
-            None
-        } else {
-            let occurrence = layer_index_occurrences.entry(layer.index).or_default();
-            let current = *occurrence;
-            *occurrence += 1;
-            Some((current, layer.source.range.start))
-        };
-        let prefix = LayerAttributePrefix {
-            index: layer.index,
-            duplicate,
-        };
-        if duplicate.is_some() {
-            attribute!("{prefix}.index", layer.index);
-        }
-        attribute!("{prefix}.name", layer.name);
-        attribute!("{prefix}.visible", layer.visible);
-        attribute!("{prefix}.locked", layer.locked);
-        if let Some(id) = layer.id {
-            attribute!("{prefix}.uuid", id);
-        }
-    }
-    Ok(attributes)
 }
 
 #[cfg(test)]

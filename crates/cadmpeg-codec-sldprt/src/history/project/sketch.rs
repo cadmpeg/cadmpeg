@@ -34,22 +34,21 @@ pub(super) fn project_split_face(feature: &Feature) -> Option<FeatureDefinition>
 }
 
 pub(super) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
-    let diameter = feature
-        .parameters
-        .get("D2")
-        .and_then(|value| parse_dimension_display_length(value))
-        .or_else(|| {
-            let mut tagged = feature
-                .parameters
-                .values()
-                .filter(|value| strip_diameter_modifier(value).is_some())
-                .filter_map(|value| parse_dimension_display_length(value));
-            let diameter = tagged.next()?;
-            tagged.next().is_none().then_some(diameter)
-        })
-        .and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok());
+    let diameter = super::parameter_dimension(feature, &["D2"]).or_else(|| {
+        let mut tagged = feature
+            .parameters
+            .iter()
+            .filter(|(_, value)| strip_diameter_modifier(value).is_some());
+        let (name, _) = tagged.next()?;
+        tagged
+            .next()
+            .is_none()
+            .then(|| super::parameter_dimension(feature, &[name.as_str()]))
+            .flatten()
+    });
     let extent = match feature.parameters.get("D1") {
         Some(value) => parse_positive_dimension_length_mm(value)
+            .and_then(|_| super::parameter_dimension(feature, &["D1"]))
             .map(|length| CosmeticThreadExtent::Blind { length })
             .or_else(|| {
                 (parse_angle_rad(value).is_some()

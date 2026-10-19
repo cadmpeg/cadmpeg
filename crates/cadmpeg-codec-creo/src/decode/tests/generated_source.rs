@@ -1431,7 +1431,8 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
         Point3::new(0.0, -40.0, -140.0),
         Vector3::new(0.0, 1.0, 0.0),
         LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(57.0).expect("nonzero length fixture"),
+            length: (cadmpeg_ir::scalar::NonZeroLength::new(57.0).expect("nonzero length fixture"))
+                .into(),
         },
     ));
     assert_eq!(

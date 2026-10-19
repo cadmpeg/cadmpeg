@@ -14,13 +14,15 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Sketches and their projected entities and constraints.
 pub(crate) struct ProjectedSketches {
     pub(crate) sketches: Vec<Sketch>,
     pub(crate) entities: Vec<SketchEntity>,
     pub(crate) constraints: Vec<SketchConstraint>,
+    /// Nested source profiles whose carrier/topology payload was not fully typed.
+    pub(crate) untyped_lanes: BTreeSet<String>,
 }
 
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
@@ -32,6 +34,7 @@ pub(crate) fn sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
+    let mut untyped_lanes = BTreeSet::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
             continue;
@@ -47,6 +50,13 @@ pub(crate) fn sketches(
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
+            if brep.untyped_model
+                || brep.stats.unknown_surface_faces != 0
+                || brep.stats.unknown_curve_edges != 0
+                || brep.stats.unclaimed_faces != 0
+            {
+                untyped_lanes.insert(native_ref.clone());
+            }
             let configuration = configuration(section);
             project_brep(
                 &brep,
@@ -70,6 +80,7 @@ pub(crate) fn sketches(
         sketches,
         entities,
         constraints,
+        untyped_lanes,
     })
 }
 

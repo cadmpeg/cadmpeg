@@ -1,37 +1,37 @@
-use crate::products::{deserialize_occurrence_scale, Occurrence, OccurrenceParent};
-use crate::scalar::FiniteReal;
+// SPDX-License-Identifier: Apache-2.0
+use crate::products::{AssemblyGraph, Occurrence, OccurrenceParent};
+use crate::transform::Transform;
 
 #[test]
-fn occurrence_scale_rejects_nonfinite_components_with_field_context() {
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        for axis in 0..3 {
-            let mut scale = [1.0; 3];
-            scale[axis] = value;
-            let deserializer = serde::de::value::SeqDeserializer::<_, serde::de::value::Error>::new(
-                scale.into_iter(),
-            );
-            let error = deserialize_occurrence_scale(deserializer).unwrap_err();
-            assert!(error.to_string().contains("scale"), "{error}");
-        }
-    }
-}
-
-#[test]
-fn occurrence_scale_preserves_zero_and_negative_factors_on_the_wire() {
+fn affine_placement_carries_scale_without_a_duplicate_scale_field() {
     let mut occurrence = super::occurrence(
-        "test:model:occurrence#scale",
+        "test:model:occurrence#affine",
         OccurrenceParent::Root {},
         0.0,
     );
-    let mut wire = serde_json::to_value(&occurrence).unwrap();
-    assert_eq!(wire["scale"], serde_json::json!([1.0, 1.0, 1.0]));
-    wire["scale"] = serde_json::json!([-2.0, 0.0, 3.0]);
-    occurrence = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(occurrence.scale.map(FiniteReal::get), [-2.0, 0.0, 3.0]);
-    assert_eq!(serde_json::to_value(&occurrence).unwrap(), wire);
-    occurrence.scale[1] = FiniteReal::ONE;
-    assert_eq!(occurrence.scale.map(FiniteReal::get), [-2.0, 1.0, 3.0]);
-    wire["scale"] = serde_json::json!([null, 1.0, 1.0]);
-    let error = serde_json::from_value::<Occurrence>(wire).unwrap_err();
-    assert!(error.to_string().contains("scale"), "{error}");
+    let rows = [
+        [-2.0, 0.0, 0.0, 7.0],
+        [0.0, 0.0, 0.0, 8.0],
+        [0.0, 0.0, 3.0, 9.0],
+    ];
+    occurrence.transform = Transform::affine(rows).unwrap();
+    let wire = serde_json::to_value(&occurrence).unwrap();
+    assert!(wire.get("scale").is_none());
+    let restored: Occurrence = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(restored.transform.affine_rows(), rows);
+    let occurrences = [restored];
+    let graph = AssemblyGraph::new(&occurrences).unwrap();
+    assert_eq!(
+        graph
+            .effective_transform(&occurrences[0].id)
+            .unwrap()
+            .affine_rows(),
+        rows
+    );
+    let mut old_wire = wire;
+    old_wire["scale"] = serde_json::json!([1.0, 1.0, 1.0]);
+    assert!(serde_json::from_value::<Occurrence>(old_wire)
+        .unwrap_err()
+        .to_string()
+        .contains("scale"));
 }

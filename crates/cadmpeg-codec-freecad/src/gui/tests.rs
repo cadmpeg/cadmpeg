@@ -347,9 +347,17 @@ fn retains_missing_and_ambiguous_cameras_in_schema_one_gui_document() {
             )
             .expect("independent persistence survives malformed GUI metadata");
 
-        assert!(assert_gui_metadata_recovery(&recovered)
-            .message
-            .contains("camera selection is unresolved"));
+        if camera_records.is_empty() {
+            assert!(recovered.report().losses.is_empty());
+            assert!(recovered.source_fidelity().unrepresented().is_empty());
+            assert!(recovered.ir().model.presentation_documents[0]
+                .states()
+                .is_empty());
+        } else {
+            assert!(assert_gui_metadata_recovery(&recovered)
+                .message
+                .contains("camera selection is unresolved"));
+        }
     }
 }
 
@@ -614,10 +622,7 @@ fn keeps_registered_non_presentation_properties_native() {
         "BoundingBox",
         "Selectable",
         "DrawStyle",
-        "LineMaterial",
-        "PointMaterial",
         "ShowPlacement",
-        "TransformOrigin",
         "AngularDeflection",
         "Deviation",
         "Transparency",
@@ -638,6 +643,12 @@ fn keeps_registered_non_presentation_properties_native() {
         .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
         .expect("GUI properties");
     assert_eq!(properties.len(), 20);
+    for name in ["LineMaterial", "PointMaterial", "TransformOrigin"] {
+        assert!(!view.properties.contains_key(name));
+        assert!(properties
+            .iter()
+            .any(|property| property.name == name && !property.values.is_empty()));
+    }
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
@@ -815,12 +826,22 @@ Co 1001000 +2 0 *
                 &DecodeOptions::default(),
             )
             .expect("producer-accepted topology color mismatch");
-        assert_eq!(result.report().losses.len(), 1);
-        let loss = &result.report().losses[0];
+        assert_eq!(result.report().losses.len(), 2);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "source.model-payload-unrepresented"));
         assert_eq!(
-            loss.code.local_code(),
-            "appearance.topology-color-count-mismatch"
+            result.source_fidelity().unrepresented(),
+            cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
         );
+        let loss = result
+            .report()
+            .losses
+            .iter()
+            .find(|loss| loss.code.local_code() == "appearance.topology-color-count-mismatch")
+            .unwrap();
         assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
         assert!(loss.message.contains(kind));
         assert!(loss.provenance.as_ref().is_some_and(|source| {

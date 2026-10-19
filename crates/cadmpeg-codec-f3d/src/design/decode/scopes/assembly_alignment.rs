@@ -58,7 +58,7 @@ pub(super) fn exact_assembly_alignment(
     };
     let matching = |owner: &&DesignParameterOwner| {
         native_stream(owner.id()) == Some(stream)
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
     };
 
     let mut lanes = Vec::new();
@@ -78,7 +78,7 @@ pub(super) fn exact_assembly_alignment(
         if lanes
             .iter()
             .enumerate()
-            .any(|(ordinal, owner)| u32::try_from(ordinal) != Ok(owner.local_ordinal()))
+            .any(|(ordinal, owner)| u32::try_from(ordinal).ok() != owner.local_ordinal())
         {
             return None;
         }
@@ -154,7 +154,7 @@ pub(super) fn exact_assembly_alignment(
             for owner in alignment_lanes {
                 owners.push(crate::records::identity::Located {
                     value: owner.record_index(),
-                    offset: owner.evaluated_value_offset(),
+                    offset: owner.evaluated_value_offset()?,
                 });
             }
             if legacy_class_388 {
@@ -167,7 +167,7 @@ pub(super) fn exact_assembly_alignment(
                     });
                 if lanes
                     .iter()
-                    .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103)
+                    .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != Some(103))
                     || !owner_reference_order_matches
                     || !scope
                         .reference_members()
@@ -188,7 +188,7 @@ pub(super) fn exact_assembly_alignment(
                     });
                 if lanes
                     .iter()
-                    .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103)
+                    .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != Some(103))
                     || !owner_reference_order_matches
                     || !scope
                         .reference_members()
@@ -205,7 +205,7 @@ pub(super) fn exact_assembly_alignment(
             ) {
                 if lanes
                     .iter()
-                    .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103)
+                    .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != Some(103))
                     || (0..scope.reference_members().len())
                         .filter(|&start| {
                             scope

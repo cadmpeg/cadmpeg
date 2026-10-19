@@ -30,11 +30,13 @@ fn diagnostic_property(
 
 fn enum_value(tag: &str, value: Option<&str>) -> crate::native::ValueRecord {
     crate::native::ValueRecord {
+        parent: None,
         tag: tag.into(),
         order: 0,
         attributes: value
             .map(|value| std::collections::BTreeMap::from([("value".into(), value.into())]))
             .unwrap_or_default(),
+        decoded_json: None,
         text: None,
         raw_xml: "<Integer/>".into(),
     }

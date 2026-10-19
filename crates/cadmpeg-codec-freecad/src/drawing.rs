@@ -208,7 +208,12 @@ pub(crate) fn transfer_neutral(
         let template = template_id.cloned();
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
-            parameters.insert(name.to_owned(), value.to_owned());
+            if !matches!(
+                name.as_str(),
+                "X" | "Y" | "Scale" | "Rotation" | "Direction"
+            ) {
+                parameters.insert(name.to_owned(), value.to_owned());
+            }
         }
         let mut assets = Vec::new();
         for name in &record.side_entries {
@@ -502,10 +507,12 @@ fn drawing_parameters(
             continue;
         };
         validate_drawing_property(ctx, name, property)?;
-        let value = root_value(ctx, property, name)?.ok_or_else(|| {
-            CodecError::malformed(format_args!("drawing property {name} has no root value"))
+        let value = crate::attributes::semantic_text(property).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "drawing property {name} has no admitted semantic value"
+            ))
         })?;
-        parameters.insert((*name).to_owned(), value.raw_xml.clone());
+        parameters.insert((*name).to_owned(), value);
     }
     for name in VALIDATED_ONLY_NAMES {
         if let Some(property) = sole_named_property("drawing", properties, name)? {

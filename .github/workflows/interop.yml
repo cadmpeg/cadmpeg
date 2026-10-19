@@ -41,8 +41,30 @@ jobs:
         with:
           shared-key: iges-freecad
 
-      - name: Install FreeCAD command line importer
-        run: sudo snap install freecad --channel=stable
+      - name: Install compatible FreeCAD 1.1.4 runtime
+        run: |
+          set -euo pipefail
+          cadmpeg_freecad_root="$RUNNER_TEMP/cadmpeg-freecad-1.1.4"
+          mkdir -p "$cadmpeg_freecad_root"
+          cd "$cadmpeg_freecad_root"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage \
+            --output FreeCAD.AppImage
+          echo 'f6dc6ba676e5ac96a565ebc8d657232f94c6158e85b4352141bd1a46f6b43434  FreeCAD.AppImage' | sha256sum --check
+          chmod +x FreeCAD.AppImage
+          ./FreeCAD.AppImage --appimage-extract > extract.log
+          rm FreeCAD.AppImage
+          mkdir -p "$cadmpeg_freecad_root/bin"
+          cat > "$cadmpeg_freecad_root/bin/freecad.cmd" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+          exec "${CADMPEG_FREECAD_BIN:?compatible FreeCAD runtime is missing}" "$@"
+          SCRIPT
+          chmod +x "$cadmpeg_freecad_root/bin/freecad.cmd"
+          echo "CADMPEG_FREECAD_BIN=$cadmpeg_freecad_root/squashfs-root/usr/bin/freecadcmd" >> "$GITHUB_ENV"
+          echo "$cadmpeg_freecad_root/bin" >> "$GITHUB_PATH"
+          "$cadmpeg_freecad_root/squashfs-root/usr/bin/freecadcmd" --version
 
       - name: Test IGES acceptance harnesses
         run: |
@@ -51,7 +73,7 @@ jobs:
             scripts/test_prepare_iges_freecad_edited.py
 
       - name: Build IGES production binary
-        run: cargo build -q --release -p cadmpeg --no-default-features --features iges
+        run: cargo build -q --release -p cadmpeg --no-default-features --features iges,fcstd
 
       - name: Materialize writer geometry profile
         run: |
@@ -96,6 +118,18 @@ jobs:
           CADMPEG_IGES_ALLOW_EMPTY: "1"
           CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-all-report.json
         run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
+
+      - name: Materialize synthesized FCStd outputs
+        run: |
+          python3 scripts/prepare-freecad-synth.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-synth"
+
+      - name: Run independent FreeCAD synthesis gate
+        env:
+          CADMPEG_FCSTD_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad-synth
+          CADMPEG_FCSTD_REPORT: /home/runner/side2/tmp/iges-l9/freecad-synth-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-freecad-synth.py"
 
       - name: Upload FreeCAD acceptance report
         if: always()

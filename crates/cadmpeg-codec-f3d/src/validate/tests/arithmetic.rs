@@ -48,7 +48,7 @@ fn locus_group_with_saturated_offsets(base: u64, count: usize) -> DesignDimensio
 fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|decode| {
         use crate::records::entity_header::{
-            DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_SKETCH,
+            DESIGN_MODULE_SKETCH, DesignEntityHeader, DesignEntityRegistration,
         };
         use crate::records::identity::{DesignEntityId, ReferenceRun};
         use crate::records::parameters::{
@@ -99,10 +99,10 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         );
         let entity = DesignEntityHeader {
             id: "f3d:Design/BulkStream.dat:entity#4".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             entity_id: DesignEntityId::from_parts("sketch", 4),
             class_tag: "112".to_owned().try_into().unwrap(),
-            optional_slot_present: false,
+            optional_slot_present: Some(false),
             registration: DesignEntityRegistration::new(
                 Some(DESIGN_MODULE_SKETCH.into()),
                 None,
@@ -223,7 +223,7 @@ fn companion_findings(
         }
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:header#8".into(),
-            byte_offset,
+            byte_offset: Some(byte_offset),
             class_tag: "258".to_owned().try_into().unwrap(),
             record_index: 8,
         };
@@ -269,7 +269,7 @@ fn companion_accepts_representable_prefix() {
 fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|decode| {
         use crate::records::entity_header::{
-            DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_SKETCH,
+            DESIGN_MODULE_SKETCH, DesignEntityHeader, DesignEntityRegistration,
         };
         use crate::records::identity::{DesignEntityId, ReferenceRun};
         use crate::records::parameters::{
@@ -325,10 +325,10 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         ));
         let entity = DesignEntityHeader {
             id: "f3d:Design/BulkStream.dat:entity#4".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             entity_id: DesignEntityId::from_parts("sketch", 4),
             class_tag: "112".to_owned().try_into().unwrap(),
-            optional_slot_present: false,
+            optional_slot_present: Some(false),
             registration: DesignEntityRegistration::new(
                 Some(DESIGN_MODULE_SKETCH.into()),
                 None,

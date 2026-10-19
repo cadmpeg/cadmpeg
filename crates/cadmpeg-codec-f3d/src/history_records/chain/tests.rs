@@ -216,7 +216,7 @@ fn chain() -> AsmHistory {
         states.push(AsmDeltaState {
             id: format!("state-{index}"),
             parent: "history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id: i64::try_from(index).unwrap(),
             version_flag: 1,
             state_flag: 0,

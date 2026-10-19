@@ -52,7 +52,7 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
             .err()
             .map(|error| error.to_string()),
         Some(
-            cadmpeg_core::CodecError::malformed(
+            crate::writer::unsupported(
                 "IGES point Type 122 directrix start has non-finite coordinates"
             )
             .to_string()

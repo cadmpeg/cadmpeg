@@ -9,6 +9,7 @@ pub(crate) mod native_references;
 pub(crate) mod test_bytes;
 pub(crate) mod test_cfb;
 pub(crate) mod test_deltas;
+pub(crate) mod test_jt_mesh;
 pub(crate) mod test_om;
 pub(crate) mod test_prt;
 pub(crate) mod test_streams;

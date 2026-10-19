@@ -106,11 +106,11 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     );
 
     let mut ambiguous_lane = lane.clone();
-    ambiguous_lane.classes.push(FeatureInputClass {
+    ambiguous_lane.classes.push(FeatureInputClass { feature_ref: None,
         id: "second-project".into(),
         parent: "lane".into(),
-        ordinal: 1,
-        offset: 120,
+        ordinal: 1, sequence: 1,
+        offset: Some(120),
         name: "moPLineProject_c".into(),
     });
     let mut ambiguous = vec![history.clone()];
@@ -166,11 +166,11 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let name = FeatureInputName {
+    let name = FeatureInputName { feature_ref: None,
         id: "name".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: cadmpeg_core::decode::u64_from_index(name_offset),
+        ordinal: 0, sequence: 0,
+        offset: Some(cadmpeg_core::decode::u64_from_index(name_offset)),
         value: value.into(),
         object_id: ObjectId::from_value(7),
     };
@@ -353,11 +353,11 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                 references: Vec::new(),
                 sketch_entities: Vec::new(),
             },
-            FeatureInputName {
+            FeatureInputName { feature_ref: None,
                 id: "name".into(),
                 parent: "lane".into(),
-                ordinal: 0,
-                offset: cadmpeg_core::decode::u64_from_index(name_offset),
+                ordinal: 0, sequence: 0,
+                offset: Some(cadmpeg_core::decode::u64_from_index(name_offset)),
                 value: "Feature".into(),
                 object_id: ObjectId::from_value(1),
             },
@@ -414,11 +414,11 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let compact_name = FeatureInputName {
+    let compact_name = FeatureInputName { feature_ref: None,
         id: "compact-name".into(),
         parent: "compact-lane".into(),
-        ordinal: 0,
-        offset: cadmpeg_core::decode::u64_from_index(name_offset),
+        ordinal: 0, sequence: 0,
+        offset: Some(cadmpeg_core::decode::u64_from_index(name_offset)),
         value: "Feature".into(),
         object_id: ObjectId::from_value(1),
     };
@@ -498,7 +498,9 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        ),
                     },
                     draft: None,
                 },
@@ -547,6 +549,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };

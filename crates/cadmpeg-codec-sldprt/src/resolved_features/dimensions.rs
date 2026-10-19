@@ -171,7 +171,9 @@ fn native_radial_record_for_marker(
             .markers
             .iter()
             .find(|marker| marker.id() == marker_id)?;
-        let offset = usize::try_from(marker.offset()).ok()?;
+        let offset = marker
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())?;
         compact_radial_circle_index(&lane.native_payload, offset)
             .or_else(|| {
                 extended_terminal_repeated_radial_circle_index(&lane.native_payload, offset)
@@ -183,7 +185,9 @@ fn native_radial_record_for_marker(
                 )
             })
             .or_else(|| {
-                let offset = usize::try_from(marker.offset()).ok()?;
+                let offset = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())?;
                 extended_radial_circle_index(&lane.native_payload, offset)
                     .map(|radial_index| (radial_index, false))
             })
@@ -275,8 +279,9 @@ fn dimensioned_arc_native_geometry(
         &markers_by_id,
         &object_markers,
     );
-    let inline = usize::try_from(marker.offset())
-        .ok()
+    let inline = marker
+        .offset()
+        .and_then(|offset| usize::try_from(offset).ok())
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset))
         .map(|coordinates| coordinates.map(cadmpeg_ir::units::FiniteVector::get));
     let [center, start, end] = if let Some(coordinates) = inline {
@@ -504,8 +509,9 @@ fn dimensioned_relation_carrier<'a>(
     if let Some((marker, offset)) = explicit
         .filter(|_| explicit_point_marker)
         .and_then(|marker| {
-            usize::try_from(marker.offset())
-                .ok()
+            marker
+                .offset()
+                .and_then(|offset| usize::try_from(offset).ok())
                 .map(|offset| (marker, offset))
         })
     {
@@ -939,7 +945,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             };
             let entity_text = format!(
                 "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
             let Ok(entity_id) = SketchEntityId::mint(entity_text) else {
                 continue;
@@ -1117,7 +1123,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }
             let entity_id = format!(
                 "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
             let Ok(entity_id) = SketchEntityId::mint(entity_id) else {
                 continue;
@@ -1864,11 +1870,14 @@ pub(crate) fn project_marker_dimensioned_circles(
             let lane = group.lane;
             let mut range: Option<(usize, usize)> = None;
             for marker in &group.markers {
-                let offset = usize::try_from(marker.offset()).map_err(|_| {
-                    cadmpeg_core::CodecError::malformed(
-                        "SLDPRT sketch marker offset exceeds the address space",
-                    )
-                })?;
+                let offset = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "SLDPRT sketch marker offset exceeds the address space",
+                        )
+                    })?;
                 range = Some(range.map_or((offset, offset), |(start, end)| {
                     (start.min(offset), end.max(offset))
                 }));
@@ -1972,13 +1981,13 @@ pub(crate) fn project_marker_dimensioned_circles(
                     }
                     let candidate_offset_u64 =
                         cadmpeg_core::decode::u64_from_index(*candidate_offset);
-                    if group
-                        .markers
-                        .iter()
-                        .any(|marker| marker.offset() == candidate_offset_u64)
-                        && (*candidate_offset == *offset
-                            || id_from_index(*candidate_radial_index)
-                                .is_some_and(|index| pair_radial_object_indices.contains(&index)))
+                    if group.markers.iter().any(|marker| {
+                        marker
+                            .offset()
+                            .is_some_and(|position| position == candidate_offset_u64)
+                    }) && (*candidate_offset == *offset
+                        || id_from_index(*candidate_radial_index)
+                            .is_some_and(|index| pair_radial_object_indices.contains(&index)))
                     {
                         let reference =
                             marker_circle_carrier_reference(lane_key, *candidate_offset);

@@ -349,7 +349,7 @@ pub enum DimensionTolerance {
 #[serde(try_from = "PmiDimensionWire", into = "PmiDimensionWire")]
 pub struct PmiDimension {
     kind: DimensionKind,
-    nominal: Option<PmiValue>,
+    nominal: Option<crate::features::Dimension<PmiValue>>,
     tolerance: Option<DimensionTolerance>,
 }
 
@@ -365,7 +365,7 @@ struct PmiDimensionWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_nominal"
     )]
-    nominal: Option<PmiValue>,
+    nominal: Option<crate::features::Dimension<PmiValue>>,
     /// Optional plus/minus or limits-and-fits tolerance.
     #[serde(
         default,
@@ -379,10 +379,10 @@ impl PmiDimension {
     /// Admit the dimensional kind, nominal value, and tolerance together.
     pub fn new(
         kind: DimensionKind,
-        nominal: Option<PmiValue>,
+        nominal: Option<crate::features::Dimension<PmiValue>>,
         tolerance: Option<DimensionTolerance>,
     ) -> Result<Self, String> {
-        Self::validate(&kind, nominal, tolerance.as_ref())?;
+        Self::validate(&kind, nominal.as_ref(), tolerance.as_ref())?;
         Ok(Self {
             kind,
             nominal,
@@ -392,7 +392,7 @@ impl PmiDimension {
 
     fn validate(
         kind: &DimensionKind,
-        nominal: Option<PmiValue>,
+        nominal: Option<&crate::features::Dimension<PmiValue>>,
         tolerance: Option<&DimensionTolerance>,
     ) -> Result<(), String> {
         let expected = match kind {
@@ -401,9 +401,14 @@ impl PmiDimension {
             | DimensionKind::Location
             | DimensionKind::Diameter
             | DimensionKind::Radius => Some(PmiQuantity::Length),
-            DimensionKind::Other(_) => nominal.map(|value| value.quantity),
+            DimensionKind::Other(_) => nominal
+                .and_then(crate::features::Dimension::literal)
+                .map(|value| value.quantity),
         };
-        if nominal.is_some_and(|value| Some(value.quantity) != expected) {
+        if nominal
+            .and_then(crate::features::Dimension::literal)
+            .is_some_and(|value| Some(value.quantity) != expected)
+        {
             return Err("dimension nominal quantity disagrees with its kind".into());
         }
         if let Some(
@@ -431,8 +436,25 @@ impl PmiDimension {
 
     /// Nominal quantity, when supplied.
     #[must_use]
-    pub fn nominal(&self) -> Option<&PmiValue> {
+    pub fn nominal(&self) -> Option<&crate::features::Dimension<PmiValue>> {
         self.nominal.as_ref()
+    }
+
+    /// Replace the canonical nominal or binding after checking its quantity.
+    pub fn set_nominal(
+        &mut self,
+        nominal: Option<crate::features::Dimension<PmiValue>>,
+    ) -> Result<(), String> {
+        Self::validate(&self.kind, nominal.as_ref(), self.tolerance.as_ref())?;
+        self.nominal = nominal;
+        Ok(())
+    }
+
+    /// Resolve the nominal from its literal or canonical parameter cache.
+    pub fn resolved_nominal(&self, ir: &crate::CadIr) -> Option<PmiValue> {
+        self.nominal
+            .as_ref()
+            .and_then(|nominal| ir.dimension_value(nominal))
     }
 
     /// Compatible tolerance, when supplied.
@@ -443,14 +465,14 @@ impl PmiDimension {
 
     /// Replace the dimensional kind if its quantities remain compatible.
     pub fn set_kind(&mut self, kind: DimensionKind) -> Result<(), String> {
-        Self::validate(&kind, self.nominal, self.tolerance.as_ref())?;
+        Self::validate(&kind, self.nominal.as_ref(), self.tolerance.as_ref())?;
         self.kind = kind;
         Ok(())
     }
 
     /// Replace the tolerance if its quantities remain compatible.
     pub fn set_tolerance(&mut self, tolerance: Option<DimensionTolerance>) -> Result<(), String> {
-        Self::validate(&self.kind, self.nominal, tolerance.as_ref())?;
+        Self::validate(&self.kind, self.nominal.as_ref(), tolerance.as_ref())?;
         self.tolerance = tolerance;
         Ok(())
     }
@@ -472,7 +494,7 @@ impl PmiDimension {
         if !compatible {
             return Ok(false);
         }
-        Self::validate(&self.kind, self.nominal, Some(&tolerance))?;
+        Self::validate(&self.kind, self.nominal.as_ref(), Some(&tolerance))?;
         let merged = match (self.tolerance.take(), tolerance) {
             (None, value) => value,
             (
@@ -706,7 +728,9 @@ mod tests {
         let definition = PmiDefinition::Dimension(
             PmiDimension::new(
                 DimensionKind::Size,
-                Some(PmiValue::new(12.0, PmiQuantity::Length).expect("finite value")),
+                Some(crate::features::Dimension::Literal(
+                    PmiValue::new(12.0, PmiQuantity::Length).expect("finite value"),
+                )),
                 Some(DimensionTolerance::PlusMinus {
                     lower: PmiValue::new(-0.1, PmiQuantity::Length).expect("finite value"),
                     upper: PmiValue::new(0.2, PmiQuantity::Length).expect("finite value"),
@@ -717,7 +741,9 @@ mod tests {
 
         let value = serde_json::to_value(&definition).unwrap();
         assert_eq!(value["kind"], "dimension");
-        assert_eq!(value["nominal"]["value"], 12.0);
+        assert_eq!(value["nominal"]["kind"], "literal");
+        assert_eq!(value["nominal"]["value"]["value"], 12.0);
+        assert_eq!(value["nominal"]["value"]["quantity"], "length");
         assert_eq!(value["tolerance"]["form"], "plus_minus");
         assert_eq!(value["tolerance"]["lower"]["value"], -0.1);
         assert_eq!(value["tolerance"]["upper"]["value"], 0.2);
@@ -777,7 +803,7 @@ mod tests {
         let value = serde_json::json!({
             "kind": "dimension",
             "dimension": "size",
-            "nominal": {"value": 12.0, "quantity": "length"},
+            "nominal": {"kind": "literal", "value": {"value": 12.0, "quantity": "length"}},
             "tolerance": {
                 "form": "plus_minus_fit",
                 "lower": {"value": -0.1, "quantity": "length"},
@@ -806,13 +832,13 @@ mod tests {
         let upper = PmiValue::new(0.2, PmiQuantity::Length).expect("finite value");
         assert!(PmiDimension::new(
             DimensionKind::Size,
-            Some(nominal),
+            Some(crate::features::Dimension::Literal(nominal)),
             Some(DimensionTolerance::PlusMinus { lower, upper }),
         )
         .is_err());
         let wire = serde_json::json!({
             "kind": "dimension", "dimension": "size",
-            "nominal": {"value": 12.0, "quantity": "length"},
+            "nominal": {"kind": "literal", "value": {"value": 12.0, "quantity": "length"}},
             "tolerance": {"form": "plus_minus",
                 "lower": {"value": -0.1, "quantity": "angle"},
                 "upper": {"value": 0.2, "quantity": "length"}}
@@ -878,10 +904,15 @@ mod tests {
     #[test]
     fn dimension_relation_rejects_nominal_kind_mismatch_and_atomic_edits() {
         let angle = PmiValue::new(1.0, PmiQuantity::Angle).expect("finite angle");
-        assert!(PmiDimension::new(DimensionKind::Size, Some(angle), None).is_err());
+        assert!(PmiDimension::new(
+            DimensionKind::Size,
+            Some(crate::features::Dimension::Literal(angle)),
+            None
+        )
+        .is_err());
         let wire = serde_json::json!({
             "kind": "dimension", "dimension": "size",
-            "nominal": {"value": 1.0, "quantity": "angle"}
+            "nominal": {"kind": "literal", "value": {"value": 1.0, "quantity": "angle"}}
         });
         let error = serde_json::from_value::<PmiDefinition>(wire)
             .expect_err("size nominal needs length")
@@ -889,8 +920,12 @@ mod tests {
         assert!(error.contains("nominal quantity disagrees"), "{error}");
 
         let length = PmiValue::new(12.0, PmiQuantity::Length).expect("finite length");
-        let mut relation = PmiDimension::new(DimensionKind::Size, Some(length), None)
-            .expect("compatible dimension");
+        let mut relation = PmiDimension::new(
+            DimensionKind::Size,
+            Some(crate::features::Dimension::Literal(length)),
+            None,
+        )
+        .expect("compatible dimension");
         let original = relation.clone();
         assert!(relation.set_kind(DimensionKind::Angular).is_err());
         assert_eq!(relation, original);
@@ -915,7 +950,9 @@ mod tests {
             definition: PmiDefinition::Dimension(
                 PmiDimension::new(
                     DimensionKind::Size,
-                    Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
+                    Some(crate::features::Dimension::Literal(
+                        PmiValue::new(1.0, PmiQuantity::Length).expect("finite value"),
+                    )),
                     None,
                 )
                 .expect("compatible dimension"),
@@ -962,7 +999,9 @@ mod tests {
             definition: PmiDefinition::Dimension(
                 PmiDimension::new(
                     DimensionKind::Size,
-                    Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
+                    Some(crate::features::Dimension::Literal(
+                        PmiValue::new(1.0, PmiQuantity::Length).expect("finite value"),
+                    )),
                     None,
                 )
                 .expect("compatible dimension"),
@@ -1153,7 +1192,11 @@ cadmpeg_core::named_optional_field!(
     "defined_area_second_unit"
 );
 cadmpeg_core::named_optional_field!(deserialize_datum_system, PmiId, "datum_system");
-cadmpeg_core::named_optional_field!(deserialize_nominal, PmiValue, "nominal");
+cadmpeg_core::named_optional_field!(
+    deserialize_nominal,
+    crate::features::Dimension<PmiValue>,
+    "nominal"
+);
 cadmpeg_core::named_optional_field!(deserialize_tolerance, DimensionTolerance, "tolerance");
 cadmpeg_core::named_optional_field!(deserialize_text, String, "text");
 cadmpeg_core::named_optional_field!(deserialize_placement, Transform, "placement");
@@ -1163,3 +1206,31 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 mod identity_rewrite;
 
 mod serialization;
+
+impl crate::features::DimensionValue for PmiValue {
+    fn from_parameter_value(value: &crate::features::ParameterValue) -> Option<Self> {
+        use crate::features::ParameterValue;
+        match value {
+            ParameterValue::Length(value) => Self::new(value.get(), PmiQuantity::Length),
+            ParameterValue::Angle(value) => Self::new(value.get(), PmiQuantity::Angle),
+            ParameterValue::Real(value) => Self::new(value.get(), PmiQuantity::Ratio),
+            ParameterValue::Integer(value) => Self::new(
+                cadmpeg_core::convert::f64_from_i64(*value)?,
+                PmiQuantity::Ratio,
+            ),
+            _ => None,
+        }
+    }
+    fn to_parameter_value(&self) -> Option<crate::features::ParameterValue> {
+        use crate::features::ParameterValue;
+        Some(match self.quantity {
+            PmiQuantity::Length => {
+                ParameterValue::Length(crate::scalar::Length::new(self.value.get())?)
+            }
+            PmiQuantity::Angle => {
+                ParameterValue::Angle(crate::scalar::Angle::new(self.value.get())?)
+            }
+            PmiQuantity::Ratio => ParameterValue::Real(self.value),
+        })
+    }
+}

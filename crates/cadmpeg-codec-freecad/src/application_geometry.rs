@@ -138,10 +138,6 @@ fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, Cod
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new(property.owner.clone())
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-        name: Some(property.name.clone()),
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }

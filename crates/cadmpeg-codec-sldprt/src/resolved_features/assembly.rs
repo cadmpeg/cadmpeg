@@ -89,8 +89,12 @@ fn feature_input_lane(
     let references = reference_cells(&scalars, &classes)?;
     let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
     for entity in &sketch_entities {
-        let signature = usize::try_from(entity.offset())
-            .ok()
+        let Some(position) = entity.offset() else {
+            continue;
+        };
+        let signature = entity
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())
             .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
             .map_or("sketch-marker", |prefix| {
                 if prefix == LEGACY_SKETCH_MARKER {
@@ -105,7 +109,7 @@ fn feature_input_lane(
             annotations,
             entity.id(),
             source.source_stream(),
-            entity.offset(),
+            position,
             signature,
             Exactness::ByteExact,
         )?;

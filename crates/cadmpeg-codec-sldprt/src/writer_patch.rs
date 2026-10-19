@@ -86,18 +86,18 @@ pub(crate) fn patch_partition(
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
     )?;
-    let colors = crate::writer::face_colors(ir)?;
+    let colors = crate::writer::face_colors(ir);
     if native
         .faces
         .iter()
         .any(|face| colors.get(&face.id).copied() != face.color)
     {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "SLDPRT native partition patch cannot write changed face colours".into(),
         ));
     }
     if !same_pcurves(ir, &native) {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "SLDPRT native partition patch cannot write changed pcurve geometry or metadata".into(),
         ));
     }

@@ -269,24 +269,16 @@ fn a_zero_vector_cannot_be_emitted_as_a_direction() {
 }
 
 /// The section written for one transformation operator over `rows`.
-fn operator_section(rows: [[f64; 4]; 3]) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+fn operator_section(rows: [[f64; 4]; 3]) -> Option<Vec<String>> {
     let transform = Transform::affine(rows).expect("affine transform");
     let mut emitter = crate::writer::Emitter::new();
-    super::transformation_operator(&mut emitter, transform);
-    emitter.into_lines()
+    super::transformation_operator(&mut emitter, transform)?;
+    Some(emitter.into_lines().expect("finite similarity"))
 }
 
-/// A transform with no `CARTESIAN_TRANSFORMATION_OPERATOR_3D` statement
-/// refuses the section.
+/// Unsupported operators decline the affected carrier without emitting it.
 fn assert_operator_is_refused(rows: [[f64; 4]; 3]) {
-    let written = operator_section(rows);
-    let Err(error) = written else {
-        panic!("{written:?}");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-        "{error}"
-    );
+    assert!(operator_section(rows).is_none());
 }
 
 /// `CARTESIAN_TRANSFORMATION_OPERATOR_3D` states a similarity: three axis

@@ -27,11 +27,11 @@ use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
     features::{
-        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationFeatureState,
-        ConfigurationId, DesignConfiguration, DesignParameter, DistinctMembers, ExtrudeExtent,
-        ExtrudeSide, Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
-        FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, LinearTermination,
-        ParameterId, ParameterValue, PlanarProfileRef, ProfileRef, TreeChildren,
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId,
+        DesignConfiguration, DesignParameter, DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature,
+        FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
+        FeatureSourceContent, FeatureTreeNodeRole, LinearTermination, ParameterId, ParameterValue,
+        PlanarProfileRef, ProfileRef, TreeChildren,
     },
     scalar::{Angle, FiniteReal, Length},
 };
@@ -259,12 +259,17 @@ pub(super) fn attach(
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             snapshot.restore(ir, annotations, unknowns, losses);
-            losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
-                "Native object-model attachment failed: {error}. Decoded geometry and \
+            ir.scope.design = false;
+            losses.push(NxLossCode::NativeAttachmentFailed.note({
+                scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
+                scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+                format!(
+                    "Native object-model attachment failed: {error}. Decoded geometry and \
                  topology are kept. None of the attachment's features, sketches, parameters, \
                  configurations, appearances, attributes, display tessellations, native \
                  records, or container passthrough records are kept."
-            )));
+                )
+            }));
             Ok(())
         }
     }
@@ -392,20 +397,27 @@ fn attach_records(
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     for section in &model.om.object_record_identity_bounded_sections {
-        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
-            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
+        losses.push(NxLossCode::ObjectRecordIdentityBounded.note({
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+            format!(
+                "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
              {} of its object records were kept without a stable identity.",
-            section.source_entry,
-            crate::native::om::MAX_STABLE_GRAPH_WORK,
-            section.records
-        )));
+                section.source_entry,
+                crate::native::om::MAX_STABLE_GRAPH_WORK,
+                section.records
+            )
+        }));
     }
     if model.display_jt.arithmetic_lane_work_bounded {
-        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(
-            "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
+        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note({
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+            format!(
+                "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
              the lanes above that bound were left undecoded.",
-            crate::jt::MAX_ARITHMETIC_WORK
-        )));
+                crate::jt::MAX_ARITHMETIC_WORK
+            )
+        }));
     }
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
@@ -415,6 +427,7 @@ fn attach_records(
     attach_rm_face_colors(ir, model, scan, annotations)?;
     attach_rm_appearances(ir, model, scan, annotations)?;
     let display_jt_tessellations = display_jt_tessellations(
+        &mut scan.source_untyped(),
         ctx,
         &DisplayJtTessellationInputs {
             meshes: &model.display_jt.polygon_meshes,
@@ -437,7 +450,40 @@ fn attach_records(
         },
         losses,
     )?;
-    for (tessellation, source_offset) in display_jt_tessellations {
+    for (tessellation, source_offset, color) in display_jt_tessellations {
+        if let Some(color) = color {
+            let source_id = tessellation.id.to_string();
+            let appearance_id: AppearanceId =
+                extended_id(&source_id, &cadmpeg_ir::identity_key!("material")).ok_or_else(
+                    || CodecError::malformed("invalid JT tessellation appearance identity"),
+                )?;
+            ir.model.appearances.push(Appearance {
+                id: appearance_id.clone(),
+                name: None,
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: Some("JTMaterial".into()),
+                category: None,
+                base_color: Some(color),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+            let binding = AppearanceBinding {
+                id: extended_id(&source_id, &cadmpeg_ir::identity_key!("appearance-binding"))
+                    .ok_or_else(|| {
+                        CodecError::malformed("invalid JT tessellation binding identity")
+                    })?,
+                target: AppearanceTarget::Tessellation(source_id),
+                appearance: appearance_id,
+                source_entity_id: None,
+                object_type: None,
+                visible: None,
+                channels: BTreeMap::new(),
+            };
+            ir.model.appearance_bindings.push(binding);
+        }
         annotations.note(
             tessellation.id.as_str(),
             &annotation_stream,
@@ -534,18 +580,18 @@ fn attach_records(
         ir,
         &model.om.expressions,
         &model.om.expression_declarations,
-        &model.features.feature_parameter_uses,
         annotations,
+        losses,
     )?;
-    attach_active_configuration_parameter_values(ir, annotations)?;
-    attach_feature_operations(ctx, ir, model, annotations, losses)?;
-    expressions::attach_block_dimension_parameter_consumers(
+    attach_feature_operations(
+        &mut scan.source_untyped(),
+        ctx,
         ir,
-        &model.features.feature_block_dimensions,
+        model,
         annotations,
+        losses,
     )?;
     attach_current_feature_states(ir, annotations)?;
-    attach_active_configuration_feature_states(ir, annotations)?;
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -1335,65 +1381,6 @@ fn attach_material_texture_assets(
     Ok(())
 }
 
-fn attach_active_configuration_parameter_values(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
-    else {
-        return Ok(());
-    };
-    let configuration = &ir.model.configurations[configuration_index];
-    if configuration.bodies.is_none()
-        || !configuration.parameter_values.is_empty()
-        || ir.model.parameters.is_empty()
-    {
-        return Ok(());
-    }
-    let mut parameters_by_id = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        if parameters_by_id.insert(&parameter.id, parameter).is_some() {
-            return Ok(());
-        }
-    }
-    for parameter in &ir.model.parameters {
-        for dependency in &parameter.dependencies {
-            let Some(preceding) = parameters_by_id.get(dependency) else {
-                return Ok(());
-            };
-            if preceding.owner != parameter.owner || preceding.ordinal >= parameter.ordinal {
-                return Ok(());
-            }
-        }
-    }
-    // A parameter with no evaluated value leaves the configuration untouched,
-    // which is what the dependency guard above does for its own case.
-
-    if ir
-        .model
-        .parameters
-        .iter()
-        .any(|parameter| parameter.value.is_none())
-    {
-        return Ok(());
-    }
-    let mut values = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        let Some(value) = parameter.value.as_ref() else {
-            return Ok(());
-        };
-        let id = parameter.id.clone();
-        let value = value.clone();
-        values.insert(id, value);
-    }
-    let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.parameter_values = values;
-    annotations
-        .derived(configuration.id.as_str(), "parameter_values")
-        .map_err(cadmpeg_core::CodecError::from)?;
-    Ok(())
-}
-
 fn attach_current_feature_states(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1413,75 +1400,6 @@ fn attach_current_feature_states(
             .map_err(cadmpeg_core::CodecError::from)?;
     }
     Ok(())
-}
-
-fn attach_active_configuration_feature_states(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
-    else {
-        return Ok(());
-    };
-    let Some(configuration_bodies) = ir.model.configurations[configuration_index]
-        .bodies
-        .as_deref()
-    else {
-        return Ok(());
-    };
-    if !ir.model.configurations[configuration_index]
-        .feature_states
-        .is_empty()
-    {
-        return Ok(());
-    }
-    let Ok(active_features) = active_feature_closure(ir, configuration_bodies) else {
-        return Ok(());
-    };
-    let mut states = BTreeMap::new();
-    for (id, &index) in &active_features {
-        let feature = &ir.model.features[index];
-        let outputs = feature.evaluation.outputs().clone();
-        let dependencies = feature.dependencies.iter().cloned().collect::<Vec<_>>();
-        let definition = feature.evaluation.definition().clone();
-        let state_id = id.clone();
-        states.insert(
-            state_id,
-            ConfigurationFeatureState {
-                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::try_from(outputs)
-                        .map_err(cadmpeg_core::CodecError::from)?,
-                },
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-                    .map_err(cadmpeg_core::CodecError::from)?,
-                definition,
-            },
-        );
-    }
-    for index in active_features.into_values() {
-        let feature = &mut ir.model.features[index];
-        if feature.suppressed != Some(false) {
-            feature.suppressed = Some(false);
-            annotations
-                .derived(&feature.id, "suppressed")
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
-    }
-    let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.feature_states = states;
-    annotations
-        .derived(configuration.id.as_str(), "feature_states")
-        .map_err(cadmpeg_core::CodecError::from)?;
-    Ok(())
-}
-
-fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
-    let mut active = configurations
-        .iter()
-        .enumerate()
-        .filter_map(|(index, configuration)| configuration.active.then_some(index));
-    let index = active.next()?;
-    active.next().is_none().then_some(index)
 }
 
 /// Materialize the exact body set present when retained feature replay begins.
@@ -1553,6 +1471,7 @@ fn attach_initial_segment_bodies(
         .derived(&id, "definition")
         .map_err(cadmpeg_core::CodecError::from)?;
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: id.clone(),
         ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
         name: Some("Retained history input".to_string()),
@@ -1579,6 +1498,7 @@ fn attach_initial_segment_bodies(
 }
 
 fn attach_feature_operations(
+    source_untyped: &mut cadmpeg_ir::ArenaClasses,
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
@@ -2339,12 +2259,6 @@ fn attach_feature_operations(
             .get(value.operation_record.as_str())
             .map(|operation| (*operation, value))
     }));
-    let mut parameter_owners = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        let key = parameter.id.clone();
-        let owner = parameter.owner.clone();
-        parameter_owners.insert(key, owner);
-    }
     let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
     for (annotation_ordinal, label) in labels
         .iter()
@@ -2360,10 +2274,10 @@ fn attach_feature_operations(
         let Some(order) = order else {
             const PREFIX: &str = "NX TEXT label ";
             const SUFFIX: &str = " lies past the stated semantic-annotation order width, so it states no order and is not projected.";
-            losses.push(
-                NxLossCode::SemanticAnnotationOrderUnstatable
-                    .note(format!("{PREFIX}{}{SUFFIX}", label.id)),
-            );
+            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note({
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                format!("{PREFIX}{}{SUFFIX}", label.id)
+            }));
             continue;
         };
         let [text, font_family] = payload_strings else {
@@ -2946,18 +2860,6 @@ fn attach_feature_operations(
                 format_args!("block_dimensions"),
                 format_args!("{}", dimensions.id),
             );
-            for (dimension_ordinal, dimension) in dimensions.dimensions.iter().enumerate() {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("block_dimension_declaration.{dimension_ordinal}"),
-                    format_args!("{}", dimension.declaration),
-                );
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("block_dimension_expression.{dimension_ordinal}"),
-                    format_args!("{}", dimension.expression),
-                );
-            }
         }
         for (ordinal, point) in block_payload_points_by_operation
             .get(label.id.as_str())
@@ -4001,7 +3903,7 @@ fn attach_feature_operations(
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
                 FeatureOperation::Sphere {
                     center: *center,
-                    radius: *radius,
+                    radius: (*radius).into(),
                     op: sphere_op,
                 },
             ))
@@ -4200,7 +4102,7 @@ fn attach_feature_operations(
         } else {
             None
         };
-        let definition = if let Some(definition) = primary_definition.or(brep_projection) {
+        let mut definition = if let Some(definition) = primary_definition.or(brep_projection) {
             definition
         } else if let Some(sketch) = sketch {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -4263,12 +4165,14 @@ fn attach_feature_operations(
                         extent: blind_hole_depths
                             .get(label.id.as_str())
                             .copied()
-                            .map(|length| LinearTermination::Blind { length }),
+                            .map(|length| LinearTermination::Blind {
+                                length: (length).into(),
+                            }),
                         counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
                         chamfer: simple_hole_chamfers
                             .get(label.id.as_str())
                             .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
-                            .copied(),
+                            .cloned(),
                         grouped_simple_through: hole_packages
                             .outputs
                             .contains_key(label.id.as_str()),
@@ -4283,21 +4187,37 @@ fn attach_feature_operations(
             }
             definition
         };
+        if let (
+            FeatureDefinition::Operation(FeatureOperation::Block {
+                dimensions: Some(neutral),
+                ..
+            }),
+            Some(source),
+        ) = (
+            &mut definition,
+            block_dimensions_by_operation.get(label.id.as_str()),
+        ) {
+            for (dimension, source) in neutral.iter_mut().zip(&source.dimensions) {
+                if let Some(parameter) = expressions::expression_parameter_id(&source.expression)
+                    .filter(|id| {
+                        ir.model
+                            .parameters
+                            .iter()
+                            .any(|parameter| &parameter.id == id)
+                    })
+                {
+                    *dimension = cadmpeg_ir::features::Dimension::Parameter(parameter);
+                } else {
+                    losses.push(NxLossCode::ExpressionParameterIncomplete.note(format!(
+                        "Block {} dimension expression {} has no neutral parameter binding.",
+                        label.id, source.expression
+                    )));
+                }
+            }
+        }
         annotations.note(&id, &stream, label.source_offset, Some("FEATURE_OPERATION"));
         annotations.exactness(&id, Exactness::Derived);
         let source_content = feature_source_content(operation_payload_string_records)?;
-        let mut referenced_parameters = Vec::new();
-        for parameter_use in operation_parameter_uses {
-            push_referenced_parameter(&mut referenced_parameters, &parameter_use.expression);
-        }
-        if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
-            for dimension in &dimensions.dimensions {
-                push_referenced_parameter(&mut referenced_parameters, &dimension.expression);
-            }
-        }
-        for owner in parameter_owner_dependencies(&parameter_owners, &referenced_parameters) {
-            dependencies.push(&owner);
-        }
         if !source_content.is_empty() {
             annotations
                 .derived(&id, "source_content")
@@ -4330,6 +4250,7 @@ fn attach_feature_operations(
             }
         }
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: id.clone(),
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
@@ -5415,6 +5336,33 @@ fn parasolid_topology_attribute_class_names<'a>(
 
 fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
     let mut targets = BTreeMap::new();
+    for body in &ir.model.bodies {
+        targets.insert(body.id.to_string(), AttributeTarget::Body(body.id.clone()));
+    }
+    for region in &ir.model.regions {
+        targets.insert(
+            region.id.to_string(),
+            AttributeTarget::Region(region.id.clone()),
+        );
+    }
+    for surface in &ir.model.surfaces {
+        targets.insert(
+            surface.id.to_string(),
+            AttributeTarget::Surface(surface.id.clone()),
+        );
+    }
+    for curve in &ir.model.curves {
+        targets.insert(
+            curve.id.to_string(),
+            AttributeTarget::Curve(curve.id.clone()),
+        );
+    }
+    for point in &ir.model.points {
+        targets.insert(
+            point.id.to_string(),
+            AttributeTarget::Point(point.id.clone()),
+        );
+    }
     for shell in &ir.model.shells {
         targets.insert(
             shell.id.to_string(),
@@ -5511,9 +5459,12 @@ fn parasolid_topology_attribute_contexts<'a>(
             continue;
         };
 
-        let Some(target) = emitted_targets.get(target_key.as_str()) else {
-            continue;
-        };
+        let target = emitted_targets
+            .get(target_key.as_str())
+            .cloned()
+            .unwrap_or_else(|| AttributeTarget::Source {
+                source_id: reference.id.clone(),
+            });
         let mut entities = BTreeSet::new();
         if let Some(entity) = reference.attribute_list_record.as_deref() {
             entities.insert(entity);
@@ -5847,12 +5798,6 @@ fn attach_parasolid_topology_structured_attributes(
     Ok(())
 }
 
-fn push_referenced_parameter(referenced: &mut Vec<ParameterId>, expression: &str) {
-    if let Some(id) = expressions::expression_parameter_id(expression) {
-        referenced.push(id);
-    }
-}
-
 fn preceding_operation_dependency<'a>(
     operation: &str,
     consumer_position: usize,
@@ -5903,6 +5848,7 @@ fn text_semantic_annotation(
     }))
 }
 
+#[cfg(test)]
 pub(super) fn parameter_owner_dependencies(
     parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
     parameter_references: &[ParameterId],

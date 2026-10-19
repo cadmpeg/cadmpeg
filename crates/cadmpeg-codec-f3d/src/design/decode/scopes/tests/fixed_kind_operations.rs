@@ -995,8 +995,8 @@ fn fixed_kind_edge_and_revolve_operations(
         record_index: 905,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(104).unwrap(),
         secondary_id: 0,
@@ -1071,6 +1071,7 @@ fn fixed_kind_edge_and_revolve_operations(
         }) if construction.axis().is_none()
     ));
     let mut feature = cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: crate::ids::neutral_feature_id(&indexed_revolve_scope),
         ordinal: 0,
         name: None,

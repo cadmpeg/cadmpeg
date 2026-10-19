@@ -348,7 +348,12 @@ fn tessellate_scene(
     };
     let mut losses = Vec::new();
     let tessellations = crate::test_support::with_decode_context(|ctx| {
-        crate::native::display_jt::display_jt_tessellations(ctx, &inputs, &mut losses)
+        crate::native::display_jt::display_jt_tessellations(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            ctx,
+            &inputs,
+            &mut losses,
+        )
     })
     .expect("a skipped tessellation is not an error");
     (tessellations.len(), losses)

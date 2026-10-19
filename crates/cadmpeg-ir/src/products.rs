@@ -210,9 +210,6 @@ pub struct Occurrence {
         deserialize_with = "deserialize_linked_prototype"
     )]
     pub linked_prototype: Option<Transform>,
-    /// Per-axis instance scale.
-    #[serde(deserialize_with = "deserialize_occurrence_scale")]
-    pub scale: [FiniteReal; 3],
     /// Source occurrence identifier or display name.
     #[serde(
         default,
@@ -415,8 +412,6 @@ pub struct CopyOnChange {
     )]
     pub touched: Option<bool>,
 }
-
-crate::units::named_field!(deserialize_occurrence_scale, [FiniteReal; 3], "scale");
 
 impl Occurrence {
     /// Placement after applying the linked prototype contribution, when present.
@@ -661,7 +656,6 @@ mod tests {
             ordinal: 0,
             transform: translation(x),
             linked_prototype: None,
-            scale: [crate::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -956,6 +950,14 @@ impl<'a> AssemblyGraph<'a> {
                 }
             }
         })
+    }
+
+    /// Computes placement in document coordinates from the occurrence parent tree.
+    ///
+    /// Body placements remain local to their product definition and compose on
+    /// the right of this transform; they never store this world placement.
+    pub fn effective_transform(&self, id: &OccurrenceId) -> Option<Transform> {
+        self.occurrences.effective_transform(id)
     }
 
     /// Returns an occurrence by identity.
@@ -1531,6 +1533,11 @@ impl AssemblyJoint {
             suppressed: false,
             native_ref: None,
         }
+    }
+
+    /// Returns the complete typed operand frames and joint family.
+    pub const fn operands(&self) -> &JointOperands {
+        &self.operands
     }
 
     /// Visits every connector in operand order.

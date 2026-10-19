@@ -523,8 +523,9 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
     assert_eq!(admitted.origin().get().x, 50.8);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
-                .expect("full turn"),
+            angle: (cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                .expect("full turn"))
+            .into(),
         },
     };
     let axis =
@@ -597,8 +598,9 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ]);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
-                .expect("valid test fixture"),
+            angle: (cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                .expect("valid test fixture"))
+            .into(),
         },
     };
 
@@ -667,7 +669,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     );
     let partial = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"),
+            angle: (cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"))
+                .into(),
         },
     };
     assert!(full_turn_revolution_carrier_axis(

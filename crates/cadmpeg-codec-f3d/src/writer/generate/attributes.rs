@@ -261,15 +261,15 @@ pub(super) fn source_less_body_key(
     if let Some(key) = index.body_keys.get(body.id.as_str()) {
         return key.asm_body_key.map_or(Ok(-1), |key| {
             i64::try_from(key)
-                .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
+                .map_err(|_| CodecError::InvalidInput("F3D ASM body key exceeds i64::MAX".into()))
         });
     }
     let key = u64::try_from(body_ordinal)
         .ok()
         .and_then(|ordinal| ordinal.checked_add(1))
-        .ok_or_else(|| CodecError::NotImplemented("F3D body ordinal exceeds u64".into()))?;
+        .ok_or_else(|| CodecError::InvalidInput("F3D body ordinal exceeds u64".into()))?;
     i64::try_from(key)
-        .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
+        .map_err(|_| CodecError::InvalidInput("F3D ASM body key exceeds i64::MAX".into()))
 }
 
 #[derive(Clone, Copy)]
@@ -721,7 +721,7 @@ fn attribute_before_timestamp(
                 )))
             }
         }
-        _ => Err(CodecError::NotImplemented(
+        _ => Err(CodecError::UnsupportedContent(
             "source-less F3D timestamp has an unsupported attribute target".into(),
         )),
     }
@@ -754,7 +754,7 @@ fn native_persistent_design_attribute(
     native_i64(
         records,
         i64::try_from(links.len())
-            .map_err(|_| CodecError::NotImplemented("too many persistent body IDs".into()))?,
+            .map_err(|_| CodecError::InvalidInput("too many persistent body IDs".into()))?,
     );
     for link in links {
         native_i64(records, kind);
@@ -784,7 +784,7 @@ fn native_persistent_subentity_attribute(
     native_i64(
         records,
         i64::try_from(tags.len())
-            .map_err(|_| CodecError::NotImplemented("too many persistent subentity tags".into()))?,
+            .map_err(|_| CodecError::InvalidInput("too many persistent subentity tags".into()))?,
     );
     for tag in tags {
         native_i64(records, tag.selector);
@@ -793,7 +793,7 @@ fn native_persistent_subentity_attribute(
         native_i64(
             records,
             i64::try_from(tag.design_references.len()).map_err(|_| {
-                CodecError::NotImplemented("too many persistent subentity references".into())
+                CodecError::InvalidInput("too many persistent subentity references".into())
             })?,
         );
         for reference in &tag.design_references {
@@ -865,7 +865,7 @@ pub(super) fn encode_source_less_attributes(
                     || creation_timestamp(index, &AttributeTarget::Coedge(coedge.id.clone()))
                         .is_some()
             }) {
-                return Err(CodecError::NotImplemented(
+                return Err(CodecError::UnsupportedContent(
                     "source-less F3D attribute target has no native owner section".into(),
                 ));
             }
@@ -883,7 +883,7 @@ pub(super) fn encode_source_less_attributes(
             )));
         }
         if timestamp_attribute_ordinal(index, &timestamp.target).is_none() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "F3D creation timestamp has an unsupported or missing target: {}",
                 timestamp.id
             )));
@@ -1173,7 +1173,7 @@ fn native_name_attribute(
     owner: i64,
 ) -> Result<(), CodecError> {
     if name.is_empty() {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::Malformed(
             "source-less F3D display name must not be empty".into(),
         ));
     }
@@ -1196,7 +1196,7 @@ fn native_color_attribute(
     owner: i64,
 ) -> Result<(), CodecError> {
     if color.a() != 1.0 {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D direct color requires opaque RGB channels".into(),
         ));
     }

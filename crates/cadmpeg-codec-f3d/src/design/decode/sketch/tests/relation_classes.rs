@@ -19,7 +19,7 @@ fn sketch_relation_assembly_admits_a_plain_relation() {
         id: "f3d:BulkStream.dat:design-record-header#0".to_owned(),
         record_index: 7,
         class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
         .expect("plain relation parse");

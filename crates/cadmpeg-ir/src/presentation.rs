@@ -338,6 +338,13 @@ pub struct PresentationLayer {
     pub id: LayerId,
     /// Layer name.
     pub name: String,
+    /// Containing layer, when this layer belongs to a hierarchy.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parent"
+    )]
+    pub parent: Option<LayerId>,
     /// Optional layer description.
     #[serde(
         default,
@@ -479,6 +486,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::mint("test:presentation:layer#construction").expect("valid identity"),
+            parent: None,
             name: "construction".into(),
             description: None,
             visible: None,
@@ -497,6 +505,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::mint("test:presentation:layer#unnamed").expect("valid identity"),
+            parent: None,
             name: String::new(),
             description: None,
             visible: None,
@@ -515,6 +524,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::mint("test:presentation:layer#missing").expect("valid identity"),
+            parent: None,
             name: "missing".into(),
             description: None,
             visible: None,
@@ -587,6 +597,7 @@ cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref"
 cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
 cadmpeg_core::named_optional_field!(deserialize_expanded, bool, "expanded");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_parent, LayerId, "parent");
 cadmpeg_core::named_optional_field!(deserialize_display_mode, String, "display_mode");
 cadmpeg_core::named_optional_field!(deserialize_selection_style, String, "selection_style");
 cadmpeg_core::named_optional_field!(deserialize_description, String, "description");

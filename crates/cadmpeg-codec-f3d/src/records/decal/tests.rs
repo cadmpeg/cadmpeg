@@ -25,12 +25,10 @@ fn decal_mapping_modes_preserve_all_bytes_with_canonical_known_mode() {
 
 fn decal_wire_fixture() -> serde_json::Value {
     let base = serde_json::json!({
-        "id": "decal", "scope_record_index": 23, "asset_reference_offset": 222,
-        "mapping_mode": 96, "mapping_mode_offset": 232, "target_group_record_index": 24,
-        "target_group_reference_offset": 234, "asset_class_tag": "258", "asset_record_index": 17,
-        "asset_byte_offset": 100, "asset_frame_length": 30, "asset_entity_suffix": 50,
-        "asset_entity_reference_offset": 120, "name_class_tag": "279", "name_record_index": 18,
-        "name_byte_offset": 130, "name_frame_length": 41, "asset_name": "mark.png", "asset_name_offset": 155
+        "id": "f3d:native:decal#0", "scope_record_index": 23,
+        "mapping_mode": 96, "target_group_record_index": 24,
+        "asset_class_tag": "258", "asset_record_index": 17, "asset_entity_suffix": 50,
+        "name_class_tag": "279", "name_record_index": 18, "asset_name": "mark.png"
     });
     base
 }
@@ -84,75 +82,157 @@ fn decal_image_native_retained_limit_refuses_before_record_clone() {
 }
 
 #[test]
-fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
+fn decal_document_retains_content_without_source_layout() {
     let base = decal_wire_fixture();
     for mode in [0, 0x60, 0x61, 0xff] {
         let mut value = base.clone();
         value["mapping_mode"] = serde_json::json!(mode);
-        let wire: crate::records::decal::DesignDecalImageWire =
-            serde_json::from_value(value).expect("Decal wire");
-        let expected = serde_json::to_string(&wire).expect("Decal wire bytes");
-        let image: crate::records::decal::DesignDecalImage =
-            serde_json::from_str(&expected).expect("Decal binding");
-        assert_eq!(image.scope_byte_offset(), 200);
-        assert_eq!(
-            serde_json::to_string(&image).expect("Decal binding bytes"),
-            expected
-        );
+        let image: super::DesignDecalImage = serde_json::from_value(value.clone()).unwrap();
+        assert!(image.scope_byte_offset().is_none());
+        assert!(image.asset.byte_offset.is_none());
+        assert_eq!(serde_json::to_value(&image).unwrap(), value);
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        image.retain_source(&mut fidelity);
+        assert!(fidelity.metadata.is_empty());
     }
     let mut unicode = base.clone();
     unicode["asset_name"] = serde_json::json!("图😀.png");
-    unicode["name_frame_length"] = serde_json::json!(39);
     unicode["asset_record_index"] = serde_json::json!(u32::MAX - 1);
     unicode["name_record_index"] = serde_json::json!(u32::MAX);
-    let wire: crate::records::decal::DesignDecalImageWire =
-        serde_json::from_value(unicode).expect("Decal Unicode wire");
-    let expected = serde_json::to_string(&wire).expect("Decal Unicode bytes");
-    let image: crate::records::decal::DesignDecalImage =
-        serde_json::from_str(&expected).expect("Decal Unicode name");
-    assert_eq!(
-        serde_json::to_string(&image).expect("Decal Unicode output"),
-        expected
-    );
+    let image: super::DesignDecalImage = serde_json::from_value(unicode.clone()).unwrap();
+    assert_eq!(serde_json::to_value(image).unwrap(), unicode);
     for field in [
         "asset_reference_offset",
         "mapping_mode_offset",
         "target_group_reference_offset",
+        "asset_byte_offset",
         "asset_frame_length",
         "asset_entity_reference_offset",
-        "name_record_index",
         "name_byte_offset",
         "name_frame_length",
         "asset_name_offset",
     ] {
         let mut value = base.clone();
         value[field] = serde_json::json!(0);
-        let error = serde_json::from_value::<crate::records::decal::DesignDecalImage>(value)
-            .expect_err("invalid Decal field")
-            .to_string();
-        assert!(error.contains(field));
+        let error = serde_json::from_value::<super::DesignDecalImage>(value).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
     }
+}
+
+#[test]
+fn decal_semantic_admission_still_validates_asset_identity_and_names() {
+    let base = decal_wire_fixture();
     for field in ["asset_class_tag", "name_class_tag", "asset_name"] {
         let mut value = base.clone();
         value[field] = serde_json::json!("");
-        let error = serde_json::from_value::<crate::records::decal::DesignDecalImage>(value)
-            .expect_err("empty Decal field")
-            .to_string();
-        assert!(error.contains(field));
+        let error = serde_json::from_value::<super::DesignDecalImage>(value).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
     }
-    for field in ["asset_reference_offset", "asset_byte_offset"] {
+    for (asset, name) in [(17, 17), (u32::MAX, u32::MAX)] {
         let mut value = base.clone();
-        value[field] = serde_json::json!(u64::MAX);
-        let error = serde_json::from_value::<crate::records::decal::DesignDecalImage>(value)
-            .expect_err("Decal byte extent overflow")
-            .to_string();
-        assert!(error.contains(field));
+        value["asset_record_index"] = serde_json::json!(asset);
+        value["name_record_index"] = serde_json::json!(name);
+        let error = serde_json::from_value::<super::DesignDecalImage>(value).unwrap_err();
+        assert!(error.to_string().contains("name_record_index"), "{error}");
     }
-    let mut no_successor = base;
-    no_successor["asset_record_index"] = serde_json::json!(u32::MAX);
-    no_successor["name_record_index"] = serde_json::json!(u32::MAX);
-    let error = serde_json::from_value::<crate::records::decal::DesignDecalImage>(no_successor)
-        .expect_err("Decal record index overflow")
-        .to_string();
-    assert!(error.contains("name_record_index"));
+}
+
+#[test]
+fn decal_scanner_validates_real_extents_and_retains_actual_layout_separately() {
+    use super::{DesignDecalAsset, DesignDecalImage, DesignDecalMappingMode};
+    use crate::records::identity::Located;
+    let asset = || {
+        DesignDecalAsset::new(
+            ["258".into(), "279".into()],
+            [17, 18],
+            100,
+            50,
+            "mark.png".into(),
+        )
+        .unwrap()
+    };
+    assert!(
+        DesignDecalAsset::new(
+            ["258".into(), "279".into()],
+            [17, 18],
+            u64::MAX,
+            50,
+            "mark.png".into()
+        )
+        .is_err()
+    );
+    assert!(
+        DesignDecalImage::new(
+            "f3d:native:decal#0".into(),
+            Located {
+                value: 23,
+                offset: u64::MAX
+            },
+            DesignDecalMappingMode::FitToFaces,
+            24,
+            asset()
+        )
+        .is_err()
+    );
+    let scanned = DesignDecalImage::new(
+        "f3d:native:decal#0".into(),
+        Located {
+            value: 23,
+            offset: 200,
+        },
+        DesignDecalMappingMode::FitToFaces,
+        24,
+        asset(),
+    )
+    .unwrap();
+    assert_eq!(scanned.scope_byte_offset(), Some(200));
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    scanned.retain_source(&mut fidelity);
+    assert_eq!(
+        fidelity.metadata["f3d:native:decal#0.scope_byte_offset"],
+        "200"
+    );
+    assert_eq!(
+        fidelity.metadata["f3d:native:decal#0.asset_byte_offset"],
+        "100"
+    );
+    assert!(fidelity.unrepresented().is_empty());
+    let wire = serde_json::to_value(&scanned).unwrap();
+    assert_eq!(wire, decal_wire_fixture());
+    let reloaded: DesignDecalImage = serde_json::from_value(wire).unwrap();
+    assert!(reloaded.scope_byte_offset().is_none());
+    assert!(reloaded.asset.byte_offset.is_none());
+}
+
+#[test]
+fn indexed_record_header_keeps_identity_and_class_without_source_position() {
+    let source = super::DesignRecordHeader {
+        id: "f3d:Design:record#0000000042".into(),
+        record_index: 42,
+        class_tag: "365".try_into().unwrap(),
+        byte_offset: Some(987),
+    };
+    let wire = serde_json::to_value(&source).unwrap();
+    assert_eq!(wire.as_object().unwrap().len(), 3);
+    assert!(wire.get("byte_offset").is_none());
+    let restored: super::DesignRecordHeader = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(restored.id, source.id);
+    assert_eq!(restored.record_index, source.record_index);
+    assert_eq!(restored.class_tag, source.class_tag);
+    assert!(restored.byte_offset.is_none());
+    assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
+    let mut obsolete_wire = wire;
+    obsolete_wire["byte_offset"] = 987.into();
+    assert!(serde_json::from_value::<super::DesignRecordHeader>(obsolete_wire).is_err());
+    let native = crate::native::F3dNative {
+        design_record_headers: vec![source],
+        ..Default::default()
+    };
+    let fidelity = native.retained_fidelity().unwrap();
+    assert_eq!(
+        fidelity.metadata["f3d:Design:record#0000000042.byte_offset"],
+        "987"
+    );
+    assert!(fidelity.unrepresented().is_empty());
+    assert!(fidelity.retained_records().is_empty());
 }

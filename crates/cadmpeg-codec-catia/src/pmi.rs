@@ -121,7 +121,7 @@ fn range_only_dimension_definition(
     Some(PmiDefinition::Dimension(
         cadmpeg_ir::pmi::PmiDimension::new(
             dimension,
-            Some(nominal),
+            Some(nominal.into()),
             Some(DimensionTolerance::PlusMinus {
                 lower: lower_deviation,
                 upper: upper_deviation,

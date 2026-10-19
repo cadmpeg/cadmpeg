@@ -42,7 +42,7 @@ fn a_zero_taper_angle_is_the_native_no_draft_sentinel() {
         else {
             unreachable!("a blind pad decodes as a one-sided extrude")
         };
-        side.draft
+        side.draft.clone()
     };
 
     let zero = FcstdCodec

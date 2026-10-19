@@ -689,8 +689,8 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
     let selection = FeatureInputEdgeSelection {
         id: "selection".into(),
         parent: "lane".into(),
-        ordinal: 0,
-        offset: cadmpeg_core::decode::u64_from_index(marker),
+        ordinal: 0, sequence: 0,
+        offset: Some(cadmpeg_core::decode::u64_from_index(marker)),
         object_name_ref: "name".into(),
         feature_ref: "consumer".into(),
         local_edge_ids: vec![4, 4, 0],

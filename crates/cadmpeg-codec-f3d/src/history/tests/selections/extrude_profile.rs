@@ -211,7 +211,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             AsmDeltaState {
                 id: format!("f3d:history:state#{state_id}"),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,

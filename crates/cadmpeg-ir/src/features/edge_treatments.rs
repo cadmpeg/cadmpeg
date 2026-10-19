@@ -2,7 +2,7 @@
 //! Fillet and chamfer operands, dimensions, and radius laws.
 
 use super::selection_overlap::face_selections_overlap;
-use super::{EdgeSelection, FaceSelection};
+use super::{Dimension, EdgeSelection, FaceSelection};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };
@@ -44,19 +44,19 @@ pub enum RadiusSpec {
     /// Same radius along the whole edge chain.
     Constant {
         /// The fillet radius.
-        radius: PositiveLength,
+        radius: Dimension<PositiveLength>,
     },
     /// Constant transverse chord length across the fillet surface.
     Chordal {
         /// Distance between the fillet's two support boundaries.
-        chord_length: PositiveLength,
+        chord_length: Dimension<PositiveLength>,
     },
     /// Distinct offsets from the selected edge along its two support faces.
     Asymmetric {
         /// Offset on the first support-face side.
-        offset_one: PositiveLength,
+        offset_one: Dimension<PositiveLength>,
         /// Offset on the second support-face side.
-        offset_two: PositiveLength,
+        offset_two: Dimension<PositiveLength>,
     },
     /// Radius varying along the edge chain per explicit control points.
     Variable {
@@ -87,7 +87,7 @@ pub struct FilletGroup {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_tangency_weight"
     )]
-    pub tangency_weight: Option<FiniteReal>,
+    pub tangency_weight: Option<Dimension<FiniteReal>>,
 }
 
 /// One full-round fillet group with pairwise disjoint face selections.
@@ -222,7 +222,9 @@ impl VariableRadii {
             .into_iter()
             .map(|point| {
                 let parameter = Fraction::new(point.parameter).ok_or(INVALID_VARIABLE_RADII)?;
-                let radius = NonNegativeLength::try_from(point.radius)
+                let radius = point
+                    .radius
+                    .try_map_literal(NonNegativeLength::try_from)
                     .map_err(|_| INVALID_VARIABLE_RADII)?;
                 Ok(VariableRadius { parameter, radius })
             })
@@ -237,7 +239,12 @@ impl VariableRadii {
         points: Vec<VariableRadius<Fraction, NonNegativeLength>>,
     ) -> Result<Self, &'static str> {
         if points.len() < 2
-            || !points.iter().any(|point| point.radius.get() > 0.0)
+            || !points.iter().any(|point| {
+                point
+                    .radius
+                    .literal()
+                    .is_none_or(|radius| radius.get() > 0.0)
+            })
             || points
                 .windows(2)
                 .any(|pair| pair[0].parameter >= pair[1].parameter)
@@ -265,8 +272,15 @@ impl VariableRadii {
     ) -> Result<Self, VariableRadiiMapError<E>> {
         let mut positive = false;
         for point in &mut self.0 {
-            point.radius = map(point.radius).map_err(VariableRadiiMapError::Radius)?;
-            positive |= point.radius.get() > 0.0;
+            point.radius = point
+                .radius
+                .clone()
+                .try_map_literal(&mut map)
+                .map_err(VariableRadiiMapError::Radius)?;
+            positive |= point
+                .radius
+                .literal()
+                .is_none_or(|radius| radius.get() > 0.0);
         }
         if positive {
             Ok(self)
@@ -294,14 +308,14 @@ impl Serialize for VariableRadii {
 // A source states a raw parameter and a signed length; `VariableRadii`
 // holds the admitted sample, whose parameter is a `Fraction` and whose
 // radius is a `NonNegativeLength`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct VariableRadius<P = f64, L = Length> {
     /// Position in `[0, 1]` along the edge chain.
     pub parameter: P,
     /// Fillet radius at this position.
-    pub radius: L,
+    pub radius: Dimension<L>,
 }
 
 impl VariableRadius<Fraction, NonNegativeLength> {
@@ -310,7 +324,7 @@ impl VariableRadius<Fraction, NonNegativeLength> {
     pub fn to_raw(&self) -> VariableRadius {
         VariableRadius {
             parameter: self.parameter.get(),
-            radius: Length::from(self.radius),
+            radius: self.radius.clone().map_literal(Length::from),
         }
     }
 }
@@ -330,7 +344,7 @@ pub enum ChamferForm {
 }
 
 /// Dimensional definition of an edge chamfer.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChamferSpec {
@@ -347,34 +361,38 @@ pub enum ChamferSpec {
     /// Equal setback distance on both faces meeting the edge.
     Distance {
         /// Setback distance from the edge.
-        distance: PositiveLength,
+        distance: Dimension<PositiveLength>,
     },
     /// Independent setback distances on each face meeting the edge.
     TwoDistances {
         /// Setback distance on the first face.
-        first: PositiveLength,
+        first: Dimension<PositiveLength>,
         /// Setback distance on the second face.
-        second: PositiveLength,
+        second: Dimension<PositiveLength>,
     },
     /// A setback distance on one face plus an angle from it to the other.
     DistanceAngle {
         /// Setback distance on the reference face.
-        distance: PositiveLength,
+        distance: Dimension<PositiveLength>,
         /// Chamfer angle measured from the reference face.
-        angle: InteriorAngle,
+        angle: Dimension<InteriorAngle>,
     },
 }
 
 impl ChamferSpec {
     /// Returns whether the chamfer form lacks its required dimensions.
-    pub const fn is_unresolved(self) -> bool {
+    pub const fn is_unresolved(&self) -> bool {
         matches!(self, Self::Unresolved { .. })
     }
 }
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_form, RadiusForm, "form");
-cadmpeg_core::named_optional_field!(deserialize_tangency_weight, FiniteReal, "tangency_weight");
+cadmpeg_core::named_optional_field!(
+    deserialize_tangency_weight,
+    Dimension<FiniteReal>,
+    "tangency_weight"
+);
 cadmpeg_core::named_optional_field!(deserialize_chamfer_spec_form, ChamferForm, "form");
 
 mod decode_clone;

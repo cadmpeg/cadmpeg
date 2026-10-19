@@ -1628,12 +1628,9 @@ fn resolve_identity(
     let color = match color_selector {
         ColorSource::Layer => layer.map(|value| value.color),
         ColorSource::Object => object_color,
-        ColorSource::Material => {
-            warnings.push(format_args!(
-                "object {object_id} material color remains unresolved"
-            ));
-            None
-        }
+        // Material assignments are projected after the material table. Their
+        // colour is resolved through the neutral appearance binding.
+        ColorSource::Material => None,
         ColorSource::Parent if definition_member => {
             warnings.push(format_args!(
                 "object {object_id} parent color remains unresolved"

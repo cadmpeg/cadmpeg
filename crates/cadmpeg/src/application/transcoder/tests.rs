@@ -96,8 +96,10 @@ fn prepared(
         selection: TargetSelection::new(format, None),
         destination: ResolvedDestination::Stdout,
         loss_policy,
+        loss_floor: super::LossFloor::Info,
         allow_errors: false,
-        allow_empty: false,
+        // These tests isolate export planning and loss policy.
+        allow_empty: true,
     }
 }
 
@@ -258,8 +260,7 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("not-implemented-test");
-    const NEEDS: cadmpeg_ir::codec::write::DepthNeed =
-        cadmpeg_ir::codec::write::DepthNeed::AtLeast(cadmpeg_core::decode::DecodeDepth::Full);
+    const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
 
@@ -491,6 +492,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
         export_target(TargetSelection::new(Format::Step, None)),
         &super::ConversionPolicy {
             losses: LossPolicy::Allow,
+            loss_floor: super::LossFloor::Info,
             allow_errors: false,
             allow_empty: false,
             destination: DestinationPolicy::Stdout {
@@ -674,6 +676,7 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
             selection: target.selection,
             destination: ResolvedDestination::Stdout,
             loss_policy: LossPolicy::Allow,
+            loss_floor: super::LossFloor::Info,
             allow_errors: false,
             allow_empty: false,
         };
@@ -765,4 +768,82 @@ fn an_f3d_native_design_record_error_does_not_block_a_step_export() {
         .expect("STEP drops the foreign native namespace");
     assert_eq!(planned.carried_errors(), 0);
     assert!(planned.prepared().validation.findings.contains(&finding));
+}
+
+#[test]
+fn loss_floor_cli_accepts_each_severity_and_defaults_to_info() {
+    use clap::Parser;
+    for (spelling, expected) in [
+        (None, super::LossFloor::Info),
+        (Some("info"), super::LossFloor::Info),
+        (Some("warning"), super::LossFloor::Warning),
+        (Some("error"), super::LossFloor::Error),
+        (Some("blocking"), super::LossFloor::Blocking),
+    ] {
+        let mut args = vec!["cadmpeg", "convert", "input.step", "--reject-lossy"];
+        if let Some(value) = spelling {
+            args.extend(["--reject-lossy-floor", value]);
+        }
+        let crate::Command::Convert {
+            reject_lossy_floor, ..
+        } = crate::Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("expected convert command");
+        };
+        assert_eq!(reject_lossy_floor, expected);
+    }
+}
+
+#[test]
+fn loss_floors_include_their_threshold_and_all_higher_severities() {
+    use cadmpeg_ir::report::Severity;
+    let severities = [
+        Severity::Info,
+        Severity::Warning,
+        Severity::Error,
+        Severity::Blocking,
+    ];
+    for (index, floor) in [
+        super::LossFloor::Info,
+        super::LossFloor::Warning,
+        super::LossFloor::Error,
+        super::LossFloor::Blocking,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for (severity_index, severity) in severities.into_iter().enumerate() {
+            assert_eq!(floor.rejects_severity(severity), severity_index >= index);
+        }
+    }
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn export_loss_gate_uses_the_configured_floor() {
+    for (floor, refuses) in [
+        (super::LossFloor::Info, true),
+        (super::LossFloor::Warning, false),
+        (super::LossFloor::Error, false),
+        (super::LossFloor::Blocking, false),
+    ] {
+        let mut conversion = prepared(
+            step_ir_with_unrepresentable_native_content(),
+            Format::Step,
+            Box::new(cadmpeg_codec_step::StepCodec::default()),
+            LossPolicy::RejectExport,
+        );
+        conversion.loss_floor = floor;
+        match conversion.plan() {
+            Err(error) if refuses => assert!(matches!(
+                error.refusal(),
+                Some(ConversionRefusal::ExportLossRejected { .. })
+            )),
+            Ok(planned) if !refuses => assert!(!planned.plan.report().losses.is_empty()),
+            outcome => panic!(
+                "unexpected outcome for floor {floor:?}: {}",
+                outcome.is_ok()
+            ),
+        }
+    }
 }

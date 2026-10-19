@@ -35,6 +35,7 @@ fn complete_block_ir() -> CadIr {
     let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(body.as_str()));
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -47,11 +48,12 @@ fn complete_block_ir() -> CadIr {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Block {
-                dimensions: Some([
+                dimensions: (Some([
                     cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-                ]),
+                ]))
+                .map(|values| values.map(Into::into)),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             }),
@@ -111,6 +113,7 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
 
 fn complete_hole(body: BodyId) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#hole".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -160,6 +163,7 @@ fn body_preserving_feature(
     definition: FeatureDefinition,
 ) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         name: None,
@@ -180,6 +184,7 @@ fn body_preserving_feature(
 
 fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         name: None,
@@ -212,7 +217,7 @@ fn complete_extrude_feature(
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap()).into(),
                     },
                     draft: None,
                 },

@@ -104,11 +104,11 @@ fn convert_stdout_contains_only_json_artifact() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
 }
 
-/// The decode report line names the depth the codec delivered. A codec with
+/// The decode report line names the content scope the codec delivered. A codec with
 /// no geometry-depth cut delivers `full` for STEP's geometry request, with or
 /// without `--full-decode`, which excludes `--container-only`.
 #[test]
-fn convert_reports_the_delivered_depth() {
+fn convert_reports_the_delivered_scope() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
     for extra in [None, Some("--full-decode")] {
@@ -126,7 +126,7 @@ fn convert_reports_the_delivered_depth() {
             .assert()
             .success()
             .stderr(predicate::str::contains(
-                "depth=full, geometry_transferred=false",
+                "scope=model+design, geometry_transferred=false",
             ));
     }
     Command::cargo_bin("cadmpeg")
@@ -199,7 +199,10 @@ fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
             "parametric/design record(s) were not represented in STEP",
         ));
     let report: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    assert_eq!(report["decode_report"]["transfer"]["transfer"], "full");
+    assert_eq!(
+        report["decode_report"]["transfer"]["scope"],
+        serde_json::json!({"model": true, "design": true})
+    );
 }
 
 #[cfg(any(feature = "fcstd", feature = "f3d"))]
@@ -222,7 +225,11 @@ fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[
             .args(args)
             .assert()
             .success()
-            .stderr(predicate::str::contains(format!("depth={depth},")));
+            .stderr(predicate::str::contains(if depth == "full" {
+                "scope=model+design,"
+            } else {
+                "scope=model,"
+            }));
         written.push(fs::read(&output).unwrap());
     }
     assert!(

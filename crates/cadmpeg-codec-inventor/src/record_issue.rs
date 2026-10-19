@@ -123,6 +123,7 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
             }
             (Some("inventor:pmdc:feature-record-issue"), Some(type_id)) => {
                 RecordIssueFamily::Feature {
+
                     type_id: type_id.try_into().map_err(str::to_owned)?,
                 }
             }
@@ -209,6 +210,7 @@ mod tests {
             ),
             (
                 RecordIssueFamily::Feature {
+
                     type_id: "0123456789abcdef0123456789abcdef"
                         .to_owned()
                         .try_into()

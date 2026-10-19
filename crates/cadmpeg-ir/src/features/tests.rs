@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod curves;
+mod wire_dimensions;
+use wire_dimensions::literal_fields;
+
 use crate::features::TrimCellSelection;
 use crate::math::{Point3, Vector3};
 
@@ -106,7 +110,7 @@ fn wrap_mode_round_trips_as_a_nested_key() {
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::Wrap {
-            mode: WrapMode::Emboss { depth: actual_depth },
+            mode: WrapMode::Emboss { depth: crate::features::Dimension::Literal(actual_depth)},
             ..
         }) if actual_depth.get() == 2.5
     ));
@@ -123,25 +127,26 @@ fn wrap_mode_round_trips_as_a_nested_key() {
 
 #[test]
 fn helix_shape_round_trips_as_a_nested_key() {
-    use crate::features::{FeatureDefinition, FeatureOperation, HelixShape};
+    use crate::features::{FeatureDefinition, FeatureOperation, HelixLaw, HelixShape};
 
     let conical_wire = serde_json::json!({
         "definition": "helix",
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "radius": 2.0,
-        "shape": {"kind": "conical", "pitch": 3.0, "cone_angle": 0.2},
-        "revolutions": 4.0,
-        "start_angle": 0.0,
+        "radius": {"kind":"literal","value":2.0},
+        "shape": {"kind":"conical","law":{"kind":"pitch_revolutions",
+            "pitch":{"kind":"literal","value":3.0},"revolutions":{"kind":"literal","value":4.0}},
+            "cone_angle":{"kind":"literal","value":0.2}},
+        "start_angle": {"kind":"literal","value":0.0},
         "clockwise": false
     });
     let conical: FeatureDefinition = serde_json::from_value(conical_wire.clone()).unwrap();
     assert!(matches!(
         &conical,
         FeatureDefinition::Operation(FeatureOperation::Helix {
-            shape: HelixShape::Conical { pitch, .. },
+            shape: HelixShape::Conical { law:HelixLaw::PitchRevolutions{pitch,..}, .. },
             ..
-        }) if pitch.get() == 3.0
+        }) if pitch.literal().unwrap().get() == 3.0
     ));
     assert_eq!(serde_json::to_value(conical).unwrap(), conical_wire);
 
@@ -149,10 +154,10 @@ fn helix_shape_round_trips_as_a_nested_key() {
         "definition": "helix",
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "radius": 2.0,
-        "shape": {"kind": "spiral", "radial_growth": 1.5},
-        "revolutions": 4.0,
-        "start_angle": 0.0,
+        "radius": {"kind":"literal","value":2.0},
+        "shape": {"kind":"spiral","radial_growth":{"kind":"literal","value":1.5},
+            "revolutions":{"kind":"literal","value":4.0}},
+        "start_angle": {"kind":"literal","value":0.0},
         "clockwise": false
     });
     let spiral: FeatureDefinition = serde_json::from_value(spiral_wire.clone()).unwrap();
@@ -160,8 +165,7 @@ fn helix_shape_round_trips_as_a_nested_key() {
         &spiral,
         FeatureDefinition::Operation(FeatureOperation::Helix {
             shape: HelixShape::Spiral {
-                radial_growth: actual_radial_growth
-            },
+                radial_growth: crate::features::Dimension::Literal(actual_radial_growth), ..},
             ..
         }) if actual_radial_growth.get() == 1.5
     ));
@@ -550,6 +554,7 @@ fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
         ),
     ];
     for (wire, positive_fields) in cases {
+        let wire = literal_fields(wire);
         let kind: PrimitiveSolidKind = serde_json::from_value(wire.clone()).unwrap();
         let solid = PrimitiveSolid::new(kind).unwrap();
         assert_eq!(serde_json::to_value(&solid).unwrap(), wire);
@@ -561,39 +566,39 @@ fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
         for field in positive_fields {
             for value in [0.0, -1.0] {
                 let mut changed = wire.clone();
-                changed[field] = json!(value);
+                *wire_dimensions::value_mut(&mut changed, field) = json!(value);
                 invalid.push(changed);
             }
         }
         match wire["kind"].as_str().unwrap() {
             "cone" => {
                 let mut both_zero = wire.clone();
-                both_zero["radius2"] = json!(0.0);
+                *wire_dimensions::value_mut(&mut both_zero, "radius2") = json!(0.0);
                 invalid.push(both_zero);
                 for field in ["radius1", "radius2"] {
                     let mut changed = wire.clone();
-                    changed[field] = json!(-1.0);
+                    *wire_dimensions::value_mut(&mut changed, field) = json!(-1.0);
                     invalid.push(changed);
                 }
             }
             "sphere" | "ellipsoid" | "torus" => {
                 for lower in [1.0, 2.0] {
                     let mut changed = wire.clone();
-                    changed["latitude1"] = json!(lower);
+                    *wire_dimensions::value_mut(&mut changed, "latitude1") = json!(lower);
                     invalid.push(changed);
                 }
             }
             "prism" => {
                 for sides in [0, 1, 2] {
                     let mut changed = wire.clone();
-                    changed["sides"] = json!(sides);
+                    *wire_dimensions::value_mut(&mut changed, "sides") = json!(sides);
                     invalid.push(changed);
                 }
             }
             "wedge" => {
                 for field in ["xmax", "ymax", "zmax", "x2max", "z2max"] {
                     let mut changed = wire.clone();
-                    changed[field] = json!(-1.0);
+                    *wire_dimensions::value_mut(&mut changed, field) = json!(-1.0);
                     invalid.push(changed);
                 }
             }
@@ -618,12 +623,12 @@ fn scale_factors_admit_only_finite_nonzero_components() {
     }
     for value in [-2.0, 0.5] {
         let factors = ScaleFactors::Uniform {
-            factor: NonZeroReal::new(value).unwrap(),
+            factor: crate::features::Dimension::Literal(NonZeroReal::new(value).unwrap()),
         };
-        let wire = serde_json::to_value(factors).unwrap();
+        let wire = serde_json::to_value(&factors).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"kind": "uniform", "factor": value})
+            literal_fields(serde_json::json!({"kind": "uniform", "factor": value}))
         );
         assert_eq!(
             serde_json::from_value::<ScaleFactors>(wire).unwrap(),
@@ -631,12 +636,13 @@ fn scale_factors_admit_only_finite_nonzero_components() {
         );
     }
     let factors = ScaleFactors::PerAxis {
-        factors: [-1.0, 2.0, -3.0].map(|value| NonZeroReal::new(value).unwrap()),
+        factors: ([-1.0, 2.0, -3.0].map(|value| NonZeroReal::new(value).unwrap()))
+            .map(crate::features::Dimension::Literal),
     };
-    let wire = serde_json::to_value(factors).unwrap();
+    let wire = serde_json::to_value(&factors).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"kind": "per_axis", "factors": [-1.0, 2.0, -3.0]})
+        literal_fields(serde_json::json!({"kind": "per_axis", "factors": [-1.0, 2.0, -3.0]}))
     );
     assert_eq!(
         serde_json::from_value::<ScaleFactors>(wire).unwrap(),
@@ -660,7 +666,7 @@ fn scale_factors_admit_only_finite_nonzero_components() {
         serde_json::json!({"uniform": 1.0}),
         serde_json::json!({"x": 1.0, "y": 1.0, "z": 1.0}),
     ] {
-        assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
+        assert!(serde_json::from_value::<ScaleFactors>(literal_fields(wire)).is_err());
     }
 }
 
@@ -668,14 +674,14 @@ fn scale_factors_admit_only_finite_nonzero_components() {
 fn blind_and_coil_lengths_reject_zero_without_losing_signed_wire_values() {
     use crate::features::{CoilExtent, LinearTermination};
     for value in [-4.0, 4.0] {
-        let wire = serde_json::json!({"kind": "blind", "length": value});
+        let wire = literal_fields(serde_json::json!({"kind": "blind", "length": value}));
         let admitted: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
     }
     for value in [-0.0, 0.0] {
-        assert!(serde_json::from_value::<LinearTermination>(
+        assert!(serde_json::from_value::<LinearTermination>(literal_fields(
             serde_json::json!({"kind":"blind","length":value})
-        )
+        ))
         .is_err());
         for wire in [
             serde_json::json!({"kind":"revolutions_pitch","revolutions":1.0,"pitch":value}),
@@ -683,10 +689,12 @@ fn blind_and_coil_lengths_reject_zero_without_losing_signed_wire_values() {
             serde_json::json!({"kind":"height_pitch","height":1.0,"pitch":value}),
             serde_json::json!({"kind":"spiral","revolutions":1.0,"radial_pitch":value}),
         ] {
-            assert!(serde_json::from_value::<CoilExtent>(wire).is_err());
+            assert!(serde_json::from_value::<CoilExtent>(literal_fields(wire)).is_err());
         }
     }
-    let wire = serde_json::json!({"kind":"revolutions_height","revolutions":1.0,"height":0.0});
+    let wire = literal_fields(
+        serde_json::json!({"kind":"revolutions_height","revolutions":1.0,"height":0.0}),
+    );
     let admitted: CoilExtent = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
 }
@@ -897,125 +905,6 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
 }
 
 #[test]
-fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing_domain() {
-    use crate::features::{FeatureDefinition, FeatureEquationCurve, FeatureOperation};
-    let curve = FeatureEquationCurve::new(
-        " t ".into(),
-        " t*t ".into(),
-        "0".into(),
-        " -t ".into(),
-        -2.0,
-        3.0,
-    )
-    .unwrap();
-    let definition = FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve });
-    let wire = serde_json::json!({"definition":"equation_curve", "curve":{"parameter":" t ", "x_expression":" t*t ", "y_expression":"0", "z_expression":" -t ", "start":-2.0, "end":3.0}});
-    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
-    assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
-        definition
-    );
-    for field in ["parameter", "x_expression", "y_expression", "z_expression"] {
-        for blank in ["", " \t\n"] {
-            let mut invalid = wire.clone();
-            invalid[field] = serde_json::json!(blank);
-            assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-        }
-    }
-    for [start, end] in [
-        [1.0, 1.0],
-        [2.0, 1.0],
-        [f64::NAN, 2.0],
-        [0.0, f64::INFINITY],
-        [f64::NEG_INFINITY, 0.0],
-    ] {
-        assert!(FeatureEquationCurve::new(
-            "t".into(),
-            "t".into(),
-            "0".into(),
-            "0".into(),
-            start,
-            end
-        )
-        .is_none());
-    }
-    for [start, end] in [[1.0, 1.0], [2.0, 1.0]] {
-        let mut invalid = wire.clone();
-        invalid["curve"]["start"] = serde_json::json!(start);
-        invalid["curve"]["end"] = serde_json::json!(end);
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-    }
-}
-
-#[test]
-fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() {
-    use crate::geometry::DirectedParameterRange;
-    use crate::{
-        features::{FeatureCircularArc, FeatureDefinition, FeatureEllipticArc, FeatureOperation},
-        scalar::PositiveLength,
-    };
-    let center = Point3::new(1.0, 2.0, 3.0);
-    let normal = Vector3::new(0.0, 0.0, 2.0);
-    let major_axis = Vector3::new(3.0, 0.0, 0.0);
-    let major = PositiveLength::new(4.0).unwrap();
-    let minor = PositiveLength::new(2.0).unwrap();
-    for endpoints in [[0.0, std::f64::consts::TAU], [2.0, -1.0]] {
-        let angles = DirectedParameterRange::new(endpoints).unwrap();
-        let arc = FeatureCircularArc::new(center, normal, major, angles).unwrap();
-        let definition = FeatureDefinition::Operation(FeatureOperation::CircularArc { arc });
-        let wire = serde_json::json!({"definition":"circular_arc", "arc":{"center":center, "normal":normal, "radius":4.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
-        assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
-        assert_eq!(
-            serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
-            definition
-        );
-        let mut invalid = wire;
-        invalid["arc"]["end_angle"] = invalid["arc"]["start_angle"].clone();
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-
-        let arc =
-            FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
-        let definition = FeatureDefinition::Operation(FeatureOperation::EllipticArc { arc });
-        let wire = serde_json::json!({"definition":"elliptic_arc", "arc":{"center":center, "normal":normal, "major_axis":major_axis, "major_radius":4.0, "minor_radius":2.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
-        assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
-        assert_eq!(
-            serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
-            definition
-        );
-        for (field, value) in [
-            ("minor_radius", serde_json::json!(5.0)),
-            ("major_axis", serde_json::json!({"x":0.0,"y":0.0,"z":1.0})),
-            ("end_angle", serde_json::json!(endpoints[0])),
-        ] {
-            let mut invalid = wire.clone();
-            invalid["arc"][field] = value;
-            assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-        }
-    }
-    let angles = DirectedParameterRange::new([0.0, 1.0]).unwrap();
-    assert!(FeatureCircularArc::new(center, Vector3::new(0.0, 0.0, 0.0), major, angles).is_none());
-    assert!(FeatureEllipticArc::new(center, normal, major_axis, [minor, major], angles).is_none());
-    assert!(FeatureEllipticArc::new(center, normal, major_axis, [major, major], angles).is_some());
-    assert!(FeatureEllipticArc::new(center, normal, normal, [major, minor], angles).is_none());
-    assert!(FeatureEllipticArc::new(
-        center,
-        normal,
-        Vector3::new(1.0, 0.0, super::EPS_FEATURE_ELLIPSE_AXES_ORTHO / 2.0),
-        [major, minor],
-        angles
-    )
-    .is_some());
-    assert!(FeatureEllipticArc::new(
-        center,
-        normal,
-        Vector3::new(1.0, 0.0, super::EPS_FEATURE_ELLIPSE_AXES_ORTHO),
-        [major, minor],
-        angles
-    )
-    .is_none());
-}
-
-#[test]
 fn block_placement_admission_requires_a_right_handed_rigid_transform() {
     use crate::features::FeatureRigidPlacement;
     use crate::transform::Transform;
@@ -1082,33 +971,41 @@ fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_trav
             serde_json::json!({"kind":"conical","height":2.0,"radial_growth":-3.0}),
         ),
     ] {
+        let wire = literal_fields(wire);
         let travel = HelicalSweepTravel::new(
-            Length::new(height).unwrap(),
-            Length::new(radial_growth).unwrap(),
+            Length::new(height).unwrap().into(),
+            Length::new(radial_growth).unwrap().into(),
         )
         .unwrap();
-        assert_eq!(travel.height().get(), height);
-        assert_eq!(travel.radial_growth().get(), radial_growth);
-        assert_eq!(serde_json::to_value(travel).unwrap(), wire);
+        assert_eq!(travel.height().literal().unwrap().get(), height);
+        assert_eq!(
+            travel.radial_growth().literal().unwrap().get(),
+            radial_growth
+        );
+        assert_eq!(serde_json::to_value(&travel).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<HelicalSweepTravel>(wire).unwrap(),
             travel
         );
     }
-    assert!(HelicalSweepTravel::new(Length::ZERO, Length::ZERO).is_none());
+    assert!(HelicalSweepTravel::new(
+        crate::features::Dimension::Literal(Length::ZERO),
+        Length::ZERO.into()
+    )
+    .is_none());
     // A zero component has no spelling: the arm that would carry it is a
     // `NonZeroLength`, and the arm that omits it names a different travel.
-    assert!(serde_json::from_value::<HelicalSweepTravel>(
+    assert!(serde_json::from_value::<HelicalSweepTravel>(literal_fields(
         serde_json::json!({"kind":"axial","height":0.0})
-    )
+    ))
     .is_err());
-    assert!(serde_json::from_value::<HelicalSweepTravel>(
+    assert!(serde_json::from_value::<HelicalSweepTravel>(literal_fields(
         serde_json::json!({"kind":"conical","height":1.0,"radial_growth":0.0})
-    )
+    ))
     .is_err());
-    assert!(serde_json::from_value::<HelicalSweepTravel>(
+    assert!(serde_json::from_value::<HelicalSweepTravel>(literal_fields(
         serde_json::json!({"kind":"axial","height":1.0,"radial_growth":2.0})
-    )
+    ))
     .is_err());
 }
 
@@ -1695,56 +1592,6 @@ fn feature_frames_replace_the_origin_and_keep_the_admitted_axes() {
         ]
         .map(f64::to_bits),
         [moved.x, moved.y, moved.z].map(f64::to_bits)
-    );
-}
-
-#[test]
-fn feature_arcs_rebuild_from_checked_parts() {
-    use crate::features::{
-        FeatureCircularArc, FeatureDirection3, FeatureEllipticArc, FinitePoint3,
-    };
-    use crate::geometry::DirectedParameterRange;
-    use crate::scalar::{PositiveLength, PositiveReal};
-
-    let center = Point3::new(1.0, 2.0, 3.0);
-    let normal = Vector3::new(0.0, 0.0, 2.0);
-    let major_axis = Vector3::new(3.0, 0.0, 0.0);
-    let angles = DirectedParameterRange::new([2.0, -1.0]).unwrap();
-    let radius = PositiveLength::new(4.0).unwrap();
-
-    let arc = FeatureCircularArc::new(center, normal, radius, angles).unwrap();
-    assert_eq!(arc.center(), FinitePoint3::new(center).unwrap());
-    assert_eq!(arc.normal(), FeatureDirection3::new(normal).unwrap());
-    assert_eq!(
-        FeatureCircularArc::from_parts(arc.center(), arc.normal(), arc.radius(), arc.angles()),
-        arc
-    );
-    let moved = FinitePoint3::new(Point3::new(-5.0, 0.0, 7.5)).unwrap();
-    let wider = PositiveLength::new(8.0).unwrap();
-    assert_eq!(
-        FeatureCircularArc::from_parts(moved, arc.normal(), wider, arc.angles()),
-        FeatureCircularArc::new(moved.get(), normal, wider, angles).unwrap()
-    );
-
-    let [major, minor] = [4.0, 2.0].map(|value| PositiveLength::new(value).unwrap());
-    let ellipse =
-        FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
-    let scale = PositiveReal::new(2.0).unwrap();
-    let scaled = [8.0, 4.0].map(|value| PositiveLength::new(value).unwrap());
-    assert_eq!(
-        ellipse
-            .with_scaled_radii(scale)
-            .map(|arc| arc.with_center(moved)),
-        FeatureEllipticArc::new(moved.get(), normal, major_axis, scaled, angles)
-    );
-    let equal =
-        FeatureEllipticArc::new(center, normal, major_axis, [major, major], angles).unwrap();
-    assert_eq!(
-        Some(equal.with_center(moved)),
-        FeatureEllipticArc::new(moved.get(), normal, major_axis, [major, major], angles)
-    );
-    assert!(
-        FeatureEllipticArc::new(moved.get(), normal, major_axis, [minor, major], angles).is_none()
     );
 }
 

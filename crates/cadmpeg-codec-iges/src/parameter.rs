@@ -28,8 +28,7 @@ impl fmt::Display for BackPointer {
 }
 
 /// One typed lexical value in an entity parameter record.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenValue {
     Omitted,
     Integer(i64),
@@ -37,6 +36,28 @@ pub(crate) enum TokenValue {
     String(cadmpeg_ir::native::bytes::NativeBytes),
     /// The field boundaries are known, but its literal cannot be interpreted.
     Unreadable(ParameterDefect),
+}
+
+impl Serialize for TokenValue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+        enum Wire<'a> {
+            Omitted,
+            Integer(i64),
+            Real(FiniteReal),
+            String(crate::text::NativeText<&'a [u8]>),
+            Unreadable(ParameterDefect),
+        }
+        match self {
+            Self::Omitted => Wire::Omitted,
+            Self::Integer(value) => Wire::Integer(*value),
+            Self::Real(value) => Wire::Real(*value),
+            Self::String(bytes) => Wire::String(crate::text::NativeText::from(bytes.as_ref())),
+            Self::Unreadable(defect) => Wire::Unreadable(*defect),
+        }
+        .serialize(serializer)
+    }
 }
 
 #[cfg(test)]
@@ -55,18 +76,7 @@ pub(crate) struct Token {
 
 impl Serialize for Token {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            start: usize,
-            end: usize,
-            value: &'a TokenValue,
-        }
-        Wire {
-            start: self.span.start,
-            end: self.span.end,
-            value: &self.value,
-        }
-        .serialize(serializer)
+        self.value.serialize(serializer)
     }
 }
 

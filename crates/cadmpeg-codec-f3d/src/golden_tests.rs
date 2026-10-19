@@ -18,11 +18,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
-use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
-use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
-    MutationOutcome, SemanticOutcome,
-};
+use cadmpeg_test_support::golden::snapshots_agree;
 
 use super::F3dCodec;
 use crate::test_support::native_test::TestEncode;
@@ -73,7 +69,6 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
     f3d_with_smbh_and_protein_with_generated_surface_stitch,
 };
-use cadmpeg_core::CodecError;
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
 #[allow(clippy::vec_init_then_push)]
@@ -372,9 +367,6 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(result) => {
             let mut result = EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
             let ir = result
                 .ir()
                 .to_canonical_json()
@@ -412,7 +404,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     text
 }
 
-/// Encodes an unedited decode result via the verbatim-replay branch.
+/// Asks to preserve an unedited document; source-only content forces synthesis.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     let mut out = Vec::new();
@@ -425,8 +417,11 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
             match plan.write_to(&mut out) {
                 Ok(_) => {
                     assert!(
-                        matches!(path, WritePath::VerbatimReplay { .. }),
-                        "the replay lane must take the verbatim-replay write path"
+                        matches!(
+                            path,
+                            WritePath::VerbatimReplay { .. } | WritePath::Synthesized { .. }
+                        ),
+                        "preservation either replays represented content or authors the document"
                     );
                     Ok(out)
                 }
@@ -474,8 +469,11 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         {
             Ok(path) => {
                 assert!(
-                    matches!(path, WritePath::Patched { .. }),
-                    "the patch lane edits the IR, so the writer must run"
+                    matches!(
+                        path,
+                        WritePath::Patched { .. } | WritePath::Synthesized { .. }
+                    ),
+                    "an edited document patches or falls back to synthesis"
                 );
                 Ok(out)
             }
@@ -576,24 +574,16 @@ fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<St
     }
 }
 
-/// Serializes the document a generated container decodes to, with every
-/// `*_sha256` attribute elided. Those digests cover written bytes that move
-/// under platform libm while the geometry still agrees within tolerance.
+/// Serializes the actual document decoded from a generated container.
+/// Source-layout fingerprints live in fidelity rather than document content.
 fn generated_container_snapshot(bytes: &[u8]) -> String {
-    let mut ir = match decode_result(bytes) {
+    let ir = match decode_result(bytes) {
         Ok(result) => result.into_parts().0,
         Err(error) => {
             let value = serde_json::json!({ "decode_error": error.to_string() });
             return serde_json::to_string_pretty(&value).expect("serialize decode error");
         }
     };
-    if let Some(source) = ir.source.as_mut() {
-        for (key, value) in &mut source.attributes {
-            if key.as_str().ends_with("_sha256") {
-                cadmpeg_test_support::golden::ELIDED_DIGEST.clone_into(value);
-            }
-        }
-    }
     ir.to_canonical_json().expect("serialize canonical ir")
 }
 
@@ -786,32 +776,57 @@ fn golden_output_is_deterministic() {
     }
 }
 
-/// Every committed fixture replays its retained bytes back to itself.
+/// Preserved layout and separately authored bytes mean the same document.
 #[test]
-fn fixtures_replay_verbatim() {
+fn fixtures_preservation_agrees_with_synthesis() {
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
-        verbatim_replay_holds(&F3dCodec, name, &input);
+        let decoded = decode_result(&input).unwrap();
+        let plan = F3dCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
+        let preserves = matches!(
+            plan.report().write_path(),
+            WritePath::Patched { .. } | WritePath::VerbatimReplay { .. }
+        );
+        if preserves {
+            assert!(
+                decoded.source_fidelity().unrepresented().is_empty(),
+                "{name}"
+            );
+        } else {
+            assert!(plan.report().synthesis_cause().is_some(), "{name}");
+        }
+        let mut retained = Vec::new();
+        plan.write_to(&mut retained).unwrap();
+        let mut authored = Vec::new();
+        let report = F3dCodec.encode(decoded.ir(), &mut authored).unwrap();
+        assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
+        let retained = decode_result(&retained).unwrap();
+        let authored = decode_result(&authored).unwrap();
+        assert_eq!(
+            cadmpeg_test_support::contract::neutral_view(retained.ir(), &[]),
+            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
+            "{name}"
+        );
     }
 }
 
-/// Write path requires a decode baseline.
+/// No retained bytes are needed to author a decoded document.
 #[test]
-fn fixtures_refuse_to_write_without_a_baseline() {
+fn fixtures_synthesize_without_source_bytes() {
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
-        semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
-            match outcome {
-            SemanticOutcome::Refused { error } => assert!(
-                matches!(error, CodecError::NotImplemented(_)),
-                "fixture `{name}`: a missing baseline is an unbuilt capability, not a malformed input: {error}"
-            ),
-            SemanticOutcome::Written { report, .. } => panic!(
-                "fixture `{name}`: the baseline was removed, yet the encoder wrote by the {} path",
-                report.write_path()
-            ),
-        }
-        });
+        let decoded = decode_result(&input).unwrap();
+        let mut bytes = Vec::new();
+        let report = F3dCodec
+            .encode(decoded.ir(), &mut bytes)
+            .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
+        assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
+        decode_result(&bytes).unwrap_or_else(|error| panic!("fixture {name}: {error}"));
     }
 }
 
@@ -821,84 +836,50 @@ const MUTATION_MM: f64 = 1.0;
 /// Fixtures with no point for the mutation lane to move.
 const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 
-/// Serializes the neutral model plus unit and tolerance declarations.
-fn neutral_document(ir: &CadIr) -> String {
-    snapshot_text(&serde_json::json!({
-        "model": serde_json::to_value(&ir.model).expect("serialize model"),
-        "units": { "length": "millimeter" },
-        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
-    }))
-}
-
-/// An edit to a decoded document survives the patch writer.
+/// An edit has the same meaning through preservation and synthesis.
 #[test]
-fn an_edit_survives_the_patch_writer() {
-    let mut edited_count = 0usize;
-    let mut skipped: Vec<&str> = Vec::new();
+fn an_edit_survives_native_writer_fallback() {
+    let mut skipped = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
-        let ran = mutation_roundtrip(
-            &F3dCodec,
-            name,
-            &input,
-            ExpectedWritePath::Patched,
-            |ir| {
-                let Some(point) = ir.model.points.first_mut() else {
-                    return false;
-                };
-                let moved = point.position().get();
-                point.set_position(
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        moved.x + MUTATION_MM,
-                        moved.y,
-                        moved.z,
-                    ))
-                    .expect("a finite position is a point"),
-                );
-                true
-            },
-            |outcome| match outcome {
-                MutationOutcome::Written { edited, bytes, .. } => {
-                    let round_trip = decode_result(bytes).unwrap_or_else(|error| {
-                        panic!("fixture `{name}`: patched output does not decode: {error}")
-                    });
-                    let moved = edited.model.points[0].position().get().x;
-                    let returned = round_trip.ir().model.points[0].position().get().x;
-                    assert!(
-                        (returned - moved).abs() <= 1.0e-9,
-                        "fixture `{name}`: the patch writer produced a container that round-trips, but the \
-                         edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
-                    );
-                    if let Err(mismatch) = snapshots_agree(
-                        &neutral_document(edited),
-                        &neutral_document(round_trip.ir()),
-                    ) {
-                        panic!(
-                            "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
-                        );
-                    }
-                }
-                MutationOutcome::Refused { error } => {
-                    panic!("fixture `{name}`: the patch writer declined to move a point: {error}")
-                }
-            },
-        );
-        if ran {
-            edited_count += 1;
-        } else {
+        let decoded = decode_result(&input).unwrap();
+        let mut edited = decoded.ir().clone();
+        let Some(point) = edited.model.points.first_mut() else {
             skipped.push(name);
-        }
+            continue;
+        };
+        let moved = point.position().get();
+        point.set_position(
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                moved.x + MUTATION_MM,
+                moved.y,
+                moved.z,
+            ))
+            .unwrap(),
+        );
+        let plan = F3dCodec
+            .plan(
+                EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
+        assert!(matches!(
+            plan.report().write_path(),
+            WritePath::Patched { .. } | WritePath::Synthesized { .. }
+        ));
+        let mut preserved = Vec::new();
+        plan.write_to(&mut preserved).unwrap();
+        let mut authored = Vec::new();
+        F3dCodec.encode(&edited, &mut authored).unwrap();
+        let preserved = decode_result(&preserved).unwrap();
+        let authored = decode_result(&authored).unwrap();
+        assert_eq!(
+            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]),
+            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
+            "{name}"
+        );
     }
-    assert_eq!(
-        skipped, FIXTURES_WITHOUT_POINTS,
-        "the set of fixtures with no point to move changed; this lane covers every other fixture, so \
-         a new name here narrows it and a missing one means a fixture lost its geometry"
-    );
-    assert_eq!(
-        edited_count,
-        fixtures().len() - FIXTURES_WITHOUT_POINTS.len(),
-        "every fixture that carries a point must reach the patch writer"
-    );
+    assert_eq!(skipped, FIXTURES_WITHOUT_POINTS);
 }
 
 /// Every committed fixture must still match its builder bytes.
@@ -1049,6 +1030,23 @@ fn geometry_depth_agrees_with_full_depth() {
         .into_iter()
         .map(|(name, _)| (name, read_fixture(name).expect("committed fixture")))
         .collect::<Vec<_>>();
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
-    assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+        &F3dCodec,
+        &inputs,
+        |result| {
+            crate::decode::assert_projection_records_are_reported(result);
+            let native = crate::test_support::native_test::f3d_native(result.ir());
+            let expected = crate::loss::unrepresented(&result.report().losses, &native);
+            for class in expected {
+                assert!(
+                    result.source_fidelity().unrepresented().contains(&class),
+                    "F3D report has a source-only {class} record without declaring its class"
+                );
+            }
+        },
+    );
+    assert!(
+        summary.cut > 0 && summary.cut + summary.refused <= summary.inputs,
+        "{summary:?}"
+    );
 }

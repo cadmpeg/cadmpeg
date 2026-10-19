@@ -10,7 +10,7 @@ use std::collections::HashMap;
 fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8c44).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,

@@ -30,6 +30,39 @@ pub enum AttributeTarget {
     Edge(EdgeId),
     /// Attribute is owned by a vertex.
     Vertex(VertexId),
+    /// Attribute is owned by a region.
+    Region(crate::ids::RegionId),
+    /// Attribute is owned by a surface carrier.
+    Surface(crate::ids::SurfaceId),
+    /// Attribute is owned by a curve carrier.
+    Curve(crate::ids::CurveId),
+    /// Attribute is owned by a point carrier.
+    Point(crate::ids::PointId),
+    /// Attribute is owned by a feature definition.
+    Feature(crate::features::FeatureId),
+    /// Attribute is owned by a sketch definition.
+    Sketch(crate::sketches::SketchId),
+    /// Attribute is owned by a parameter.
+    Parameter(crate::features::ParameterId),
+    /// Attribute is owned by a reusable product.
+    ProductDefinition(crate::ids::ProductDefinitionId),
+    /// Attribute is owned by a placed occurrence.
+    Occurrence(crate::ids::OccurrenceId),
+    /// Attribute is owned by a tessellation.
+    Tessellation(String),
+    /// Attribute is owned by a PMI annotation.
+    Pmi(crate::ids::PmiId),
+    /// Attribute is owned by a semantic annotation.
+    SemanticAnnotation(crate::semantic_annotations::SemanticAnnotationId),
+    /// Attribute is owned by a drawing.
+    Drawing(crate::drawings::DrawingId),
+    /// Attribute is owned by an object view provider.
+    ViewPresentation(crate::presentation::PresentationId),
+    /// Attribute is owned by a retained typed native object with no neutral entity.
+    Source {
+        /// Identity of an existing typed native record or source-object association.
+        source_id: String,
+    },
 }
 
 /// One ordered typed value from a source attribute record.

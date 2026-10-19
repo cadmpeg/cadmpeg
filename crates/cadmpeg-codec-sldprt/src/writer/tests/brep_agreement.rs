@@ -9,18 +9,17 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::container;
 use crate::test_support::container::make_block;
 use crate::test_support::history::sldprt_with_body_and_history;
-use crate::test_support::native::{sldprt_native, update_sldprt_native};
+use crate::test_support::native::update_sldprt_native;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn extrusion_depth_edit_without_brep_edit_is_refused() {
+fn extrusion_depth_edit_without_brep_edit_is_synthesized() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let feature_id = decoded.ir().model.features[0].id.clone();
     decoded.ir_mut().model.features[0]
         .evaluation
         .edit(|definition, _| {
@@ -33,33 +32,24 @@ fn extrusion_depth_edit_without_brep_edit_is_refused() {
             *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
+                        ),
                     },
                     draft: None,
                 },
             };
         });
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-        "{error:?}"
-    );
-    assert!(error.to_string().contains(feature_id.as_str()), "{error}");
+    assert_synthesized_design(&decoded);
 }
 
 #[test]
-fn feature_output_scope_edit_is_refused() {
+fn feature_output_scope_edit_is_synthesized() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let feature_id = decoded.ir().model.features[0].id.clone();
     let body = decoded.ir().model.bodies[0].id.clone();
     let outputs = decoded.ir().model.features[0].evaluation.outputs().clone();
     let replacement = if outputs.is_empty() {
@@ -70,18 +60,11 @@ fn feature_output_scope_edit_is_refused() {
     decoded.ir_mut().model.features[0]
         .evaluation
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains(feature_id.as_str()), "{error}");
+    assert_synthesized_design(&decoded);
 }
 
 #[test]
-fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
+fn feature_output_edit_with_nongeometric_history_edit_is_synthesized() {
     let mut source = sldprt_with_body_and_history(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -107,7 +90,6 @@ fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
         .position(|feature| feature.name.as_deref() == Some("Equations"))
         .unwrap();
     let body = decoded.ir().model.bodies[0].id.clone();
-    let feature_id = decoded.ir().model.features[modeling].id.clone();
     let replacement = if decoded.ir().model.features[modeling]
         .evaluation
         .outputs()
@@ -123,18 +105,11 @@ fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
     edit.model.features[nongeometric].source_text = Some("changed".into());
     drop(edit);
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains(feature_id.as_str()), "{error}");
+    assert_synthesized_design(&decoded);
 }
 
 #[test]
-fn extrusion_parameter_value_edit_without_brep_edit_is_refused() {
+fn extrusion_parameter_value_edit_without_brep_edit_is_synthesized() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -147,20 +122,12 @@ fn extrusion_parameter_value_edit_without_brep_edit_is_refused() {
         .iter_mut()
         .find(|parameter| parameter.name == "Depth")
         .unwrap();
-    let parameter_id = parameter.id.clone();
     parameter.expression = "50mm".into();
     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
     ));
     drop(edit);
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains(parameter_id.as_str()), "{error}");
+    assert_synthesized_design(&decoded);
 }
 
 #[test]
@@ -186,54 +153,34 @@ fn removing_referenced_extrusion_parameter_is_malformed() {
 }
 
 #[test]
-fn native_extrusion_depth_edit_is_refused() {
+fn native_extrusion_depth_edit_is_synthesized() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let native_id = sldprt_native(decoded.ir()).feature_histories[0].features[0]
-        .id
-        .clone();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Depth"), "50mm".into());
     });
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains(&native_id), "{error}");
+    assert_synthesized_design(&decoded);
 }
 
 #[test]
-fn native_extrusion_edit_without_source_image_is_refused() {
+fn native_extrusion_edit_without_source_image_is_synthesized() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let native_id = sldprt_native(decoded.ir()).feature_histories[0].features[0]
-        .id
-        .clone();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Depth"), "50mm".into());
     });
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains(&native_id), "{error}");
+    assert_synthesized_design(&decoded);
 }
 
 #[test]
@@ -311,4 +258,55 @@ fn native_feature_name_edit_keeps_retained_brep() {
         .section
         .payload();
     assert_eq!(output_partition, source_partition);
+}
+
+fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResult) {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(
+            |loss| loss.code.local_code() == "writer.brep-not-regenerated"
+                && loss.severity == cadmpeg_ir::report::Severity::Warning
+        ));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        written.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
+    let mut expected = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.name, &parameter.expression))
+        .collect::<Vec<_>>();
+    let mut actual = written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.name, &parameter.expression))
+        .collect::<Vec<_>>();
+    expected.sort();
+    actual.sort();
+    assert_eq!(
+        actual, expected,
+        "neutral parameters decide the written history"
+    );
 }

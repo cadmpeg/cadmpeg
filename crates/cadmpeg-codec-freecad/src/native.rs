@@ -19,6 +19,32 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
+/// Every content/evidence arena in the FreeCAD native namespace. Source byte
+/// ledgers live in SourceFidelity rather than in this registry.
+pub(crate) const ARENAS: &[&str] = &[
+    "document",
+    "objects",
+    "extensions",
+    "properties",
+    "shape_payloads",
+    "carrier_census",
+    "string_tables",
+    "product_nodes",
+    "joints",
+    "drawings",
+    "annotations",
+    "applications",
+    "attachments",
+    "design_census",
+    "entries",
+    "gui_documents",
+    "gui_view_providers",
+    "gui_properties",
+    "element_maps",
+    "unreadable_entries",
+    "unknowns",
+];
+
 pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
     format!(
         "fcstd:native:{kind}#{}",
@@ -52,6 +78,34 @@ pub(crate) fn id_key(id: &str) -> &str {
 mod tests {
 
     use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn decoded_json_wire_distinguishes_absence_from_held_null() {
+        let value = super::ValueRecord {
+            tag: "Python".into(),
+            order: 0,
+            parent: None,
+            attributes: std::collections::BTreeMap::new(),
+            decoded_json: None,
+            text: None,
+            raw_xml: String::new(),
+        };
+        let mut wire = serde_json::to_value(value).unwrap();
+        assert!(wire.get("decoded_json").is_none());
+        assert!(serde_json::from_value::<super::ValueRecord>(wire.clone())
+            .unwrap()
+            .decoded_json
+            .is_none());
+        wire["decoded_json"] = serde_json::json!({"value":null});
+        let decoded: super::ValueRecord = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded.decoded_json, Some(serde_json::Value::Null.into()));
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        wire["decoded_json"]["unknown"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<super::ValueRecord>(wire.clone()).is_err());
+        wire["decoded_json"] = serde_json::Value::Null;
+        let error = serde_json::from_value::<super::ValueRecord>(wire).unwrap_err();
+        assert!(error.to_string().contains("decoded_json:"));
+    }
 
     #[test]
     fn entries_check_names_identities_references_and_cache_the_digest() {
@@ -346,7 +400,7 @@ mod tests {
 
     #[test]
     fn gui_state_order_is_derived_from_collection_position() {
-        let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
+        let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "length":4, "sha256":cadmpeg_ir::hash::sha256_hex(b"<A/>")});
         let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
         assert!(
             serde_json::from_value::<super::GuiDocumentRecord>(wire.clone())
@@ -438,7 +492,7 @@ mod tests {
 
     #[test]
     fn gui_provider_object_rejects_empty_wire_identity() {
-        let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
+        let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0});
         assert!(serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
         for object in [serde_json::Value::Null, serde_json::json!("object")] {
             wire["object"] = object;
@@ -449,24 +503,29 @@ mod tests {
     }
 
     #[test]
-    fn retained_xml_records_reject_invalid_wire_spans() {
+    fn retained_xml_records_validate_evidence_without_source_spans() {
         let bases = [
             serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
             serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
             serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
             serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
         ];
+        let hash = cadmpeg_ir::hash::sha256_hex(b"<A/>");
         for (kind, base) in bases.into_iter().enumerate() {
-            for (start, end, valid) in [
-                (10, 14, true),
-                (10, 10, false),
-                (10, 9, false),
-                (10, 15, false),
+            for (length, digest, valid) in [
+                (4, hash.as_str(), true),
+                (0, hash.as_str(), false),
+                (4, "short", false),
             ] {
                 let mut wire = base.clone();
-                wire["raw_xml"] = serde_json::json!("<A/>");
-                wire["byte_start"] = serde_json::json!(start);
-                wire["byte_end"] = serde_json::json!(end);
+                let evidence = serde_json::json!({"length":length,"sha256":digest});
+                if kind == 2 {
+                    wire["data_evidence"] = evidence;
+                } else {
+                    wire.as_object_mut()
+                        .unwrap()
+                        .extend(evidence.as_object().unwrap().clone());
+                }
                 let admitted = match kind {
                     0 => serde_json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
                     1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
@@ -476,10 +535,23 @@ mod tests {
                 assert_eq!(
                     admitted.is_ok(),
                     valid,
-                    "kind={kind}, span={start}..{end}: {admitted:?}"
+                    "kind={kind}, evidence={length}/{digest}: {admitted:?}"
                 );
             }
         }
+        for (start, end, valid) in [
+            (10, 14, true),
+            (10, 10, false),
+            (10, 9, false),
+            (10, 15, false),
+        ] {
+            assert_eq!(
+                super::RetainedXml::try_new("<A/>".into(), start, end).is_ok(),
+                valid
+            );
+        }
+        assert!(super::RetainedXml::from_text(String::new(), 0).is_err());
+        assert!(super::RetainedXml::from_text("<A/>".into(), u64::MAX).is_err());
     }
 
     #[test]
@@ -588,7 +660,7 @@ mod tests {
                 "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
                 "persistent_id": null, "view_type": null, "attributes": {},
                 "dependencies": [], "dependency_allow_partial": value, "order": 0,
-                "raw_xml": null, "byte_start": null, "byte_end": null
+                "data_evidence": null
             });
             let error = serde_json::from_value::<super::ObjectRecord>(wire).unwrap_err();
             assert!(error.to_string().contains("dependency_allow_partial"));
@@ -708,14 +780,14 @@ mod tests {
     }
 
     #[test]
-    fn an_object_record_writes_its_retained_xml_and_its_absence() {
+    fn an_object_record_writes_xml_evidence_and_its_absence() {
         let wire = serde_json::json!({
             "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
             "persistent_id": 7, "view_type": "Gui::ViewProviderFeature",
             "attributes": {"Touched": "1"},
             "dependencies": ["fcstd:native:object#B"],
             "dependency_allow_partial": 2, "order": 0,
-            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
+            "data_evidence": {"length":4,"sha256":cadmpeg_ir::hash::sha256_hex(b"<A/>")}
         });
         let record = serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
@@ -724,9 +796,7 @@ mod tests {
         bare["persistent_id"] = serde_json::Value::Null;
         bare["view_type"] = serde_json::Value::Null;
         bare["dependency_allow_partial"] = serde_json::Value::Null;
-        bare["raw_xml"] = serde_json::Value::Null;
-        bare["byte_start"] = serde_json::Value::Null;
-        bare["byte_end"] = serde_json::Value::Null;
+        bare["data_evidence"] = serde_json::Value::Null;
         let record = serde_json::from_value::<super::ObjectRecord>(bare.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), bare);
     }
@@ -740,11 +810,11 @@ mod tests {
             "dynamic": {"group": "Base", "documentation": "label", "attributes": 0,
                         "read_only": false, "hidden": null},
             "order": 2,
-            "values": [{"tag": "String", "order": 0, "attributes": {"value": "A"},
-                        "text": null, "raw_xml": "<String value=\"A\"/>"}],
+            "values": [{"tag": "String", "order": 0, "parent": null, "attributes": {"value": "A"},
+                        "text": null}],
             "links": [null, link("B", &["Face1"])],
             "side_entries": ["Body.brp"],
-            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
+            "length": 4, "sha256": cadmpeg_ir::hash::sha256_hex(b"<A/>")
         });
         let record = serde_json::from_value::<super::PropertyRecord>(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
@@ -760,15 +830,14 @@ mod tests {
     }
 
     #[test]
-    fn an_entry_record_writes_its_bytes_beside_their_length_and_digest() {
+    fn an_entry_record_writes_evidence_without_opaque_bytes() {
         let wire = serde_json::json!({
             "id": "fcstd:native:entry#Document.xml",
             "name": "Document.xml",
             "role": "document",
             "byte_len": 3,
             "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-            "referenced_by": ["fcstd:native:property#A:Shape"],
-            "data": "010203"
+            "referenced_by": ["fcstd:native:property#A:Shape"]
         });
         let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&record).unwrap(), wire);
@@ -784,13 +853,12 @@ mod tests {
         empty["sha256"] =
             serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         empty["referenced_by"] = serde_json::json!([]);
-        empty["data"] = serde_json::json!("");
         let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), empty);
     }
 
     #[test]
-    fn entry_hex_rejects_odd_nonhex_uppercase_and_array_payloads() {
+    fn entry_evidence_rejects_invalid_digests_without_needing_the_payload() {
         let record = crate::test_support::entry_record(
             "fcstd:native:entry#Payload.bin".into(),
             "Payload.bin".into(),
@@ -799,34 +867,23 @@ mod tests {
             vec![0xab],
         );
         let wire = serde_json::to_value(record).unwrap();
-        for data in [
-            serde_json::json!("a"),
-            serde_json::json!("ag"),
-            serde_json::json!("AB"),
-            serde_json::json!([171]),
-        ] {
+        assert!(wire.get("data").is_none());
+        for digest in ["a", "ag", "AB", &"A".repeat(64)] {
             let mut invalid = wire.clone();
-            invalid["data"] = data;
-            let json = serde_json::to_string(&invalid).unwrap();
-            assert!(serde_json::from_str::<super::EntryRecord>(&json).is_err());
-            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
-        }
-        for field in ["byte_len", "sha256"] {
-            let mut invalid = wire.clone();
-            invalid[field] = if field == "byte_len" {
-                serde_json::json!(0)
-            } else {
-                serde_json::json!(cadmpeg_ir::hash::sha256_hex(&[]))
-            };
+            invalid["sha256"] = serde_json::json!(digest);
             assert!(serde_json::from_value::<super::EntryRecord>(invalid)
                 .unwrap_err()
                 .to_string()
-                .contains("entry byte_len/sha256 disagrees with data"));
+                .contains("sha256"));
         }
+        let record: super::EntryRecord = serde_json::from_value(wire).unwrap();
+        assert_eq!(record.byte_len(), 1);
+        assert_eq!(record.sha256(), cadmpeg_ir::hash::sha256_hex(&[0xab]));
+        assert!(record.data().is_empty());
     }
 
     #[test]
-    fn entry_data_is_stored_as_hex_on_the_wire() {
+    fn entry_wire_keeps_evidence_and_references_without_payload_bytes() {
         let bytes: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
         let record = crate::test_support::entry_record(
             "fcstd:native:entry#Payload.bin".into(),
@@ -835,6 +892,7 @@ mod tests {
             Vec::new(),
             bytes.clone(),
         );
+        assert_eq!(record.data(), bytes);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
@@ -844,13 +902,12 @@ mod tests {
             .set_arena(&ctx, "entries", &[record])
             .expect("entry arena");
         let records = namespace.arena_as::<super::EntryRecord>("entries").unwrap();
-        assert_eq!(records[0].data(), bytes);
+        assert!(records[0].data().is_empty());
+        assert_eq!(records[0].byte_len(), u64::try_from(bytes.len()).unwrap());
+        assert_eq!(records[0].sha256(), cadmpeg_ir::hash::sha256_hex(&bytes));
         let wire = namespace.arena_as::<serde_json::Value>("entries").unwrap();
-        assert_eq!(wire[0]["data"].as_str().unwrap().len(), bytes.len() * 2);
-        assert!(wire[0]["data"]
-            .as_str()
-            .unwrap()
-            .starts_with("000102030405060708090a0b0c0d0e0f"));
+        assert!(wire[0].get("data").is_none());
+        assert_eq!(wire[0]["byte_len"], bytes.len());
     }
 
     #[test]
@@ -1175,8 +1232,11 @@ impl ByteSpan {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "RetainedXmlWire")]
 pub(crate) struct RetainedXml {
+    // Transient scan fields. NativeRecord serializes only the evidence below.
     text: String,
     span: ByteSpan,
+    length: u64,
+    sha256: String,
 }
 
 impl RetainedXml {
@@ -1185,7 +1245,13 @@ impl RetainedXml {
         if end - start != cadmpeg_core::decode::u64_from_index(text.len()) {
             return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
         }
-        Ok(Self { text, span })
+        let sha256 = sha256_hex(text.as_bytes());
+        Ok(Self {
+            text,
+            span,
+            length: end - start,
+            sha256,
+        })
     }
     pub(crate) fn from_text(text: String, start: u64) -> Result<Self, String> {
         let end = start
@@ -1205,34 +1271,56 @@ impl RetainedXml {
     pub(crate) fn end(&self) -> u64 {
         self.span.end()
     }
+    pub(crate) fn length(&self) -> u64 {
+        self.length
+    }
+    pub(crate) fn sha256(&self) -> &str {
+        &self.sha256
+    }
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RetainedXmlWire {
-    raw_xml: String,
-    byte_start: u64,
-    byte_end: u64,
+    length: u64,
+    sha256: String,
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 impl TryFrom<RetainedXmlWire> for RetainedXml {
     type Error = String;
     fn try_from(wire: RetainedXmlWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)
+        if wire.length == 0 || !valid_sha256(&wire.sha256) {
+            return Err("XML evidence needs positive length and lowercase sha256".into());
+        }
+        Ok(Self {
+            text: String::new(),
+            span: ByteSpan {
+                start: 0,
+                end: wire.length,
+            },
+            length: wire.length,
+            sha256: wire.sha256,
+        })
     }
 }
 
 #[derive(Serialize)]
 struct RetainedXmlOut<'a> {
-    raw_xml: &'a str,
-    byte_start: u64,
-    byte_end: u64,
+    length: u64,
+    sha256: &'a str,
 }
 
 impl Serialize for RetainedXml {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         RetainedXmlOut {
-            raw_xml: &self.text,
-            byte_start: self.span.start(),
-            byte_end: self.span.end(),
+            length: self.length,
+            sha256: &self.sha256,
         }
         .serialize(serializer)
     }
@@ -2219,6 +2307,7 @@ pub(crate) struct GuiViewProviderRecord {
     /// Source order in `ViewProviderData`.
     pub(crate) order: usize,
     /// Exact provider XML.
+    #[serde(skip)]
     pub(crate) raw_xml: String,
 }
 
@@ -2634,9 +2723,7 @@ struct ObjectRecordWire {
     dependencies: Vec<String>,
     dependency_allow_partial: Option<i128>,
     order: usize,
-    raw_xml: Option<String>,
-    byte_start: Option<u64>,
-    byte_end: Option<u64>,
+    data_evidence: Option<RetainedXml>,
 }
 
 #[derive(Serialize)]
@@ -2650,18 +2737,11 @@ struct ObjectRecordOut<'a> {
     dependencies: &'a [String],
     dependency_allow_partial: Option<i128>,
     order: usize,
-    raw_xml: Option<&'a str>,
-    byte_start: Option<u64>,
-    byte_end: Option<u64>,
+    data_evidence: Option<&'a RetainedXml>,
 }
 
 impl Serialize for ObjectRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Absent object data writes all three span members absent.
-        let (raw_xml, byte_start, byte_end) = match &self.data {
-            Some(data) => (Some(data.text()), Some(data.start()), Some(data.end())),
-            None => (None, None, None),
-        };
         ObjectRecordOut {
             id: self.id(),
             name: self.name(),
@@ -2674,9 +2754,7 @@ impl Serialize for ObjectRecord {
                 .dependency_allow_partial
                 .map(|value| i128::from(value.get())),
             order: self.order,
-            raw_xml,
-            byte_start,
-            byte_end,
+            data_evidence: self.data.as_ref(),
         }
         .serialize(serializer)
     }
@@ -2686,17 +2764,7 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
     type Error = String;
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
-        let data = match (wire.raw_xml, wire.byte_start, wire.byte_end) {
-            (Some(raw_xml), Some(byte_start), Some(byte_end)) => {
-                Some(RetainedXml::try_new(raw_xml, byte_start, byte_end)?)
-            }
-            (None, None, None) => None,
-            _ => {
-                return Err(
-                    "object data raw_xml, byte_start, and byte_end must be set together".to_owned(),
-                );
-            }
-        };
+        let data = wire.data_evidence;
         Ok(Self {
             identity: object_identity::ObjectIdentity::try_new(wire.id, wire.name)?,
             type_name: wire.type_name,
@@ -2733,6 +2801,7 @@ pub(crate) struct ExtensionRecord {
     /// Source-order index.
     pub(crate) order: usize,
     /// Exact extension XML.
+    #[serde(skip)]
     pub(crate) raw_xml: String,
 }
 
@@ -2910,19 +2979,87 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
     }
 }
 
-/// One property value element retained in source order.
+/// A decoded JSON value. The wrapper distinguishes a held JSON null from an
+/// absent decoded value without giving the optional key two wire spellings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DecodedJsonValue {
+    pub(crate) value: serde_json::Value,
+}
+
+impl From<serde_json::Value> for DecodedJsonValue {
+    fn from(value: serde_json::Value) -> Self {
+        Self { value }
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_decoded_json, DecodedJsonValue, "decoded_json");
+
+/// One property value element retained in source order.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct ValueRecord {
     /// Value element tag.
     pub(crate) tag: String,
     /// Ordered position among value elements.
     pub(crate) order: usize,
+    /// Parent value index; absent for a direct property child.
+    pub(crate) parent: Option<usize>,
     /// Value attributes.
     pub(crate) attributes: BTreeMap<String, String>,
+    /// Decoded JSON-mode Python value; encoded source attributes are layout only.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_decoded_json"
+    )]
+    pub(crate) decoded_json: Option<DecodedJsonValue>,
     /// Direct text content.
     pub(crate) text: Option<String>,
     /// Exact value-element XML.
+    #[serde(skip)]
     pub(crate) raw_xml: String,
+}
+
+impl Serialize for ValueRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct ValueOut<'a> {
+            tag: &'a str,
+            order: usize,
+            parent: Option<usize>,
+            attributes: BTreeMap<&'a str, &'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            decoded_json: Option<&'a DecodedJsonValue>,
+            text: Option<&'a str>,
+        }
+        let python = self.tag == "Python";
+        let encoded_stream = matches!(
+            self.tag.as_str(),
+            "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
+        );
+        ValueOut {
+            tag: &self.tag,
+            order: self.order,
+            parent: self.parent,
+            attributes: self
+                .attributes
+                .iter()
+                .filter(|(key, _)| {
+                    !python
+                        || !matches!(
+                            key.as_str(),
+                            "value" | "Value" | "data" | "encoded" | "json"
+                        )
+                })
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect(),
+            decoded_json: self.decoded_json.as_ref(),
+            text: (!python && !encoded_stream)
+                .then_some(self.text.as_deref())
+                .flatten(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Persisted values of a property, or a status-only transient declaration.
@@ -3092,9 +3229,8 @@ struct PropertyRecordWire {
     values: Vec<ValueRecord>,
     links: Vec<Option<LinkTarget>>,
     side_entries: Vec<String>,
-    raw_xml: String,
-    byte_start: u64,
-    byte_end: u64,
+    #[serde(flatten)]
+    evidence: RetainedXml,
 }
 
 #[derive(Serialize)]
@@ -3113,9 +3249,8 @@ struct PropertyRecordOut<'a> {
     values: &'a [ValueRecord],
     links: &'a [Option<LinkTarget>],
     side_entries: &'a [String],
-    raw_xml: &'a str,
-    byte_start: u64,
-    byte_end: u64,
+    #[serde(flatten)]
+    evidence: &'a RetainedXml,
 }
 
 impl Serialize for PropertyRecord {
@@ -3136,9 +3271,7 @@ impl Serialize for PropertyRecord {
             values: self.values(),
             links: self.links(),
             side_entries: self.side_entries(),
-            raw_xml: self.xml.text(),
-            byte_start: self.xml.start(),
-            byte_end: self.xml.end(),
+            evidence: &self.xml,
         }
         .serialize(serializer)
     }
@@ -3148,6 +3281,14 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
     type Error = String;
 
     fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
+        for (index, value) in wire.values.iter().enumerate() {
+            if value.order != index || value.parent.is_some_and(|parent| parent >= index) {
+                return Err(
+                    "property values require contiguous order and backward parent references"
+                        .into(),
+                );
+            }
+        }
         let body = if let Some(detail) = wire.payload_error {
             if detail.trim().is_empty()
                 || wire.transient
@@ -3190,7 +3331,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             status: wire.status,
             body,
             order: wire.order,
-            xml: RetainedXml::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)?,
+            xml: wire.evidence,
         })
     }
 }
@@ -3240,6 +3381,7 @@ pub(crate) struct EntryRecord {
     pub(crate) role: cadmpeg_core::container::ContainerRole,
     referenced_by: EntryReferences,
     data: NativeBytes,
+    length: u64,
     sha256: String,
 }
 
@@ -3295,12 +3437,14 @@ impl EntryRecord {
         let referenced_by =
             EntryReferences::try_from(referenced_by).map_err(CodecError::malformed)?;
         let sha256 = sha256_hex(&data);
+        let length = cadmpeg_core::decode::u64_from_index(data.len());
         Ok(Self {
             id,
             name,
             role,
             referenced_by,
             data: data.into(),
+            length,
             sha256,
         })
     }
@@ -3318,7 +3462,7 @@ impl EntryRecord {
         self.data.as_ref()
     }
     pub(crate) fn byte_len(&self) -> u64 {
-        cadmpeg_core::decode::u64_from_index(self.data.len())
+        self.length
     }
     pub(crate) fn sha256(&self) -> &str {
         &self.sha256
@@ -3341,22 +3485,10 @@ impl EntryRecord {
 
     #[cfg(test)]
     pub(crate) fn replace_data(&mut self, bytes: Vec<u8>) {
+        self.length = cadmpeg_core::decode::u64_from_index(bytes.len());
         self.sha256 = sha256_hex(&bytes);
         self.data = bytes.into();
     }
-}
-
-/// Read a [`NativeBytes`] payload, requiring the lowercase spelling the writer emits.
-pub(crate) fn deserialize_lowercase_native_bytes<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<NativeBytes, D::Error> {
-    let text = String::deserialize(deserializer)?;
-    if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return Err(serde::de::Error::custom(
-            "entry data hex requires lowercase hexadecimal digits",
-        ));
-    }
-    NativeBytes::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(&text))
 }
 
 #[derive(Deserialize)]
@@ -3367,8 +3499,6 @@ struct EntryRecordWire {
     byte_len: u64,
     sha256: String,
     referenced_by: Vec<String>,
-    #[serde(deserialize_with = "deserialize_lowercase_native_bytes")]
-    data: NativeBytes,
 }
 
 #[derive(Serialize)]
@@ -3379,7 +3509,6 @@ struct EntryRecordOut<'a> {
     byte_len: u64,
     sha256: &'a str,
     referenced_by: &'a [String],
-    data: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for EntryRecord {
@@ -3391,7 +3520,6 @@ impl Serialize for EntryRecord {
             byte_len: self.byte_len(),
             sha256: self.sha256(),
             referenced_by: self.referenced_by(),
-            data: NativeBytes::new(self.data()),
         }
         .serialize(serializer)
     }
@@ -3404,10 +3532,8 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
         let id = cadmpeg_ir::ids::Identity::new(wire.id).map_err(|error| error.to_string())?;
         let name = ArchiveEntryName::try_from(wire.name).map_err(str::to_owned)?;
         let referenced_by = EntryReferences::try_from(wire.referenced_by)?;
-        if wire.byte_len != cadmpeg_core::decode::u64_from_index(wire.data.len())
-            || wire.sha256 != sha256_hex(&wire.data)
-        {
-            return Err("entry byte_len/sha256 disagrees with data".to_owned());
+        if !valid_sha256(&wire.sha256) {
+            return Err("entry sha256 must use lowercase hexadecimal".to_owned());
         }
         let record = Self {
             id,
@@ -3415,7 +3541,8 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
             role: serde_json::from_value(serde_json::Value::String(wire.role))
                 .map_err(|error| format!("entry role: {error}"))?,
             referenced_by,
-            data: wire.data,
+            data: Vec::new().into(),
+            length: wire.byte_len,
             sha256: wire.sha256,
         };
         Ok(record)
@@ -3592,9 +3719,9 @@ pub(crate) struct StringTableRecord {
     /// Owning property when the table is serialized beside its first use.
     pub(crate) owner_property: Option<String>,
     /// Whether all strings were persisted; `None` for unreadable metadata.
-    save_all: Option<bool>,
+    pub(crate) save_all: Option<bool>,
     /// Native hashing threshold; `None` for unreadable metadata.
-    threshold: Option<i64>,
+    pub(crate) threshold: Option<i64>,
     /// Referenced side entry, or `None` for inline data.
     pub(crate) source_entry: Option<String>,
     /// Parsed records in serialized order; `None` when the payload is source-only.
@@ -3722,5 +3849,6 @@ pub(crate) struct StringTableEntry {
     /// Exact payload following the numeric header.
     pub(crate) payload: String,
     /// Exact serialized record without its line terminator.
+    #[serde(skip)]
     pub(crate) raw: String,
 }

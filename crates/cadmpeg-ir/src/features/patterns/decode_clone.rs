@@ -2,13 +2,13 @@
 //! Copy admitted feature fields under the caller decode resource policy.
 
 use super::{
-    CompositePattern, LinearPatternDirection, PatternKind, PatternScaleCenter, PatternSeed,
-    PatternStage, PatternTransform,
+    CircularPatternDistribution, CompositePattern, LinearPatternDirection, PatternAngle,
+    PatternDistance, PatternKind, PatternScaleCenter, PatternSeed, PatternStage, PatternTransform,
 };
 
 rewrite_record!(CompositePattern, []; (field0));
 
-rewrite_record!(LinearPatternDirection, []; { direction, spacing, count });
+rewrite_record!(LinearPatternDirection, []; { direction, distance, count });
 
 rewrite_record!(PatternKind<C>, [C]; (field0));
 
@@ -29,7 +29,7 @@ rewrite_record!(PatternStage, []; { pattern });
 
 rewrite_enum!(PatternTransform<C>, [C]; {
     Unresolved { form },
-    Linear { direction, spacing, count, second },
+    Linear { direction, distance, count, second },
     LinearOffsets { direction, offsets },
     Circular { axis_origin, axis_dir, angle, count },
     CircularAngles { axis_origin, axis_dir, angles },
@@ -39,3 +39,15 @@ rewrite_enum!(PatternTransform<C>, [C]; {
     Scale { center, final_factor, count },
     Composite { stages },
 });
+
+rewrite_enum!(PatternDistance<Q>, [Q: crate::features::DimensionValue]; {
+    Spacing { distance },
+    Span { distance },
+});
+
+rewrite_enum!(PatternAngle<Q>, [Q: crate::features::DimensionValue]; {
+    Spacing { angle },
+    Span { angle, distribution },
+});
+
+rewrite_enum!(CircularPatternDistribution, []; { Inclusive, Periodic });

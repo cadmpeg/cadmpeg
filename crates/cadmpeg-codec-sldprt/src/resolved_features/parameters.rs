@@ -6,7 +6,21 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
     FeatureInputScalar, FeatureInputScalarRole,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
+
+/// Resolve a dimensional binding through the current canonical parameter slice.
+pub(crate) fn dimension_value<Q: cadmpeg_ir::features::DimensionValue>(
+    dimension: &cadmpeg_ir::features::Dimension<Q>,
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) -> Option<Q> {
+    match dimension {
+        cadmpeg_ir::features::Dimension::Literal(value) => Some(value.clone()),
+        cadmpeg_ir::features::Dimension::Parameter(id) => parameters
+            .iter()
+            .find(|parameter| parameter.id == *id)
+            .and_then(Q::resolve_parameter),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScalarUnit {
@@ -19,7 +33,7 @@ enum ScalarUnit {
 /// unreferenced scalar belongs to the object whose open span holds its offset.
 struct ScalarOwners<'a> {
     referenced: HashMap<&'a str, Vec<usize>>,
-    unreferenced: Vec<(u64, usize)>,
+    unreferenced: Vec<(u32, usize)>,
 }
 
 impl<'a> ScalarOwners<'a> {
@@ -29,7 +43,7 @@ impl<'a> ScalarOwners<'a> {
         for (index, scalar) in scalars.iter().enumerate() {
             match scalar.feature_ref.as_deref() {
                 Some(feature) => referenced.entry(feature).or_default().push(index),
-                None => unreferenced.push((scalar.offset, index)),
+                None => unreferenced.push((scalar.sequence, index)),
             }
         }
         unreferenced.sort_unstable();
@@ -41,7 +55,7 @@ impl<'a> ScalarOwners<'a> {
 
     /// Indices, in scalar order, of the scalars `feature` owns over the span
     /// after `start` and before `end`.
-    fn owned(&self, feature: &str, start: u64, end: Option<u64>) -> Vec<usize> {
+    fn owned(&self, feature: &str, start: u32, end: Option<u32>) -> Vec<usize> {
         let first = self
             .unreferenced
             .partition_point(|&(offset, _)| offset <= start);
@@ -65,17 +79,17 @@ impl<'a> ScalarOwners<'a> {
 /// A lane's class declarations and name records in offset order.
 struct DeclaredParameters<'a> {
     classes: Vec<&'a FeatureInputClass>,
-    name_offsets: Vec<u64>,
+    name_offsets: Vec<u32>,
 }
 
 impl<'a> DeclaredParameters<'a> {
     fn new(lane: &'a FeatureInputLane) -> Self {
         let mut classes = lane.classes.iter().collect::<Vec<_>>();
-        classes.sort_by_key(|class| class.offset);
+        classes.sort_by_key(|class| class.sequence);
         let mut name_offsets = lane
             .names
             .iter()
-            .map(|name| name.offset)
+            .map(|name| name.sequence)
             .collect::<Vec<_>>();
         name_offsets.sort_unstable();
         Self {
@@ -89,14 +103,14 @@ impl<'a> DeclaredParameters<'a> {
     fn class_of(&self, name: &FeatureInputName) -> Option<&'a FeatureInputClass> {
         let before = self
             .classes
-            .partition_point(|class| class.offset < name.offset);
+            .partition_point(|class| class.sequence < name.sequence);
         let class = *self.classes.get(before.checked_sub(1)?)?;
         let after_class = self
             .name_offsets
-            .partition_point(|&offset| offset <= class.offset);
+            .partition_point(|&offset| offset <= class.sequence);
         let before_name = self
             .name_offsets
-            .partition_point(|&offset| offset < name.offset);
+            .partition_point(|&offset| offset < name.sequence);
         (after_class >= before_name).then_some(class)
     }
 }
@@ -150,13 +164,13 @@ pub(crate) fn enrich_history_parameters<'a>(
             }
         }
         let object_names = FeatureObjectNames::new(&lane.names);
-        let mut starts = Vec::<(u64, usize, usize)>::new();
+        let mut starts = Vec::<(u32, usize, usize)>::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
                 let Some(name) = object_names.of(feature) else {
                     continue;
                 };
-                starts.push((name.offset, history_index, feature_index));
+                starts.push((name.sequence, history_index, feature_index));
             }
         }
         starts.sort_by_key(|left| left.0);
@@ -192,7 +206,9 @@ pub(crate) fn enrich_history_parameters<'a>(
                 if let [scalar] = candidates_for_name.as_slice() {
                     let value_only = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
                         value_only_scalar_offset(&lane.native_payload, name)
-                            == usize::try_from(scalar.offset).ok()
+                            == scalar
+                                .offset
+                                .and_then(|offset| usize::try_from(offset).ok())
                     });
                     let unit = scalar_units
                         .get(scalar.id.as_str())
@@ -325,7 +341,9 @@ fn scalar_unit_from_feature_parameter(
 }
 
 pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
-    let name_offset = usize::try_from(name.offset).ok()?;
+    let name_offset = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -351,10 +369,9 @@ fn native_scalar_matches_discrete_parameter(
     }
 }
 
-pub(crate) fn sync_changed_feature_scalars(
+pub(crate) fn sync_feature_scalars(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-    changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
@@ -368,7 +385,11 @@ pub(crate) fn sync_changed_feature_scalars(
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter_map(|feature| object_names.of(feature).map(|name| (name.offset, feature)))
+            .filter_map(|feature| {
+                object_names
+                    .of(feature)
+                    .map(|name| (name.sequence, feature))
+            })
             .collect::<Vec<_>>();
         starts.sort_by_key(|(left, _)| *left);
         let owners = ScalarOwners::new(&lane.scalars);
@@ -377,9 +398,6 @@ pub(crate) fn sync_changed_feature_scalars(
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
             let mut owned = None;
             for (name, expression) in &feature.parameters {
-                if !changed.contains(&(feature.id.clone(), name.clone())) {
-                    continue;
-                }
                 let candidates = owned
                     .get_or_insert_with(|| owners.owned(&feature.id, start, end))
                     .iter()
@@ -388,22 +406,6 @@ pub(crate) fn sync_changed_feature_scalars(
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })
                     .collect::<Vec<_>>();
-                let driving = candidates
-                    .iter()
-                    .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Driving)
-                    .copied()
-                    .collect::<Vec<_>>();
-                let candidates = if driving.is_empty() {
-                    candidates
-                        .into_iter()
-                        .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Native)
-                        .collect::<Vec<_>>()
-                } else {
-                    driving
-                };
-                let [(scalar_index, _)] = candidates.as_slice() else {
-                    continue;
-                };
                 let value = match crate::history::parameters::parse_native_parameter_literal(
                     feature,
                     name.as_str(),
@@ -414,29 +416,38 @@ pub(crate) fn sync_changed_feature_scalars(
                     Some(ParameterValue::Real(value)) => value.get(),
                     _ => continue,
                 };
-                updates.push((*scalar_index, value));
+                updates.extend(
+                    candidates
+                        .into_iter()
+                        .map(|(scalar_index, _)| (scalar_index, value)),
+                );
             }
         }
         for (scalar_index, value) in updates {
             let scalar = &mut lane.scalars[scalar_index];
-            let offset = usize::try_from(scalar.offset).map_err(|_| {
-                cadmpeg_core::CodecError::Malformed(
-                    "SLDPRT scalar offset exceeds address space".into(),
-                )
+            let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
             })?;
-            let bytes = lane
-                .native_payload
-                .get_mut(offset..offset + 8)
-                .ok_or_else(|| {
+            if !lane.native_payload.is_empty() {
+                let offset = scalar
+                    .offset
+                    .and_then(|offset| usize::try_from(offset).ok())
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "SLDPRT scalar offset exceeds address space",
+                        )
+                    })?;
+                let end = offset.checked_add(8).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("SLDPRT scalar extent overflows")
+                })?;
+                let bytes = lane.native_payload.get_mut(offset..end).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(format_args!(
                         "SLDPRT scalar {} lies outside its payload",
                         scalar.id
                     ))
                 })?;
-            let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
-            })?;
-            bytes.copy_from_slice(&value.to_le_bytes());
+                bytes.copy_from_slice(&value.to_le_bytes());
+            }
             scalar.value = checked;
         }
     }

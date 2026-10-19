@@ -19,7 +19,7 @@ fn native(valid: bool) -> crate::native::F3dNative {
             id: "f3d:Design/BulkStream.dat:design-record-header#101".into(),
             record_index: 101,
             class_tag: DesignClassTag::try_from("297".to_owned()).unwrap(),
-            byte_offset: 100,
+            byte_offset: Some(100),
         });
     }
     native

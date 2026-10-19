@@ -18,9 +18,11 @@ fn drawing_direction_vector_refuses_nonfinite_components() {
         ("valueZ".into(), "0".into()),
     ]);
     let value = |attributes| crate::native::ValueRecord {
+        parent: None,
         tag: "PropertyVector".into(),
         order: 0,
         attributes,
+        decoded_json: None,
         text: None,
         raw_xml: String::new(),
     };

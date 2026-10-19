@@ -73,6 +73,22 @@ before the parent charges again.
 `WorkBudget::recursion_guard` bounds recursion inside a local search; at its
 depth it exhausts the work budget and does not touch the session.
 
+The document records the content delivered, independently of why a phase
+stopped. A completely omitted or failed class has `scope.model = false` or
+`scope.design = false` and empty neutral arenas for that class. A partial
+projection holds the class and reports each omitted record as a decode loss.
+`report.transfer.scope` mirrors the document's `scope`; the request remains
+`DecodeDepth`, and `decode/depth.not-delivered` names required classes that
+were not delivered. No failure-diagnostic arena substitutes for this state.
+
+The codec also declares `SourceFidelity.unrepresented`: classes whose source
+records survive in no typed neutral or native arena. Resource containment that
+leaves only source bytes or unreadable blobs adds the affected class to that
+set. A patch or replay cannot use those bytes to recover content; the writer
+synthesizes from the document and reports any export loss. Retaining a typed
+native record can avoid an unrepresented class even when neutral projection
+was skipped.
+
 A per-input bound refuses or skips one record, or refuses the decode as
 malformed or unsupported. It does not fuse the session, so the decode can
 continue with other records when the codec allows it.
@@ -290,7 +306,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/design/decode/sketch.rs`                      | `MAX_RELATION_RUN`                        | `4096`                                                  | 1    | Counted runs in sketch relation, text and pattern records. A larger count rejects the framing candidate (`None`).                                                                                                                                                            |
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
-| `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `1 << 16`                                               | N    | Encode path: spans generated for a source-less conic. Excess returns `NotImplemented`.                                                                                                                                                                                       |
+| `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `1 << 16`                                               | N    | Encode path: spans generated for a source-less conic. Excess is an addressable NURBS capacity refusal (`InvalidInput`).                                                                                                                                                                                       |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_VALUES`                   | `1_000_000`                                             | 2    | Value count of one JT integer packet or arithmetic lane. Symbols can use zero bits, so there is no byte floor; excess leaves the lane undecoded (`None`).                                                                                                                    |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_WORK`                     | `64_000_000`                                            | 4    | Probability-entry × value lookup work of one arithmetic lane. Above it the lane is left undecoded (`None`) and the shared `ArithmeticWorkBound` is marked; `native/attach.rs` reports `container.display-jt-arithmetic-lane-bounded`.                                        |
 | `cadmpeg-codec-nx`       | `src/om.rs`                                        | `MAX_INDEXED_SECTION_REGISTRY_WORK`       | `1 << 28`                                               | 4    | `WorkBudget` per directory entry for the indexed object-model section search (`container.rs`). Exhaustion skips the remaining sections; `decode.rs` reports `source.scan-bounded`.                                                                                           |

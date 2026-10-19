@@ -7,8 +7,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
-        DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureOperation,
-        FeatureTreeNodeRole, ParameterId, ParameterValue,
+        DesignParameter, DimensionDisplay, Expression, ExpressionToken, FeatureDefinition,
+        FeatureId, FeatureOperation, FeatureTreeNodeRole, ParameterId, ParameterValue,
     },
     scalar::{Angle, FiniteReal, Length},
 };
@@ -46,6 +46,7 @@ pub(crate) fn project_parameters(
     let mut feature_names = HashMap::new();
     let mut global_owners = HashSet::new();
     let mut parameters = Vec::new();
+    let mut source_aliases = HashMap::new();
     for history in histories {
         let metadata = HistoryMetadata::new(&history.features);
         for feature in &history.features {
@@ -64,34 +65,38 @@ pub(crate) fn project_parameters(
             for (ordinal, name) in projected_parameter_names(feature).into_iter().enumerate() {
                 let expression = &feature.parameters[name.as_str()];
                 let display = dimension_display(expression);
-                let properties = feature
+                let mut properties = feature
                     .dimension_properties
                     .get(&name)
                     .cloned()
                     .unwrap_or_default();
-                let parse_value = |value: &str| match display {
-                    Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
-                        parse_dimension_display_length(value).map(ParameterValue::Length)
-                    }
-                    None => parse_native_parameter_literal(feature, &name, value),
-                };
-                let value = properties
-                    .get("Value")
-                    .and_then(|value| parse_value(value))
-                    .or_else(|| parse_value(expression));
+                let value = source_parameter_value(feature, &name);
                 let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
                     CodecError::malformed("SLDPRT feature parameter ordinal exceeds u32")
                 })?;
+                let driving = properties
+                    .get("Driven")
+                    .is_none_or(|value| !matches!(value.as_str(), "true" | "1"));
+                let id = neutral_parameter_id(feature, ordinal)?;
+                // Decode-only source spelling. Canonical expressions retain
+                // the identity token and never this duplicate alias property.
+                if let Some(alias) = properties.remove("EquationId") {
+                    source_aliases.insert(id.clone(), alias);
+                }
                 let parameter = DesignParameter {
-                    id: neutral_parameter_id(feature, ordinal)?,
+                    id,
                     owner: Some(neutral_feature_id(&feature.id)?),
                     ordinal: ordinal_u32,
-                    properties,
+                    properties: {
+                        properties.remove("Value");
+                        properties.remove("Driven");
+                        properties
+                    },
                     name,
-                    expression: expression.clone(),
+                    expression: Expression::text(strip_display(expression, display)),
+                    driving,
                     display,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     native_ref: None,
                     pmi: None,
                 };
@@ -99,14 +104,21 @@ pub(crate) fn project_parameters(
             }
         }
     }
-    populate_parameter_dependencies(&mut parameters, &feature_names, &global_owners);
-    order_parameters_by_dependencies(&mut parameters)?;
+    tokenize_parameter_expressions(
+        &mut parameters,
+        &feature_names,
+        &global_owners,
+        &source_aliases,
+    )?;
     evaluate_parameter_expressions(ctx, &mut parameters, &feature_names, &global_owners)?;
     for parameter in parameters
         .iter_mut()
         .filter(|parameter| parameter.value.is_none())
     {
-        parameter.value = text_parameter_literal(&parameter.name, &parameter.expression);
+        parameter.value = parameter
+            .expression
+            .literal_text()
+            .and_then(|expression| text_parameter_literal(&parameter.name, &expression));
     }
     Ok(parameters)
 }
@@ -239,6 +251,25 @@ pub(super) fn apply_evaluated_parameters(
     Ok(())
 }
 
+/// Read one source parameter cache during typed source projection.
+/// Canonical neutral consumers resolve their `Dimension` through the document.
+pub(crate) fn source_parameter_value(feature: &Feature, name: &str) -> Option<ParameterValue> {
+    let expression = feature.parameters.get(name)?;
+    let display = dimension_display(expression);
+    let parse_value = |value: &str| match display {
+        Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
+            parse_dimension_display_length(value).map(ParameterValue::Length)
+        }
+        None => parse_native_parameter_literal(feature, name, value),
+    };
+    feature
+        .dimension_properties
+        .get(name)
+        .and_then(|properties| properties.get("Value"))
+        .and_then(|value| parse_value(value))
+        .or_else(|| parse_value(expression))
+}
+
 pub(crate) fn parse_native_parameter_literal(
     feature: &Feature,
     name: &str,
@@ -339,91 +370,87 @@ pub(crate) fn format_native_scalar(
     }
 }
 
-fn project_parameter_dependencies(
-    parameter: &DesignParameter,
-    aliases: ParameterAliasView<'_>,
-) -> cadmpeg_ir::features::DistinctMembers<ParameterId> {
-    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-    let Some(tokens) = expression_identifier_tokens(&parameter.expression) else {
-        return dependencies;
-    };
-    for token in tokens.iter().filter(|token| !token.is_syntax()) {
-        let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else {
-            continue;
-        };
-        if dependency != &parameter.id {
-            dependencies.insert(dependency.clone());
-        }
+fn strip_display(expression: &str, display: Option<DimensionDisplay>) -> &str {
+    let expression = expression.trim();
+    match display {
+        Some(DimensionDisplay::Diameter) => expression
+            .strip_prefix("<MOD-DIAM>")
+            .unwrap_or(expression)
+            .trim(),
+        Some(DimensionDisplay::Radius) => expression.strip_prefix('R').unwrap_or(expression).trim(),
+        None => expression,
     }
-    dependencies
 }
 
-fn populate_parameter_dependencies(
+fn tokenize_parameter_expressions(
     parameters: &mut [DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-) {
-    let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
-    for parameter in parameters.iter_mut() {
-        parameter.dependencies =
-            project_parameter_dependencies(parameter, aliases.for_owner(parameter.owner.as_ref()));
-    }
-}
-
-fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) -> Result<(), CodecError> {
-    let mut owner_order = Vec::new();
-    let mut seen_owners = HashSet::new();
-    let mut parameter_owners = HashMap::new();
-    for parameter in parameters.iter() {
-        let owner = parameter.owner.as_ref();
-        if seen_owners.insert(owner) {
-            owner_order.push(owner);
-        }
-        parameter_owners.insert(&parameter.id, owner);
-    }
-    let mut updates = Vec::new();
-    for owner in owner_order {
-        let mut remaining = Vec::new();
-        for (index, parameter) in parameters.iter().enumerate() {
-            if parameter.owner.as_ref() == owner {
-                remaining.push(index);
-            }
-        }
-        let mut ordered = Vec::new();
-        let mut ordered_ids = HashSet::new();
-        while !remaining.is_empty() {
-            let mut next = None;
-            for (position, index) in remaining.iter().enumerate() {
-                if parameters[*index].dependencies.iter().all(|dependency| {
-                    parameter_owners
-                        .get(dependency)
-                        .is_none_or(|dependency_owner| dependency_owner != &owner)
-                        || ordered_ids.contains(dependency)
-                }) {
-                    next = Some(position);
-                    break;
-                }
-            }
-            let Some(position) = next else {
-                ordered.clear();
-                break;
-            };
-            let index = remaining.remove(position);
-            let id = &parameters[index].id;
-            ordered_ids.insert(id);
-            ordered.push(index);
-        }
-        for (ordinal, index) in ordered.into_iter().enumerate() {
-            let ordinal = u32::try_from(ordinal).map_err(|_| {
-                CodecError::malformed("SLDPRT ordered parameter ordinal exceeds u32")
-            })?;
-            updates.push((index, ordinal));
-        }
-    }
-    for (index, ordinal) in updates {
-        parameters[index].ordinal = ordinal;
+    source_aliases: &HashMap<ParameterId, String>,
+) -> Result<(), CodecError> {
+    let mut aliases = ParameterAliases::new(parameters, feature_names, global_owners);
+    aliases.insert_source_spellings(parameters, feature_names, global_owners, source_aliases);
+    for parameter in parameters {
+        let Some(text) = parameter.expression.literal_text() else {
+            continue;
+        };
+        let aliases = aliases.for_owner(parameter.owner.as_ref());
+        let spans = expression_identifier_tokens(&text)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|token| !token.is_syntax())
+            .filter_map(|token| {
+                let id = aliases.get(token.value()).and_then(Option::as_ref)?.clone();
+                let end = text.len() - token.following.len();
+                Some(((end - token.raw.len())..end, id))
+            })
+            .collect::<Vec<_>>();
+        parameter.expression =
+            Expression::from_spans(&text, spans).map_err(CodecError::malformed)?;
     }
     Ok(())
+}
+
+/// Render only current parameter identities and names in SolidWorks syntax.
+pub(crate) fn render_parameter_expression(
+    parameter: &DesignParameter,
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
+) -> Option<String> {
+    parameter.expression.render_with(|id| {
+        let target = parameters.iter().find(|target| &target.id == id)?;
+        let mut name = target.name.to_string();
+        if target.owner != parameter.owner
+            && !target
+                .owner
+                .as_ref()
+                .is_some_and(|owner| global_owners.contains(owner))
+        {
+            if let Some(owner) = target
+                .owner
+                .as_ref()
+                .and_then(|owner| feature_names.get(owner))
+            {
+                name = format!("{name}@{owner}");
+            }
+        }
+        Some(render_identifier(&name))
+    })
+}
+
+pub(crate) fn render_identifier(name: &str) -> String {
+    let mut characters = name.chars();
+    let unquoted = characters
+        .next()
+        .is_some_and(|first| first.is_alphabetic() || first == '_')
+        && characters
+            .all(|character| character.is_alphanumeric() || matches!(character, '_' | '.'));
+    if unquoted {
+        name.to_owned()
+    } else {
+        format!("\"{}\"", name.replace('"', "\"\""))
+    }
 }
 
 #[cfg(test)]
@@ -478,14 +505,7 @@ impl ParameterAliases {
                 parameter.id.as_str().to_owned(),
                 &parameter.id,
             );
-            let unqualified = [
-                Some(parameter.name.as_str()),
-                parameter
-                    .properties
-                    .get("EquationId")
-                    .filter(|equation_id| !equation_id.contains('@'))
-                    .map(String::as_str),
-            ];
+            let unqualified = [Some(parameter.name.as_str())];
             if let Some(owner_name) = parameter
                 .owner
                 .as_ref()
@@ -493,14 +513,6 @@ impl ParameterAliases {
             {
                 let qualified = format!("{}@{owner_name}", parameter.name);
                 insert_parameter_alias(&mut aliases.exact, qualified, &parameter.id);
-                if let Some(equation_id) = parameter.properties.get("EquationId") {
-                    let qualified = if equation_id.contains('@') {
-                        equation_id.to_owned()
-                    } else {
-                        format!("{equation_id}@{owner_name}")
-                    };
-                    insert_parameter_alias(&mut aliases.exact, qualified, &parameter.id);
-                }
             }
             if parameter
                 .owner
@@ -521,6 +533,50 @@ impl ParameterAliases {
             }
         }
         aliases
+    }
+
+    /// Source aliases exist only while converting source text to identity tokens.
+    fn insert_source_spellings(
+        &mut self,
+        parameters: &[DesignParameter],
+        feature_names: &HashMap<FeatureId, String>,
+        global_owners: &HashSet<FeatureId>,
+        spellings: &HashMap<ParameterId, String>,
+    ) {
+        for parameter in parameters {
+            let Some(spelling) = spellings.get(&parameter.id) else {
+                continue;
+            };
+            if let Some(owner_name) = parameter
+                .owner
+                .as_ref()
+                .and_then(|owner| feature_names.get(owner))
+            {
+                let qualified = if spelling.contains('@') {
+                    spelling.clone()
+                } else {
+                    format!("{spelling}@{owner_name}")
+                };
+                insert_parameter_alias(&mut self.exact, qualified, &parameter.id);
+            }
+            if spelling.contains('@') {
+                continue;
+            }
+            if parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| global_owners.contains(owner))
+            {
+                insert_parameter_alias(&mut self.global, spelling.clone(), &parameter.id);
+            }
+            let local = parameter
+                .owner
+                .as_ref()
+                .map_or(&mut self.document_local, |owner| {
+                    self.feature_local.entry(owner.clone()).or_default()
+                });
+            insert_parameter_alias(local, spelling.clone(), &parameter.id);
+        }
     }
 
     pub(super) fn for_owner<'a>(&'a self, owner: Option<&'a FeatureId>) -> ParameterAliasView<'a> {
@@ -574,6 +630,13 @@ fn evaluate_parameter_expressions(
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
 ) -> Result<(), CodecError> {
+    let expressions = parameters
+        .iter()
+        .filter_map(|parameter| {
+            render_parameter_expression(parameter, parameters, feature_names, global_owners)
+                .map(|expression| (parameter.id.clone(), expression))
+        })
+        .collect::<HashMap<_, _>>();
     let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
     let mut values = HashMap::new();
     for parameter in parameters.iter() {
@@ -588,9 +651,11 @@ fn evaluate_parameter_expressions(
             .filter(|parameter| parameter.value.is_none())
         {
             let aliases = aliases.for_owner(parameter.owner.as_ref());
+            let Some(expression) = expressions.get(&parameter.id) else {
+                continue;
+            };
             let Some(value) =
-                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, &values)
-                    .parse()?
+                ParameterExpressionParser::new(ctx, expression, aliases, &values).parse()?
             else {
                 continue;
             };
@@ -616,31 +681,24 @@ fn insert_parameter_value(
 
 pub(crate) fn parameters_with_unresolved_references(
     parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>,
-    global_owners: &HashSet<FeatureId>,
+    _feature_names: &HashMap<FeatureId, String>,
+    _global_owners: &HashSet<FeatureId>,
 ) -> usize {
-    let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
-    let mut count = 0;
-    for parameter in parameters {
-        let aliases = aliases.for_owner(parameter.owner.as_ref());
-        let unresolved = match expression_identifier_tokens(&parameter.expression) {
-            None => true,
-            Some(parsed) => parsed
-                .iter()
-                .filter(|identifier| !identifier.is_syntax())
-                .filter(|identifier| definite_parameter_reference(identifier))
-                .any(|identifier| {
-                    aliases
-                        .get(identifier.value())
-                        .and_then(Option::as_ref)
-                        .is_none_or(|dependency| dependency == &parameter.id)
-                }),
-        };
-        if unresolved {
-            count += 1;
-        }
-    }
-    count
+    parameters
+        .iter()
+        .filter(|parameter| {
+            parameter.expression.tokens.iter().any(|token| {
+                let ExpressionToken::Text(text) = token else {
+                    return false;
+                };
+                expression_identifier_tokens(text).is_none_or(|tokens| {
+                    tokens.iter().any(|identifier| {
+                        !identifier.is_syntax() && definite_parameter_reference(identifier)
+                    })
+                })
+            })
+        })
+        .count()
 }
 
 pub(crate) fn parameters_with_unevaluable_expressions(
@@ -658,14 +716,18 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     let mut count = 0;
     for parameter in parameters {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
+        let Some(expression) =
+            render_parameter_expression(parameter, parameters, feature_names, global_owners)
+        else {
+            count += 1;
+            continue;
+        };
         for values in &mut states {
             let own = values.remove_entry(&parameter.id);
             let evaluated =
-                match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values)
-                    .parse()?
-                {
+                match ParameterExpressionParser::new(ctx, &expression, aliases, values).parse()? {
                     Some(value) => Some(value),
-                    None => text_parameter_literal(&parameter.name, &parameter.expression),
+                    None => text_parameter_literal(&parameter.name, &expression),
                 };
             if let Some((id, value)) = own {
                 values.insert(id, value);
@@ -681,18 +743,20 @@ pub(crate) fn parameters_with_unevaluable_expressions(
 
 pub(crate) fn parameters_with_incoherent_dependencies(
     parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>,
-    global_owners: &HashSet<FeatureId>,
+    _feature_names: &HashMap<FeatureId, String>,
+    _global_owners: &HashSet<FeatureId>,
 ) -> usize {
-    let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
+    let ids = parameters
+        .iter()
+        .map(|parameter| &parameter.id)
+        .collect::<HashSet<_>>();
     parameters
         .iter()
         .filter(|parameter| {
-            parameter.dependencies
-                != project_parameter_dependencies(
-                    parameter,
-                    aliases.for_owner(parameter.owner.as_ref()),
-                )
+            parameter
+                .expression
+                .dependencies()
+                .any(|id| !ids.contains(id))
         })
         .count()
 }
@@ -712,14 +776,19 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     let mut count = 0;
     for parameter in parameters
         .iter()
-        .filter(|parameter| !parameter.dependencies.is_empty())
+        .filter(|parameter| parameter.expression.dependencies().next().is_some())
     {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
+        let Some(expression) =
+            render_parameter_expression(parameter, parameters, feature_names, global_owners)
+        else {
+            count += 1;
+            continue;
+        };
         for values in &mut states {
             let own = values.remove_entry(&parameter.id);
             let evaluated =
-                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values)
-                    .parse()?;
+                ParameterExpressionParser::new(ctx, &expression, aliases, values).parse()?;
             let incoherent =
                 own.as_ref()
                     .zip(evaluated.as_ref())
@@ -878,18 +947,6 @@ impl<'a> ExpressionIdentifier<'a> {
         }
         eval::ParameterFunction::parse(self.value()).is_some()
             && self.following.trim_start().starts_with('(')
-    }
-
-    /// The expression text that follows this token.
-    pub(super) fn following(&self) -> &'a str {
-        self.following
-    }
-
-    /// The text of `tail` that precedes this token, where `tail` is the not-yet-consumed
-    /// remainder of the expression this token was cut from.
-    pub(super) fn preceding(&self, tail: &'a str) -> Option<&'a str> {
-        tail.strip_suffix(self.following)
-            .and_then(|head| head.strip_suffix(self.raw))
     }
 }
 

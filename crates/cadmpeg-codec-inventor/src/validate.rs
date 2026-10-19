@@ -38,7 +38,7 @@ use crate::native::{
 use crate::pmdc::PmDcReferenceList;
 use crate::record_issue::RecordIssue;
 
-const ARENAS: &[&str] = &[
+pub(crate) const ARENAS: &[&str] = &[
     "active_carrier",
     "assembly_occurrences",
     "assembly_placements",
@@ -140,6 +140,24 @@ pub(crate) fn validate_native(
             ),
             None,
         )]);
+    }
+    if let Some(properties) = namespace.arenas().get("properties") {
+        for property in properties {
+            let fields = property.fields()?;
+            if let Some(link) = fields.get("neutral_attribute") {
+                let valid = link.as_str().is_some_and(|id| {
+                    ir.model
+                        .attributes
+                        .iter()
+                        .any(|attribute| attribute.id.as_str() == id)
+                });
+                if !valid || fields.contains_key("scalar_value") || fields.contains_key("name") {
+                    return Ok(vec![finding(Check::NativeLinks,
+                        "Inventor property neutral attribute does not resolve or duplicates its canonical value".into(),
+                        Some(property.id().to_owned()))]);
+                }
+            }
+        }
     }
     let data = match NativeData::load(ctx, namespace) {
         Ok(data) => data,
@@ -1712,26 +1730,8 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
             }
         }
     }
-    let expanded_lengths = data
-        .bulk
-        .iter()
-        .map(|bulk| (bulk.token.as_str(), bulk.expanded_len))
-        .collect::<HashMap<_, _>>();
-    for record in &data.records {
-        let end = record.payload_offset.checked_add(record.payload_len());
-        if end.is_none_or(|end| {
-            end > expanded_lengths
-                .get(record.token.as_str())
-                .copied()
-                .unwrap_or(0)
-        }) {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor RSe record payload range exceeds its bulk stream".into(),
-                Some(record.id.clone()),
-            ));
-        }
-    }
+    // Byte extents are checked while framing the source bulk streams. Native
+    // document validation checks record identities and typed references only.
     for record in &data.unpaired {
         if pair_tokens.contains(record.token.as_str()) {
             findings.push(finding(

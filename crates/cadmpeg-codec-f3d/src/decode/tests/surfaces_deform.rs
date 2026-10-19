@@ -41,6 +41,65 @@ use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
+fn assert_solved_carriers_reduction(ir: &cadmpeg_ir::CadIr) {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("unsupported procedural content degrades to held carriers");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterProceduralReduced.kind()));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("held carrier output decodes");
+    for original in ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.geometry.procedural_construction().is_some())
+    {
+        let solved = original
+            .geometry
+            .solved()
+            .expect("fixture has a solved surface");
+        assert!(
+            decoded
+                .ir()
+                .model
+                .surfaces
+                .iter()
+                .any(|surface| surface.geometry.solved() == Some(solved)),
+            "held solved surface must survive synthesis"
+        );
+    }
+    for original in ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| curve.geometry.procedural_construction().is_some())
+    {
+        let solved = original
+            .geometry
+            .solved()
+            .expect("fixture has a solved curve");
+        assert!(
+            decoded
+                .ir()
+                .model
+                .curves
+                .iter()
+                .any(|curve| curve.geometry.solved() == Some(solved)),
+            "held solved curve must survive synthesis"
+        );
+    }
+}
+
 #[test]
 fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
     for (smbh, label) in [
@@ -75,7 +134,7 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
 }
 
 #[test]
-fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carriers() {
+fn generated_source_less_reports_procedural_construction_loss_on_analytic_carriers() {
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
@@ -114,13 +173,7 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
             .unwrap(),
         )),
     };
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("analytic carrier must not discard its procedural surface");
-    assert!(error
-        .to_string()
-        .contains("cannot retain its construction on analytic carrier"));
+    assert_solved_carriers_reduction(&source_less);
 
     let decoded = F3dCodec
         .decode(
@@ -154,13 +207,7 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
             .unwrap(),
         )),
     };
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("analytic carrier must not discard its procedural curve");
-    assert!(error
-        .to_string()
-        .contains("cannot retain its construction on carrier"));
+    assert_solved_carriers_reduction(&source_less);
 }
 
 #[test]
@@ -674,7 +721,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
 }
 
 #[test]
-fn generated_source_less_sweep_refuses_missing_native_graph() {
+fn generated_source_less_sweep_reports_missing_native_graph() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let mut decoded = F3dCodec
@@ -708,15 +755,7 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .unwrap();
     });
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a sweep without its native graph must not be guessed");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("lacks its native construction graph")
-    ));
+    assert_solved_carriers_reduction(&decoded);
 }
 
 #[test]
@@ -1374,10 +1413,7 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         source_less.model.procedural_surfaces[0]
             .set_cache_fit_tolerance(None)
             .unwrap();
-        let error = F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .unwrap_err();
+        let error = crate::writer::generate::write_new(&source_less, &mut Vec::new()).unwrap_err();
         assert!(
             error
                 .to_string()

@@ -80,3 +80,17 @@ fn source_rescoping_preserves_absent_provenance_tag() {
         None
     );
 }
+
+#[test]
+fn source_rescoping_and_append_union_unrepresented_classes() {
+    use cadmpeg_ir::document::ArenaClass::{Design, Model};
+    let mut parent = source("parent");
+    parent.mark_untyped(ID, [Model]).unwrap();
+    let mut child = source("member");
+    child.mark_untyped(ID, [Design]).unwrap();
+    let rescoped = rescope_fidelity(child, "part/occurrence-0").unwrap();
+    assert!(rescoped.unrepresented().contains(&Design));
+    assert!(!rescoped.unrepresented().contains(&Model));
+    parent.append(rescoped).unwrap();
+    assert_eq!(parent.unrepresented(), [Model, Design].into());
+}

@@ -5,14 +5,15 @@ use std::collections::HashMap;
 
 use crate::native::F3dNative;
 use cadmpeg_asm::brep::records::{
-    EdgeContinuity, EdgeOwnership, FaceSidedness, TolerantCoedgeParameters, TolerantEdgeTail,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness, TolerantCoedgeParameters,
+    TolerantEdgeTail, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
 pub(super) struct NativeGenerationIndex<'a> {
     pub(super) edge_continuities: HashMap<&'a str, &'a EdgeContinuity>,
     pub(super) edge_ownerships: &'a [EdgeOwnership],
     pub(super) face_sidedness: HashMap<&'a str, &'a FaceSidedness>,
+    pub(super) face_native_keys: HashMap<&'a str, &'a FaceNativeKey>,
     pub(super) tolerant_coedges: HashMap<&'a str, &'a TolerantCoedgeParameters>,
     pub(super) tolerant_edges: HashMap<&'a str, &'a TolerantEdgeTail>,
     pub(super) tolerant_vertices: HashMap<&'a str, &'a TolerantVertexTail>,
@@ -43,6 +44,7 @@ impl<'a> NativeGenerationIndex<'a> {
             edge_continuities: first_by_id!(&native.edge_continuities, edge),
             edge_ownerships: &native.edge_ownerships,
             face_sidedness: first_by_id!(&native.face_sidedness, face),
+            face_native_keys: first_by_id!(&native.face_native_keys, face),
             tolerant_coedges: first_by_id!(&native.tolerant_coedge_parameters, coedge),
             tolerant_edges: first_by_id!(&native.tolerant_edge_tails, edge),
             tolerant_vertices: first_by_id!(&native.tolerant_vertex_tails, vertex),

@@ -24,7 +24,7 @@ pub(crate) fn named_scalars(
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut scalars = Vec::new();
     for name in names {
-        let Some(name_offset) = usize::try_from(name.offset).ok() else {
+        let Some(name_offset) = name.offset.and_then(|offset| usize::try_from(offset).ok()) else {
             continue;
         };
         let Some(value_offset) = scalar_value_offset(payload, name_offset) else {
@@ -49,7 +49,8 @@ pub(crate) fn named_scalars(
             parent: parent.to_owned(),
             feature_ref: None,
             ordinal,
-            offset: u64_from_index(value_offset),
+            sequence: ordinal,
+            offset: Some(u64_from_index(value_offset)),
             object_id,
             name: name.id.clone(),
             value,
@@ -135,7 +136,7 @@ fn scalar_operands(
         .into_iter()
         .flatten()
         .map(|(offset, kind, entity_index)| FeatureInputOperand {
-            offset: u64_from_index(offset),
+            offset: Some(u64_from_index(offset)),
             reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
             kind,
             entity_index,
@@ -255,7 +256,7 @@ impl FeatureObjectStarts {
             .iter()
             .flat_map(|history| &history.features)
             .filter_map(|feature| names.of(feature))
-            .map(|name| name.offset)
+            .filter_map(|name| name.offset)
             .collect::<Vec<_>>();
         starts.sort_unstable();
         Self(starts)
@@ -263,7 +264,10 @@ impl FeatureObjectStarts {
 
     /// End of the feature object named at `start`: the next feature object
     /// start after it, else `payload_len`.
-    pub(super) fn end(&self, start: u64, payload_len: usize) -> usize {
+    pub(super) fn end(&self, start: impl Into<Option<u64>>, payload_len: usize) -> usize {
+        let Some(start) = start.into() else {
+            return payload_len;
+        };
         self.0
             .get(self.0.partition_point(|offset| *offset <= start))
             .and_then(|offset| usize::try_from(*offset).ok())

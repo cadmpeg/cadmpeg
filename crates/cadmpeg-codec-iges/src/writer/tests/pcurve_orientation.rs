@@ -54,7 +54,7 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
         .expect_err("the end has no finite point");
     assert_eq!(
         error.to_string(),
-        cadmpeg_core::CodecError::malformed(
+        crate::writer::unsupported(
             "IGES point edge test pcurve test:iges:pcurve#overflow end has non-finite coordinates"
         )
         .to_string()
@@ -126,7 +126,7 @@ fn a_pcurve_end_whose_placed_support_point_overflows_is_refused_as_non_finite() 
         .expect("valid LinePcurve fixture");
     assert_eq!(
         line_pcurve_end_error(&surface, line),
-        cadmpeg_core::CodecError::malformed(
+        crate::writer::unsupported(
             "IGES point edge test pcurve test:iges:pcurve#overflow end has non-finite coordinates"
         )
         .to_string()
@@ -141,7 +141,7 @@ fn a_pcurve_end_whose_line_point_overflows_is_refused_as_non_finite() {
         .expect("valid LinePcurve fixture");
     assert_eq!(
         line_pcurve_end_error(&SurfaceGeometry::Solved(origin_plane()), line),
-        cadmpeg_core::CodecError::malformed(
+        crate::writer::unsupported(
             "IGES point edge test pcurve test:iges:pcurve#overflow end has non-finite coordinates"
         )
         .to_string()

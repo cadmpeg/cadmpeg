@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::entity_selection_matches_curve;
-use crate::design::dimensions::expression_identifiers;
+use crate::design::dimensions::expression_identifier_spans;
 use crate::design::edge_resolve::{
     project_fixed_fillet_with_corners, resolved_edge_flange_group, resolved_edge_group,
     resolved_edge_treatment_group_with_corners, resolved_surface_patch_edge_group,
@@ -55,6 +55,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
+mod dimension_bindings;
 pub(crate) mod form_cages;
 
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
@@ -510,17 +511,13 @@ impl<'a> ScopeHistoryGraph<'a> {
                 if visited.is_empty() {
                     return Ok(ScopeHistoryPredecessor::None);
                 }
-                return Err(CodecError::Malformed(
-                    "Design scope history-state dependency is cyclic".into(),
-                ));
+                return Ok(ScopeHistoryPredecessor::Ambiguous);
             }
             if projected(candidate) {
                 return Ok(ScopeHistoryPredecessor::Scope(candidate));
             }
             if !visited.insert(candidate.id.as_str()) {
-                return Err(CodecError::Malformed(
-                    "Design scope history-state dependency is cyclic".into(),
-                ));
+                return Ok(ScopeHistoryPredecessor::Ambiguous);
             }
             let Some(previous_state_id) = candidate.previous_history_state_id() else {
                 return Ok(ScopeHistoryPredecessor::None);
@@ -533,7 +530,7 @@ impl<'a> ScopeHistoryGraph<'a> {
     }
 }
 
-fn ensure_feature_dependencies_precede(
+fn validate_projected_feature_identities(
     features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
     let mut ordinals = HashMap::new();
@@ -551,19 +548,6 @@ fn ensure_feature_dependencies_precede(
             return Err(CodecError::Malformed(
                 "projected Design feature ordinal is not unique".into(),
             ));
-        }
-        if let Some((dependency, dependency_ordinal)) =
-            feature.dependencies.iter().find_map(|dependency| {
-                ordinals
-                    .get(dependency)
-                    .filter(|ordinal| **ordinal >= feature.ordinal)
-                    .map(|ordinal| (dependency, ordinal))
-            })
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                    "Design feature dependency does not precede its authored timeline position: {dependency} at ordinal {dependency_ordinal} -> {} at ordinal {}",
-                    feature.id, feature.ordinal,
-                )));
         }
     }
     Ok(())
@@ -649,13 +633,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let mut parameters = Vec::new();
             for owner in owners.iter().filter(|owner| {
                 native_stream(owner.id()) == Some(native_scope)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
             }) {
                 if let Some(parameter) = native.iter().find(|parameter| {
                     native_stream(&parameter.id) == Some(native_scope)
                         && parameter.record_index == owner.parameter_record_index()
                 }) {
-                    parameters.push((owner.local_ordinal(), parameter));
+                    parameters.push((
+                        owner.local_ordinal().unwrap_or(parameter.source_ordinal),
+                        parameter,
+                    ));
                 }
             }
             let family = design_feature_family(&scope.kind());
@@ -705,7 +692,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                            parameters: (BTreeMap::new()).into(),
                         })
                     }),
                 Some(DesignFeatureFamily::Draft) => project_draft(
@@ -719,7 +706,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
+                        parameters: (BTreeMap::new()).into(),
                     })
                 }),
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
@@ -740,14 +727,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
+                        parameters: (BTreeMap::new()).into(),
                     })
                 }),
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                            parameters: (BTreeMap::new()).into(),
                         })
                     }),
                 Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(
@@ -762,7 +749,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
+                        parameters: (BTreeMap::new()).into(),
                     })
                 }),
                 Some(DesignFeatureFamily::Pipe) => project_fixed_pipe(
@@ -784,7 +771,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
+                        parameters: (BTreeMap::new()).into(),
                     })
                 }),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
@@ -811,13 +798,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 ":design-record#",
                                 u64::from(operation.boundary_record_index)
                             )),
-                            distance: Some(distance),
+                            distance: (Some(distance)).map(Into::into),
                             method,
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                            parameters: (BTreeMap::new()).into(),
                         })
                     }
                 }
@@ -831,7 +818,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                            parameters: (BTreeMap::new()).into(),
                         })
                     }),
                 Some(DesignFeatureFamily::SurfaceRuled) => project_ruled_surface(
@@ -849,7 +836,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: BTreeMap::new(),
+                                parameters: (BTreeMap::new()).into(),
                             })
                         })
                 }
@@ -857,7 +844,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                            parameters: (BTreeMap::new()).into(),
                         })
                     })
                 }
@@ -867,27 +854,29 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_split(scope, construction_groups, face_operands)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                            parameters: (BTreeMap::new()).into(),
                         })
                     })
                 }
                 Some(DesignFeatureFamily::CircularPattern) => {
-                    project_circular_pattern(scope, construction_groups, face_operands)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: Vec::new(),
-                                pattern: PatternKind::UNRESOLVED_CIRCULAR,
-                            })
-                        })
+                    // The retained total angle and count do not establish whether
+                    // the endpoint is included. Preserve their canonical links
+                    // without inventing a circular distribution mode.
+                    native_scope_definition(scope, &parameters)?
                 }
                 Some(DesignFeatureFamily::RectangularPattern) => {
-                    project_rectangular_pattern_scalars(scope, construction_groups, face_operands)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: Vec::new(),
-                                pattern: PatternKind::UNRESOLVED_LINEAR,
-                            })
+                    project_rectangular_pattern_scalars(
+                        scope,
+                        construction_groups,
+                        face_operands,
+                        &parameters,
+                    )
+                    .unwrap_or_else(|| {
+                        FeatureDefinition::Operation(FeatureOperation::Pattern {
+                            seeds: Vec::new(),
+                            pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
+                    })
                 }
                 Some(DesignFeatureFamily::Mirror) => {
                     project_mirror(scope, construction_groups, face_operands, scopes)
@@ -949,12 +938,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         FeatureDefinition::Operation(FeatureOperation::Scale {
                             bodies,
                             center: Some(center),
-                            factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
+                            factors: cadmpeg_ir::features::ScaleFactors::Uniform {
+                                factor: (factor).into(),
+                            },
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
+                            parameters: (BTreeMap::new()).into(),
                         })
                     }
                 }
@@ -979,7 +970,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             );
                             let has_parameter_owners = owners.iter().any(|owner| {
                                 native_stream(owner.id()) == Some(native_scope)
-                                    && owner.scope_record_index() == scope.record_index
+                                    && owner.scope_record_index() == Some(scope.record_index)
                             });
                             let face_reference_count =
                                 construction.face_group_record_indices.len().checked_mul(2);
@@ -1024,7 +1015,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 .find(|(ordinal, _)| *ordinal == 1)
                                 .and_then(|(_, parameter)| design_positive_length(parameter))
                                 .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
-                                    length,
+                                    length: (length).into(),
                                 })
                                 .or_else(|| {
                                     full_face_extent.then_some(
@@ -1034,7 +1025,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             Ok(FeatureDefinition::Operation(
                                 FeatureOperation::CosmeticThread {
                                     face,
-                                    diameter: Some(nominal_size),
+                                    diameter: (Some(nominal_size)).map(Into::into),
                                     extent,
                                 },
                             ))
@@ -1047,7 +1038,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 None => {
-                    if let Some(primitive) = project_solid_primitive(scope) {
+                    if let Some(primitive) = project_solid_primitive(scope, &parameters) {
                         primitive
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::JointOrigin
@@ -1136,7 +1127,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             || {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
-                                    parameters: BTreeMap::new(),
+                                    parameters: (BTreeMap::new()).into(),
                                 })
                             },
                         )
@@ -1146,7 +1137,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         project_remove_body(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: BTreeMap::new(),
+                                parameters: (BTreeMap::new()).into(),
                             })
                         })
                     } else if scope.kind()
@@ -1155,7 +1146,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: BTreeMap::new(),
+                                parameters: (BTreeMap::new()).into(),
                             })
                         })
                     } else if scope.kind()
@@ -1172,7 +1163,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: BTreeMap::new(),
+                                parameters: (BTreeMap::new()).into(),
                             })
                         })
                     } else if matches!(
@@ -1184,7 +1175,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .unwrap_or_else(|| {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
-                                    parameters: BTreeMap::new(),
+                                    parameters: (BTreeMap::new()).into(),
                                 })
                             })
                     } else if scope.kind()
@@ -1213,7 +1204,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         } else {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: BTreeMap::new(),
+                                parameters: (BTreeMap::new()).into(),
                             })
                         }
                     } else if scope.kind()
@@ -1223,7 +1214,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             || {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
-                                    parameters: BTreeMap::new(),
+                                    parameters: (BTreeMap::new()).into(),
                                 })
                             },
                             |operation| {
@@ -1248,7 +1239,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         } else {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: BTreeMap::new(),
+                                parameters: (BTreeMap::new()).into(),
                             })
                         }
                     } else {
@@ -1258,6 +1249,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let outputs = inserted_bodies;
             Ok(Feature {
+                needs_recompute: false,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!("{} {}", scope.kind_name(), scope.feature_ordinal)),
@@ -1324,9 +1316,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         let Some(predecessor) = scope_ids.get(&(stream, predecessor_scope.record_index)) else {
             continue;
         };
-        if predecessor != &feature.id {
-            feature.dependencies.insert(predecessor.clone());
-        }
+        feature.dependencies.insert(predecessor.clone());
     }
     for feature in &mut features {
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
@@ -1338,18 +1328,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             cadmpeg_ir::features::patterns::PatternSeed::Feature(feature) => Some(feature),
             _ => None,
         }) {
-            if dependency != &feature.id {
-                feature.dependencies.insert(dependency.clone());
-            }
+            feature.dependencies.insert(dependency.clone());
         }
     }
     for feature in &mut features {
-        let feature_id = &feature.id;
         let dependencies = &mut feature.dependencies;
         let mut add_dependency = |dependency: &cadmpeg_ir::features::FeatureId| {
-            if dependency != feature_id {
-                dependencies.insert(dependency.clone());
-            }
+            dependencies.insert(dependency.clone());
             Ok::<_, CodecError>(())
         };
         match feature.evaluation.definition() {
@@ -1455,9 +1440,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let Some(Some(dependency)) = history_state_features.get(&key) else {
                 continue;
             };
-            if dependency != &feature.id {
-                feature.dependencies.insert(dependency.clone());
-            }
+            feature.dependencies.insert(dependency.clone());
         }
     }
     features.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1469,8 +1452,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let native_owner = parameter
                 .owner_record_index()
                 .and_then(|record_index| owners_by_index.get(&(stream, record_index)));
-            let owner =
-                native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index())));
+            let owner = native_owner.and_then(|owner| {
+                owner
+                    .scope_record_index()
+                    .and_then(|index| scope_ids.get(&(stream, index)))
+            });
             let mut properties = BTreeMap::new();
             if parameter.kind() != DesignParameterKind::User {
                 properties.insert(
@@ -1484,22 +1470,26 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     format!("{owner_record_index}"),
                 );
             }
-            let value = match parameter.unit().map(|field| field.value.as_str()) {
-                Some(unit) if design_length_unit(unit) => {
-                    Length::new(parameter.evaluated_value().get() * 10.0)
-                        .map(ParameterValue::Length)
-                }
-                Some(unit) if design_angle_unit(unit) => {
-                    Angle::new(parameter.evaluated_value().get()).map(ParameterValue::Angle)
-                }
-                None => Some(ParameterValue::Real(parameter.evaluated_value())),
-                Some(unit) => {
-                    properties.insert(cadmpeg_core::nonblank_literal!("unit"), unit.to_owned());
-                    properties.insert(
-                        cadmpeg_core::nonblank_literal!("evaluated_scalar"),
-                        format!("{}", parameter.evaluated_value().get()),
-                    );
-                    None
+            let value = if let Some(count) = dimension_bindings::count_cache(parameter, scopes) {
+                Some(ParameterValue::Integer(i64::from(count)))
+            } else {
+                match parameter.unit().map(|field| field.value.as_str()) {
+                    Some(unit) if design_length_unit(unit) => {
+                        Length::new(parameter.evaluated_value().get() * 10.0)
+                            .map(ParameterValue::Length)
+                    }
+                    Some(unit) if design_angle_unit(unit) => {
+                        Angle::new(parameter.evaluated_value().get()).map(ParameterValue::Angle)
+                    }
+                    None => Some(ParameterValue::Real(parameter.evaluated_value())),
+                    Some(unit) => {
+                        properties.insert(cadmpeg_core::nonblank_literal!("unit"), unit.to_owned());
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("evaluated_scalar"),
+                            format!("{}", parameter.evaluated_value().get()),
+                        );
+                        None
+                    }
                 }
             };
             NeutralParameter {
@@ -1507,9 +1497,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 owner: owner.cloned(),
                 ordinal: owner
                     .zip(native_owner)
-                    .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal()),
+                    .and_then(|(_, owner)| owner.local_ordinal())
+                    .unwrap_or(parameter.source_ordinal),
                 name: parameter.name().to_owned(),
-                expression: parameter.expression().to_owned(),
+                expression: parameter.expression().into(),
+                driving: parameter.kind() != DesignParameterKind::Dimension,
                 display: if parameter.source_kind_str().contains("Diameter Dimension") {
                     Some(DimensionDisplay::Diameter)
                 } else if parameter.source_kind_str().contains("Radius Dimension") {
@@ -1518,21 +1510,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     None
                 },
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties,
                 pmi: None,
                 native_ref: Some(parameter.id.clone()),
             }
         })
         .collect::<Vec<_>>();
-    let (
-        parameter_scopes,
-        document_aliases,
-        feature_aliases,
-        owned_aliases,
-        parameter_owners,
-        feature_order,
-    ) = {
+    let (parameter_scopes, document_aliases, feature_aliases, owned_aliases, parameter_owners) = {
         let mut parameter_scopes = HashMap::new();
         for (source, parameter) in native.iter().zip(&parameters) {
             if let Some(stream) = native_stream(&source.id) {
@@ -1579,100 +1563,46 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             // discarded-value: duplicate parameter IDs keep the last owner.
             let _ = parameter_owners.insert(key, owner);
         }
-        let mut feature_order = HashMap::new();
-        for feature in &features {
-            let id = feature.id.clone();
-            // discarded-value: duplicate feature IDs keep the last authored ordinal.
-            let _ = feature_order.insert(id, feature.ordinal);
-        }
         (
             parameter_scopes,
             document_aliases,
             feature_aliases,
             owned_aliases,
             parameter_owners,
-            feature_order,
         )
     };
-    for parameter in &mut parameters {
+    for (parameter, source_parameter) in parameters.iter_mut().zip(native) {
         let scope = parameter_scopes[&parameter.id];
-        if parameter.properties.contains_key("owner_record_index") {
-            continue;
-        }
-        parameter.dependencies.clear();
-        for identifier in expression_identifiers(&parameter.expression) {
-            let identifier = identifier.to_string();
-            let alias_key = (scope, identifier);
-            let preceding_owned = || {
-                let consumer = parameter.owner.as_ref()?;
-                let consumer_order = feature_order.get(consumer)?;
-                let mut candidates = owned_aliases.get(&alias_key)?.iter().filter(|candidate| {
-                    parameter_owners
-                        .get(*candidate)
-                        .and_then(Option::as_ref)
-                        .and_then(|owner| feature_order.get(owner))
-                        .is_some_and(|order| order < consumer_order)
-                });
+        let source = dimension_bindings::expression(source_parameter);
+        let mut spans = Vec::new();
+        for (span, identifier) in expression_identifier_spans(&source) {
+            let alias_key = (scope, identifier.to_owned());
+            let unique_owned = || {
+                let mut candidates = owned_aliases.get(&alias_key)?.iter();
                 let candidate = candidates.next()?;
                 candidates.next().is_none().then_some(candidate)
             };
             let candidate = if let Some(owner) = &parameter.owner {
-                let owner_key = owner.clone();
-                let feature_identifier = alias_key.1.clone();
-                match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
-                    Some(None) => None,
-                    Some(Some(local)) => Some(local),
+                match feature_aliases.get(&(scope, owner.clone(), identifier.to_owned())) {
+                    Some(candidate) => candidate.as_ref(),
                     None => match document_aliases.get(&alias_key) {
-                        Some(Some(document)) => Some(document),
-                        Some(None) => None,
-                        None => preceding_owned(),
+                        Some(candidate) => candidate.as_ref(),
+                        None => unique_owned(),
                     },
                 }
             } else {
                 document_aliases.get(&alias_key).and_then(Option::as_ref)
             };
-            let Some(candidate) = candidate else {
-                continue;
-            };
-            let dependency_owner = parameter_owners.get(candidate);
-            let allowed = match (dependency_owner, &parameter.owner) {
-                (Some(Some(dependency_owner)), Some(consumer_owner))
-                    if dependency_owner != consumer_owner =>
-                {
-                    feature_order
-                        .get(dependency_owner)
-                        .zip(feature_order.get(consumer_owner))
-                        .is_some_and(|(dependency, consumer)| dependency < consumer)
-                }
-                (Some(Some(_)), None) => false,
-                (Some(_), _) => true,
-                (None, _) => false,
-            };
-            if !allowed || candidate == &parameter.id || parameter.dependencies.contains(candidate)
-            {
-                continue;
+            if let Some(candidate) = candidate {
+                spans.push((span, candidate.clone()));
             }
-            let dependency = candidate.clone();
-            parameter.dependencies.insert(dependency);
         }
+        parameter.expression = cadmpeg_ir::features::Expression::from_spans(&source, spans)
+            .map_err(CodecError::malformed)?;
     }
     let unordered_parameter_scopes =
         normalize_parameter_ordinals(&mut parameters, &parameter_owners);
-    for feature in &mut features {
-        for parameter in parameters
-            .iter()
-            .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
-        {
-            for dependency in &parameter.dependencies {
-                if let Some(Some(owner)) = parameter_owners.get(dependency) {
-                    if owner != &feature.id {
-                        feature.dependencies.insert(owner.clone());
-                    }
-                }
-            }
-        }
-    }
-    ensure_feature_dependencies_precede(&features)?;
+    validate_projected_feature_identities(&features)?;
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(ProjectedParameterDesign {
         features,
@@ -1683,6 +1613,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 
 fn project_solid_primitive(
     scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
@@ -1701,6 +1632,9 @@ fn project_solid_primitive(
                 length,
                 width,
                 height,
+                length_record_index,
+                width_record_index,
+                height_record_index,
                 offset_x,
                 offset_y,
                 operation: result,
@@ -1713,11 +1647,23 @@ fn project_solid_primitive(
                 [0.0, 0.0, 1.0, 0.0],
             ])?;
             FeatureDefinition::Operation(FeatureOperation::Block {
-                dimensions: Some([
-                    cadmpeg_ir::scalar::PositiveLength::new(length.get() * 10.0)?,
-                    cadmpeg_ir::scalar::PositiveLength::new(width.get() * 10.0)?,
-                    cadmpeg_ir::scalar::PositiveLength::new(height.get() * 10.0)?,
-                ]),
+                dimensions: (Some([
+                    dimension_bindings::owner(
+                        parameters,
+                        *length_record_index,
+                        cadmpeg_ir::scalar::PositiveLength::new(length.get() * 10.0)?,
+                    ),
+                    dimension_bindings::owner(
+                        parameters,
+                        *width_record_index,
+                        cadmpeg_ir::scalar::PositiveLength::new(width.get() * 10.0)?,
+                    ),
+                    dimension_bindings::owner(
+                        parameters,
+                        *height_record_index,
+                        cadmpeg_ir::scalar::PositiveLength::new(height.get() * 10.0)?,
+                    ),
+                ])),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
                 op: operation(*result),
             })
@@ -1725,23 +1671,50 @@ fn project_solid_primitive(
         crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(
             crate::records::feature::primitives::DesignCylinderPrimitive {
                 height,
+                height_record_index,
                 diameter,
+                diameter_record_index,
+                transform,
                 operation: result,
                 ..
             },
-        )) => FeatureDefinition::Operation(FeatureOperation::Primitive {
-            solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
-                radius: Length::new(diameter.get() * 5.0)?,
-                height: Length::new(height.get() * 10.0)?,
-                angle: Angle::FULL_TURN,
+        )) => {
+            let placement = if let Some(transform) = transform {
+                let mut matrix = *transform.value.as_ref();
+                for row in matrix.iter_mut().take(3) {
+                    row[3] *= 10.0;
+                }
+                cadmpeg_ir::transform::Transform::affine([matrix[0], matrix[1], matrix[2]])?
+            } else {
+                // The unshifted cylinder form uses the source model frame.
+                cadmpeg_ir::transform::Transform::identity()
+            };
+            FeatureDefinition::Operation(FeatureOperation::Primitive {
+                solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
+                    radius: cadmpeg_ir::features::RadialDimension::Diameter(
+                        dimension_bindings::owner(
+                            parameters,
+                            *diameter_record_index,
+                            Length::new(diameter.get() * 10.0)?,
+                        ),
+                    ),
+                    height: dimension_bindings::owner(
+                        parameters,
+                        *height_record_index,
+                        Length::new(height.get() * 10.0)?,
+                    ),
+                    angle: Angle::FULL_TURN.into(),
+                })
+                .ok()?,
+                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
+                op: operation(*result),
             })
-            .ok()?,
-            op: operation(*result),
-        }),
+        }
         crate::records::feature::scope::DesignScopePayload::SpherePrimitive(Some(
             crate::records::feature::primitives::DesignSpherePrimitive {
                 transform,
                 diameter,
+                diameter_record_index,
                 operation: result,
                 ..
             },
@@ -1751,7 +1724,11 @@ fn project_solid_primitive(
                 transform[1][3] * 10.0,
                 transform[2][3] * 10.0,
             ))?,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
+            radius: cadmpeg_ir::features::RadialDimension::Diameter(dimension_bindings::owner(
+                parameters,
+                *diameter_record_index,
+                cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 10.0)?,
+            )),
             op: operation(*result),
         }),
         crate::records::feature::scope::DesignScopePayload::TorusPrimitive(Some(
@@ -1759,6 +1736,8 @@ fn project_solid_primitive(
                 transform,
                 major_diameter,
                 minor_diameter,
+                major_diameter_record_index,
+                minor_diameter_record_index,
                 operation: result,
                 ..
             },
@@ -1773,8 +1752,20 @@ fn project_solid_primitive(
                 transform[1][2],
                 transform[2][2],
             ))?,
-            major_radius: cadmpeg_ir::scalar::PositiveLength::new(major_diameter.get() * 5.0)?,
-            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(minor_diameter.get() * 5.0)?,
+            major_radius: cadmpeg_ir::features::RadialDimension::Diameter(
+                dimension_bindings::owner(
+                    parameters,
+                    *major_diameter_record_index,
+                    cadmpeg_ir::scalar::PositiveLength::new(major_diameter.get() * 10.0)?,
+                ),
+            ),
+            minor_radius: cadmpeg_ir::features::RadialDimension::Diameter(
+                dimension_bindings::owner(
+                    parameters,
+                    *minor_diameter_record_index,
+                    cadmpeg_ir::scalar::PositiveLength::new(minor_diameter.get() * 10.0)?,
+                ),
+            ),
             op: operation(*result),
         }),
         _ => return None,
@@ -1946,7 +1937,7 @@ fn project_work_point_construction(
             }
             DatumPointConstruction::DistanceOnEdge {
                 edge: edge(input)?,
-                fraction: cadmpeg_ir::scalar::Fraction::new(distance.evaluated_value().get())?,
+                fraction: dimension_bindings::parameter(distance),
             }
         }
         DesignWorkPointRuleForm::Native { .. } => return None,
@@ -2102,13 +2093,15 @@ fn native_scope_definition(
             }
             .into());
         }
-        let expression = parameter.expression().to_owned();
-        properties.insert(name, expression);
+        properties.insert(
+            name,
+            cadmpeg_ir::features::Dimension::Parameter(crate::ids::neutral_parameter_id(parameter)),
+        );
     }
 
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
         kind: scope.kind_name().to_owned().into(),
-        parameters: properties,
+        parameters: (properties).into(),
     }))
 }
 
@@ -2153,7 +2146,16 @@ fn project_fillet_arm(
         let mut groups = Vec::new();
         for resolved in assignments {
             let edge_radius = match &resolved.radius {
-                RadiusSpec::Constant { radius } => Some(radius.get()),
+                RadiusSpec::Constant { radius } => {
+                    radius.literal().map(|radius| radius.get()).or_else(|| {
+                        let id = radius.parameter()?;
+                        let source = parameters
+                            .iter()
+                            .map(|(_, source)| *source)
+                            .find(|source| crate::ids::neutral_parameter_id(source) == *id)?;
+                        design_positive_length(source).map(|value| value.get())
+                    })
+                }
                 _ => None,
             };
             let edges = if let Some(group) = inputs.construction_groups.iter().find(|group| {
@@ -2180,7 +2182,7 @@ fn project_fillet_arm(
             groups.push(FilletGroup {
                 edges,
                 radius: resolved.radius,
-                tangency_weight: resolved.tangency_weight,
+                tangency_weight: (resolved.tangency_weight).map(Into::into),
             });
         }
         let groups = groups.try_into().ok();
@@ -2212,7 +2214,7 @@ fn project_fillet_arm(
     let [(_, parameter)] = parameters else {
         return native_scope_definition(scope, parameters);
     };
-    let Some(radius) = (parameter.source_kind() == "Radius")
+    let Some(_radius) = (parameter.source_kind() == "Radius")
         .then(|| design_positive_length(parameter))
         .flatten()
     else {
@@ -2221,7 +2223,9 @@ fn project_fillet_arm(
     Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
             edges: EdgeSelection::Native(scope.id.clone()),
-            radius: RadiusSpec::Constant { radius },
+            radius: RadiusSpec::Constant {
+                radius: (dimension_bindings::parameter(parameter)).into(),
+            },
             tangency_weight: None,
         }),
     }))
@@ -2230,7 +2234,7 @@ fn project_fillet_arm(
 struct ResolvedFilletAssignment<'a> {
     assignment: &'a DesignFilletRadiusGroup,
     radius: cadmpeg_ir::features::edge_treatments::RadiusSpec,
-    tangency_weight: Option<cadmpeg_ir::scalar::FiniteReal>,
+    tangency_weight: Option<cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::FiniteReal>>,
 }
 
 fn resolved_fillet_assignments<'a>(
@@ -2265,33 +2269,34 @@ fn resolved_fillet_assignments<'a>(
             .copied()
             .filter(|parameter| parameter.source_kind() == kind)
     };
-    let length = |record, kind| design_positive_length(parameter(record, kind)?);
+    let length = |record, kind| {
+        let source = parameter(record, kind)?;
+        design_positive_length(source)?;
+        Some(dimension_bindings::parameter(source))
+    };
     let mut resolved = Vec::new();
     for &assignment in assignments {
         let tangency_weight = assignment
             .tangency_weight_parameter_record_index
-            .map(|record| {
-                parameter(record, "TangencyWeight")
-                    .map(crate::records::parameters::DesignParameter::evaluated_value)
-            })
+            .map(|record| parameter(record, "TangencyWeight").map(dimension_bindings::parameter))
             .map_or(Some(None), |value| value.map(Some))?;
         let radius = match &assignment.law {
             DesignFilletRadiusLaw::Constant {
                 radius_parameter_record_index,
             } => RadiusSpec::Constant {
-                radius: length(*radius_parameter_record_index, "Radius")?,
+                radius: (length(*radius_parameter_record_index, "Radius")?).into(),
             },
             DesignFilletRadiusLaw::Chordal {
                 chord_length_parameter_record_index,
             } => RadiusSpec::Chordal {
-                chord_length: length(*chord_length_parameter_record_index, "ChordLen")?,
+                chord_length: (length(*chord_length_parameter_record_index, "ChordLen")?).into(),
             },
             DesignFilletRadiusLaw::Asymmetric {
                 offset_one_parameter_record_index,
                 offset_two_parameter_record_index,
             } => RadiusSpec::Asymmetric {
-                offset_one: length(*offset_one_parameter_record_index, "EdgeOffset1")?,
-                offset_two: length(*offset_two_parameter_record_index, "EdgeOffset2")?,
+                offset_one: (length(*offset_one_parameter_record_index, "EdgeOffset1")?).into(),
+                offset_two: (length(*offset_two_parameter_record_index, "EdgeOffset2")?).into(),
             },
             DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index,
@@ -2415,7 +2420,7 @@ fn project_full_round_fillet(
     let stream = or_none!(native_stream(&scope.id));
     if owners.iter().any(|owner| {
         native_stream(owner.id()) == Some(stream)
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
     }) || fillet_radius_groups.iter().any(|assignment| {
         native_stream(&assignment.id) == Some(stream)
             && assignment.scope_record_index == scope.record_index
@@ -2609,22 +2614,14 @@ pub(crate) fn bind_sketch_feature_geometry(
                     break 'feature_edit;
                 };
                 if spatial.profiles.is_empty() {
-                    let Some(profile_operand) = scope.extrude_profile() else {
+                    if scope.extrude_profile().is_none() {
                         break 'feature_edit;
-                    };
-                    let Some(stream) = native_stream(&scope.id) else {
-                        break 'feature_edit;
-                    };
-                    // The spatial carrier has no closed loop that can be represented
-                    // by a profile index. Keep the exact profile frame as a native
-                    // selection instead of retaining the provisional planar ID.
+                    }
+                    // The held scope owns the exact typed profile operand.
+                    // Reference that content when the spatial carrier has no
+                    // closed loop; source positions are not document facts.
                     let sketch_id = spatial.id.clone();
-                    let selection = format!(
-                        "{}{}{}",
-                        stream,
-                        ":design-record-header#",
-                        profile_operand.byte_offset()
-                    );
+                    let selection = scope.id.clone();
                     *profile =
                         match ProfileRef::spatial_sketch_selection(sketch_id, vec![selection]) {
                             Ok(profile) => profile,
@@ -2709,9 +2706,7 @@ pub(crate) fn bind_sketch_feature_geometry(
     for feature in features.iter_mut() {
         let mut add_dependency = |dependency: Option<&cadmpeg_ir::features::FeatureId>| {
             if let Some(dependency) = dependency {
-                if dependency != &feature.id {
-                    feature.dependencies.insert(dependency.clone());
-                }
+                feature.dependencies.insert(dependency.clone());
             }
             Ok::<(), CodecError>(())
         };
@@ -2916,7 +2911,7 @@ fn project_surface_offset(
                     ":design-record#",
                     u64::from(*boundary_record_index)
                 )),
-                distance: Some(distance),
+                distance: (Some(distance)).map(Into::into),
             },
         )));
     };
@@ -2954,7 +2949,7 @@ fn project_surface_offset(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: Some(distance),
+            distance: (Some(distance)).map(Into::into),
         },
     )))
 }
@@ -3043,9 +3038,10 @@ fn project_draft(
                                 plane: Some(crate::ids::neutral_feature_id(neutral_plane)),
                             }),
                         },
-                        angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                        angle: (Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                             construction.angle.get(),
-                        ))),
+                        ))))
+                        .map(Into::into),
                         outward: Some(draft_outward(construction.angle.get())),
                     },
                 )));
@@ -3063,9 +3059,10 @@ fn project_draft(
                     plane: neutral_plane,
                     pull: None,
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                angle: (Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
-                ))),
+                ))))
+                .map(Into::into),
                 outward: Some(draft_outward(construction.angle.get())),
             }))
         }
@@ -3081,9 +3078,10 @@ fn project_draft(
                     )?,
                     pull: None,
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                angle: (Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
-                ))),
+                ))))
+                .map(Into::into),
                 outward: Some(draft_outward(construction.angle.get())),
             }))
         }
@@ -3122,9 +3120,10 @@ fn project_draft(
                         plane: Some(crate::ids::neutral_feature_id(pull_plane)),
                     },
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                angle: (Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
-                ))),
+                ))))
+                .map(Into::into),
                 outward: Some(draft_outward(construction.angle.get())),
             }))
         }
@@ -3449,7 +3448,13 @@ pub(super) fn project_offset_faces(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MoveFace {
             faces,
-            motion: FaceMotion::Offset { distance },
+            motion: FaceMotion::Offset {
+                distance: (parameters.first().map_or_else(
+                    || distance.into(),
+                    |(_, source)| dimension_bindings::parameter(source),
+                ))
+                .into(),
+            },
         },
     )))
 }
@@ -3490,9 +3495,10 @@ pub(super) fn project_thicken(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Thicken {
             faces,
-            thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+            thickness: (Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
                 signed_thickness.get().abs() * 10.0,
-            ))),
+            ))))
+            .map(Into::into),
             side: Some(if signed_thickness.get() > 0.0 {
                 ThickenSide::Forward
             } else {
@@ -3537,9 +3543,10 @@ pub(super) fn project_shell(
         FeatureOperation::Shell {
             bodies,
             removed_faces,
-            thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+            thickness: (Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
                 thickness.get() * 10.0,
-            ))),
+            ))))
+            .map(Into::into),
             outward: Some(*outward),
             mode: None,
             join: None,
@@ -3559,13 +3566,13 @@ fn project_move(
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies: BodySelection::Native(group.id.clone()),
-        translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(
-            operation.transform[0][3] * 10.0,
-            operation.transform[1][3] * 10.0,
-            operation.transform[2][3] * 10.0,
-        ))?,
+        translation: [
+            cadmpeg_ir::scalar::Length::new(operation.transform[0][3] * 10.0)?.into(),
+            cadmpeg_ir::scalar::Length::new(operation.transform[1][3] * 10.0)?.into(),
+            cadmpeg_ir::scalar::Length::new(operation.transform[2][3] * 10.0)?.into(),
+        ],
         rotation: matrix_axis_angle(operation.transform.as_ref()),
-        copies: 0,
+        copies: (0).into(),
     }))
 }
 
@@ -3626,7 +3633,8 @@ fn project_base_flange(
     Some(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalBaseFlange {
             profile: PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(operation.thickness.get() * 10.0)?,
+            thickness: (cadmpeg_ir::scalar::PositiveLength::new(operation.thickness.get() * 10.0)?)
+                .into(),
             side: SheetMetalThicknessSide::Forward,
         },
     ))
@@ -3671,7 +3679,7 @@ fn project_edge_flange(
             let parameter = |owner_record_index, source_kind: &str| {
                 let mut matching = owners.iter().filter(|owner| {
                     native_stream(owner.id()) == Some(stream)
-                        && owner.scope_record_index() == scope.record_index
+                        && owner.scope_record_index() == Some(scope.record_index)
                         && owner.record_index() == owner_record_index
                 });
                 let owner = matching.next()?;
@@ -3687,9 +3695,9 @@ fn project_edge_flange(
 
             let height = match &operation.selection.shape().height() {
                 DesignEdgeFlangeHeightExtent::Distance => {
-                    SheetMetalFlangeHeight::Distance(or_none!(design_positive_length(or_none!(
+                    SheetMetalFlangeHeight::Distance(dimension_bindings::parameter(or_none!(
                         parameter(operation.height_owner_record_index, "FlangeHeight",)
-                    ))))
+                    )))
                 }
                 DesignEdgeFlangeHeightExtent::ToObject {
                     target_group_record_index,
@@ -3750,7 +3758,10 @@ fn project_edge_flange(
                         *offset_owner_record_index,
                         "ToObjectOffset"
                     ))));
-                    SheetMetalFlangeHeight::ToObject { target, offset }
+                    SheetMetalFlangeHeight::ToObject {
+                        target,
+                        offset: (offset).into(),
+                    }
                 }
             };
             let angle = or_none!(design_angle(or_none!(parameter(
@@ -3766,10 +3777,11 @@ fn project_edge_flange(
                     owner,
                     ..
                 } => SheetMetalFlangeWidth::Symmetric {
-                    width: or_none!(design_positive_length(or_none!(parameter(
+                    width: (or_none!(design_positive_length(or_none!(parameter(
                         *owner,
                         "EdgeWidth"
-                    )))),
+                    )))))
+                    .into(),
                 },
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::SymmetricPerEdge(
                     edges,
@@ -3781,7 +3793,9 @@ fn project_edge_flange(
                     if widths.any(|width| width != Some(first)) {
                         return Ok(None);
                     }
-                    SheetMetalFlangeWidth::Symmetric { width: first }
+                    SheetMetalFlangeWidth::Symmetric {
+                        width: (first).into(),
+                    }
                 }
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
                     edges,
@@ -3805,8 +3819,8 @@ fn project_edge_flange(
                     let mut widths = Vec::new();
                     for row in edges {
                         let width = SheetMetalFlangeTwoSidedWidth {
-                            first: or_none!(width_length(row.owners[0], first_kind)),
-                            second: or_none!(width_length(row.owners[1], second_kind)),
+                            first: (or_none!(width_length(row.owners[0], first_kind))).into(),
+                            second: (or_none!(width_length(row.owners[1], second_kind))).into(),
                         };
                         widths.push(width);
                     }
@@ -3821,14 +3835,16 @@ fn project_edge_flange(
                     owners: [first, second],
                     ..
                 } => SheetMetalFlangeWidth::TwoSides {
-                    first: or_none!(design_positive_length(or_none!(parameter(
+                    first: (or_none!(design_positive_length(or_none!(parameter(
                         *first,
                         "EdgeWidth_1"
-                    )))),
-                    second: or_none!(design_positive_length(or_none!(parameter(
+                    )))))
+                    .into(),
+                    second: (or_none!(design_positive_length(or_none!(parameter(
                         *second,
                         "EdgeWidth_2"
-                    )))),
+                    )))))
+                    .into(),
                 },
             };
 
@@ -3900,13 +3916,14 @@ fn project_edge_flange(
         FeatureOperation::SheetMetalEdgeFlange {
             edges,
             height,
-            angle,
+            angle: (angle).into(),
             height_datum,
             bend_position,
             width,
-            bend_radius: or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+            bend_radius: (or_none!(cadmpeg_ir::scalar::PositiveLength::new(
                 operation.bend_radius.get() * 10.0,
-            )),
+            )))
+            .into(),
         },
     )))
 }
@@ -3942,7 +3959,7 @@ fn project_hem(
         let parameter = |owner_record_index: u32, source_kind: &str| {
             let mut matching_owners = owners.iter().filter(|owner| {
                 native_stream(owner.id()) == Some(stream)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && owner.record_index() == owner_record_index
             });
             let owner = matching_owners.next()?;
@@ -3958,50 +3975,57 @@ fn project_hem(
             matching_parameters.next().is_none().then_some(parameter)
         };
 
-        let form =
-            match &operation.parameter_owners {
-                DesignHemParameterOwners::GapLength {
-                    gap_owner_record_index,
-                    length_owner_record_index,
-                } => SheetMetalHemForm::GapLength {
-                    gap: cadmpeg_ir::scalar::NonNegativeLength::try_from(design_length(
-                        parameter(*gap_owner_record_index, "HemGap")?,
-                    )?)
-                    .ok()?,
-                    length: design_positive_length(parameter(
-                        *length_owner_record_index,
-                        "HemLength",
-                    )?)?,
-                },
-                DesignHemParameterOwners::RadiusAngle {
-                    radius_owner_record_index,
-                    angle_owner_record_index,
-                } => SheetMetalHemForm::Rolled {
-                    radius: design_positive_length(parameter(
-                        *radius_owner_record_index,
-                        "HemRadius",
-                    )?)?,
-                    angle: design_angle(parameter(*angle_owner_record_index, "HemAngle")?)?,
-                },
-                DesignHemParameterOwners::GapLengthRadius {
-                    gap_owner_record_index,
-                    length_owner_record_index,
-                    radius_owner_record_index,
-                } => SheetMetalHemForm::Teardrop {
-                    gap: cadmpeg_ir::scalar::NonNegativeLength::try_from(design_length(
-                        parameter(*gap_owner_record_index, "HemGap")?,
-                    )?)
-                    .ok()?,
-                    length: design_positive_length(parameter(
-                        *length_owner_record_index,
-                        "HemLength",
-                    )?)?,
-                    radius: design_positive_length(parameter(
-                        *radius_owner_record_index,
-                        "HemRadius",
-                    )?)?,
-                },
-            };
+        let form = match &operation.parameter_owners {
+            DesignHemParameterOwners::GapLength {
+                gap_owner_record_index,
+                length_owner_record_index,
+            } => SheetMetalHemForm::GapLength {
+                gap: (cadmpeg_ir::scalar::NonNegativeLength::try_from(design_length(parameter(
+                    *gap_owner_record_index,
+                    "HemGap",
+                )?)?)
+                .ok()?)
+                .into(),
+                length: (design_positive_length(parameter(
+                    *length_owner_record_index,
+                    "HemLength",
+                )?)?)
+                .into(),
+            },
+            DesignHemParameterOwners::RadiusAngle {
+                radius_owner_record_index,
+                angle_owner_record_index,
+            } => SheetMetalHemForm::Rolled {
+                radius: (design_positive_length(parameter(
+                    *radius_owner_record_index,
+                    "HemRadius",
+                )?)?)
+                .into(),
+                angle: (design_angle(parameter(*angle_owner_record_index, "HemAngle")?)?).into(),
+            },
+            DesignHemParameterOwners::GapLengthRadius {
+                gap_owner_record_index,
+                length_owner_record_index,
+                radius_owner_record_index,
+            } => SheetMetalHemForm::Teardrop {
+                gap: (cadmpeg_ir::scalar::NonNegativeLength::try_from(design_length(parameter(
+                    *gap_owner_record_index,
+                    "HemGap",
+                )?)?)
+                .ok()?)
+                .into(),
+                length: (design_positive_length(parameter(
+                    *length_owner_record_index,
+                    "HemLength",
+                )?)?)
+                .into(),
+                radius: (design_positive_length(parameter(
+                    *radius_owner_record_index,
+                    "HemRadius",
+                )?)?)
+                .into(),
+            },
+        };
 
         let mut edge_groups = groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
@@ -4071,11 +4095,16 @@ fn project_hem(
         (
             SheetMetalHemForm::GapLength { gap: _, length },
             Some(crate::history::HemGapLengthForm::Flat),
-        ) => SheetMetalHemForm::Flat { length },
+        ) => SheetMetalHemForm::Flat {
+            length: (length).into(),
+        },
         (
             SheetMetalHemForm::GapLength { gap, length },
             Some(crate::history::HemGapLengthForm::Open),
-        ) => SheetMetalHemForm::Open { gap, length },
+        ) => SheetMetalHemForm::Open {
+            gap: (gap).into(),
+            length: (length).into(),
+        },
         (form, _) => form,
     };
     let direction = semantics
@@ -4087,9 +4116,10 @@ fn project_hem(
             edges,
             form,
             direction,
-            bend_radius: or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+            bend_radius: (or_none!(cadmpeg_ir::scalar::PositiveLength::new(
                 operation.bend_radius.get() * 10.0,
-            )),
+            )))
+            .into(),
         },
     )))
 }
@@ -4142,9 +4172,10 @@ pub(super) fn project_surface_stitch(
             faces: FaceSelection::Native(scope.id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(
+            gap_tolerance: (Some(cadmpeg_ir::scalar::NonNegativeLength::new(
                 operation.gap_tolerance.get() * 10.0,
-            )?),
+            )?))
+            .map(Into::into),
         },
     ))
 }
@@ -4170,7 +4201,7 @@ fn project_ruled_surface(
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
+                && owner.scope_record_index() == Some(scope.record_index)
                 && owner.record_index() == owner_record_index
         });
         let owner = matching.next()?;
@@ -4192,8 +4223,12 @@ fn project_ruled_surface(
         "ruledAngle"
     ))));
     let mode = match operation.method {
-        DesignRuledSurfaceMethod::Tangent => RuledSurfaceMode::Tangent { distance },
-        DesignRuledSurfaceMethod::Normal => RuledSurfaceMode::Normal { distance },
+        DesignRuledSurfaceMethod::Tangent => RuledSurfaceMode::Tangent {
+            distance: (distance).into(),
+        },
+        DesignRuledSurfaceMethod::Normal => RuledSurfaceMode::Normal {
+            distance: (distance).into(),
+        },
         DesignRuledSurfaceMethod::Direction => return Ok(None),
     };
     let mut ordered_groups = Vec::new();
@@ -4242,7 +4277,7 @@ fn project_ruled_surface(
             edges,
             support_faces: FaceSelection::Native(support_native),
             mode,
-            angle: Some(angle),
+            angle: (Some(angle)).map(Into::into),
             alternate_face: Some(operation.alternate_face),
             corner: Some(match operation.corner {
                 DesignRuledSurfaceCorner::Rounded => RuledSurfaceCorner::Rounded,
@@ -4377,7 +4412,7 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
             y / norm,
             z / norm,
         ))?,
-        angle: Angle::new(angle)?,
+        angle: (Angle::new(angle)?).into(),
     })
 }
 
@@ -4499,14 +4534,12 @@ fn normalize_parameter_ordinals(
     unordered_scopes
 }
 
-/// Reassign the ordinals of one owner scope so each parameter follows its
-/// same-scope dependencies, breaking cycles at their lowest-ordinal member.
+/// Order parameters by same-scope dependencies where possible. Cycles retain
+/// every edge and use their first authored member for deterministic ordering.
 ///
 /// Returns `false` when the ordering exhausts `budget`. The scope then keeps
-/// its source ordinals and loses its same-scope dependency edges, so the
-/// projection stays valid. Decode reports the skipped scope as
-/// `parameter.order-budget-exceeded` and the dropped edges as unbound
-/// expression symbols.
+/// its source ordinals and all expression references. Decode reports the
+/// skipped ordering as `parameter.order-budget-exceeded`.
 fn order_parameter_scope(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
@@ -4529,25 +4562,23 @@ fn order_parameter_scope(
     while !unresolved.is_empty() {
         let mut ready = Vec::new();
         for index in &unresolved {
-            let dependencies = &parameters[*index].dependencies;
+            let dependencies = parameters[*index]
+                .expression
+                .dependencies()
+                .collect::<Vec<_>>();
             // The round charge also covers the component search of a
             // cycle-breaking round, which walks the same graph.
             if !budget.charge_by(1 + dependencies.len()) {
                 break;
             }
             if dependencies.iter().all(|dependency| {
-                owners.get(dependency).map(Option::as_ref) != Some(owner)
-                    || resolved.contains(dependency)
+                owners.get(*dependency).map(Option::as_ref) != Some(owner)
+                    || resolved.contains(*dependency)
             }) {
                 ready.push(*index);
             }
         }
         if budget.exhausted() {
-            for index in indices {
-                parameters[*index]
-                    .dependencies
-                    .retain(|dependency| owners.get(dependency).map(Option::as_ref) != Some(owner));
-            }
             return false;
         }
         ready.sort_by(|a, b| {
@@ -4556,9 +4587,8 @@ fn order_parameter_scope(
             pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
         });
         if ready.is_empty() {
-            // Every blocked parameter has an unresolved dependency, so the
-            // remaining graph contains a cycle. Break its lowest-ordinal
-            // member, then resume ordering before selecting another cycle.
+            // An unresolved component contains a cycle. Preserve its edges
+            // and select its lowest-ordinal member for deterministic output.
             let cycle = cyclic_parameter_components(parameters, &unresolved)
                 .into_iter()
                 .map(|(first, remaining)| {
@@ -4578,18 +4608,11 @@ fn order_parameter_scope(
                     let b = &parameters[*b];
                     (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
                 });
-            if let Some((breaker, first, remaining)) = cycle {
-                let mut members = HashSet::new();
-                for index in std::iter::once(first).chain(remaining) {
-                    let id = parameters[index].id.clone();
-                    // discarded-value: component indices are distinct.
-                    let _ = members.insert(id);
-                }
-                parameters[breaker]
-                    .dependencies
-                    .retain(|dependency| !members.contains(dependency));
+            if let Some((breaker, _, _)) = cycle {
+                // A source cycle is preserved. Select its first authored
+                // member only to order records; validation reports the cycle.
+                ready.push(breaker);
             }
-            continue;
         }
         for index in ready {
             unresolved.remove(&index);
@@ -4628,7 +4651,7 @@ fn cyclic_parameter_components(
     let mut edges = Vec::new();
     for index in &indices {
         let mut dependencies = Vec::new();
-        for dependency in &parameters[*index].dependencies {
+        for dependency in parameters[*index].expression.dependencies() {
             if let Some(local) = local_by_id.get(dependency) {
                 dependencies.push(*local);
             }
@@ -4784,7 +4807,7 @@ fn project_variable_fillet(
                     ctx,
                 )?,
                 radius: RadiusSpec::Variable { points },
-                tangency_weight,
+                tangency_weight: (tangency_weight).map(Into::into),
             }),
         },
     )))
@@ -4794,7 +4817,7 @@ fn variable_fillet_law(
     parameters: &[(u32, &DesignParameter)],
 ) -> Option<(
     cadmpeg_ir::features::edge_treatments::VariableRadii,
-    Option<cadmpeg_ir::scalar::FiniteReal>,
+    Option<cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::FiniteReal>>,
 )> {
     use cadmpeg_ir::features::edge_treatments::VariableRadius;
 
@@ -4805,15 +4828,17 @@ fn variable_fillet_law(
         let parameter = matches.next()?;
         matches.next().is_none().then_some(parameter)
     };
-    let start = unique_parameter("StartRadius").and_then(design_length)?;
-    let end = unique_parameter("EndRadius").and_then(design_length)?;
+    let start = unique_parameter("StartRadius")?;
+    design_length(start)?;
+    let end = unique_parameter("EndRadius")?;
+    design_length(end)?;
     let tangency_weight = {
         let mut matches = parameters.iter().filter_map(|(_, parameter)| {
             (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
         });
         match (matches.next(), matches.next()) {
             (None, None) => None,
-            (Some(parameter), None) => Some(parameter.evaluated_value()),
+            (Some(parameter), None) => Some(dimension_bindings::parameter(parameter)),
             (None, Some(_)) => return None,
             (Some(_), Some(_)) => return None,
         }
@@ -4842,16 +4867,19 @@ fn variable_fillet_law(
     let mut points = Vec::new();
     points.push(VariableRadius {
         parameter: 0.0,
-        radius: start,
+        radius: (dimension_bindings::parameter(start)).into(),
     });
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
-        let radius = design_length(radius)?;
+        design_length(radius)?;
         let parameter = parameter.evaluated_value().get();
-        points.push(VariableRadius { parameter, radius });
+        points.push(VariableRadius {
+            parameter,
+            radius: (dimension_bindings::parameter(radius)).into(),
+        });
     }
     points.push(VariableRadius {
         parameter: 1.0,
-        radius: end,
+        radius: (dimension_bindings::parameter(end)).into(),
     });
     cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
         .ok()
@@ -5039,17 +5067,26 @@ fn project_chamfer(
     let mut candidates = Vec::new();
     for ordinal in 0..group_count {
         let spec = match lanes {
-            Lanes::Distance(distance) => design_positive_length(distance[ordinal])
-                .map(|distance| ChamferSpec::Distance { distance }),
+            Lanes::Distance(distance) => {
+                design_positive_length(distance[ordinal]).map(|_| ChamferSpec::Distance {
+                    distance: (dimension_bindings::parameter(distance[ordinal])).into(),
+                })
+            }
             Lanes::TwoDistances(first, second) => design_positive_length(first[ordinal])
                 .zip(design_positive_length(second[ordinal]))
-                .map(|(first, second)| ChamferSpec::TwoDistances { first, second }),
+                .map(|_| ChamferSpec::TwoDistances {
+                    first: (dimension_bindings::parameter(first[ordinal])).into(),
+                    second: (dimension_bindings::parameter(second[ordinal])).into(),
+                }),
             Lanes::DistanceAngle(distance, angle) => design_positive_length(distance[ordinal])
                 .zip(
                     design_angle(angle[ordinal])
                         .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()),
                 )
-                .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle }),
+                .map(|_| ChamferSpec::DistanceAngle {
+                    distance: (dimension_bindings::parameter(distance[ordinal])).into(),
+                    angle: (dimension_bindings::parameter(angle[ordinal])).into(),
+                }),
         };
         let spec = or_none!(spec);
         candidates.push(spec);
@@ -5108,13 +5145,13 @@ fn project_fixed_chamfer(
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
-                distance: or_none!(cadmpeg_ir::scalar::PositiveLength::new(distance.value.get() * 10.0)),
+                distance: (or_none!(cadmpeg_ir::scalar::PositiveLength::new(distance.value.get() * 10.0))).into(),
             }
         }
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::TwoDistances { first, second } => {
             ChamferSpec::TwoDistances {
-                first: or_none!(cadmpeg_ir::scalar::PositiveLength::new(first.value.get() * 10.0)),
-                second: or_none!(cadmpeg_ir::scalar::PositiveLength::new(second.value.get() * 10.0)),
+                first: (or_none!(cadmpeg_ir::scalar::PositiveLength::new(first.value.get() * 10.0))).into(),
+                second: (or_none!(cadmpeg_ir::scalar::PositiveLength::new(second.value.get() * 10.0))).into(),
             }
         }
     };
@@ -5253,7 +5290,9 @@ pub(super) fn project_fixed_revolve_with_entities(
     let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
         PlanarProfileRef::Native(profile.id.clone());
     let extent = RevolveExtent::OneSided {
-        termination: AngularTermination::Angle { angle: *angle },
+        termination: AngularTermination::Angle {
+            angle: (*angle).into(),
+        },
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match axis {
@@ -5905,112 +5944,17 @@ fn loft_path_from_edge_selection(
     }
 }
 
-fn project_circular_pattern(
-    scope: &DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureOperation,
-    };
-    let construction = scope.circular_pattern_construction()?;
-    let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
-    let stream = native_stream(&scope.id)?;
-    let group = unique_feature_match(groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && matches!(
-                group.role(),
-                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-            )
-            && !group.members().is_empty()
-    }))?;
-    let seed = if group.role() == DesignOperandRole::BODIES_A {
-        PatternSeed::Faces(
-            match resolved_historical_face_group(
-                scope,
-                scope.previous_history_state_id(),
-                group,
-                face_operands,
-            ) {
-                Some(selection) => selection,
-                None => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
-            },
-        )
-    } else {
-        PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-            group.id.clone(),
-        ))
-    };
-    let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
-    let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
-    let pattern = PatternKind::new(PatternTransform::Circular {
-        axis_origin,
-        axis_dir,
-        angle: construction.angle,
-        count: construction.count.get(),
-    })
-    .ok()?;
-    Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds: vec![seed],
-        pattern,
-    }))
-}
-
-fn circular_pattern_axis(
-    axis: &crate::records::feature::patterns::DesignCircularPatternAxis,
-) -> Option<(Point3, Vector3)> {
-    use crate::records::feature::patterns::DesignCircularPatternAxis;
-
-    match axis {
-        DesignCircularPatternAxis::Inline {
-            origin, direction, ..
-        } => Some((
-            Point3::new(
-                origin[0].get() * 10.0,
-                origin[1].get() * 10.0,
-                origin[2].get() * 10.0,
-            ),
-            *direction.as_raw(),
-        )),
-        DesignCircularPatternAxis::HistoricalEdge {
-            resolved: Some(axis),
-            ..
-        } => Some((axis.origin.get(), *axis.direction.as_raw())),
-        DesignCircularPatternAxis::HistoricalEdge { .. } => None,
-    }
-}
-
-/// The gap count of an active rectangular pattern axis: one less than the
-/// instance count. An axis is active only when it states two or more
-/// instances, so the gap count is never zero and always divides.
-#[derive(Clone, Copy)]
-struct PatternIntervals(std::num::NonZeroU32);
-
-impl PatternIntervals {
-    /// Admit an active axis. An axis with fewer than two instances states no
-    /// gap and is refused here.
-    fn new(count: u32) -> Option<Self> {
-        std::num::NonZeroU32::new(count.checked_sub(1)?).map(Self)
-    }
-
-    /// The gap count.
-    const fn get(self) -> u32 {
-        self.0.get()
-    }
-}
-
 fn project_rectangular_pattern_scalars(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    parameters: &[(u32, &DesignParameter)],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureOperation,
     };
-    use cadmpeg_ir::scalar::PositiveLength;
+    use cadmpeg_ir::scalar::Length;
 
     let construction = scope.rectangular_pattern_construction()?;
     let mut active = [
@@ -6018,18 +5962,18 @@ fn project_rectangular_pattern_scalars(
             construction.u_count(),
             construction.u_extent(),
             construction.v_count(),
+            0,
         ),
         (
             construction.v_count(),
             construction.v_extent(),
             construction.u_count(),
+            1,
         ),
     ]
     .into_iter()
-    .filter_map(|(count, extent, inactive_count)| {
-        Some((count, PatternIntervals::new(count)?, extent, inactive_count))
-    });
-    let (count, intervals, extent, inactive_count) = active.next()?;
+    .filter(|(count, _, _, _)| *count > 1);
+    let (count, extent, inactive_count, axis) = active.next()?;
     if active.next().is_some() || inactive_count != 1 {
         return None;
     }
@@ -6041,7 +5985,7 @@ fn project_rectangular_pattern_scalars(
             last[1][3] - first[1][3],
             last[2][3] - first[2][3],
         );
-        cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(delta)
+        cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(delta.scale(1.0 / extent))
     });
     let component_seed = construction
         .instances()
@@ -6098,10 +6042,18 @@ fn project_rectangular_pattern_scalars(
         seeds.push(seed);
     }
     let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
-    let spacing = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?;
+    let distance = cadmpeg_ir::features::PatternDistance::Span {
+        distance: dimension_bindings::owner(
+            parameters,
+            construction.owner_record_indices[axis + 2],
+            Length::new(extent * 10.0)?,
+        ),
+    };
+    let count =
+        dimension_bindings::owner(parameters, construction.owner_record_indices[axis], count);
     let pattern = PatternKind::new(PatternTransform::Linear {
         direction,
-        spacing,
+        distance,
         count,
         second: None,
     })
@@ -6356,8 +6308,8 @@ pub(super) fn project_fixed_sweep(
         ctx,
     )?;
     let guide_extent = SweepPathExtent {
-        along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[2])),
-        against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[3])),
+        along_fraction: (or_none!(cadmpeg_ir::scalar::Fraction::new(values[2]))).into(),
+        against_fraction: (or_none!(cadmpeg_ir::scalar::Fraction::new(values[3]))).into(),
     };
     let guide_rail = if let Some(rail) = paths.get(1) {
         Some(SweepGuideRail {
@@ -6410,13 +6362,13 @@ pub(super) fn project_fixed_sweep(
             transformation: None,
             path_tangent: false,
             linearize: false,
-            twist: (values[4] != 0.0).then_some(twist_angle),
+            twist: ((values[4] != 0.0).then_some(twist_angle)).map(Into::into),
             path_extent: Some(SweepPathExtent {
-                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[0])),
-                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[1])),
+                along_fraction: (or_none!(cadmpeg_ir::scalar::Fraction::new(values[0]))).into(),
+                against_fraction: (or_none!(cadmpeg_ir::scalar::Fraction::new(values[1]))).into(),
             }),
             guide_rail,
-            taper: (values[5] != 0.0).then_some(taper_angle),
+            taper: ((values[5] != 0.0).then_some(taper_angle)).map(Into::into),
             scale: None,
             allow_multi_profile_faces: None,
         },
@@ -6521,7 +6473,7 @@ fn project_fixed_pipe(
             let wall_thickness = if *filled {
                 None
             } else if section_thickness.get() < section_size.get() / 2.0 {
-                Some(section_thickness)
+                Some(dimension_bindings::parameter(section_thickness_parameter))
             } else {
                 return None;
             };
@@ -6573,7 +6525,7 @@ fn project_fixed_pipe(
             };
             Some((
                 path_group,
-                section_size,
+                section_size_parameter,
                 wall_thickness,
                 *record_indexes,
                 legacy_reference_layout,
@@ -6601,9 +6553,9 @@ fn project_fixed_pipe(
                 op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
                 section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                     region: or_none!(cadmpeg_ir::features::SweepCircularRegion::new(
-                        or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                            section_size.get() / 2.0
-                        )),
+                        cadmpeg_ir::features::RadialDimension::Diameter(
+                            dimension_bindings::parameter(section_size)
+                        ),
                         wall_thickness,
                     )
                     .ok()),
@@ -6985,16 +6937,26 @@ fn project_hole(
     let drill_point_angle = cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok();
     let (kind, bottom) = match (counterbore, drill_point_angle) {
         (None, None) => (HoleKind::Simple, Some(HoleBottom::Flat)),
-        (None, Some(drill_point_angle)) => (HoleKind::SimpleDrilled { drill_point_angle }, None),
-        (Some((diameter, depth)), None) => (
-            HoleKind::Counterbore { diameter, depth },
+        (None, Some(_drill_point_angle)) => (
+            HoleKind::SimpleDrilled {
+                drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle"))))
+                    .into(),
+            },
+            None,
+        ),
+        (Some((_diameter, _depth)), None) => (
+            HoleKind::Counterbore {
+                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))).into(),
+                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))).into(),
+            },
             Some(HoleBottom::Flat),
         ),
-        (Some((diameter, depth)), Some(drill_point_angle)) => (
+        (Some((_diameter, _depth)), Some(_drill_point_angle)) => (
             HoleKind::CounterboreDrilled {
-                diameter,
-                depth,
-                drill_point_angle,
+                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))).into(),
+                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))).into(),
+                drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle"))))
+                    .into(),
             },
             None,
         ),
@@ -7031,12 +6993,14 @@ fn project_hole(
                 specification: None,
             },
             None,
-            Some(diameter),
+            Some(dimension_bindings::parameter(or_none!(parameter(
+                "HoleDiameter"
+            )))),
         )
         .ok()),
 
         extent: Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(depth),
+            length: (dimension_bindings::parameter(or_none!(parameter("HoleDepth")))).into(),
         }),
         bottom,
         taper_angle: None,
@@ -7864,7 +7828,7 @@ fn project_extrude(
                 None => Ok(FaceSelection::Native(group.id.clone())),
             }
         };
-    let start = match prologue.start() {
+    let mut start = match prologue.start() {
         DesignExtrudeStart::ProfilePlane if start_groups.is_empty() => {
             if profile_offset.is_some() {
                 return Ok(None);
@@ -7873,7 +7837,7 @@ fn project_extrude(
         }
         DesignExtrudeStart::OffsetProfilePlane if start_groups.is_empty() => {
             ExtrudeStart::OffsetProfilePlane {
-                offset: or_none!(profile_offset),
+                offset: (or_none!(profile_offset)).into(),
             }
         }
         DesignExtrudeStart::FromFace => {
@@ -7883,7 +7847,7 @@ fn project_extrude(
             let offset = or_none!(profile_offset);
             ExtrudeStart::FromFace {
                 face: selected_face(start)?,
-                offset: (offset.get() != 0.0).then_some(offset),
+                offset: ((offset.get() != 0.0).then_some(offset)).map(Into::into),
             }
         }
         _ => return Ok(None),
@@ -7902,10 +7866,10 @@ fn project_extrude(
         {
             (
                 ExtentShape::OneSided(LinearTermination::Blind {
-                    length: NonZeroLength::from(along.abs()),
+                    length: (along).into(),
                 }),
                 match along_direction {
-                    AlongDirection::SignedDistance => along.get() < 0.0,
+                    AlongDirection::SignedDistance => prologue.direction_reversed(),
                     AlongDirection::PrologueReversal => prologue.direction_reversed(),
                 },
             )
@@ -7921,13 +7885,13 @@ fn project_extrude(
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::Blind {
-                        length: NonZeroLength::from(along.abs()),
+                        length: (along).into(),
                     },
                     second: LinearTermination::Blind {
-                        length: NonZeroLength::from(against.abs()),
+                        length: (against).into(),
                     },
                 },
-                along.get() < 0.0,
+                prologue.direction_reversed(),
             )
         }
         (
@@ -7946,14 +7910,15 @@ fn project_extrude(
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::Blind {
-                        length: NonZeroLength::from(along.abs()),
+                        length: (along).into(),
                     },
                     second: LinearTermination::ToFace {
                         face: selected_face(termination)?,
-                        offset: side_two_offset.filter(|offset| offset.get() != 0.0),
+                        offset: (side_two_offset.filter(|offset| offset.get() != 0.0))
+                            .map(Into::into),
                     },
                 },
-                along.get() < 0.0,
+                prologue.direction_reversed(),
             )
         }
         (DesignExtrudeExtent::TwoSidedToFaces, None, None)
@@ -7969,11 +7934,13 @@ fn project_extrude(
                 ExtentShape::TwoSided {
                     first: LinearTermination::ToFace {
                         face: selected_face(first)?,
-                        offset: side_one_offset.filter(|offset| offset.get() != 0.0),
+                        offset: (side_one_offset.filter(|offset| offset.get() != 0.0))
+                            .map(Into::into),
                     },
                     second: LinearTermination::ToFace {
                         face: selected_face(second)?,
-                        offset: side_two_offset.filter(|offset| offset.get() != 0.0),
+                        offset: (side_two_offset.filter(|offset| offset.get() != 0.0))
+                            .map(Into::into),
                     },
                 },
                 prologue.direction_reversed(),
@@ -7989,9 +7956,9 @@ fn project_extrude(
         {
             (
                 ExtentShape::Symmetric(LinearTermination::Blind {
-                    length: NonZeroLength::from(along.abs()),
+                    length: (along).into(),
                 }),
-                along.get() < 0.0,
+                prologue.direction_reversed(),
             )
         }
         (DesignExtrudeExtent::SymmetricThroughAll, None, None)
@@ -8014,7 +7981,7 @@ fn project_extrude(
                     (
                         ExtentShape::OneSided(LinearTermination::ToFace {
                             face: selected_face(termination)?,
-                            offset: (offset.get() != 0.0).then_some(offset),
+                            offset: ((offset.get() != 0.0).then_some(offset)).map(Into::into),
                         }),
                         prologue.direction_reversed(),
                     )
@@ -8094,24 +8061,31 @@ fn project_extrude(
     if second_draft.is_some() && !matches!(shape, ExtentShape::TwoSided { .. }) {
         return Ok(None);
     }
-    let extent = match shape {
+    let mut extent = match shape {
         ExtentShape::OneSided(termination) => ExtrudeExtent::OneSided {
-            side: ExtrudeSide { termination, draft },
+            side: ExtrudeSide {
+                termination,
+                draft: (draft).map(Into::into),
+            },
         },
         ExtentShape::Symmetric(termination) => ExtrudeExtent::Symmetric {
-            side: ExtrudeSide { termination, draft },
+            side: ExtrudeSide {
+                termination,
+                draft: (draft).map(Into::into),
+            },
         },
         ExtentShape::TwoSided { first, second } => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: first,
-                draft,
+                draft: (draft).map(Into::into),
             },
             second: ExtrudeSide {
                 termination: second,
-                draft: second_draft,
+                draft: (second_draft).map(Into::into),
             },
         },
     };
+    dimension_bindings::extrude(&mut start, &mut extent, parameters);
     let has_body_operands = scope_groups
         .iter()
         .any(|group| group.extrude_role() == Some(DesignExtrudeOperandRole::Bodies));
@@ -8382,8 +8356,8 @@ fn project_coil(
             match scope.coil_extent()? {
                 DesignCoilExtent::RevolutionsHeight => (
                     CoilExtent::RevolutionsHeight {
-                        revolutions: dimensionless("Revolutions")?,
-                        height: design_length(unique("Height")?)?,
+                        revolutions: (dimensionless("Revolutions")?).into(),
+                        height: (design_length(unique("Height")?)?).into(),
                     },
                     design_angle(unique("TaperAngle")?)?,
                     &[
@@ -8396,11 +8370,12 @@ fn project_coil(
                 ),
                 DesignCoilExtent::RevolutionsPitch => (
                     CoilExtent::RevolutionsPitch {
-                        revolutions: dimensionless("Revolutions")?,
-                        pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(unique(
-                            "Pitch",
-                        )?)?)
-                        .ok()?,
+                        revolutions: (dimensionless("Revolutions")?).into(),
+                        pitch: (cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(
+                            unique("Pitch")?,
+                        )?)
+                        .ok()?)
+                        .into(),
                     },
                     design_angle(unique("TaperAngle")?)?,
                     &[
@@ -8413,25 +8388,28 @@ fn project_coil(
                 ),
                 DesignCoilExtent::HeightPitch => (
                     CoilExtent::HeightPitch {
-                        height: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(
+                        height: (cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(
                             unique("Height")?,
                         )?)
-                        .ok()?,
-                        pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(unique(
-                            "Pitch",
-                        )?)?)
-                        .ok()?,
+                        .ok()?)
+                        .into(),
+                        pitch: (cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(
+                            unique("Pitch")?,
+                        )?)
+                        .ok()?)
+                        .into(),
                     },
                     design_angle(unique("TaperAngle")?)?,
                     &["Diameter", "SectionSize", "TaperAngle", "Height", "Pitch"],
                 ),
                 DesignCoilExtent::Spiral => (
                     CoilExtent::Spiral {
-                        revolutions: dimensionless("Revolutions")?,
-                        radial_pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(
+                        revolutions: (dimensionless("Revolutions")?).into(),
+                        radial_pitch: (cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(
                             unique("Pitch")?,
                         )?)
-                        .ok()?,
+                        .ok()?)
+                        .into(),
                     },
                     cadmpeg_ir::scalar::Angle::ZERO,
                     &["Diameter", "SectionSize", "Revolutions", "Pitch"],
@@ -8446,15 +8424,17 @@ fn project_coil(
         }
         let section = match scope.coil_section()? {
             DesignCoilSection::Circular => CoilSection::Circular {
-                diameter: section_size,
+                diameter: (section_size).into(),
             },
-            DesignCoilSection::Square => CoilSection::Square { size: section_size },
-            DesignCoilSection::ExternalTriangle => {
-                CoilSection::ExternalTriangle { size: section_size }
-            }
-            DesignCoilSection::InternalTriangle => {
-                CoilSection::InternalTriangle { size: section_size }
-            }
+            DesignCoilSection::Square => CoilSection::Square {
+                size: (section_size).into(),
+            },
+            DesignCoilSection::ExternalTriangle => CoilSection::ExternalTriangle {
+                size: (section_size).into(),
+            },
+            DesignCoilSection::InternalTriangle => CoilSection::InternalTriangle {
+                size: (section_size).into(),
+            },
         };
         let section_placement = match scope.coil_section_placement()? {
             DesignCoilSectionPlacement::Inside => CoilSectionPlacement::Inside,
@@ -8548,16 +8528,18 @@ fn project_coil(
         },
     };
     let clockwise = or_none!(scope.coil_clockwise());
+    let mut construction = CoilConstruction {
+        placement,
+        diameter: diameter.into(),
+        extent,
+        section,
+        section_placement,
+        clockwise,
+        taper: taper.into(),
+    };
+    dimension_bindings::coil(&mut construction, parameters);
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Coil {
-        construction: CoilConstruction {
-            placement,
-            diameter,
-            extent,
-            section,
-            section_placement,
-            clockwise,
-            taper,
-        },
+        construction,
         result,
     })))
 }

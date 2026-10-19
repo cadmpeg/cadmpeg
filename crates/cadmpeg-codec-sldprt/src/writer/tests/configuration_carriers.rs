@@ -136,13 +136,20 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
     }
 
     assert!(container::first_solidworks_envelope([payload.as_slice()]).is_some());
-    let patched = super::super::patch_active_configuration_xml(&payload, "New")
+    let patched = super::super::patch_active_configuration_xml(&payload, "New", true, 7)
         .unwrap()
         .expect("the UTF-16 envelope is recognized");
     let envelope = container::first_solidworks_envelope([patched.as_slice()])
         .expect("the rewritten envelope remains recognizable");
     assert_eq!(envelope.sw_version.as_deref(), Some("34000"));
     assert_eq!(envelope.configuration_name.as_deref(), Some("New"));
+    assert_eq!(
+        envelope
+            .configuration_attributes
+            .get("sw_configuration_7_needs_update")
+            .map(String::as_str),
+        Some("YES")
+    );
 }
 
 #[test]
@@ -188,6 +195,7 @@ fn encoder_writes_source_less_datum_features() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -781,6 +789,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "EquationDriven".into(),
@@ -793,6 +802,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: ParameterId::mint("sldprt:model:parameter#generated:equation:0")
             .expect("identity grammar"),
         owner: Some(feature_id),
@@ -801,7 +811,6 @@ fn encoder_writes_source_less_neutral_parameters() {
         expression: "D1@Sketch1 * 2".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1150,7 +1159,7 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
 }
 
 #[test]
-fn semantic_writer_rejects_unrepresented_typed_fields() {
+fn semantic_writer_reports_unrepresented_typed_fields() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -1165,17 +1174,25 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
             cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([0.0, 1.0]))
                 .unwrap();
     }
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.fields-omitted"));
 }
 
 #[test]
-pub(crate) fn semantic_writer_rejects_subds() {
+pub(crate) fn semantic_writer_drops_subds_with_loss() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -1190,17 +1207,21 @@ pub(crate) fn semantic_writer_rejects_subds() {
         cage: cadmpeg_ir::subd::SubdCage::default(),
     });
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("does not support SubD surfaces")
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.arena-omitted"));
 }
 
 #[test]
@@ -1230,13 +1251,13 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     ] {
         assert!(matches!(
             crate::writer::curve_values(&geometry, 0.001),
-            Err(cadmpeg_core::CodecError::NotImplemented(_))
+            Err(cadmpeg_core::CodecError::UnsupportedContent(_))
         ));
     }
 }
 
 #[test]
-fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() {
+fn semantic_writer_reports_unrepresentable_analytic_surface_parameterizations() {
     let decoded = EditableDecodeResult::from(
         SldprtCodec
             .decode(
@@ -1302,18 +1323,31 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
         let surface_id = ir.model.surfaces[0].id.as_str().to_owned();
         ir.model.surfaces[0].geometry = geometry;
 
-        let error = crate::test_support::plan_inherited_write(
-            &ir,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-
+        let plan = SldprtCodec
+            .plan(
+                EncodeInput::new(&ir, Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap();
         assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::NotImplemented(message)
-                if message.contains(&surface_id) && message.contains(expected)
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
+        assert!(
+            plan.report().losses.iter().any(|loss| loss.code
+                == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+                && loss.severity == cadmpeg_ir::report::Severity::Error
+                && loss.message.contains(&surface_id)
+                && loss.message.contains(expected)),
+            "{:?}",
+            plan.report().losses
+        );
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let written = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(written.ir().model.bodies.is_empty());
     }
 }
 
@@ -1638,7 +1672,7 @@ fn semantic_writer_preserves_face_appearance() {
 }
 
 #[test]
-fn semantic_writer_derives_resolved_feature_section_names() {
+fn untyped_feature_framing_is_not_written_as_content() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
@@ -1655,30 +1689,38 @@ fn semantic_writer_derives_resolved_feature_section_names() {
             .reclassify(crate::records::SketchInputKind::from_native_code(9));
     });
 
-    let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut written,
-    )
-    .unwrap();
-    let scan = crate::test_support::container::scan(&written);
-    assert!(scan
-        .blocks
-        .iter()
-        .any(|block| { block.section.name() == Some("Contents/Config-0-ResolvedFeatures") }));
-
-    let (mut unscoped, _, fidelity) = decoded.into_parts();
-    update_sldprt_native(&mut unscoped, |native| {
-        native.feature_input_lanes[0].configuration = None;
-    });
-    let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(&unscoped, &fidelity, &mut written).unwrap();
-    let scan = crate::test_support::container::scan(&written);
-    assert!(scan
-        .blocks
-        .iter()
-        .any(|block| block.section.name() == Some("Contents/ResolvedFeatures")));
+    let (ir, _, fidelity) = decoded.into_parts();
+    for scoped in [true, false] {
+        let mut document = ir.clone();
+        if !scoped {
+            update_sldprt_native(&mut document, |native| {
+                native.feature_input_lanes[0].configuration = None;
+            });
+        }
+        let plan = SldprtCodec
+            .plan(
+                EncodeInput::new(&document, Some(&fidelity)),
+                TargetRequest::Inherit,
+            )
+            .unwrap();
+        assert!(matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.namespace() == "export"
+                && loss.code.local_code() == "native.records-omitted"));
+        let mut written = Vec::new();
+        plan.write_to(&mut written).unwrap();
+        let scan = crate::test_support::container::scan(&written);
+        assert!(!scan.blocks.iter().any(|block| block
+            .section
+            .name()
+            .is_some_and(|name| name.ends_with("ResolvedFeatures"))));
+    }
 }
 
 #[test]
@@ -1785,7 +1827,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_configuration_edits() {
+fn neutral_configuration_edits_override_native_edits() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
@@ -1798,15 +1840,16 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
         native.feature_histories[0].configurations[0].name = "Native".to_string();
     });
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT configuration edits"));
+    let mut output = Vec::new();
+    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
+        .unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        written.ir().model.configurations[0].name.as_deref(),
+        Some("Neutral")
+    );
 }
 
 #[test]
@@ -1833,7 +1876,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1883,7 +1926,7 @@ fn semantic_writer_preserves_dimension_attributes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1929,7 +1972,7 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

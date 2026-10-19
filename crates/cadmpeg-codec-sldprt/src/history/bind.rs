@@ -241,13 +241,6 @@ fn regeneration_order(
             if let Some(parent) = model.feature_parent(&feature.id) {
                 predecessors.insert(parent);
             }
-            for configuration in &model.configurations {
-                if let Some(state) = configuration.feature_states.get(&feature.id) {
-                    for dependency in &state.dependencies {
-                        predecessors.insert(dependency);
-                    }
-                }
-            }
         }
         for predecessor in predecessors {
             let Some(&source) = by_id.get(predecessor) else {

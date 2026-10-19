@@ -57,7 +57,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .expect("replace side entry");
 
     let mut encoded = Vec::new();
-    FcstdCodec
+    let report = FcstdCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("write graph");
@@ -84,6 +84,10 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
             .iter()
             .find(|entry| entry.name() == "Payload.bin")
             .map(crate::native::EntryRecord::data),
-        Some(b"edited payload".as_slice())
+        None
     );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
 }

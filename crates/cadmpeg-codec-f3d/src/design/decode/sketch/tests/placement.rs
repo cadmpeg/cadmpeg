@@ -371,12 +371,12 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
 
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,
@@ -813,32 +813,39 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     }
 
     push_marked_reference(&mut bytes, 201);
-    let segment_type = |type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
-        crate::records::entity_header::SegmentTypeData {
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::identity::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
-                    .collect(),
-            ),
-        }
-    };
+    let segment_type =
+        |class_tag: u32, type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
+            crate::records::entity_header::SegmentTypeData {
+                class_tag: (class_tag)
+                    .to_string()
+                    .try_into()
+                    .expect("fixture class tag"),
+                byte_offset: Some(0),
+                type_guid: type_guid.to_owned().try_into().expect("type GUID"),
+                type_guid_offset: Some(0),
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                version,
+                version_offset: Some(0),
+                module: module.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
+                ),
+            }
+        };
     let meta = crate::metastream::MetaStream {
         types: vec![
             segment_type(
+                256,
                 "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
                 3,
                 "MSketch",
                 vec![1200],
             ),
             segment_type(
+                257,
                 "00000000-0000-0000-0000-000000000001",
                 0,
                 "MSketch",
@@ -909,12 +916,12 @@ fn sketch_geometry_tail_names_its_owner_container() {
 fn sketch_graph_header(suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
     DesignEntityHeader {
         id: format!("f3d:native:design-entity-header#{suffix}"),
-        byte_offset: suffix,
+        byte_offset: Some(suffix),
 
         entity_id: crate::records::identity::DesignEntityId::try_from(format!("0_{suffix}"))
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,

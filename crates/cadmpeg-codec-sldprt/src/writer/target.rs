@@ -14,23 +14,63 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 /// otherwise the replay law's compare: replaying the retained image is
 /// eligible exactly when `id` is the source's dialect.
 ///
-/// `Inherit` asks for preservation instead: a valid retained image replays
-/// whatever dialect the source is, every versioned row included, which this
-/// writer could never synthesize. Where the image is not usable the semantic
-/// writer still preserves the dialect whenever the retained blocks carry the
-/// source's own `swSolidWorks` envelope, because that envelope is passed
-/// through unchanged. Where neither holds, the write lands on the totality row
-/// and the request is refused by name. There is no fall-through to the catalog
-/// default: a same-format conversion never silently changes what the file is.
-///
-/// The catalog default supplies the target only when there is nothing to
-/// inherit: the document has no source, or a source of another format.
+/// `Inherit` preserves the typed source dialect. When retained layout cannot
+/// express an edit, synthesis authors the selected envelope from the document.
+/// A fresh or cross-format document uses the catalog default.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let (written, bytes) = write(input, resolved.preserves_source())?;
-    check_honesty(resolved, &written)?;
+    if !resolved.preserves_source() || input.fidelity.is_none() {
+        let cause = if resolved.preserves_source() && input.fidelity.is_none() {
+            super::synthesis::SynthesisCause::SourceImageUnavailable
+        } else {
+            super::synthesis::SynthesisCause::Fresh
+        };
+        return super::synthesis::plan(input, resolved, cause);
+    }
+    let classes = input.source_unrepresented();
+    if !classes.is_empty() {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::SourceUnrepresented { classes },
+        );
+    }
+    let attempt = write(input, true);
+    let (written, bytes) = match attempt {
+        Ok(written) => written,
+        Err(CodecError::UnsupportedContent(reason)) => {
+            return super::synthesis::plan(
+                input,
+                resolved,
+                super::synthesis::SynthesisCause::PatchDeclined { reason },
+            );
+        }
+        Err(error) => return Err(error),
+    };
+    if matches!(
+        &written,
+        Written::Semantic {
+            path: SemanticPath::Synthesized,
+            ..
+        }
+    ) {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::SourceImageUnavailable,
+        );
+    }
+    if let Err(error) = check_honesty(resolved, &written) {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: error.to_string(),
+            },
+        );
+    }
     Ok(finish(
         input,
         resolved.displacement_message(),
@@ -119,9 +159,16 @@ fn finish(
             != cadmpeg_ir::codec::write::ArenaDisposition::Written
             && !super::requires_native_partition(input.ir);
         losses.extend(super::accounting::losses(input.ir, regenerated_brep));
+        losses.extend(super::accounting::arena_losses(input.ir, coverage));
     }
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
+    }
+    if matches!(write_path, WritePath::Synthesized { .. }) && input.ir.model.faces.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterNoExportableSolids
+                .note("the document has no exportable B-rep solids"),
+        );
     }
     let path_note = match &write_path {
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
@@ -136,6 +183,12 @@ fn finish(
         },
         write_path,
         coverage: written.coverage(),
+        native_dispositions: cadmpeg_ir::codec::write::NativeDispositions::for_namespace(
+            "sldprt",
+            crate::native::SLDPRT_ARENA_NAMES,
+            cadmpeg_ir::codec::write::NativeDisposition::Written,
+        ),
+        synthesis_cause: None,
         losses,
         notes: vec![
             path_note.into(),

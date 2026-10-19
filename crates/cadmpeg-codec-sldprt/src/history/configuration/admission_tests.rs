@@ -39,13 +39,45 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             geometry_role: None,
             format: CodecFormat::Sldprt,
             object_id: cadmpeg_core::text::NonBlankString::new("carrier").unwrap(),
-            name: Some("Retained surface".into()),
-            color: None,
-            visible: Some(true),
-            layer: Some("Layer".into()),
             instance_path: vec!["Outer".into(), "Inner".into()],
         }),
     });
+    for (name, value) in [
+        (
+            "name",
+            cadmpeg_ir::attributes::AttributeValue::String("Retained surface".into()),
+        ),
+        (
+            "visible",
+            cadmpeg_ir::attributes::AttributeValue::Boolean(true),
+        ),
+    ] {
+        ir.model
+            .attributes
+            .push(cadmpeg_ir::attributes::SourceAttribute {
+                id: cadmpeg_ir::ids::AttributeId::mint(format!(
+                    "synthetic:test:attribute#surface-{name}"
+                ))
+                .unwrap(),
+                target: cadmpeg_ir::attributes::AttributeTarget::Surface(
+                    ir.model.surfaces[0].id.clone(),
+                ),
+                name: name.into(),
+                values: vec![value],
+            });
+    }
+    ir.model
+        .presentation_layers
+        .push(cadmpeg_ir::presentation::PresentationLayer {
+            id: cadmpeg_ir::ids::LayerId::mint("synthetic:test:layer#surface").unwrap(),
+            name: "Layer".into(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: vec![cadmpeg_ir::presentation::PresentationItem::Surface {
+                surface: ir.model.surfaces[0].id.clone(),
+            }],
+        });
     for rational in [false, true] {
         let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
         let poles = vec![
@@ -147,8 +179,8 @@ fn configuration_sketch_projection_carrier_runs_under_service_policy() {
 
 fn datum_model() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, DatumPlaneReference, Feature,
-        FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+        DatumPlaneReference, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
     };
     let plane = FeatureId::mint("synthetic:test:id#plane").unwrap();
     let first = FeatureId::mint("synthetic:test:id#offset-first").unwrap();
@@ -166,13 +198,13 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             reference: Some(DatumPlaneReference::Feature {
                 feature: plane.clone(),
             }),
-            distance: cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
+            distance: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(2.0).unwrap()),
         }),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature {
                 feature: first.clone(),
             }),
-            distance: cadmpeg_ir::scalar::Length::new(3.0).unwrap(),
+            distance: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(3.0).unwrap()),
         }),
     ];
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -198,6 +230,7 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -205,14 +238,12 @@ fn datum_model() -> cadmpeg_ir::CadIr {
     let mut configuration = design_configuration("datum", 0, Some(0), None);
     configuration.feature_states.insert(
         second,
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::DistinctMembers::default(),
-            },
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![plane]).unwrap(),
+        cadmpeg_ir::features::ConfigurationFeatureState::Definition {
             definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: None,
-                distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+                ),
             }),
         },
     );
@@ -232,17 +263,15 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         .feature_states
         .get_mut(&FeatureId::mint("synthetic:test:id#offset-second").unwrap())
         .unwrap();
-    state.definition = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Feature {
-            feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+    *state = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+        definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature {
+                feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+            }),
+            distance: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(7.0).unwrap()),
         }),
-        distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
-    });
-    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
-        FeatureId::mint("synthetic:test:id#plane").unwrap(),
-        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-    ])
-    .unwrap();
+    };
+
     super::inherit_configuration_reference_plane_states(&ctx, &mut ir)?;
     assert_eq!(ir, expected);
     Ok(())
@@ -255,27 +284,31 @@ fn configuration_datum_state_projection_refuses_nesting_limit() {
 
 fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
-        ConfigurationEvaluation, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue,
+        Dimension, FeatureDefinition, FeatureOperation, ParameterId, ParameterValue,
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
-    let mut feature = crate::history::tests::feature("feature", None, 0);
-    feature
+    let mut native = crate::history::tests::feature("feature", None, 0);
+    native
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("Length"), "12mm".into());
-    let histories = [crate::records::FeatureHistory {
+    let mut histories = [crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: std::collections::BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
-        features: vec![feature],
+        features: vec![native],
     }];
     let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = crate::history::parameters::project_parameters(&ctx, &histories)?;
+    ir.model.features = crate::history::project::project_features(&histories)?;
     ir.model
         .configurations
         .push(design_configuration("design", 0, Some(0), None));
+    histories[0].features[0]
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Length"), "14mm".into());
     super::project_configuration_design_states(
         &ctx,
         &mut ir,
@@ -284,33 +317,35 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[],
         None,
     )?;
+    let id = ParameterId::mint("sldprt:model:parameter#feature:0").unwrap();
     let configuration = &ir.model.configurations[0];
     assert_eq!(
         configuration.parameter_values,
         std::collections::BTreeMap::from([(
-            ParameterId::mint("sldprt:model:parameter#feature:0").unwrap(),
-            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(12.0).unwrap()),
+            id.clone(),
+            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(14.0).unwrap())
         )])
     );
-    assert_eq!(configuration.feature_states.len(), 1);
-    let state =
-        &configuration.feature_states[&FeatureId::mint("sldprt:model:feature#feature").unwrap()];
+    assert_eq!(configuration.parameter_overrides.len(), 1);
+    assert!(configuration.feature_states.is_empty());
     assert_eq!(
-        state.evaluation,
-        ConfigurationEvaluation::Active {
-            outputs: cadmpeg_ir::features::DistinctMembers::default()
-        }
+        ir.model.parameters[0].value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(12.0).unwrap()
+        ))
     );
-    assert!(state.dependencies.is_empty());
     assert_eq!(
-        state.definition,
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: "Custom".into(),
-            parameters: std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("Length"),
-                "12mm".into(),
-            )]),
-        })
+        configuration
+            .dimension_value(
+                &ir,
+                &Dimension::<cadmpeg_ir::scalar::Length>::Parameter(id.clone())
+            )
+            .unwrap()
+            .get(),
+        14.0
+    );
+    assert!(
+        matches!(ir.model.features[0].evaluation.definition(),FeatureDefinition::Operation(FeatureOperation::Native {parameters,..}) if parameters["Length"]==Dimension::Parameter(id))
     );
     Ok(())
 }
@@ -327,17 +362,15 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         .feature_states
         .get_mut(&FeatureId::mint("synthetic:test:id#offset-second").unwrap())
         .unwrap();
-    state.definition = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Feature {
-            feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+    *state = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+        definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature {
+                feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+            }),
+            distance: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(7.0).unwrap()),
         }),
-        distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
-    });
-    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
-        FeatureId::mint("synthetic:test:id#plane").unwrap(),
-        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-    ])
-    .unwrap();
+    };
+
     let losses = project_configuration_sketch_states(
         &ctx,
         &mut ir,
@@ -352,8 +385,7 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation,
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
     };
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
     let arena = DecodeArena::new();
@@ -386,6 +418,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
                 FeatureOperation::SpatialSketch {
                     sketch: Some(sketch.clone()),
@@ -395,13 +428,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
         });
         configuration.feature_states.insert(
             id,
-            ConfigurationFeatureState {
-                evaluation: ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
-                },
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                definition,
-            },
+            cadmpeg_ir::features::ConfigurationFeatureState::Definition { definition },
         );
     }
     ir.model.configurations.push(configuration);
@@ -415,9 +442,11 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
     });
     let mut expected = ir.clone();
     for state in expected.model.configurations[0].feature_states.values_mut() {
-        state.definition = FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-            sketch: Some(sketch.clone()),
-        });
+        *state = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+            definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                sketch: Some(sketch.clone()),
+            }),
+        };
     }
     let losses = project_configuration_sketch_states(
         &ctx,
@@ -436,8 +465,8 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         HoleConstruction, HoleKind, HoleShape, HoleSpecification, HoleThreadDepth, ThreadHand,
     };
     use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation, LinearTermination,
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+        LinearTermination,
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -449,7 +478,9 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         cosmetic: true,
         hand: ThreadHand::Right,
         depth: HoleThreadDepth::HoleDepth,
-        clearance: Some(cadmpeg_ir::scalar::Length::new(0.1).unwrap()),
+        clearance: Some(cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::Length::new(0.1).unwrap(),
+        )),
     };
     let threaded = HoleSpecification::Threaded {
         standard: cadmpeg_core::nonblank_literal!("ISO"),
@@ -457,8 +488,12 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         class: Some("6H".into()),
         modeled: true,
         cosmetic: false,
-        pitch: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
-        major_diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap()),
+        pitch: Some(cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+        )),
+        major_diameter: Some(cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+        )),
         hand: ThreadHand::Left,
         depth: HoleThreadDepth::TappedStandard,
         clearance: None,
@@ -476,11 +511,14 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
                     specification,
                 },
                 None,
-                complete.then(|| cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+                (complete.then(|| cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()))
+                    .map(Into::into),
             )
             .unwrap(),
             extent: complete.then(|| LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                ),
             }),
             bottom: None,
             taper_angle: None,
@@ -504,16 +542,13 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: FeatureEvaluation::from_definition(hole(base_specification, true)),
             native_ref: None,
         });
         configuration.feature_states.insert(
             id,
-            ConfigurationFeatureState {
-                evaluation: ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
-                },
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            cadmpeg_ir::features::ConfigurationFeatureState::Definition {
                 definition: hole(local_specification, false),
             },
         );
@@ -521,11 +556,12 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
     ir.model.configurations.push(configuration);
     let mut expected = ir.clone();
     for (name, specification) in [("clearance", clearance), ("threaded", threaded)] {
-        expected.model.configurations[0]
+        *expected.model.configurations[0]
             .feature_states
             .get_mut(&FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap())
-            .unwrap()
-            .definition = hole(Some(Box::new(specification)), true);
+            .unwrap() = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+            definition: hole(Some(Box::new(specification)), true),
+        };
     }
     let losses = project_configuration_sketch_states(
         &ctx,
@@ -542,9 +578,8 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
 fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, HoleShape};
     use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, FaceSelection, Feature,
-        FeatureDefinition, FeatureDirection3, FeatureEvaluation, FeatureId, FeatureOperation,
-        FinitePoint3,
+        FaceSelection, Feature, FeatureDefinition, FeatureDirection3, FeatureEvaluation, FeatureId,
+        FeatureOperation, FinitePoint3,
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -595,27 +630,25 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(hole(true)),
         native_ref: None,
     });
     let mut configuration = design_configuration("hole-operands", 0, Some(0), None);
     configuration.feature_states.insert(
         id.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::DistinctMembers::default(),
-            },
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        cadmpeg_ir::features::ConfigurationFeatureState::Definition {
             definition: hole(false),
         },
     );
     ir.model.configurations.push(configuration);
     let mut expected = ir.clone();
-    expected.model.configurations[0]
+    *expected.model.configurations[0]
         .feature_states
         .get_mut(&id)
-        .unwrap()
-        .definition = hole(true);
+        .unwrap() = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+        definition: hole(true),
+    };
     let losses = project_configuration_sketch_states(
         &ctx,
         &mut ir,
@@ -709,7 +742,9 @@ fn profile_termination_operands() -> (
     let terminations = vec![
         LinearTermination::Unresolved {},
         LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+            ),
         },
         LinearTermination::ThroughAll {},
         LinearTermination::ThroughNext {},
@@ -720,11 +755,15 @@ fn profile_termination_operands() -> (
                 faces,
                 native: "terminating face".into(),
             },
-            offset: Some(cadmpeg_ir::scalar::Length::new(-2.0).unwrap()),
+            offset: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::Length::new(-2.0).unwrap(),
+            )),
         },
         LinearTermination::OffsetFromFace {
             face: FaceSelection::Native("offset face".into()),
-            offset: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            offset: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            ),
         },
         LinearTermination::ToShape {
             target: FaceSelection::Native("target shape".into()),
@@ -760,8 +799,7 @@ fn profile_termination_operands() -> (
 fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HoleShape};
     use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation,
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -794,6 +832,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: FeatureEvaluation::from_definition(hole(
                 Some(profiles[index % profiles.len()].clone()),
                 Some(terminations[index % terminations.len()].clone()),
@@ -802,11 +841,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
         });
         configuration.feature_states.insert(
             id,
-            ConfigurationFeatureState {
-                evaluation: ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
-                },
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            cadmpeg_ir::features::ConfigurationFeatureState::Definition {
                 definition: hole(None, None),
             },
         );
@@ -814,11 +849,12 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
     ir.model.configurations.push(configuration);
     let mut expected = ir.clone();
     for feature in &expected.model.features {
-        expected.model.configurations[0]
+        *expected.model.configurations[0]
             .feature_states
             .get_mut(&feature.id)
-            .unwrap()
-            .definition = feature.evaluation.definition().clone();
+            .unwrap() = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+            definition: feature.evaluation.definition().clone(),
+        };
     }
     let losses = project_configuration_sketch_states(
         &ctx,
@@ -833,45 +869,95 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
 }
 
 fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DesignParameter, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
-    };
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = cadmpeg_ir::CadIr::empty();
     for index in 0..7 {
         ir.model.parameters.push(DesignParameter {
+            driving: true,
             id: ParameterId::mint(format!("synthetic:test:id#parameter-{index}")).unwrap(),
             owner: None,
             ordinal: index,
             name: format!("Parameter {index}"),
-            expression: format!("original expression {index}"),
+            expression: if index == 0 {
+                cadmpeg_ir::features::Expression::text(format!("original expression {index}"))
+            } else {
+                cadmpeg_ir::features::Expression {
+                    tokens: vec![
+                        cadmpeg_ir::features::ExpressionToken::Text(format!(
+                            "original expression {index} "
+                        )),
+                        cadmpeg_ir::features::ExpressionToken::Parameter(
+                            ParameterId::mint("synthetic:test:id#parameter-0").unwrap(),
+                        ),
+                    ],
+                }
+            },
             display: None,
             value: (index != 1).then(|| ParameterValue::String(format!("original value {index}"))),
-            dependencies: if index == 0 {
-                cadmpeg_ir::features::DistinctMembers::default()
-            } else {
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![ParameterId::mint(
-                    "synthetic:test:id#parameter-0",
-                )
-                .unwrap()])
-                .unwrap()
-            },
             properties: std::collections::BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("property"),
                 "retained property text".into(),
             )]),
-            pmi: Some(ParameterPmi {
-                subtype: PmiDimensionSubtype::Linear,
-                precision: 3,
-                display_text: Some("retained PMI text".into()),
-                basic: false,
-                inspection: true,
-                reference_only: false,
-                native_ref: "retained PMI reference".into(),
-            }),
+            pmi: Some(
+                cadmpeg_ir::ids::PmiId::mint(format!("synthetic:test:pmi#parameter-{index}"))
+                    .unwrap(),
+            ),
             native_ref: Some(format!("retained parameter reference {index}")),
         });
+        ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
+            id: cadmpeg_ir::ids::PmiId::mint(format!("synthetic:test:pmi#parameter-{index}"))
+                .unwrap(),
+            name: Some("retained PMI text".into()),
+            visible: None,
+            targets: Vec::new(),
+            definition: cadmpeg_ir::pmi::PmiDefinition::Dimension(
+                cadmpeg_ir::pmi::PmiDimension::new(
+                    cadmpeg_ir::pmi::DimensionKind::Size,
+                    None,
+                    None,
+                )
+                .unwrap(),
+            ),
+        });
+    }
+    for annotation in &ir.model.pmi {
+        for (name, value) in [
+            (
+                "precision",
+                cadmpeg_ir::attributes::AttributeValue::Integer(3),
+            ),
+            (
+                "basic",
+                cadmpeg_ir::attributes::AttributeValue::Boolean(false),
+            ),
+            (
+                "inspection",
+                cadmpeg_ir::attributes::AttributeValue::Boolean(true),
+            ),
+            (
+                "reference_only",
+                cadmpeg_ir::attributes::AttributeValue::Boolean(false),
+            ),
+            (
+                "native_ref",
+                cadmpeg_ir::attributes::AttributeValue::String("retained PMI reference".into()),
+            ),
+        ] {
+            ir.model
+                .attributes
+                .push(cadmpeg_ir::attributes::SourceAttribute {
+                    id: cadmpeg_ir::ids::AttributeId::mint(format!(
+                        "synthetic:test:attribute#{}-{name}",
+                        annotation.id.as_str().rsplit_once('#').unwrap().1
+                    ))
+                    .unwrap(),
+                    target: cadmpeg_ir::attributes::AttributeTarget::Pmi(annotation.id.clone()),
+                    name: name.into(),
+                    values: vec![value],
+                });
+        }
     }
     for (index, values) in [
         (

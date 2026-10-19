@@ -308,6 +308,7 @@ mod tests {
         native: bool,
     ) -> Feature {
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint(id).expect("identity grammar"),
             ordinal,
             name: Some(id.into()),

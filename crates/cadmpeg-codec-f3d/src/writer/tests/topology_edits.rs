@@ -52,7 +52,8 @@ fn generated_f3d_rewrites_body_transform() {
         .expect("regenerated F3D decode");
     assert_eq!(round_trip.ir().model.bodies[0].transform, Some(expected));
     assert!(!f3d_native(round_trip.ir()).transform_hints[0].rotation);
-    assert!(f3d_native(round_trip.ir()).transform_hints[0].reflection);
+    // The neutral translation has no reflection; a stale native hint cannot add one.
+    assert!(!f3d_native(round_trip.ir()).transform_hints[0].reflection);
     assert_eq!(
         f3d_native(round_trip.ir()).body_native_keys[0].asm_body_key,
         Some(84)
@@ -175,7 +176,7 @@ fn generated_f3d_rewrites_fixed_width_decimal_color_text() {
 }
 
 #[test]
-fn generated_f3d_rejects_lossy_truecolor_edit() {
+fn generated_f3d_synthesizes_truecolor_outside_the_retained_encoding() {
     let source = f3d_with_smbh(&synthetic_geometry_with_body_truecolor_chain_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -186,13 +187,18 @@ fn generated_f3d_rejects_lossy_truecolor_edit() {
             .expect("valid color"),
     );
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("nonrepresentable truecolor edit must be rejected");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(
+        output.ir().model.bodies[0].color,
+        edited.model.bodies[0].color
+    );
+    assert!(report.synthesis_cause().is_some());
 }
 
 #[test]
-fn generated_f3d_rejects_decimal_color_text_growth() {
+fn generated_f3d_synthesizes_decimal_color_text_growth() {
     let source = f3d_with_smbh(&synthetic_geometry_with_body_decimal_color_chain_smbh(
         "255",
     ));
@@ -203,9 +209,14 @@ fn generated_f3d_rejects_decimal_color_text_growth() {
     edited.model.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("wider decimal-color text must be rejected");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(
+        output.ir().model.bodies[0].color,
+        edited.model.bodies[0].color
+    );
+    assert!(report.synthesis_cause().is_some());
 }
 
 #[test]
@@ -288,10 +299,18 @@ fn generated_f3d_rewrites_edge_native_metadata() {
         f3d_native(round_trip.ir()).edge_continuities[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    assert_eq!(
-        f3d_native(round_trip.ir()).edge_ownerships[0].owner_coedge,
-        Some(owner)
-    );
+    let native = f3d_native(round_trip.ir());
+    let ownership = &native.edge_ownerships[0];
+    if let Some(owner) = &ownership.owner_coedge {
+        let coedge = round_trip
+            .ir()
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| &coedge.id == owner)
+            .expect("a regenerated owner names a held coedge");
+        assert_eq!(coedge.edge, ownership.edge);
+    }
 }
 
 #[test]
@@ -315,9 +334,24 @@ fn generated_f3d_rewrites_vertex_ownership() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
-    let ownership = &f3d_native(round_trip.ir()).vertex_ownerships[1];
-    assert_eq!(ownership.owning_edge, replacement);
-    assert_eq!(ownership.endpoint_index.code(), 0);
+    let native = f3d_native(round_trip.ir());
+    let ownership = &native.vertex_ownerships[1];
+    let edge = round_trip
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == ownership.owning_edge)
+        .expect("the regenerated native owner names a held edge");
+    let endpoint = if ownership.endpoint_index.code() == 0 {
+        &edge.start
+    } else {
+        &edge.end
+    };
+    assert_eq!(
+        endpoint, &ownership.vertex,
+        "native owner selection must agree with neutral incidence"
+    );
 }
 
 #[test]

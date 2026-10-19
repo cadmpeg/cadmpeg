@@ -6,7 +6,7 @@ use super::{
     PositiveReal, SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchGeometry,
     SketchGeometryDefinition, SpatialSketchConstraintDefinition,
     SpatialSketchConstraintDefinitionInput, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
-    EPS_POLAR_DISTANCE_ZERO, EPS_SPATIAL_LINE_LENGTH,
+    EPS_SPATIAL_LINE_LENGTH,
 };
 use crate::geometry::nurbs::NurbsError;
 
@@ -41,63 +41,100 @@ fn constraint_length(
     Ok(())
 }
 
+fn dimension_length(
+    value: &mut crate::features::Dimension<crate::scalar::Length>,
+    scale: PositiveReal,
+) -> Result<(), SketchConstraintScaleError> {
+    if let crate::features::Dimension::Literal(value) = value {
+        constraint_length(value, scale)?;
+    }
+    Ok(())
+}
+fn dimension_positive_length(
+    value: &mut crate::features::Dimension<PositiveLength>,
+    scale: PositiveReal,
+) -> Result<(), SketchConstraintScaleError> {
+    if let crate::features::Dimension::Literal(value) = value {
+        *value = PositiveLength::new(value.get() * scale.get())
+            .ok_or(SketchConstraintScaleError::LengthOverflow)?;
+    }
+    Ok(())
+}
+
 impl SketchConstraintDefinition {
-    /// Scale only distance values. Stored arity, references, and unrelated
-    /// scalar fields retain their admission.
+    /// Scale literal distances and their solved coordinates; bindings retain
+    /// their identity and are scaled once through their canonical parameter.
     pub fn scale_lengths(&mut self, scale: PositiveReal) -> Result<(), SketchConstraintScaleError> {
         use SketchConstraintDefinitionInput as Kind;
-        match &mut self.0 {
+        let mut candidate = self.0.clone();
+        match &mut candidate {
             Kind::PointCoordinateValues { values, .. } => {
-                let mut scaled = *values;
-                for value in &mut scaled {
-                    constraint_length(value, scale)?;
+                for value in values {
+                    dimension_length(value, scale)?;
                 }
-                *values = scaled;
             }
-            Kind::PolarDistance {
-                distance, angle, ..
-            } => {
-                let mut scaled = *distance;
-                constraint_length(&mut scaled, scale)?;
-                if (scaled.get() <= EPS_POLAR_DISTANCE_ZERO) == angle.is_some() {
-                    return Err(SketchConstraintScaleError::InvalidLocalValue);
+            Kind::PolarDistance { distance, .. }
+            | Kind::Offset { distance, .. }
+            | Kind::DistanceLociValue { distance, .. } => dimension_length(distance, scale)?,
+            Kind::Distance { parameter, .. }
+            | Kind::DistanceLoci { parameter, .. }
+            | Kind::HorizontalDistance { parameter, .. }
+            | Kind::VerticalDistance { parameter, .. }
+            | Kind::RepeatedDistance { parameter, .. }
+            | Kind::RepeatedLength { parameter, .. }
+            | Kind::ParallelLineSetDistance { parameter, .. } => {
+                dimension_length(parameter, scale)?
+            }
+            Kind::Radius { parameter, .. }
+            | Kind::Diameter { parameter, .. }
+            | Kind::RepeatedRadius { parameter, .. }
+            | Kind::RepeatedDiameter { parameter, .. } => {
+                dimension_positive_length(parameter, scale)?
+            }
+            Kind::MidpointCoordinate { value, .. } => constraint_length(value, scale)?,
+            Kind::RectangularPattern { pattern } => {
+                for direction in &mut pattern.directions {
+                    match &mut direction.distance {
+                        super::SketchPatternDistance::Spacing { distance }
+                        | super::SketchPatternDistance::Span { distance } => {
+                            dimension_length(distance, scale)?
+                        }
+                    }
                 }
-                *distance = scaled;
-            }
-            Kind::Offset { distance, .. } => {
-                let mut scaled = *distance;
-                constraint_length(&mut scaled, scale)?;
-                if scaled.get() <= 0.0 {
-                    return Err(SketchConstraintScaleError::InvalidLocalValue);
-                }
-                *distance = scaled;
-            }
-            Kind::MidpointCoordinate { value, .. }
-            | Kind::DistanceLociValue {
-                distance: value, ..
-            } => {
-                let mut scaled = *value;
-                constraint_length(&mut scaled, scale)?;
-                *value = scaled;
             }
             _ => {}
         }
+        *self =
+            Self::try_from(candidate).map_err(|_| SketchConstraintScaleError::InvalidLocalValue)?;
         Ok(())
     }
 }
 
 impl SpatialSketchConstraintDefinition {
-    /// Scale the optional offset distance while carrying admitted directions
-    /// and entity relationships unchanged.
+    /// Scale literal distances while carrying canonical parameter bindings.
     pub fn scale_lengths(&mut self, scale: PositiveReal) -> Result<(), SketchConstraintScaleError> {
-        if let SpatialSketchConstraintDefinitionInput::Offset { distance, .. } = &mut self.0 {
-            let product = distance.get() * scale.get();
-            if !product.is_finite() {
-                return Err(SketchConstraintScaleError::LengthOverflow);
+        use SpatialSketchConstraintDefinitionInput as Kind;
+        let mut candidate = self.0.clone();
+        match &mut candidate {
+            Kind::Offset {
+                distance: crate::features::Dimension::Literal(value),
+                ..
+            } => {
+                *value = crate::scalar::NonZeroLength::new(value.get() * scale.get())
+                    .ok_or(SketchConstraintScaleError::InvalidLocalValue)?;
             }
-            *distance = PositiveLength::new(product)
-                .ok_or(SketchConstraintScaleError::InvalidLocalValue)?;
+            Kind::LineLength { parameter, .. }
+            | Kind::PointDistance { parameter, .. }
+            | Kind::PointLineDistance { parameter, .. }
+            | Kind::ParallelLineDistance { parameter, .. }
+            | Kind::RepeatedLineLength { parameter, .. }
+            | Kind::RepeatedParallelLineDistance { parameter, .. }
+            | Kind::ParallelLineSetDistance { parameter, .. } => {
+                dimension_length(parameter, scale)?
+            }
+            _ => {}
         }
+        self.0 = candidate;
         Ok(())
     }
 }
@@ -315,7 +352,7 @@ impl SpatialSketchGeometry {
 
 #[cfg(test)]
 mod tests {
-    use super::{SketchConstraintScaleError, SketchLengthScaleError, EPS_POLAR_DISTANCE_ZERO};
+    use super::{SketchConstraintScaleError, SketchLengthScaleError};
     use crate::math::{Point3, Vector3};
     use crate::scalar::{Angle, FiniteReal, Length};
     use crate::sketches::{
@@ -473,6 +510,7 @@ mod tests {
 
     #[test]
     fn polar_distance_scaling_checks_only_the_changed_threshold_relation() {
+        use super::super::EPS_POLAR_DISTANCE_ZERO;
         use crate::sketches::{SketchEntityId, SketchLocus};
 
         let first = SketchLocus::Start(SketchEntityId::mint("test:test:sketch-entity#a").unwrap());
@@ -481,9 +519,10 @@ mod tests {
             SketchConstraintDefinition::try_from(SketchConstraintDefinitionInput::PolarDistance {
                 first,
                 second,
-                distance: Length::new(2.0 * EPS_POLAR_DISTANCE_ZERO).unwrap(),
-                angle: Some(Angle::new(0.5).unwrap()),
-                distance_parameter: None,
+                distance: crate::features::Dimension::Literal(
+                    Length::new(2.0 * EPS_POLAR_DISTANCE_ZERO).unwrap(),
+                ),
+                angle: Some(Angle::new(0.5).unwrap().into()),
             })
             .unwrap();
         let original = definition.clone();
@@ -498,7 +537,7 @@ mod tests {
         assert!(matches!(
             definition.kind(),
             SketchConstraintDefinitionInput::PolarDistance { distance, angle: Some(angle), .. }
-                if distance.get() == 4.0 * EPS_POLAR_DISTANCE_ZERO && angle.get() == 0.5
+                if distance.literal().unwrap().get() == 4.0 * EPS_POLAR_DISTANCE_ZERO && angle.literal().unwrap().get() == 0.5
         ));
     }
 
@@ -511,8 +550,7 @@ mod tests {
                 sources: vec![SpatialSketchEntityId::mint("test:test:spatial-entity#a").unwrap()],
                 results: vec![SpatialSketchEntityId::mint("test:test:spatial-entity#b").unwrap()],
                 normal: Vector3::new(0.0, 0.0, 1.0),
-                distance: Length::new(2.0).unwrap(),
-                parameter: None,
+                distance: crate::features::Dimension::Literal(Length::new(2.0).unwrap()),
             },
         )
         .unwrap();
@@ -524,7 +562,7 @@ mod tests {
             definition.kind(),
             SpatialSketchConstraintDefinitionInput::Offset { normal, distance, .. }
                 if *normal.as_raw() == Vector3::new(0.0, 0.0, 1.0)
-                    && distance.get() == 2.0 * f64::MIN_POSITIVE
+                    && distance.literal().unwrap().get() == 2.0 * f64::MIN_POSITIVE
         ));
         let before_failure = definition.clone();
         assert_eq!(
@@ -576,7 +614,8 @@ mod tests {
                 values: [
                     Length::new(1.0).expect("length"),
                     Length::new(f64::MAX).expect("length"),
-                ],
+                ]
+                .map(crate::features::Dimension::Literal),
             },
         )
         .expect("constraint");
@@ -592,7 +631,7 @@ mod tests {
         assert!(
             matches!(definition.kind(), SketchConstraintDefinitionInput::PointCoordinateValues { point, values }
             if point == match original.kind() { SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => point, _ => panic!("fixture") }
-                && values[0].get() == 0.5 && values[1].get() == f64::MAX * 0.5)
+                && values[0].literal().unwrap().get() == 0.5 && values[1].literal().unwrap().get() == f64::MAX * 0.5)
         );
     }
 }

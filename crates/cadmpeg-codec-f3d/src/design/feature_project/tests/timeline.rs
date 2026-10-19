@@ -217,10 +217,22 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     assert_eq!(ordinals[&(stream, 200)], 2);
 
     let reversed = timeline(vec![200, 150, 100]);
-    let error = project(&reversed).expect_err("forward history edge must be rejected");
-    assert!(error
-        .to_string()
-        .contains("dependency does not precede its authored timeline position"));
+    let reversed_features = project(&reversed)
+        .expect("forward source edges remain held")
+        .features;
+    let reversed_earlier = reversed_features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&earlier.id))
+        .unwrap();
+    let reversed_later = reversed_features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&later.id))
+        .unwrap();
+    assert!(reversed_later.ordinal < reversed_earlier.ordinal);
+    assert_eq!(
+        reversed_later.dependencies.as_slice(),
+        [reversed_earlier.id.clone()]
+    );
 
     let second = DesignFeatureTimeline::try_new(
         authored.id().clone(),
@@ -585,7 +597,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
 }
 
 #[test]
-fn feature_projection_rejects_a_cyclic_internal_scope_history() {
+fn feature_projection_retains_a_consumer_of_cyclic_internal_history() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut first_internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
@@ -649,10 +661,15 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
             },
         )
     });
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    let projected = result.expect("ambiguous internal history does not erase the authored feature");
+    assert_eq!(projected.features.len(), 1);
+    assert_eq!(
+        projected.features[0].native_ref.as_deref(),
+        Some(scopes[2].id.as_str())
+    );
+    assert!(projected.features[0].dependencies.is_empty());
+    assert_eq!(scopes[0].previous_history_state_id(), Some(2));
+    assert_eq!(scopes[1].previous_history_state_id(), Some(1));
 }
 
 #[test]
@@ -965,7 +982,10 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("successor Depth parameter");
-    assert_eq!(depth.dependencies.as_slice(), [width.id.clone()]);
+    assert_eq!(
+        depth.expression.dependencies().collect::<Vec<_>>(),
+        [&width.id]
+    );
 }
 
 #[test]

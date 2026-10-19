@@ -89,11 +89,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
-        "ConfigurationEvaluation",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features.rs",
         "DistinctMembers",
         "keyless",
     ),
@@ -353,14 +348,19 @@ fn compiled_hand_readers_keep_their_admission_boundaries() {
         Some(serde_json::json!({"preserved": true}))
     );
 
-    let unknown_configuration = serde_json::from_value::<
-        cadmpeg_ir::features::ConfigurationEvaluation,
-    >(serde_json::json!({
-        "kind": "suppressed",
-        "unexpected": true,
-    }));
+    let unknown_feature =
+        serde_json::from_value::<cadmpeg_ir::features::Feature>(serde_json::json!({
+            "id": "test:source-census:feature#0",
+            "ordinal": 0,
+            "needs_recompute": false,
+            "definition": {"definition":"stored_geometry"},
+            "unexpected": true,
+        }));
     assert!(
-        unknown_configuration.is_err(),
+        unknown_feature
+            .unwrap_err()
+            .to_string()
+            .contains("unexpected"),
         "the compiled local wire adapter rejects an unknown object key"
     );
 }

@@ -82,12 +82,14 @@
 //! [`SldprtCodec`] implements [`cadmpeg_ir::codec::write::Encoder`] through
 //! `plan` → `write_to`. Encoding
 //! with the retained `source_fidelity` sidecar replays or patches the source
-//! image. Omitting `fidelity` regenerates the supported source-less profile.
+//! image when every source record is represented. Otherwise synthesis writes
+//! supported content from neutral arenas and typed native records.
 //! Supported geometry edits can patch the native partition when the entity
 //! graph and provenance remain stable. Retained writing synchronizes supported
 //! feature, sketch, parameter, configuration, and PMI edits. Semantic writing
-//! returns [`CodecError::NotImplemented`] when the requested IR shape cannot be
-//! represented.
+//! degrades unsupported entities and reports omitted arenas. A declined patch
+//! falls back to synthesis, including construction edits whose solved B-rep
+//! requires the target application to rebuild on open.
 //!
 //! The semantic writer supports solid bodies with at most five regions and at
 //! most six shells per solid region, sheet bodies with one shell per region,
@@ -96,7 +98,6 @@
 //! right-handed rigid body transforms into geometry.
 //!
 //! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
-//! [`CodecError::NotImplemented`]: cadmpeg_core::CodecError::NotImplemented
 //! [`DecodeOptions::depth`]: cadmpeg_ir::DecodeOptions::depth
 //! [`DecodeDepth::Container`]: cadmpeg_core::decode::DecodeDepth::Container
 
@@ -135,12 +136,11 @@ use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    ArenaCoverage, ArenaDispositions, Consumption, DepthNeed, EncodeInput, EncoderBackend,
-    ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::{report::check::Finding, Annotations, SourceFidelity};
 
@@ -148,6 +148,7 @@ use cadmpeg_ir::{report::check::Finding, Annotations, SourceFidelity};
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
 
 /// The identity of the retained source image, composed from its literal parts.
+#[cfg(test)]
 fn source_image_id() -> UnknownId {
     UnknownId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
@@ -165,6 +166,7 @@ struct SourceRecord<'a> {
     id: UnknownId,
     sha256: String,
     data: Option<&'a [u8]>,
+    metadata: &'a std::collections::BTreeMap<String, String>,
 }
 
 impl SldprtCodec {
@@ -188,10 +190,9 @@ impl SldprtCodec {
         records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let expected = ir
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
+        let expected = records
+            .first()
+            .and_then(|record| record.metadata.get("document_local_sha256"));
         let Some(expected) = expected else {
             return Self::write_semantic(
                 ir,
@@ -247,29 +248,6 @@ impl SldprtCodec {
     ) -> Result<Written, CodecError> {
         let writer::SemanticOutput { dialect, coverage } =
             writer::write_semantic_with_records(ir, annotations, records, writer)?;
-        let native = ir
-            .native
-            .namespace("sldprt")
-            .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
-            .transpose()?;
-        let source_arena = cadmpeg_core::decode::DecodeArena::new();
-        let source_context = records
-            .iter()
-            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
-            .and_then(|record| record.data)
-            .map(|bytes| {
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    bytes,
-                    &source_arena,
-                    &cadmpeg_core::decode::DecodePolicy::desktop(),
-                )
-            })
-            .transpose()?;
-        let source_scan = source_context
-            .as_ref()
-            .map(|(ctx, root)| container::scan(ctx, *root))
-            .transpose()?;
-        history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
@@ -432,7 +410,7 @@ impl EncoderBackend for SldprtCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Patches the retained source, so the design records it rewrites must be
     /// present.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 
@@ -446,35 +424,19 @@ impl EncoderBackend for SldprtCodec {
 }
 
 fn source_records<'a>(
-    ir: &CadIr,
+    _ir: &CadIr,
     source_fidelity: &'a SourceFidelity,
 ) -> Result<Vec<SourceRecord<'a>>, CodecError> {
-    let mut records = ir
-        .native_unknowns_iter("sldprt")
-        .map(|reference| {
-            let reference = reference?;
-            let retained = source_fidelity
-                .retained_record(reference.id.as_str())
-                .ok_or_else(|| {
-                    cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
-                        reference.id.as_str().to_owned(),
-                    )
-                })?;
-            Ok(SourceRecord {
-                id: reference.id,
-                sha256: retained.sha256(),
-                data: retained.data(),
-            })
+    Ok(source_fidelity
+        .retained_records()
+        .iter()
+        .map(|(id, record)| SourceRecord {
+            id: id.clone(),
+            sha256: record.sha256(),
+            data: record.data(),
+            metadata: &source_fidelity.metadata,
         })
-        .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
-    if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
-        records.push(SourceRecord {
-            id: source_image_id(),
-            sha256: source.sha256(),
-            data: source.data(),
-        });
-    }
-    Ok(records)
+        .collect())
 }
 
 #[cfg(test)]

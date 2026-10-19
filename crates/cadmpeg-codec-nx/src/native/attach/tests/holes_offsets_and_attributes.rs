@@ -295,7 +295,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 }],
                 diameter: Some(Length::new(4.0).unwrap()),
                 extent: Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap(),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap()).into(),
                 }),
                 ..HoleProjection::default()
             },

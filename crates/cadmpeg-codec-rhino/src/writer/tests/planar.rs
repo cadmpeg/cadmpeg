@@ -128,10 +128,9 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         assert_eq!(decoded.ir().model.coedges.len(), 8, "{version:?}");
         assert_eq!(decoded.ir().model.edges.len(), 7, "{version:?}");
         assert_eq!(decoded.ir().model.vertices.len(), 6, "{version:?}");
-        assert!(decoded.ir().model.edges.iter().all(|edge| edge
-            .param_range()
-            .map(cadmpeg_ir::units::FiniteVector::get)
-            == Some([2.0, 3.0])));
+        assert!(decoded.ir().model.edges.iter().all(|edge| {
+            edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) == Some([2.0, 3.0])
+        }));
         let shared = decoded
             .ir()
             .model
@@ -390,7 +389,7 @@ const EPS_BELOW_WRITE_BOUND: f64 = 1.0e-12;
 const EPS_BELOW_WRITE_BOUND_TEXT: &str = "0.000000000001";
 
 #[test]
-fn sub_resolution_edge_tolerance_is_refused_before_output() {
+fn sub_resolution_edge_tolerance_omits_sheet_face_without_widening() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -400,23 +399,31 @@ fn sub_resolution_edge_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let mut output = Vec::new();
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
-    let message = error.to_string();
+        .expect("unrepresentable tolerance omits only its sheet face");
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == crate::loss::RhinoLossCode::WriterEntityOmitted.kind())
+        .expect("sheet-face omission is reported");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
+    let message = &loss.message;
     assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
     assert!(message.contains("edge#polygon.0"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("empty archive is valid");
+    assert!(decoded.ir().model.bodies.is_empty());
 }
 
 #[test]
-fn sub_resolution_face_tolerance_is_refused_before_output() {
+fn sub_resolution_face_tolerance_omits_sheet_face_without_widening() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -426,19 +433,27 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let mut output = Vec::new();
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
-    let message = error.to_string();
+        .expect("unrepresentable tolerance omits only its sheet face");
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == crate::loss::RhinoLossCode::WriterEntityOmitted.kind())
+        .expect("sheet-face omission is reported");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
+    let message = &loss.message;
     assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
     assert!(message.contains("face#polygon"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("empty archive is valid");
+    assert!(decoded.ir().model.bodies.is_empty());
 }
 
 #[test]

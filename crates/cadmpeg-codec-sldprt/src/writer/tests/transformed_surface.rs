@@ -66,7 +66,7 @@ fn a_transformed_surface_is_unwritable_at_every_admitted_depth() {
         )
         .expect_err("a transformed surface carrier is unwritable");
         assert!(
-            matches!(refusal, CodecError::NotImplemented(_)),
+            matches!(refusal, CodecError::UnsupportedContent(_)),
             "the refusal is the writer's unsupported-carrier route, not {refusal:?}"
         );
     }

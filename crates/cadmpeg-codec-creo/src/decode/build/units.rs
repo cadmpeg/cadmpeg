@@ -56,59 +56,82 @@ fn scale_transform_translation(
     Ok(())
 }
 
-pub(in crate::decode) fn scale_length(
-    length: &mut Length,
+// Source unit admission scales literal quantities only. Parameter bindings
+// already refer to the one parameter cache converted by SourceUnitCarriers.
+pub(in crate::decode) trait SourceLength: Clone {
+    fn scale_source_length(&mut self, scale: PositiveReal) -> Result<(), CodecError>;
+}
+macro_rules! source_length {
+    ($($quantity:ty),+ $(,)?) => {$ (
+        impl SourceLength for $quantity {
+            fn scale_source_length(&mut self, scale: PositiveReal) -> Result<(), CodecError> {
+                *self = Self::new(self.get() * scale.get()).ok_or_else(|| {
+                    CodecError::malformed("Creo scaled source length violates its quantity bounds")
+                })?;
+                Ok(())
+            }
+        }
+    )+};
+}
+source_length!(
+    Length,
+    cadmpeg_ir::scalar::PositiveLength,
+    cadmpeg_ir::scalar::NonZeroLength,
+    cadmpeg_ir::scalar::NonNegativeLength
+);
+impl<Q: SourceLength> SourceLength for cadmpeg_ir::features::Dimension<Q> {
+    fn scale_source_length(&mut self, scale: PositiveReal) -> Result<(), CodecError> {
+        *self = self.clone().try_map_literal(|mut value| {
+            value.scale_source_length(scale)?;
+            Ok::<_, CodecError>(value)
+        })?;
+        Ok(())
+    }
+}
+impl<Q: SourceLength> SourceLength for cadmpeg_ir::features::RadialDimension<Q> {
+    fn scale_source_length(&mut self, scale: PositiveReal) -> Result<(), CodecError> {
+        self.dimension_mut().scale_source_length(scale)
+    }
+}
+pub(in crate::decode) fn scale_length<Q: SourceLength>(
+    length: &mut Q,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length = Length::new(length.get() * scale.get())
-        .ok_or_else(|| CodecError::malformed("Creo scaled length must be finite"))?;
-    Ok(())
+    length.scale_source_length(scale)
 }
-
-fn scale_positive_length(
-    length: &mut cadmpeg_ir::scalar::PositiveLength,
+fn scale_positive_length<Q: SourceLength>(
+    length: &mut Q,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::scalar::PositiveLength::new(length.get() * scale.get())
-        .ok_or_else(|| CodecError::malformed("Creo scaled length must be positive and finite"))?;
-    Ok(())
+    length.scale_source_length(scale)
 }
-
-fn scale_nonzero_length(
-    length: &mut cadmpeg_ir::scalar::NonZeroLength,
+fn scale_nonzero_length<Q: SourceLength>(
+    length: &mut Q,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::scalar::NonZeroLength::new(length.get() * scale.get())
-        .ok_or_else(|| CodecError::malformed("Creo scaled length must be finite and nonzero"))?;
-    Ok(())
+    length.scale_source_length(scale)
 }
-
-fn scale_nonnegative_length(
-    length: &mut cadmpeg_ir::scalar::NonNegativeLength,
+fn scale_nonnegative_length<Q: SourceLength>(
+    length: &mut Q,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length = length.scaled(scale).ok_or_else(|| {
-        CodecError::malformed("Creo scaled length must be nonnegative and finite")
-    })?;
-    Ok(())
+    length.scale_source_length(scale)
 }
-
-fn scale_optional_positive_length(
-    length: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
+fn scale_optional_positive_length<Q: SourceLength>(
+    length: &mut Option<Q>,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     if let Some(length) = length {
-        scale_positive_length(length, scale)?;
+        length.scale_source_length(scale)?;
     }
     Ok(())
 }
-
-fn scale_optional_length(
-    length: &mut Option<Length>,
+fn scale_optional_length<Q: SourceLength>(
+    length: &mut Option<Q>,
     scale: PositiveReal,
-) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(length) = length.as_mut() {
-        scale_length(length, scale)?;
+) -> Result<(), CodecError> {
+    if let Some(length) = length {
+        length.scale_source_length(scale)?;
     }
     Ok(())
 }
@@ -251,7 +274,7 @@ fn scale_feature_operation(
         }
         FeatureOperation::CircularArc { arc } => {
             let mut center = arc.center().get();
-            let mut radius = arc.radius();
+            let mut radius = arc.radius().clone();
             scale_point3(&mut center, scale);
             scale_positive_length(&mut radius, scale)?;
             let center = cadmpeg_ir::features::FinitePoint3::new(center).ok_or_else(|| {
@@ -261,12 +284,12 @@ fn scale_feature_operation(
                 center,
                 arc.normal(),
                 radius,
-                arc.angles(),
+                arc.angles().clone(),
             );
         }
         FeatureOperation::EllipticArc { arc } => {
             let center = arc.center().scaled(scale);
-            let scaled = arc.with_scaled_radii(scale).ok_or_else(|| {
+            let scaled = arc.clone().with_scaled_radii(scale).ok_or_else(|| {
                 CodecError::malformed("Creo scaled length must be positive and finite")
             })?;
             let center = center.ok_or_else(|| {
@@ -329,21 +352,16 @@ fn scale_feature_operation(
             scale_finite_point3(axis_origin, scale)?;
             scale_positive_length(radius, scale)?;
             match shape {
-                cadmpeg_ir::features::HelixShape::Cylindrical { pitch }
-                | cadmpeg_ir::features::HelixShape::Conical { pitch, .. } => {
-                    scale_nonzero_length(pitch, scale)?;
+                cadmpeg_ir::features::HelixShape::Cylindrical { law }
+                | cadmpeg_ir::features::HelixShape::Conical { law, .. } => {
+                    scale_helix_law(law, scale)?;
                 }
-                cadmpeg_ir::features::HelixShape::Spiral { radial_growth } => {
+                cadmpeg_ir::features::HelixShape::Spiral { radial_growth, .. } => {
                     scale_length(radial_growth, scale)?;
                 }
             }
         }
-        FeatureOperation::HelixNativeAxis {
-            axial_rise, pitch, ..
-        } => {
-            scale_length(axial_rise, scale)?;
-            scale_length(pitch, scale)?;
-        }
+        FeatureOperation::HelixNativeAxis { law, .. } => scale_helix_law(law, scale)?,
         FeatureOperation::Sphere { center, radius, .. } => {
             scale_finite_point3(center, scale)?;
             scale_positive_length(radius, scale)?;
@@ -373,7 +391,18 @@ fn scale_feature_operation(
         FeatureOperation::SketchBlockInstance {
             placement: None, ..
         } => {}
-        FeatureOperation::Primitive { solid, .. } => scale_primitive_solid(solid, scale)?,
+        FeatureOperation::Primitive {
+            solid, placement, ..
+        } => {
+            scale_primitive_solid(solid, scale)?;
+            if let Some(placement) = placement {
+                *placement = placement.scaled_translation(scale).ok_or_else(|| {
+                    CodecError::malformed(
+                        "Creo scaled primitive placement must remain finite and rigid",
+                    )
+                })?;
+            }
+        }
         FeatureOperation::Sweep { shape, .. } => {
             for generated in shape.generated_sections_mut() {
                 scale_sweep_section(generated, scale)?;
@@ -493,10 +522,9 @@ fn scale_feature_operation(
             rotation,
             ..
         } => {
-            *translation = cadmpeg_ir::features::FiniteVector3::new(translation.scale(scale.get()))
-                .ok_or_else(|| {
-                    CodecError::malformed("Creo scaled body translation must be finite")
-                })?;
+            for component in translation {
+                scale_length(component, scale)?;
+            }
             if let Some(rotation) = rotation {
                 scale_finite_point3(&mut rotation.origin, scale)?;
             }
@@ -540,6 +568,22 @@ fn scale_fuzzy_tolerance(
     Ok(())
 }
 
+fn scale_helix_law(
+    law: &mut cadmpeg_ir::features::HelixLaw,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::HelixLaw;
+    match law {
+        HelixLaw::PitchRevolutions { pitch, .. } => scale_nonzero_length(pitch, scale)?,
+        HelixLaw::HeightPitch { height, pitch } => {
+            scale_length(height, scale)?;
+            scale_nonzero_length(pitch, scale)?;
+        }
+        HelixLaw::HeightRevolutions { height, .. } => scale_length(height, scale)?,
+    }
+    Ok(())
+}
+
 fn scale_primitive_solid(
     solid: &mut cadmpeg_ir::features::PrimitiveSolid,
     scale: PositiveReal,
@@ -560,8 +604,8 @@ fn scale_sweep_section(
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region } = section;
-    let mut outer_radius = region.outer_radius();
-    let mut wall_thickness = region.wall_thickness();
+    let mut outer_radius = region.outer_radius().clone();
+    let mut wall_thickness = region.wall_thickness().cloned();
     scale_positive_length(&mut outer_radius, scale)?;
     scale_optional_positive_length(&mut wall_thickness, scale)?;
     *region = cadmpeg_ir::features::SweepCircularRegion::new(outer_radius, wall_thickness)
@@ -793,11 +837,15 @@ fn scale_radius_spec(
     *radius = match owned {
         RadiusSpec::Constant { mut radius } => {
             scale_positive_length(&mut radius, scale)?;
-            RadiusSpec::Constant { radius }
+            RadiusSpec::Constant {
+                radius: (radius).into(),
+            }
         }
         RadiusSpec::Chordal { mut chord_length } => {
             scale_positive_length(&mut chord_length, scale)?;
-            RadiusSpec::Chordal { chord_length }
+            RadiusSpec::Chordal {
+                chord_length: (chord_length).into(),
+            }
         }
         RadiusSpec::Asymmetric {
             mut offset_one,
@@ -806,8 +854,8 @@ fn scale_radius_spec(
             scale_positive_length(&mut offset_one, scale)?;
             scale_positive_length(&mut offset_two, scale)?;
             RadiusSpec::Asymmetric {
-                offset_one,
-                offset_two,
+                offset_one: (offset_one).into(),
+                offset_two: (offset_two).into(),
             }
         }
         RadiusSpec::Variable { points } => {
@@ -1301,6 +1349,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Feature {
+                    needs_recompute: false,
                     id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                         .expect("identity grammar"),
                     ordinal: 0,
@@ -1318,13 +1367,14 @@ mod tests {
                             )),
                             direction: ExtrudeDirection::ProfileNormal {},
                             start: ExtrudeStart::OffsetProfilePlane {
-                                offset: Length::new(2.0).expect("finite length fixture"),
+                                offset: (Length::new(2.0).expect("finite length fixture")).into(),
                             },
                             extent: ExtrudeExtent::TwoSided {
                                 first: ExtrudeSide {
                                     termination: LinearTermination::Blind {
-                                        length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
-                                            .expect("nonzero length fixture"),
+                                        length: (cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                                            .expect("nonzero length fixture"))
+                                        .into(),
                                     },
                                     draft: None,
                                 },
@@ -1333,9 +1383,10 @@ mod tests {
                                         face: cadmpeg_ir::features::FaceSelection::Native(
                                             "face".into(),
                                         ),
-                                        offset: Some(
+                                        offset: (Some(
                                             Length::new(4.0).expect("finite length fixture"),
-                                        ),
+                                        ))
+                                        .map(Into::into),
                                     },
                                     draft: None,
                                 },
@@ -1357,6 +1408,7 @@ mod tests {
             carriers.admit_parameter(
                 &mut ir,
                 cadmpeg_ir::features::DesignParameter {
+                    driving: true,
                     id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
                         .expect("identity grammar"),
                     owner: None,
@@ -1367,7 +1419,7 @@ mod tests {
                     value: Some(ParameterValue::Length(
                         Length::new(5.0).expect("finite length fixture"),
                     )),
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
                     properties: BTreeMap::new(),
                     pmi: None,
                     native_ref: None,
@@ -1492,7 +1544,7 @@ mod tests {
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid direction fixture"),
-            distance: Length::new(2.0).expect("finite length fixture"),
+            distance: (Length::new(2.0).expect("finite length fixture")).into(),
         };
         { scale_face_motion(&mut translate, positive(25.4)) }.expect("valid test fixture");
         let FaceMotion::Translate {
@@ -1512,7 +1564,7 @@ mod tests {
                 0.0, 0.0, 1.0,
             ))
             .expect("valid direction fixture"),
-            angle: cadmpeg_ir::scalar::Angle::new(0.5).expect("finite angle fixture"),
+            angle: (cadmpeg_ir::scalar::Angle::new(0.5).expect("finite angle fixture")).into(),
         };
         scale_face_motion(&mut rotate, positive(25.4)).expect("valid test fixture");
         let FaceMotion::Rotate {
@@ -1566,7 +1618,7 @@ mod tests {
         let mut definition = FeatureDefinition::PostProcess {
             operation: FeatureOperation::Native {
                 kind: "Boolean".into(),
-                parameters: BTreeMap::new(),
+                parameters: (BTreeMap::new()).into(),
             },
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(positive_length(2.0)),
@@ -1935,9 +1987,11 @@ mod tests {
                 center,
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
-                radii.map(positive_length),
+                radii.map(|value| positive_length(value).into()),
                 cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0])
-                    .expect("a nonzero interval"),
+                    .expect("a nonzero interval")
+                    .try_into()
+                    .expect("finite angular control endpoints"),
             )
             .expect("an ordered arc fixture"),
         })
@@ -1958,7 +2012,9 @@ mod tests {
             panic!("test feature changed family");
         };
         assert_eq!(
-            arc.radii().map(cadmpeg_ir::scalar::PositiveLength::get),
+            arc.radii()
+                .each_ref()
+                .map(|radius| radius.literal_radius().expect("literal radius").get()),
             [48.26, 48.26]
         );
         assert_point3(arc.center().get(), [25.4, 50.8, 76.2]);
@@ -1995,8 +2051,8 @@ mod tests {
                 Some(positive_length(high)),
             )
             .expect("an entry above the bore"),
-            depth: positive_length(1.0),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(1.0).expect("an interior angle"),
+            depth: (positive_length(1.0)).into(),
+            angle: (cadmpeg_ir::scalar::InteriorAngle::new(1.0).expect("an interior angle")).into(),
         };
         let error = kind
             .try_map_lengths(&mut |value| -> Result<_, cadmpeg_core::CodecError> {
@@ -2020,8 +2076,8 @@ mod tests {
         let mut shape = cadmpeg_ir::features::holes::HoleShape::new(
             cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::Counterbore {
-                    diameter: positive_length(high),
-                    depth: positive_length(1.0),
+                    diameter: (positive_length(high)).into(),
+                    depth: (positive_length(1.0)).into(),
                 },
                 specification: None,
             },
@@ -2093,16 +2149,16 @@ mod tests {
         let length = |value: f64| Length::new(value).expect("a finite length");
         let mut solid = cadmpeg_ir::features::PrimitiveSolid::new(
             cadmpeg_ir::features::PrimitiveSolidKind::Wedge {
-                xmin: length(low),
-                ymin: length(0.0),
-                zmin: length(0.0),
-                x2min: length(0.0),
-                z2min: length(0.0),
-                xmax: length(high),
-                ymax: length(1.0),
-                zmax: length(1.0),
-                x2max: length(0.0),
-                z2max: length(0.0),
+                xmin: (length(low)).into(),
+                ymin: (length(0.0)).into(),
+                zmin: (length(0.0)).into(),
+                x2min: (length(0.0)).into(),
+                z2min: (length(0.0)).into(),
+                xmax: (length(high)).into(),
+                ymax: (length(1.0)).into(),
+                zmax: (length(1.0)).into(),
+                x2max: (length(0.0)).into(),
+                z2max: (length(0.0)).into(),
             },
         )
         .expect("a wedge fixture");
@@ -2252,9 +2308,9 @@ mod tests {
                     cosmetic: false,
                     hand: ThreadHand::Right,
                     depth: HoleThreadDepth::Blind {
-                        depth: positive_length(3.0),
+                        depth: (positive_length(3.0)).into(),
                     },
-                    clearance: Some(Length::new(1.0).expect("length")),
+                    clearance: (Some(Length::new(1.0).expect("length"))).map(Into::into),
                 })),
             },
             None,
@@ -2396,7 +2452,7 @@ mod tests {
         assert!(matches!(
             shape.generated_sections_mut().next(),
             Some(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region })
-                if region.outer_radius().get() == 2.0
+                if region.outer_radius().literal_radius().is_some_and(|radius| radius.get() == 2.0)
         ));
     }
 
