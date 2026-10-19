@@ -473,6 +473,10 @@ fn decode_sketch_visibility_member(
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
+/// The explicit head frame whose closing reference at offset 151 carries an
+/// inline type GUID: forty bytes longer than the plain frame.
+const TYPED_MEMBER_RUN_HEAD_FRAME: usize = MEMBER_RUN_HEAD_FRAME + 40;
+
 /// Parse a member-run head placement: the paired same-index record after the
 /// sketch's entity header opens with a marked
 /// reference naming a head record. A 34-byte head denotes the identity
@@ -524,8 +528,11 @@ fn parse_member_run_head_placement(
                     paired_byte_offset: u64_from_index(paired_at),
                 }
             }
-            MEMBER_RUN_HEAD_FRAME
-                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) =>
+            MEMBER_RUN_HEAD_FRAME | TYPED_MEMBER_RUN_HEAD_FRAME
+                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..])
+                    && (frame_length == MEMBER_RUN_HEAD_FRAME
+                        || crate::bytes::typed_local_reference_target(bytes, head_at + 151)
+                            .is_some()) =>
             {
                 let values = f64s_at::<16>(bytes, head_at + 22)?;
                 let mut transform = [[0.0; 4]; 4];
@@ -538,6 +545,7 @@ fn parse_member_run_head_placement(
                 DesignSketchFrameForm::MemberExplicit {
                     paired_byte_offset: u64_from_index(paired_at),
                     transform: SketchPlacementMatrix::try_from(transform).ok()?,
+                    typed_reference: frame_length == TYPED_MEMBER_RUN_HEAD_FRAME,
                 }
             }
             _ => return None,
@@ -1033,12 +1041,43 @@ fn parse_legacy_sketch_member_run(
     primary_at: usize,
     entity_suffix: u32,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    parse_legacy_sketch_member_run_with(bytes, primary_at, entity_suffix, false)
+        .or_else(|| parse_legacy_sketch_member_run_with(bytes, primary_at, entity_suffix, true))
+}
+
+/// Target of the local reference at `at` in one spelling: the eleven-byte
+/// `01 + u32 + six zero bytes` or the 51-byte typed reference.
+fn legacy_sketch_reference_target(bytes: &[u8], at: usize, typed: bool) -> Option<u32> {
+    if typed {
+        crate::bytes::typed_local_reference_target(bytes, at)
+    } else if bytes.get(at) == Some(&1) && bytes.get(at + 5..at + 11) == Some(&[0u8; 6][..]) {
+        View::u32_le_at(bytes, at + 1)
+    } else {
+        None
+    }
+}
+
+/// Parse the legacy counted sketch member run with one reference spelling.
+///
+/// The paired header is followed by eight zero bytes, a reference at offset
+/// 19, eleven bytes, the u32 member count, and that many references; every
+/// reference in the run uses the same spelling.
+fn parse_legacy_sketch_member_run_with(
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+    typed: bool,
+) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    let width = if typed {
+        crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+    } else {
+        11
+    };
     let parsed = (|| {
         let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
         if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
             || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
-            || bytes.get(paired_at + 19) != Some(&1)
-            || bytes.get(paired_at + 24..paired_at + 30) != Some(&[0u8; 6][..])
+            || legacy_sketch_reference_target(bytes, paired_at + 19, typed).is_none()
         {
             return None;
         }
@@ -1050,27 +1089,23 @@ fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        let count = usize::try_from(View::u32_le_at(bytes, paired_at + 41)?).ok()?;
+        let count_at = paired_at + 19 + width + 11;
+        let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0 {
             return None;
         }
-        let run_end = (paired_at + 45).checked_add(count.checked_mul(11)?)?;
+        let run_end = (count_at + 4).checked_add(count.checked_mul(width)?)?;
         if run_end > bytes.len() {
             return None;
         }
-        Some((paired_at, count))
+        Some((count_at + 4, count))
     })();
-    let (paired_at, count) = parsed?;
+    let (first, count) = parsed?;
     let mut members = Vec::new();
     for ordinal in 0..count {
-        let marker = paired_at + 45 + ordinal * 11;
-        if bytes.get(marker) != Some(&1)
-            || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
-        {
-            return None;
-        }
+        let marker = first + ordinal * width;
         members.push(crate::records::identity::Located {
-            value: View::u32_le_at(bytes, marker + 1)?,
+            value: legacy_sketch_reference_target(bytes, marker, typed)?,
             offset: u64_from_index(marker + 1),
         });
     }

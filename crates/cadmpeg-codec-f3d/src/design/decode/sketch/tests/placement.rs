@@ -1020,3 +1020,76 @@ fn sketch_member_run_backfills_relation_free_owners() {
     )
     .is_err());
 }
+
+fn typed_sketch_reference(bytes: &mut Vec<u8>, target: u32) {
+    bytes.push(1);
+    bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+    bytes.extend_from_slice(&36u32.to_le_bytes());
+    bytes.extend_from_slice(b"11111111-2222-3333-4444-555555555555");
+    bytes.extend_from_slice(&[0, 0]);
+}
+
+#[test]
+fn typed_legacy_sketch_pair_reads_wide_member_references_and_head_frame() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"380");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"381");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    typed_sketch_reference(&mut bytes, 200);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for member in [300u32, 301] {
+        typed_sketch_reference(&mut bytes, member);
+    }
+    let members =
+        tested_parse_legacy_sketch_member_run(&bytes, 0, 100).expect("typed sketch member run");
+    assert_eq!(
+        members.iter().map(|row| row.value).collect::<Vec<_>>(),
+        [300, 301]
+    );
+    assert_eq!(
+        members.iter().map(|row| row.offset).collect::<Vec<_>>(),
+        [
+            u64_from_index(paired_at + 86),
+            u64_from_index(paired_at + 137)
+        ]
+    );
+
+    let head_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"283");
+    bytes.extend_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    for value in crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+        .rows()
+        .into_iter()
+        .flatten()
+    {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0);
+    typed_sketch_reference(&mut bytes, 152);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"284");
+    bytes.extend_from_slice(&201u32.to_le_bytes());
+    let entity_id = crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
+        .expect("valid entity ID");
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let placement = crate::design::decode::sketch::parse_member_run_head_placement(
+        &bytes, 0, &entity_id, &records,
+    )
+    .expect("typed explicit head placement");
+    assert_eq!(placement.byte_offset(), u64_from_index(head_at));
+    assert_eq!(placement.frame_length(), 202);
+    assert_eq!(
+        placement.transform_offset(),
+        Some(u64_from_index(head_at + 22))
+    );
+}

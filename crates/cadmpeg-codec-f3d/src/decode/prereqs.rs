@@ -174,10 +174,13 @@ pub(super) fn decode(
                 recipes: &construction_recipes,
             },
         )?;
+    let primary_frames =
+        crate::design::decode::scopes::parameter_scope::design_primary_frame_offsets(scan)?;
     crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
         ctx,
         &mut design_parameter_scopes,
         &history_index,
+        &primary_frames,
     )?;
     let design_joint_motions =
         crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
