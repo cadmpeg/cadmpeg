@@ -265,29 +265,55 @@ pub(crate) fn patch_protein_appearances(
     let mut patched = std::collections::BTreeSet::new();
     let mut total_inflated = 0_u64;
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|error| {
-            CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
-        })?;
-        let name = entry
-            .name()
+        // `zip` cannot expand or write a Zstandard member: see `crate::zip_write`.
+        let zstd = crate::zip_write::is_zstd_member(&mut archive, index)?;
+        let (name, options, mut bytes) = {
+            let mut entry = if zstd {
+                archive.by_index_raw(index)
+            } else {
+                archive.by_index(index)
+            }
             .map_err(|error| {
-                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
-            })?
-            .into_owned();
-        let options = crate::zip_write::file_options(entry.compression());
-        let declared_size = entry.size();
-        total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {
-            CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())
-        })?;
-        if total_inflated > crate::container::MAX_ARCHIVE_BYTES {
-            return Err(CodecError::malformed(format_args!(
-                "Protein ZIP entries declare {total_inflated} inflated bytes; total limit is {}",
-                crate::container::MAX_ARCHIVE_BYTES
-            )));
-        }
-        let mut bytes = crate::container::read_entry_bounded(&mut entry, declared_size, &name)?;
+                CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
+            })?;
+            let name = entry
+                .name()
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+                })?
+                .into_owned();
+            let options = crate::zip_write::file_options(entry.compression());
+            let declared_size = entry.size();
+            total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {
+                CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())
+            })?;
+            if total_inflated > crate::container::MAX_ARCHIVE_BYTES {
+                return Err(CodecError::malformed(format_args!(
+                    "Protein ZIP entries declare {total_inflated} inflated bytes; total limit is {}",
+                    crate::container::MAX_ARCHIVE_BYTES
+                )));
+            }
+            let bytes = if zstd {
+                crate::zip_write::expand_zstd_member(&mut entry, &name)?
+            } else {
+                crate::container::read_entry_bounded(&mut entry, declared_size, &name)?
+            };
+            (name, options, bytes)
+        };
+        let expanded = zstd.then(|| bytes.clone());
         if name.ends_with("AssetData/InstanceProperties.bin") {
             patch_instance_colors(protein, &mut bytes, edits, &mut patched, notes)?;
+        }
+        if let Some(expanded) = expanded {
+            crate::zip_write::write_zstd_member(
+                &mut zip,
+                &mut archive,
+                index,
+                &expanded,
+                &bytes,
+                notes,
+            )?;
+            continue;
         }
         zip.start_file(name, options).map_err(|error| {
             CodecError::malformed(format_args!("cannot write nested Protein entry: {error}"))
