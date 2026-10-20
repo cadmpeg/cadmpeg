@@ -2784,7 +2784,12 @@ pub(crate) fn project_relation_bindings(
             }
         }
     }
-    Ok(())
+    super::relation_table::project_relation_tables(
+        constraints,
+        &sketches_by_feature,
+        sketch_entities,
+        lanes,
+    )
 }
 
 pub(crate) fn owned_relation_parameters<'a>(

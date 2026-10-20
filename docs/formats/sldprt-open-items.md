@@ -222,11 +222,11 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the lookup rule to evaluate a configuration-qualified property operand.
 
-### DI-05. Offset-edge relation invariant
+### DI-05. Offset-edge relation invariant with an external operand
 
-**Question.** What neutral geometric invariant does an offset-edge marker relation impose?
+**Question.** What neutral geometric invariant does an offset-edge relation impose when one operand is an external-reference record?
 
-**Known.** `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" through `sldprt.md` §2 "A primary line-or-circle geometry handle on a transformed line segment identifies that line" define operand resolution and the neutral invariants of the supported dimensional and geometric relations.
+**Known.** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the invariant for two local operands: two parallel lines or two concentric arcs. An external-reference record stores backed-up points in the frame of its source sketch, so a comparison in the frame of the owning sketch does not apply.
 
 **Need.** We must know the invariant to project the native relation as a neutral sketch constraint.
 
@@ -250,15 +250,15 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** What neutral invariant and operand roles does each relation code in `29..32`, `36..41`, and `43..85` have?
 
-**Known.** The native numeric taxonomy defines identities through code `85`. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" through `sldprt.md` §2 "A primary line-or-circle geometry handle on a transformed line segment identifies that line" define the neutral semantics of the supported codes.
+**Known.** The native numeric taxonomy defines identities through code `85`. `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the row layout and operand kinds. Relation tables use codes `32`, `40`, `50`, `53`, `55`, `56`, `57`, `62`, `64`, `65`, `66`, `67`, `75`, `80`, and `85` of this range. A patterned row (`57`) has two congruent operands, but the IR has no patterned constraint. A use-edge row (`32`) pairs an external-reference record with a local curve. An at-pierce row (`40`) has two point operands, and most name an external-reference point.
 
-**Need.** We must know each invariant and operand family to project the remaining codes.
+**Need.** We must know each invariant and operand role to project the remaining codes.
 
 ### DI-09. Relation codes above `85`
 
 **Question.** What native relation does each code above `85` identify?
 
-**Known.** The defined native numeric taxonomy ends at code `85`.
+**Known.** The defined native numeric taxonomy ends at code `85`. No known relation-table row or sketch marker has a code above `85`.
 
 **Need.** We must know the identities before we can define their operands and neutral invariants.
 
@@ -509,6 +509,22 @@ uses the nearest preceding sibling `moCosmeticThread_c` feature when a pattern
 has a derived cosmetic-thread output and no resolved seed. Another fallback
 uses the immediately preceding feature-input object. Either rule can assign an
 unrelated preceding feature as the pattern seed.
+
+### DI-45. Relation-table row flag
+
+**Question.** What does the u16 row flag `1` of a relation-table row mean?
+
+**Known.** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the flag position. The solved geometry satisfies a flag-`0` row; a flag-`1` row often does not hold. The decoder keeps flag-`1` rows as native constraints.
+
+**Need.** We must know the meaning to type or to write flag-`1` rows.
+
+### DI-46. Point records with a curve or relation code
+
+**Question.** Which field identifies a point record whose u32 at marker +17 is `2` or a relation code?
+
+**Known.** Such a record stores the coordinate tag `1e 00` at marker +64 and holds a slot in the point array of its block. The marker scan classifies it by marker +17, so the record does not become a sketch point, and relation rows that name it stay native.
+
+**Need.** We must draw these points to type the relations that name them.
 
 ## 6. Container record semantics
 
