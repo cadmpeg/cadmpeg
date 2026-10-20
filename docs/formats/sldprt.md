@@ -16,7 +16,8 @@ frames below. The compound-document envelope begins with the OLE2 magic
 The compound-document envelope uses Compound File Binary version 3 or 4. Its
 header sector is 512 or 4096 bytes respectively; regular sectors have the same
 size and mini sectors are 64 bytes. Header DIFAT entries and chained DIFAT
-sectors identify FAT sectors. FAT chains identify the directory stream, the
+sectors identify FAT sectors; the last DIFAT sector links to ENDOFCHAIN, and a
+FREESECT link there is malformed. FAT chains identify the directory stream, the
 root mini stream, the mini-FAT stream, and regular streams. Directory entries
 are 128 bytes and carry a NUL-terminated UTF-16LE name, object type, left and
 right sibling identifiers, child identifier, first sector, and u64 stream size.

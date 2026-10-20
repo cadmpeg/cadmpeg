@@ -27,6 +27,67 @@ const MINI_STREAM_CUTOFF: u64 = 4096;
 
 static NEXT_COMPOUND_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
+/// A noncanonical CFB encoding admitted under an exact structural rule.
+///
+/// A codec reading a snapshot must report each deviation through its loss
+/// vocabulary even when every stream opens.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompoundDeviation {
+    /// The final DIFAT sector links to FREESECT instead of ENDOFCHAIN. Admitted
+    /// only when the chain walked exactly the header DIFAT count, that count is
+    /// the number of DIFAT sectors the declared FAT count requires, and the
+    /// walk collected exactly the declared FAT sector ids.
+    DifatChainEndsWithFreeSector,
+}
+
+impl CompoundDeviation {
+    /// Human-readable description of the deviation.
+    #[must_use]
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::DifatChainEndsWithFreeSector => {
+                "CFB DIFAT chain ended with FREESECT instead of ENDOFCHAIN"
+            }
+        }
+    }
+}
+
+/// How a walked DIFAT chain ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DifatEnd {
+    Canonical,
+    FreeSector,
+}
+
+/// Classifies the final DIFAT link after exactly `difat_count` sectors were
+/// walked and `fat_ids` FAT sector ids were collected. `None` rejects the chain.
+fn difat_end(
+    difat_start: u32,
+    difat_count: usize,
+    final_link: u32,
+    fat_count: usize,
+    fat_ids: usize,
+    sector_size: usize,
+) -> Option<DifatEnd> {
+    if difat_count == 0 {
+        return (difat_start == END_OF_CHAIN).then_some(DifatEnd::Canonical);
+    }
+    match final_link {
+        END_OF_CHAIN => Some(DifatEnd::Canonical),
+        FREE_SECTOR
+            if fat_ids == fat_count
+                && fat_count
+                    .checked_sub(109)
+                    .map(|rest| rest.div_ceil(sector_size / 4 - 1))
+                    == Some(difat_count) =>
+        {
+            Some(DifatEnd::FreeSector)
+        }
+        _ => None,
+    }
+}
+
 /// Stable identity for a CFB storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CompoundStorageId(u32);
@@ -347,6 +408,7 @@ struct CompoundState {
     fat_sectors: BTreeSet<u32>,
     difat_sectors: BTreeSet<u32>,
     range_lock_sector: Option<u32>,
+    difat_deviation: Option<CompoundDeviation>,
 }
 
 /// Parsed CFB navigation state over one decode-session root view.
@@ -397,6 +459,21 @@ impl<'a> CompoundSnapshot<'a> {
     /// Returns the CFB major version.
     pub const fn major_version(&self) -> u16 {
         self.parsed.version.major()
+    }
+
+    /// Noncanonical encodings this snapshot admitted. A codec must report
+    /// each one through its loss vocabulary.
+    pub fn deviations(&self) -> impl Iterator<Item = CompoundDeviation> {
+        self.parsed.difat_deviation.into_iter()
+    }
+
+    /// Refuses a snapshot that admitted any noncanonical encoding. Codecs
+    /// without a loss path for [`Self::deviations`] call this instead.
+    pub fn require_canonical(&self) -> Result<(), CodecError> {
+        match self.deviations().next() {
+            Some(deviation) => malformed(deviation.description()),
+            None => Ok(()),
+        }
     }
 
     /// Returns the regular-sector size.
@@ -690,8 +767,15 @@ impl CompoundState {
             next_difat = le_u32(data, difat_entries * 4)
                 .ok_or_else(|| CodecError::Malformed("truncated CFB DIFAT link".into()))?;
         }
-        if (difat_count == 0 && difat_start != END_OF_CHAIN)
-            || (difat_count != 0 && next_difat != END_OF_CHAIN)
+        let difat_end = difat_end(
+            difat_start,
+            difat_count,
+            next_difat,
+            fat_count,
+            fat_sectors.len(),
+            sector_size,
+        );
+        if difat_end.is_none()
             || fat_sectors.len() != fat_count
             || fat_sectors
                 .iter()
@@ -814,6 +898,8 @@ impl CompoundState {
             fat_sectors: fat_sector_set,
             difat_sectors: seen_difat,
             range_lock_sector,
+            difat_deviation: (difat_end == Some(DifatEnd::FreeSector))
+                .then_some(CompoundDeviation::DifatChainEndsWithFreeSector),
         })
     }
 
@@ -1194,8 +1280,15 @@ impl CompoundPrefixProbe {
             };
             next_difat = next;
         }
-        if (difat_count == 0 && difat_start != END_OF_CHAIN)
-            || (difat_count != 0 && next_difat != END_OF_CHAIN)
+        if difat_end(
+            difat_start,
+            difat_count,
+            next_difat,
+            fat_count,
+            fat_sectors.len(),
+            sector_size,
+        )
+        .is_none()
         {
             return Ok(Self::Malformed(
                 "CFB DIFAT chain length does not match the header".into(),
@@ -1813,9 +1906,9 @@ mod tests {
 
     use super::{
         cfb_name_cmp, cfb_upper_unit, parse_directory, path_key, range_lock_sector,
-        read_detection_prefix, validate_sibling_tree, CompoundEntry, CompoundPrefixProbe,
-        CompoundSnapshot, CompoundState, CompoundVersion, DirectorySlot, DIFAT_SECTOR,
-        END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, MAGIC, NO_STREAM, RANGE_LOCK_END,
+        read_detection_prefix, validate_sibling_tree, CompoundDeviation, CompoundEntry,
+        CompoundPrefixProbe, CompoundSnapshot, CompoundState, CompoundVersion, DirectorySlot,
+        DIFAT_SECTOR, END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, MAGIC, NO_STREAM, RANGE_LOCK_END,
     };
 
     const SECTOR_SIZE: usize = 512;
@@ -2435,6 +2528,56 @@ mod tests {
             probe(&prefix),
             CompoundPrefixProbe::DirectoryEvidence(_)
         ));
+    }
+
+    #[test]
+    fn difat_free_terminator_is_admitted_only_at_the_exact_declared_count() {
+        // 110 FAT sectors: 109 in the header DIFAT and one in DIFAT sector 121,
+        // whose next link is FREESECT rather than ENDOFCHAIN.
+        let mut file = fixture();
+        file.resize(SECTOR_SIZE * 124, 0xff);
+        put_u32(&mut file, 44, 110);
+        put_u32(&mut file, 68, 121);
+        put_u32(&mut file, 72, 1);
+        for index in 1..109 {
+            put_u32(
+                &mut file,
+                76 + index * 4,
+                11 + u32::try_from(index).expect("FAT id"),
+            );
+        }
+        for id in 12..=120 {
+            put_u32(sector_mut(&mut file, 11), id * 4, FAT_SECTOR);
+        }
+        put_u32(sector_mut(&mut file, 11), 121 * 4, DIFAT_SECTOR);
+        put_u32(sector_mut(&mut file, 121), 0, 120);
+        let deviations = |file: &[u8]| {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::default();
+            let (ctx, root) = DecodeContext::from_root_bytes(file, &arena, &policy)
+                .expect("synthetic CFB fits the decode policy");
+            CompoundSnapshot::new(&ctx, root)
+                .map(|snapshot| snapshot.deviations().collect::<Vec<_>>())
+                .is_ok_and(|found| found == [CompoundDeviation::DifatChainEndsWithFreeSector])
+        };
+        assert!(deviations(&file));
+        assert!(matches!(
+            probe(&file),
+            CompoundPrefixProbe::DirectoryEvidence(_)
+        ));
+        let mut canonical = file.clone();
+        put_u32(
+            sector_mut(&mut canonical, 121),
+            SECTOR_SIZE - 4,
+            END_OF_CHAIN,
+        );
+        assert!(snapshot_parses(&canonical) && !deviations(&canonical));
+        // A second, empty DIFAT sector exceeds the count the FAT requires.
+        put_u32(&mut file, 72, 2);
+        put_u32(sector_mut(&mut file, 121), SECTOR_SIZE - 4, 122);
+        put_u32(sector_mut(&mut file, 11), 122 * 4, DIFAT_SECTOR);
+        assert!(!snapshot_parses(&file));
+        assert!(matches!(probe(&file), CompoundPrefixProbe::Malformed(_)));
     }
 
     #[test]

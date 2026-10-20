@@ -605,7 +605,8 @@ FastLoad occurrence ordinal.
 ### 2.4 Legacy CFB envelope
 
 Legacy NX parts use the Compound File Binary envelope with the eight-byte header
-signature `d0 cf 11 e0 a1 b1 1a e1`. The CFB directory contains the
+signature `d0 cf 11 e0 a1 b1 1a e1`. The last DIFAT sector links to ENDOFCHAIN;
+a FREESECT link there is malformed. The CFB directory contains the
 `UG_PART/UG_PART` stream. The CFB signature alone does not identify NX; the
 `UG_PART/UG_PART` directory path is required.
 
