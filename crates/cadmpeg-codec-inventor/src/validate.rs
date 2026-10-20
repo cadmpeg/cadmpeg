@@ -1075,6 +1075,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
+    let history_records = data
+        .pm_dc_pattern_features
+        .iter()
+        .map(PmDcPatternFeature::id)
+        .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
+        .collect::<HashSet<_>>();
     for feature in &ir.model.features {
         if is_flat_pattern_feature(feature)
             && feature
@@ -1084,11 +1090,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         {
             continue;
         }
-        let Some(raw_feature) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| raw_features.get(native).copied())
-        else {
+        let native = feature.native_ref.as_deref();
+        let Some(raw_feature) = native.and_then(|native| raw_features.get(native).copied()) else {
+            if native.is_some_and(|native| history_records.contains(native))
+                && crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
+                    .is_none()
+            {
+                continue;
+            }
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature does not resolve to its PmDc source record".into(),

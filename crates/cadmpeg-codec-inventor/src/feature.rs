@@ -34,6 +34,8 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
+mod history;
+
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
 const FEATURE_TYPE: [u8; 16] = [
@@ -990,6 +992,206 @@ const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ]));
 
+/// Native family names of feature-label classes outside the neutral families.
+const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
+    (
+        [
+            0x05, 0xda, 0xba, 0x90, 0xd1, 0x11, 0x38, 0x61, 0x00, 0x08, 0x0b, 0xbd, 0x06, 0x63,
+            0xdc, 0x09,
+        ],
+        "Sweep",
+    ),
+    (
+        [
+            0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1,
+            0xfb, 0xb0,
+        ],
+        "Thread",
+    ),
+    (
+        [
+            0x12, 0x96, 0x3c, 0xb8, 0xd1, 0x11, 0x8a, 0x28, 0x60, 0x00, 0x8b, 0xb8, 0x01, 0xf3,
+            0x1b, 0xb0,
+        ],
+        "Shell",
+    ),
+    (
+        [
+            0x2d, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24,
+            0xdc, 0x09,
+        ],
+        "Base",
+    ),
+    (
+        [
+            0x33, 0x67, 0x23, 0xc0, 0x7e, 0x40, 0xea, 0xcb, 0x2e, 0xff, 0x66, 0x9e, 0x9a, 0xdd,
+            0x87, 0xf8,
+        ],
+        "Combine",
+    ),
+    (
+        [
+            0x3a, 0x6f, 0xed, 0x36, 0xd4, 0x11, 0x42, 0x88, 0x10, 0x00, 0xfc, 0xa5, 0xbb, 0xa6,
+            0x47, 0xb5,
+        ],
+        "RevolveSurface",
+    ),
+    (
+        [
+            0x5f, 0x01, 0x54, 0x00, 0xd2, 0x11, 0x25, 0x1c, 0x60, 0x00, 0x67, 0xb7, 0x9b, 0x49,
+            0xeb, 0xb0,
+        ],
+        "Revolve",
+    ),
+    (
+        [
+            0x68, 0x6e, 0x16, 0xd3, 0x33, 0x4f, 0x63, 0x71, 0x61, 0xa6, 0xa1, 0x9b, 0xdd, 0x3d,
+            0x2b, 0xe8,
+        ],
+        "DeleteFace",
+    ),
+    (
+        [
+            0x7f, 0x58, 0x80, 0x68, 0xb7, 0x43, 0x78, 0xa0, 0x55, 0x95, 0x15, 0x94, 0x6f, 0x7a,
+            0x1c, 0x12,
+        ],
+        "SheetMetalCorner",
+    ),
+    (
+        [
+            0x80, 0x8b, 0x00, 0xaf, 0xd4, 0x11, 0x40, 0x88, 0x10, 0x00, 0xfc, 0xa5, 0xbb, 0xa6,
+            0x47, 0xb5,
+        ],
+        "LoftSurface",
+    ),
+    (
+        [
+            0x85, 0x5b, 0x33, 0xe7, 0x04, 0x45, 0xdf, 0x5c, 0x25, 0xb4, 0x8c, 0xb8, 0xa8, 0xb2,
+            0x69, 0x22,
+        ],
+        "Decal",
+    ),
+    (
+        [
+            0x8c, 0x39, 0x5e, 0x28, 0x4c, 0x4f, 0xeb, 0x8b, 0xc9, 0x81, 0x4c, 0xab, 0xad, 0xec,
+            0x94, 0x39,
+        ],
+        "Emboss",
+    ),
+    (
+        [
+            0x94, 0x26, 0xc2, 0xb6, 0xd2, 0x11, 0x26, 0x36, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3,
+            0x1b, 0xb0,
+        ],
+        "CircularPattern",
+    ),
+    (
+        [
+            0xa3, 0x26, 0xc2, 0xb6, 0xd2, 0x11, 0x26, 0x36, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3,
+            0x1b, 0xb0,
+        ],
+        "Mirror",
+    ),
+    (
+        [
+            0xaa, 0xf2, 0x10, 0x93, 0xd3, 0x44, 0x20, 0x9a, 0x04, 0xcc, 0x79, 0x96, 0x56, 0xcd,
+            0x7e, 0x09,
+        ],
+        "FlatPatternDefinition",
+    ),
+    (
+        [
+            0xb5, 0x4d, 0xd6, 0xf6, 0xd3, 0x11, 0xc4, 0x96, 0x60, 0x00, 0xf2, 0xb2, 0x1d, 0x6e,
+            0xef, 0xb0,
+        ],
+        "CornerRound",
+    ),
+    (
+        [
+            0xba, 0xa8, 0x71, 0x83, 0xd3, 0x11, 0x34, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf,
+            0x72, 0x4f,
+        ],
+        "Split",
+    ),
+    (
+        [
+            0xc6, 0x5f, 0x58, 0x55, 0xd3, 0x11, 0x73, 0x0c, 0x60, 0x00, 0x3a, 0xa9, 0x9d, 0xcc,
+            0xef, 0xb0,
+        ],
+        "SheetMetalPlate",
+    ),
+    (
+        [
+            0xda, 0x14, 0x19, 0xb4, 0xd2, 0x11, 0xda, 0xd0, 0x60, 0x00, 0x12, 0xa9, 0x9d, 0xcc,
+            0xef, 0xb0,
+        ],
+        "Coil",
+    ),
+    (
+        [
+            0xda, 0xc2, 0x7a, 0x76, 0xd2, 0x11, 0x0d, 0x2e, 0x60, 0x00, 0x2a, 0xab, 0x01, 0xf3,
+            0x1b, 0xb0,
+        ],
+        "RectangularPattern",
+    ),
+    (
+        [
+            0xde, 0xa6, 0xa6, 0x8f, 0x4c, 0x4b, 0x52, 0x91, 0x88, 0xca, 0x31, 0xb5, 0x63, 0x01,
+            0x98, 0xc8,
+        ],
+        "Move",
+    ),
+    (
+        [
+            0xe0, 0xef, 0x54, 0x2f, 0xd1, 0x11, 0x34, 0x09, 0x00, 0x08, 0x4e, 0xba, 0x32, 0xa3,
+            0xdc, 0x09,
+        ],
+        "Loft",
+    ),
+    (
+        [
+            0xe6, 0xda, 0x3f, 0x26, 0x92, 0x4b, 0x5d, 0xab, 0x8e, 0x1b, 0xc5, 0xa9, 0x3f, 0xea,
+            0xd7, 0xde,
+        ],
+        "Rotate",
+    ),
+    (
+        [
+            0xe8, 0x99, 0xdb, 0xdf, 0xd3, 0x11, 0x65, 0xaf, 0xc0, 0x00, 0x01, 0x85, 0xe8, 0x9c,
+            0x6b, 0x4f,
+        ],
+        "Tagging",
+    ),
+    (
+        [
+            0xe9, 0x9f, 0x83, 0x2b, 0x7a, 0x42, 0x95, 0xa1, 0xd9, 0x76, 0x33, 0x83, 0xbe, 0xa1,
+            0x7c, 0xce,
+        ],
+        "MoveBody",
+    ),
+    (
+        [
+            0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30,
+            0x96, 0xac,
+        ],
+        "Thicken",
+    ),
+    (
+        [
+            0xf0, 0xa4, 0x97, 0xe5, 0xd4, 0x11, 0xd8, 0x84, 0x10, 0x00, 0xfa, 0xa5, 0xbb, 0xa6,
+            0x47, 0xb5,
+        ],
+        "ExtrudeSurface",
+    ),
+    (
+        [
+            0xf2, 0x58, 0xf7, 0x4c, 0xd3, 0x11, 0x4f, 0x24, 0x60, 0x00, 0x47, 0xa9, 0x9d, 0xcc,
+            0xef, 0xb0,
+        ],
+        "SheetMetalBend",
+    ),
+];
+
 #[derive(Clone, Copy)]
 pub(crate) enum FeatureFamily {
     Extrusion,
@@ -1170,32 +1372,97 @@ pub(crate) fn project(
             label,
         )
     }));
+    let token = feature_tokens.iter().next().copied();
+    let history = match token {
+        Some(token) => history::build(ctx, token, inventory, design, &sketch.sketches)?,
+        None => history::History::default(),
+    };
+    let label_of = |ordinal: u32| {
+        token.and_then(|token| {
+            labels
+                .get(&(token, Some(ordinal)))
+                .and_then(Option::as_ref)
+                .copied()
+        })
+    };
     let mut projected = Vec::new();
+    let mut neutral = 0_usize;
     for feature in &inventory.features {
-        let Some(label) = labels
-            .get(&(
-                feature.identity.segment_token.as_str(),
-                Some(feature.identity.record_ordinal),
-            ))
-            .and_then(Option::as_ref)
-        else {
-            continue;
+        let label = label_of(feature.identity.record_ordinal);
+        let value = match label.and_then(|label| {
+            FeatureFamily::from_class_id(label.class_id()).map(|family| (label, family))
+        }) {
+            Some((label, family)) => match family {
+                FeatureFamily::Extrusion => project_extrusion(ctx, feature, label, &index),
+                FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
+                FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
+                FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
+            }
+            .transpose()?,
+            None => None,
         };
-        let Some(family) = FeatureFamily::from_class_id(label.class_id()) else {
-            continue;
-        };
-        let value = match family {
-            FeatureFamily::Extrusion => project_extrusion(ctx, feature, label, &index),
-            FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
-            FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
-            FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
-        }
-        .transpose()?;
-        if let Some(value) = value {
-            projected.push(value);
+        match value {
+            Some((projected_feature, result)) => {
+                neutral += 1;
+                projected.push(HistoryItem {
+                    record: feature.identity.record_ordinal,
+                    kind: history::HistoryNodeKind::Feature,
+                    flags: feature.header.flags,
+                    label,
+                    feature: projected_feature,
+                    result: Some(result),
+                });
+            }
+            None if history.placement(feature.identity.record_ordinal).is_some() => {
+                projected.push(HistoryItem {
+                    record: feature.identity.record_ordinal,
+                    kind: history::HistoryNodeKind::Feature,
+                    flags: feature.header.flags,
+                    label,
+                    feature: native_feature(ctx, &feature.identity, label, feature.id())?,
+                    result: None,
+                });
+            }
+            None => {}
         }
     }
-    let ordinal_counts = projected.iter().map(|(feature, _)| feature.ordinal).fold(
+    for pattern in &inventory.pattern_features {
+        if history.placement(pattern.identity.record_ordinal).is_none() {
+            continue;
+        }
+        let label = label_of(pattern.identity.record_ordinal);
+        projected.push(HistoryItem {
+            record: pattern.identity.record_ordinal,
+            kind: history::HistoryNodeKind::Pattern,
+            flags: pattern.header.flags,
+            label,
+            feature: native_feature(ctx, &pattern.identity, label, pattern.id())?,
+            result: None,
+        });
+    }
+    for record in &sketch.sketches {
+        let Some(placement) = history.placement(record.identity.record_ordinal) else {
+            continue;
+        };
+        if placement.kind != history::HistoryNodeKind::Sketch {
+            continue;
+        }
+        let label = label_of(record.identity.record_ordinal);
+        projected.push(HistoryItem {
+            record: record.identity.record_ordinal,
+            kind: history::HistoryNodeKind::Sketch,
+            flags: record.header.flags,
+            label,
+            feature: sketch_feature(ctx, record, label, &index)?,
+            result: None,
+        });
+    }
+    apply_history(&mut projected, &history, inventory, token)?;
+    let unresolved_states = projected
+        .iter()
+        .filter(|item| item.result.is_some() && history.placement(item.record).is_none())
+        .count();
+    let ordinal_counts = projected.iter().map(|item| item.feature.ordinal).fold(
         HashMap::<u64, usize>::new(),
         |mut counts, ordinal| {
             *counts.entry(ordinal).or_default() += 1;
@@ -1206,17 +1473,239 @@ pub(crate) fn project(
         .into_iter()
         .filter_map(|(ordinal, count)| (count > 1).then_some(ordinal))
         .collect::<HashSet<_>>();
-    projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
-    projected.sort_unstable_by_key(|(left, _)| left.ordinal);
-    let (features, result_topologies): (Vec<_>, Vec<_>) = projected.into_iter().unzip();
+    projected.retain(|item| {
+        let keep = !duplicate_ordinals.contains(&item.feature.ordinal);
+        if !keep && item.result.is_some() {
+            neutral -= 1;
+        }
+        keep
+    });
+    projected.sort_unstable_by_key(|item| item.feature.ordinal);
+    let mut features = Vec::new();
+    let mut result_topologies = Vec::new();
+    for item in projected {
+        features.push(item.feature);
+        if let Some(result) = item.result {
+            result_topologies.push(result);
+        }
+    }
     Ok(FeatureProjection {
-        unresolved_features: total.checked_sub(features.len()).ok_or_else(|| {
+        unresolved_features: total.checked_sub(neutral).ok_or_else(|| {
             CodecError::malformed("Inventor feature projection exceeds inventory")
         })?,
-        unresolved_states: features.len(),
+        unresolved_states: unresolved_states.min(neutral),
         features,
         result_topologies,
     })
+}
+
+/// One projected history node and the record that supplies it.
+struct HistoryItem<'a> {
+    record: u32,
+    kind: history::HistoryNodeKind,
+    flags: u32,
+    label: Option<&'a PmDcFeatureLabel>,
+    feature: Feature,
+    result: Option<FeatureResultTopology>,
+}
+
+/// Apply browser order, suppression, end-of-part state, and consumed-node
+/// dependencies to the projected history nodes.
+fn apply_history(
+    projected: &mut [HistoryItem<'_>],
+    history: &history::History,
+    inventory: &FeatureInventory,
+    token: Option<&str>,
+) -> Result<(), CodecError> {
+    if history.placements.is_empty() {
+        return Ok(());
+    }
+    let mut unplaced = projected
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| history.placement(item.record).is_none())
+        .map(|(position, item)| (item.label.map(|label| label.index), item.record, position))
+        .collect::<Vec<_>>();
+    unplaced.sort_unstable_by_key(|&(label, record, _)| (label.is_none(), label, record));
+    let mut next = history.next_ordinal;
+    for (_, _, position) in unplaced {
+        if let Some(item) = projected.get_mut(position) {
+            item.feature.ordinal = next;
+            next = next
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("Inventor feature ordinal overflows"))?;
+        }
+    }
+    let ids = projected
+        .iter()
+        .map(|item| (item.record, item.feature.id.clone()))
+        .collect::<HashMap<_, _>>();
+    let patterns = inventory
+        .pattern_features
+        .iter()
+        .filter(|pattern| Some(pattern.identity.segment_token.as_str()) == token)
+        .map(|pattern| (pattern.identity.record_ordinal, pattern))
+        .collect::<HashMap<_, _>>();
+    for item in projected.iter_mut() {
+        let Some(placement) = history.placement(item.record) else {
+            continue;
+        };
+        item.feature.ordinal = placement.ordinal;
+        let flagged = item.flags & history::SUPPRESSED_FLAG != 0;
+        item.feature.suppressed = Some(flagged || placement.below_end_of_part);
+        if flagged {
+            insert_history_property(&mut item.feature, "suppressed", "true")?;
+        }
+        if placement.below_end_of_part {
+            insert_history_property(&mut item.feature, "end_of_part", "below")?;
+        }
+        if !placement.model_history {
+            insert_history_property(&mut item.feature, "history", "flat_pattern")?;
+        }
+        let consumed: Vec<u32> = match item.kind {
+            history::HistoryNodeKind::Sketch => Vec::new(),
+            history::HistoryNodeKind::Feature => item
+                .label
+                .map(|label| {
+                    label
+                        .participants
+                        .references()
+                        .iter()
+                        .filter_map(|reference| reference.record_ordinal())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            history::HistoryNodeKind::Pattern => patterns
+                .get(&item.record)
+                .map(|pattern| {
+                    pattern
+                        .participants
+                        .references()
+                        .iter()
+                        .filter_map(|reference| reference.record_ordinal())
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        for ordinal in consumed {
+            let Some(dependency) = ids.get(&ordinal) else {
+                continue;
+            };
+            if history
+                .placement(ordinal)
+                .is_none_or(|earlier| earlier.ordinal >= placement.ordinal)
+            {
+                continue;
+            }
+            item.feature.dependencies.insert(dependency.clone());
+        }
+    }
+    Ok(())
+}
+
+fn insert_history_property(
+    feature: &mut Feature,
+    key: &'static str,
+    value: &'static str,
+) -> Result<(), CodecError> {
+    feature.source_properties.insert(
+        cadmpeg_core::text::NonBlankString::new(key.to_owned()).ok_or_else(|| {
+            CodecError::malformed("Inventor feature history property key is blank")
+        })?,
+        value.to_owned(),
+    );
+    Ok(())
+}
+
+fn history_feature_id(
+    identity: &crate::record_identity::RecordIdentity,
+) -> Result<FeatureId, CodecError> {
+    Ok(FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+        identity.key()?,
+    ))
+}
+
+/// A feature record whose operation graph is not closed, retained at its
+/// history position with its native family.
+fn native_feature(
+    ctx: &DecodeContext<'_>,
+    identity: &crate::record_identity::RecordIdentity,
+    label: Option<&PmDcFeatureLabel>,
+    native_id: String,
+) -> Result<Feature, CodecError> {
+    ctx.charge_entities(1, "project Inventor history feature")?;
+    let kind = native_kind(label.map(|label| label.class_id()));
+    Ok(Feature {
+        id: history_feature_id(identity)?,
+        ordinal: label.map_or(0, |label| u64::from(label.index)),
+        name: label.and_then(|label| label.name()).map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some("native".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind,
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: Some(native_id),
+    })
+}
+
+/// A planar sketch node of the history.
+fn sketch_feature(
+    ctx: &DecodeContext<'_>,
+    record: &crate::sketch::PmDcSketch,
+    label: Option<&PmDcFeatureLabel>,
+    index: &ProjectionIndex<'_>,
+) -> Result<Feature, CodecError> {
+    let native_id = record.id();
+    ctx.charge_entities(1, "project Inventor history feature")?;
+    let sketch = index.sketch_ids.get(native_id.as_str()).cloned();
+    Ok(Feature {
+        id: history_feature_id(&record.identity)?,
+        ordinal: label.map_or(0, |label| u64::from(label.index)),
+        name: label.and_then(|label| label.name()).map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some("sketch".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
+            }),
+        ),
+        native_ref: Some(native_id),
+    })
+}
+
+/// Native family of a feature-label class identifier.
+fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeatureKind {
+    use cadmpeg_ir::features::NativeFeatureKind;
+    let Some(class_id) = class_id else {
+        return NativeFeatureKind::Other("InventorFeature".into());
+    };
+    if let Some(family) = FeatureFamily::from_class_id(class_id) {
+        return match family {
+            FeatureFamily::Extrusion => NativeFeatureKind::Extrude,
+            FeatureFamily::Fillet => NativeFeatureKind::Fillet,
+            FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
+            FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
+        };
+    }
+    NATIVE_CLASSES
+        .iter()
+        .find(|(bytes, _)| *bytes == class_id.0.into_inner())
+        .map_or_else(
+            || NativeFeatureKind::Other(format!("InventorClass:{class_id}")),
+            |(_, name)| NativeFeatureKind::Other((*name).to_owned()),
+        )
 }
 
 fn project_extrusion(
@@ -2116,7 +2605,7 @@ mod tests {
         );
     }
 
-    fn segment() -> cadmpeg_ir::ids::IdentityKey {
+    pub(super) fn segment() -> cadmpeg_ir::ids::IdentityKey {
         cadmpeg_ir::identity_key!("generated")
     }
 
@@ -2150,12 +2639,12 @@ mod tests {
         bytes
     }
 
-    fn reference(index: u32) -> crate::pmdc::PmDcReference {
+    pub(super) fn reference(index: u32) -> crate::pmdc::PmDcReference {
         crate::pmdc::PmDcReference::new(index, index != 0)
             .expect("test reference index fits 31 bits")
     }
 
-    fn reference_list(values: &[u32]) -> PmDcReferenceList {
+    pub(super) fn reference_list(values: &[u32]) -> PmDcReferenceList {
         PmDcReferenceList::new(
             2,
             (!values.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
@@ -2167,7 +2656,7 @@ mod tests {
         .expect("test list metadata matches length")
     }
 
-    fn test_header() -> PmDcContentHeader {
+    pub(super) fn test_header() -> PmDcContentHeader {
         PmDcContentHeader {
             header_value: 0,
             header_id: 0,
@@ -2192,7 +2681,11 @@ mod tests {
         )
     }
 
-    fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
+    pub(super) fn test_feature(
+        ordinal: u32,
+        slot_count: usize,
+        slots: &[(usize, u32)],
+    ) -> PmDcFeature {
         let mut references = vec![reference(0); slot_count];
         for (slot, record_ordinal) in slots {
             references[*slot] = reference(record_ordinal + 1);
@@ -2249,7 +2742,7 @@ mod tests {
         assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_err());
     }
 
-    fn test_label(
+    pub(super) fn test_label(
         owner_ordinal: u32,
         index: u32,
         class_id: ClassId,
