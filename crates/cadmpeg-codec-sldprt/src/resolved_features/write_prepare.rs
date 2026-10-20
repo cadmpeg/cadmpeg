@@ -615,11 +615,23 @@ fn validate_generated_marker_constraint(
             }
             (entity, None)
         }
-        _ => {
-            return Err(cadmpeg_core::CodecError::NotImplemented(
-                "source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations"
-                    .into(),
-            ));
+        SketchConstraintDefinitionInput::Native { native_kind, .. } => {
+            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                "source-less SLDPRT sketch constraint {} keeps native relation {}, which the synthesized writer cannot emit",
+                constraint.id.as_str(),
+                native_kind.as_str()
+            )));
+        }
+        other => {
+            let debug = format!("{other:?}");
+            let kind = debug
+                .split(|character: char| !character.is_ascii_alphanumeric())
+                .next()
+                .unwrap_or_default();
+            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                "source-less SLDPRT sketch constraint {} is {kind}; source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations",
+                constraint.id.as_str()
+            )));
         }
     };
     let entity = ir
