@@ -101,6 +101,7 @@ pub(super) fn placement_transform(
 pub(super) fn infer_edge_parameter_ranges(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut needed = false;
     for edge in &ir.model.edges {
@@ -113,6 +114,7 @@ pub(super) fn infer_edge_parameter_ranges(
         return Ok(());
     }
     let model_index = cadmpeg_ir::index::ModelIndex::build(ir);
+    let tolerance = model_index.ir().tolerances.linear.get();
     let mut inferred = Vec::new();
     for (edge_index, edge) in ir.model.edges.iter().enumerate() {
         if edge.param_range().is_some() {
@@ -151,42 +153,142 @@ pub(super) fn infer_edge_parameter_ranges(
         let Some(solved) = geometry.solved() else {
             continue;
         };
+        let (start, end) = (start.position().get(), end.position().get());
+        // The parameter a conic inversion returns is exact for any vertex off
+        // the axis, so admit the offset the parameter cannot reduce rather than
+        // reject the parameter for carrying it. `None` leaves the document
+        // tolerance in force, which is every non-conic carrier and the axial
+        // degeneracy where no angle exists.
+        let start_offset = conic_irreducible_offset(solved, start, tolerance);
+        let end_offset = conic_irreducible_offset(solved, end, tolerance);
         let start_seed = curve_endpoint_seed(solved, false, 0.0);
-        let Some(start_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-            ctx,
-            &model_index,
-            curve,
-            start.position().get(),
-            start_seed,
-        )?
+        let Some(start_parameter) =
+            cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
+                ctx,
+                &model_index,
+                curve,
+                start,
+                start_seed,
+                tolerance + start_offset.unwrap_or(0.0),
+            )?
         else {
             continue;
         };
         let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
-        let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-            ctx,
-            &model_index,
-            curve,
-            end.position().get(),
-            end_seed,
-        )?
+        let Some(end_parameter) =
+            cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
+                ctx,
+                &model_index,
+                curve,
+                end,
+                end_seed,
+                tolerance + end_offset.unwrap_or(0.0),
+            )?
         else {
             continue;
         };
-        if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
-            inferred.push((edge_index, range));
+        let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) else {
+            continue;
+        };
+        // Report only what the document's own accuracy does not already cover:
+        // ordinary rounding is not a finding, and every accepted edge in a
+        // healthy file sits orders below this.
+        let worst = start_offset
+            .into_iter()
+            .chain(end_offset)
+            .fold(0.0f64, f64::max);
+        // The edge's curve and its vertex agree to the bound the inversion
+        // admitted them at, and to no less: that is what an edge tolerance
+        // states. Without it a consumer holds the edge to the document accuracy
+        // the inversion has already shown it misses, and refuses the body.
+        let mut edge_tolerance = None;
+        if worst > tolerance {
+            edge_tolerance = PositiveReal::new(tolerance + worst);
+            let carried = edge_tolerance.map_or_else(String::new, |bound| {
+                format!("; the edge carries {:.6e} as its tolerance", bound.get())
+            });
+            losses.push(StepLossCode::EdgeVertexOffCarrier.note(format!(
+                "edge {}: a vertex lies {worst:.6e} off its circular carrier, \
+                 {:.0}x the document's stated accuracy of {tolerance:.6e}; the arc's \
+                 parameter range was derived from the carrier's own closed form, which \
+                 the offset cannot change, and the vertex was transferred as \
+                 authored{carried}",
+                edge.id,
+                worst / tolerance
+            )));
         }
+        inferred.push((edge_index, range, edge_tolerance));
     }
     drop(model_index);
 
-    for (index, range) in inferred {
+    for (index, range, edge_tolerance) in inferred {
         if let Some(edge) = ir.model.edges.get_mut(index) {
             let curve = edge.curve().cloned();
             edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(range))
                 .map_err(CodecError::malformed)?;
+            // Only ever loosens: a tolerance the source stated stands if it is
+            // the wider of the two.
+            if let Some(bound) = edge_tolerance {
+                edge.tolerance = Some(edge.tolerance.map_or(bound, |stated| {
+                    if stated.get() >= bound.get() {
+                        stated
+                    } else {
+                        bound
+                    }
+                }));
+            }
         }
     }
     Ok(())
+}
+
+/// The part of a vertex's distance to a circular carrier that NO parameter can
+/// remove, or `None` where the document tolerance must stand.
+///
+/// The inversion takes a circle's parameter from the vertex's in-plane
+/// components alone -- `atan2` of its projections on the reference and
+/// transverse directions -- so the axial offset and the radial error survive
+/// every choice of parameter. Validating the total 3D distance therefore
+/// rejects a parameter that is exact, for a defect the parameter cannot repair,
+/// and the whole body is lost downstream when it does. Returning the
+/// irreducible part lets the caller admit exactly that much and no more: the
+/// bound is MEASURED off the vertex rather than chosen, so there is no
+/// threshold here to tune or to justify.
+///
+/// `None` for every non-circular carrier, leaving their admission untouched,
+/// and `None` on the axis, where `atan2` returns a defined value that means
+/// nothing -- the one conic case the distance check was right to refuse, and it
+/// stays refused. "On the axis" is an in-plane distance within `tolerance`, not
+/// exactly zero: a vertex a rounding error off the axis has an angle that is
+/// pure noise, and it is refused the same way.
+///
+/// A degenerate circle (non-positive or non-finite radius, a frame that is not
+/// orthonormal) is unrepresentable: `CircleCurve`'s fields are checked types.
+fn conic_irreducible_offset(
+    geometry: &SolvedCurveGeometry,
+    point: Point3,
+    tolerance: f64,
+) -> Option<f64> {
+    let SolvedCurveGeometry::Circle(circle) = geometry else {
+        return None;
+    };
+    let frame = circle.frame();
+    let radius = circle.radius().get();
+    // Mirrors the inversion's own frame: `transverse = axis x reference`, and
+    // the three components are raw dot products against them.
+    let axis = *frame.axis().as_raw();
+    let reference = *frame.reference().as_raw();
+    let transverse = axis.cross(reference);
+    let delta = point.vector_from(circle.center().get());
+    let along_reference = delta.dot(reference);
+    let along_transverse = delta.dot(transverse);
+    let along_axis = delta.dot(axis);
+    let in_plane = along_reference.hypot(along_transverse);
+    if !in_plane.is_finite() || in_plane <= tolerance {
+        return None;
+    }
+    let offset = (in_plane - radius).hypot(along_axis);
+    offset.is_finite().then_some(offset)
 }
 
 fn curve_endpoint_seed(geometry: &SolvedCurveGeometry, upper: bool, fallback: f64) -> f64 {

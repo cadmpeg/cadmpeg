@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::{Cursor, Write as _};
+use std::io::Write as _;
 
 use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
-use zip::write::SimpleFileOptions;
-use zip::CompressionMethod;
+use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 
 use super::super::{ArchiveSnapshot, EntryRecord, ZipSpanRole};
 
@@ -336,27 +335,25 @@ fn zip64_local_fields_include_both_sizes_and_match_ordinary_sizes() {
     }
 }
 
+// Laid out by `zip_fixture` rather than `zip::ZipWriter`: `zip` is built without its `zstd`
+// feature (it is a libzstd binding), so its writer cannot emit the third member.
 fn directory_archive() -> Vec<u8> {
-    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    for (name, method) in [
-        ("stored", CompressionMethod::Stored),
-        ("deflate", CompressionMethod::Deflated),
-        ("zstd", CompressionMethod::Zstd),
-    ] {
-        writer
-            .start_file(
-                name,
-                SimpleFileOptions::default().compression_method(method),
-            )
-            .expect("start synthetic member");
-        writer
-            .write_all(b"geometry")
-            .expect("write synthetic payload");
-    }
-    writer
-        .finish()
-        .expect("finish synthetic directory")
-        .into_inner()
+    let mut deflate =
+        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+    deflate
+        .write_all(b"geometry")
+        .expect("write synthetic payload");
+    let deflated = deflate.finish().expect("finish synthetic payload");
+    zip_fixture::archive(&[
+        RawEntry::stored("stored", b"geometry"),
+        RawEntry::compressed("deflate", zip_fixture::DEFLATE, &deflated, b"geometry"),
+        RawEntry::compressed(
+            "zstd",
+            zip_fixture::ZSTD,
+            &zip_fixture::zstd_stored_frame(b"geometry"),
+            b"geometry",
+        ),
+    ])
 }
 
 #[test]

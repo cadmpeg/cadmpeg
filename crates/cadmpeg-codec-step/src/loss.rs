@@ -343,6 +343,17 @@ pub(crate) enum StepLossCode {
     /// A non-manifold edge of a closed shell was written as one edge per
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
+    /// An edge vertex lies off its own carrier by more than the document
+    /// tolerance, and the edge's parameter range was derived anyway.
+    ///
+    /// The conic inversion takes the parameter from the IN-PLANE components of
+    /// the vertex alone, so the axial and radial offsets cannot change the
+    /// answer: the parameter is exact for any vertex off the axis. Refusing it
+    /// on the total 3D distance rejects a correct parameter for a defect no
+    /// parameter can repair, and costs the whole body downstream. The offset is
+    /// reported here instead, with its measured value, because the cost is
+    /// continuous and a threshold cannot express it.
+    EdgeVertexOffCarrier,
 }
 
 impl StepLossCode {
@@ -505,6 +516,7 @@ impl StepLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
+        Self::EdgeVertexOffCarrier,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -687,6 +699,7 @@ impl StepLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
+            Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
         }
     }
 
@@ -871,9 +884,9 @@ impl StepLossCode {
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata => LossTaxonomy::PcurveOmitted,
-            Self::FaceMultipleOuterBounds | Self::ShellDisconnectedFaces => {
-                LossTaxonomy::SourceTopologyInvalid
-            }
+            Self::FaceMultipleOuterBounds
+            | Self::ShellDisconnectedFaces
+            | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
@@ -1098,6 +1111,7 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
+                "geometry.edge-vertex-off-carrier",
             ]
         );
     }
