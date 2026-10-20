@@ -30,7 +30,7 @@ items[count]
 span u32
 ```
 
-`span` equals `4 + count * item_size`. Section 1 items are 4-byte block descriptors. Bit 31 states that the corresponding bulk block is stored; bits 0 through 30 give its payload length. Section 2 items are 10 bytes. Section 3 items are 28 bytes. Section 4 items are 28-byte type descriptors and the count does not exceed 256. A type descriptor contains a 16-byte type identifier and two `(u16, u32)` field pairs.
+`span` equals `4 + count * item_size`. Section 1 items are 4-byte block descriptors. Bit 31 states that the corresponding bulk block is stored; bits 0 through 30 give its payload length. Section 2 items are 10 bytes. Section 3 items are 28 bytes. Section 4 items are 28-byte type descriptors. A type descriptor contains a 16-byte type identifier and two `(u16, u32)` field pairs. The section 4 count is not limited to 256; descriptors at index 256 and later have no record selector that addresses them.
 
 Sections 5 through 11 use backward framing. The eight bytes before a section payload contain a u32 span to the previous payload and a u32 discriminator. The section chain joins the section 4 footer exactly. Section 11 has a 72-byte payload. The 16-byte terminal identifier follows section 11.
 
@@ -47,7 +47,7 @@ trailing_payload_len u32
 versioned_trailer bytes[]
 ```
 
-The selector low byte indexes the section 4 type table. `trailing_payload_len` is zero or equals `block.payload_len`. Segment major versions above 18 have an extended trailer. Its presence byte selects an empty trailer or a typed property and reference list. After all records, the expanded stream has a u32 `0xffffffff` marker and a retained trailer. The stream is exhausted exactly.
+The selector low byte indexes the section 4 type table, so a record selects one of the first 256 type descriptors. `trailing_payload_len` is zero or equals `block.payload_len`. Segment major versions above 18 have an extended trailer. Its presence byte selects an empty trailer or a typed property and reference list. After all records, the expanded stream has a u32 `0xffffffff` marker and a retained trailer. The stream is exhausted exactly.
 
 ## 5. Active part kernel carrier
 
