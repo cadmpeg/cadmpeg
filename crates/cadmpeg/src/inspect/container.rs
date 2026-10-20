@@ -348,19 +348,17 @@ mod tests {
 
     #[test]
     fn zip_member_past_the_zstd_window_allowance_names_the_allowance() {
-        use std::io::Write as _;
+        use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 
-        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        writer
-            .start_file(
-                "streamed.bin",
-                zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Zstd)
-                    .compression_level(Some(22)),
-            )
-            .expect("member");
-        writer.write_all(b"payload").expect("payload");
-        let file = writer.finish().expect("archive").into_inner();
+        // A streamed frame as a level-22 encoder writes it: a 128 MiB window
+        // and no content size. Laid out by `zip_fixture`: `zip` is built
+        // without its `zstd` feature.
+        let file = zip_fixture::archive(&[RawEntry::compressed(
+            "streamed.bin",
+            zip_fixture::ZSTD,
+            &zip_fixture::zstd_streamed_frame(27, b"payload"),
+            b"payload",
+        )]);
         let error = extract(&file, ResourceLimits::desktop(), "streamed.bin")
             .expect_err("the member cannot be expanded");
         let message = format!("{error:#}");

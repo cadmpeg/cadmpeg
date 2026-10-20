@@ -401,29 +401,20 @@ mod tests {
 
     #[test]
     fn protein_instance_past_the_zstd_window_allowance_is_an_issue_without_a_refusal() {
+        use cadmpeg_test_support::zip_fixture as raw_zip;
         let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
-        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        writer
-            .start_file(
-                "Schemas/SimpleSchema.xml",
-                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
-            )
-            .expect("start synthetic ZIP member");
-        writer
-            .write_all(schema)
-            .expect("write synthetic ZIP member");
-        writer
-            .start_file(
+        // The instance stream is a streamed frame as a level-22 encoder writes it: a
+        // 128 MiB window and no content size. Laid out by `zip_fixture`: `zip` is built
+        // without its `zstd` feature.
+        let zip = raw_zip::archive(&[
+            raw_zip::RawEntry::stored("Schemas/SimpleSchema.xml", schema),
+            raw_zip::RawEntry::compressed(
                 "AssetData/InstanceProperties.bin",
-                SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Zstd)
-                    .compression_level(Some(22)),
-            )
-            .expect("start synthetic ZIP member");
-        writer
-            .write_all(b"instance")
-            .expect("write synthetic ZIP member");
-        let zip = writer.finish().expect("finish synthetic ZIP").into_inner();
+                raw_zip::ZSTD,
+                &raw_zip::zstd_streamed_frame(27, b"instance"),
+                b"instance",
+            ),
+        ]);
         let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
             .to_le_bytes()
             .to_vec();

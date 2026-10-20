@@ -139,6 +139,46 @@ fn inflate_deflate_writer<'ctx, 'a>(
     Ok(writer)
 }
 
+/// Expands one ZIP member stored as Zstandard (method 93) into an owned buffer.
+///
+/// For a caller that reads members through `zip`: the workspace builds `zip`
+/// without its `zstd` feature (a libzstd binding), so `zip` cannot expand
+/// method 93 and the member is read as stored, through `by_index_raw`, and
+/// expanded here by `cadmpeg-core`'s decoder, the one [`crate::ArchiveSnapshot`]
+/// uses. The output is held to `spec` and to the member's `crc32`, the checks
+/// `zip` makes on a member it expands itself.
+///
+/// `stored` is copied into `ctx` first, so the caller's buffer need not be
+/// one of `ctx`'s views.
+pub fn expand_zstd_member_owned(
+    ctx: &DecodeContext<'_>,
+    stored: &[u8],
+    spec: ExpandSpec,
+    crc32: u32,
+) -> Result<Vec<u8>, CodecError> {
+    let mut source = ctx.begin_expand(ExpandSpec::Exact(cadmpeg_core::decode::u64_from_index(
+        stored.len(),
+    )))?;
+    source.write(stored)?;
+    let mut decoder = ctx.open_zstd(source.finalize()?)?;
+    let mut writer = ctx.begin_expand(spec)?;
+    let mut chunk = [0_u8; INFLATE_CHUNK];
+    loop {
+        let read = decoder.read_chunk(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        writer.write(&chunk[..read])?;
+    }
+    let bytes = writer.finalize_owned()?;
+    if crc32fast::hash(&bytes) != crc32 {
+        return Err(CodecError::Malformed(
+            "Zstandard ZIP member fails its CRC-32".into(),
+        ));
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write as _;
@@ -150,8 +190,8 @@ mod tests {
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
     use super::{
-        inflate_deflate, inflate_deflate_owned, inflate_zlib_exact, inflate_zlib_member,
-        inflate_zlib_member_owned,
+        expand_zstd_member_owned, inflate_deflate, inflate_deflate_owned, inflate_zlib_exact,
+        inflate_zlib_member, inflate_zlib_member_owned,
     };
 
     #[test]
@@ -392,5 +432,34 @@ mod tests {
             Some(b"Document.xml".as_slice())
         );
         assert!(ctx.inflate_probe(root, 11, true).expect("probe").is_none());
+    }
+
+    /// A Zstandard member is held to its record: the reference frame expands, and a declared
+    /// size or CRC-32 that does not match the frame is refused rather than believed.
+    #[test]
+    fn a_zstandard_member_is_held_to_its_declared_size_and_crc() {
+        let frame = cadmpeg_test_support::zip_fixture::ZSTD_GOLDEN_FRAME;
+        let plain = cadmpeg_test_support::zip_fixture::zstd_golden_plaintext();
+        let size = u64::try_from(plain.len()).expect("plaintext length fits u64");
+        let crc = crc32fast::hash(&plain);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("empty root");
+
+        assert_eq!(
+            expand_zstd_member_owned(&ctx, frame, ExpandSpec::Exact(size), crc)
+                .expect("the reference frame expands"),
+            plain
+        );
+        assert!(matches!(
+            expand_zstd_member_owned(&ctx, frame, ExpandSpec::Exact(size), crc ^ 1),
+            Err(CodecError::Malformed(message)) if message.contains("CRC-32")
+        ));
+        for wrong in [size - 1, size + 1] {
+            assert!(
+                expand_zstd_member_owned(&ctx, frame, ExpandSpec::Exact(wrong), crc).is_err(),
+                "a declared size of {wrong} for {size} bytes was accepted"
+            );
+        }
     }
 }
