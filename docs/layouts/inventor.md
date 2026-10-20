@@ -344,11 +344,11 @@ Spec §8 · layout: byte offsets · size: 20 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `end_string_flag` | `u32` | little | spec | end_string_flag u32 |
-| 4 | 4 | `file_reference_id` | `u32` | little | spec | file_reference_id u32 |
-| 8 | 4 | `occurrence_id` | `u32` | little | spec | occurrence_id u32 |
+| 0 | 4 | `reference_id` | `u32` | little | spec | reference_id u32 |
+| 4 | 4 | `occurrence_id` | `u32` | little | spec | occurrence_id u32 |
+| 8 | 4 | `occurrence_key` | `u32` | little | spec | occurrence_key u32 |
 | 12 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
-| 16 | 4 | `title_form_or_count` | `u32` | little | spec | title_form_or_count u32 |
+| 16 | 4 | `title_count` | `u32` | little | spec | title_count u32 |
 
 ## `assembly_occurrence_prefix`
 
