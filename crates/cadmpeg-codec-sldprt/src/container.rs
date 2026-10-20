@@ -504,6 +504,7 @@ fn compound_streams(
     root: View<'_>,
 ) -> Result<Vec<CompoundStream>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
+    snapshot.require_canonical()?;
     let mut streams = Vec::new();
     for entry in snapshot.entries() {
         let CompoundEntry::Stream(entry) = entry else {
