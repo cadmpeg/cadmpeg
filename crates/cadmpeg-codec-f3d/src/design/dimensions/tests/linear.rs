@@ -1028,6 +1028,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         primary_id: std::num::NonZeroU64::new(42).unwrap(),
         secondary_id: 0,
         geometry: None,
+        planar_z_noise: None,
     };
     let axis_entity = cadmpeg_ir::sketches::SpatialSketchEntity::new(
         cadmpeg_ir::sketches::SpatialSketchEntityId::mint("synthetic:test:id#spatial-axis")

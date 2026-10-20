@@ -3088,9 +3088,13 @@ fn decode_sketch_curve_identities_from_stream(
         } else {
             None
         };
-        let (geometry, geometry_offset) = parsed_geometry
-            .map_or((None, geometry_shift + 133), |parsed| {
-                (Some(parsed.geometry), parsed.geometry_offset)
+        let (geometry, geometry_offset, planar_z_noise) =
+            parsed_geometry.map_or((None, geometry_shift + 133, None), |parsed| {
+                (
+                    Some(parsed.geometry),
+                    parsed.geometry_offset,
+                    parsed.planar_z_noise,
+                )
             });
 
         out.push(SketchCurveIdentity {
@@ -3110,6 +3114,7 @@ fn decode_sketch_curve_identities_from_stream(
             primary_id,
             secondary_id,
             geometry,
+            planar_z_noise,
         });
     }
     Ok(out)
@@ -3559,6 +3564,7 @@ fn decode_sketch_curve_identity_variant(
 struct DecodedSketchCurveGeometry {
     geometry: SketchCurveGeometry,
     geometry_offset: usize,
+    planar_z_noise: Option<[f64; 3]>,
 }
 
 fn decode_sketch_curve_geometry(
@@ -3571,12 +3577,23 @@ fn decode_sketch_curve_geometry(
     let Some(geometry_payload) = payload.get(geometry_shift..) else {
         return Ok(None);
     };
+    let mut planar_z_noise = None;
     let decoded = match class {
         SketchCurveClass::Line => {
-            if let Some((geometry, _)) = decode_line_family(geometry_payload, record_at)? {
+            if let Some((geometry, form)) = decode_line_family(geometry_payload, record_at)? {
+                if form == COMPACT_PLANAR_LINE_VALUES {
+                    planar_z_noise = compact_planar_line_z_noise(geometry_payload);
+                }
                 Some((geometry, 133))
             } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
-                decode_line_family(referenced, record_at)?.map(|(geometry, _)| (geometry, 11 + 133))
+                let decoded = decode_line_family(referenced, record_at)?;
+                if decoded
+                    .as_ref()
+                    .is_some_and(|(_, form)| *form == COMPACT_PLANAR_LINE_VALUES)
+                {
+                    planar_z_noise = compact_planar_line_z_noise(referenced);
+                }
+                decoded.map(|(geometry, _)| (geometry, 11 + 133))
             } else {
                 None
             }
@@ -3611,6 +3628,7 @@ fn decode_sketch_curve_geometry(
         decoded.map(|(geometry, offset)| DecodedSketchCurveGeometry {
             geometry,
             geometry_offset: geometry_shift + offset,
+            planar_z_noise,
         }),
     )
 }
@@ -3931,6 +3949,9 @@ fn decode_line(
     decode_line_values(payload, 133, record_at)
 }
 
+/// Value count that `decode_line_family` reports for the compact planar line.
+const COMPACT_PLANAR_LINE_VALUES: usize = 9;
+
 fn decode_compact_planar_line(
     payload: &[u8],
     record_at: usize,
@@ -3943,8 +3964,13 @@ fn decode_compact_planar_line(
         };
         *value = parsed;
     }
-    if values[2] != 0.0 || values[5] != 0.0 || values[8] != 0.0 {
-        return Ok(None);
+    // Each z component is zero or floating-point noise below the resolution
+    // of the same vector's own coordinates; the projection reads it as zero.
+    for z in [2, 5, 8] {
+        if !planar_z_is_zero(values[z - 2], values[z - 1], values[z]) {
+            return Ok(None);
+        }
+        values[z] = 0.0;
     }
     // The values are followed by one reference: the plain eleven-byte
     // spelling or the 51-byte typed spelling.
@@ -3958,6 +3984,20 @@ fn decode_compact_planar_line(
     decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)
 }
 
+/// Whether `z` is zero for a planar vector `(x, y, z)` stored in centimetres:
+/// exactly zero, or at most `f64::EPSILON * max(|x|, |y|, 1 cm)`.
+pub(in crate::design) fn planar_z_is_zero(x: f64, y: f64, z: f64) -> bool {
+    z == 0.0 || z.abs() <= f64::EPSILON * x.abs().max(y.abs()).max(1.0)
+}
+
+/// Raw z components of a compact planar line at `payload` offset 133 when
+/// at least one is nonzero noise admitted by [`planar_z_is_zero`].
+pub(in crate::design) fn compact_planar_line_z_noise(payload: &[u8]) -> Option<[f64; 3]> {
+    let raw = [2usize, 5, 8].map(|index| View::f64_le_at(payload, 133 + index * 8));
+    let raw = [raw[0]?, raw[1]?, raw[2]?];
+    raw.iter().any(|z| *z != 0.0).then_some(raw)
+}
+
 fn decode_line_family(
     payload: &[u8],
     record_at: usize,
@@ -3965,7 +4005,8 @@ fn decode_line_family(
     if let Some(geometry) = decode_line(payload, record_at)? {
         return Ok(Some((geometry, 12)));
     }
-    Ok(decode_compact_planar_line(payload, record_at)?.map(|geometry| (geometry, 9)))
+    Ok(decode_compact_planar_line(payload, record_at)?
+        .map(|geometry| (geometry, COMPACT_PLANAR_LINE_VALUES)))
 }
 
 fn decode_line_values(

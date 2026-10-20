@@ -1113,3 +1113,59 @@ fn compact_planar_line_admits_a_typed_trailing_reference() {
         crate::design::decode::sketch::decode_compact_planar_line(&bytes, 0).expect("line parse");
     assert!(truncated.is_none());
 }
+
+/// A compact planar line's z component is zero when it is at most one
+/// floating-point epsilon of the same vector's largest planar coordinate,
+/// floored at 1 cm; a larger z keeps the line rejected.
+#[test]
+fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        -23.79, 14.73, 1.0e-76
+    ));
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        f64::EPSILON
+    ));
+    assert!(!crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        2.0 * f64::EPSILON
+    ));
+    assert!(!crate::design::decode::sketch::planar_z_is_zero(
+        100.0, 0.0, 1.0e-12
+    ));
+
+    let line = |z: f64| {
+        let values: [f64; 9] = [0.5, 0.875, z, 0.0, -1.75, 0.0, 0.0, -1.0, z];
+        let mut bytes = vec![0u8; 133];
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        typed_sketch_reference(&mut bytes, 37);
+        bytes
+    };
+    let noisy = line(1.0e-76);
+    let parsed = crate::design::decode::sketch::decode_compact_planar_line(&noisy, 0)
+        .expect("line parse")
+        .expect("noisy planar line");
+    let SketchCurveGeometry::Line { start, .. } = parsed else {
+        panic!("expected line");
+    };
+    assert_eq!(start.get(), Point3::new(5.0, 8.75, 0.0));
+    assert_eq!(
+        crate::design::decode::sketch::compact_planar_line_z_noise(&noisy),
+        Some([1.0e-76, 0.0, 1.0e-76])
+    );
+    assert_eq!(
+        crate::design::decode::sketch::compact_planar_line_z_noise(&line(0.0)),
+        None
+    );
+
+    let non_planar = line(1.0e-3);
+    assert!(
+        crate::design::decode::sketch::decode_compact_planar_line(&non_planar, 0)
+            .expect("line parse")
+            .is_none()
+    );
+}

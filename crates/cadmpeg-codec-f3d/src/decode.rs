@@ -4130,6 +4130,13 @@ fn populate_annotations(
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_entity");
+                // Admitted z noise is read as zero, so the projected
+                // endpoints are derived rather than byte-exact.
+                if entity.planar_z_noise.is_some() {
+                    for field in ["geometry.start", "geometry.end"] {
+                        annotations.derived(projected, field)?;
+                    }
+                }
             }
         }
         for entity in &native.sketch_surfaces {

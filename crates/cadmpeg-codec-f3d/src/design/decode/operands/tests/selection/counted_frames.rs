@@ -315,6 +315,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             primary_id: std::num::NonZeroU64::new(586).unwrap(),
             secondary_id: 0,
             geometry: None,
+            planar_z_noise: None,
         };
         bind_extrude_selection_geometry(
             std::slice::from_mut(&mut member),

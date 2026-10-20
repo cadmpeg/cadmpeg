@@ -1446,6 +1446,11 @@ pub(crate) struct SketchCurveIdentity {
         deserialize_with = "deserialize_geometry"
     )]
     pub(crate) geometry: Option<SketchCurveGeometry>,
+    /// Raw z components of a compact planar line's start, displacement, and
+    /// direction when at least one is nonzero floating-point noise that the
+    /// projection reads as zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) planar_z_noise: Option<[f64; 3]>,
 }
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
