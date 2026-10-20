@@ -987,7 +987,7 @@ pub(crate) struct MetaSectionRecord {
 pub(crate) struct MetaTypeRecord {
     pub(crate) id: String,
     pub(crate) token: String,
-    pub(crate) index: u8,
+    pub(crate) index: u32,
     pub(crate) type_id: String,
     pub(crate) fields: [(u16, u32); 2],
 }
