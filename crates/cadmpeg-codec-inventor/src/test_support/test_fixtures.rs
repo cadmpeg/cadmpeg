@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::Write as _;
-
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
-
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -190,6 +185,7 @@ pub(crate) fn primary_envelope_fixture_with_unavailable_carrier() -> Vec<u8> {
         &[],
         false,
         false,
+        [1, 1],
     )
 }
 
@@ -207,6 +203,7 @@ pub(crate) fn primary_envelope_fixture_with_design(
         design,
         false,
         false,
+        [1, 1],
     )
 }
 
@@ -247,6 +244,18 @@ fn primary_envelope_fixture_with_kernel_and_failures(
         &[],
         break_database_body,
         break_metadata_body,
+        [1, 1],
+    )
+}
+
+pub(crate) fn primary_envelope_with_compression(kernel: &[u8], methods: [u8; 2]) -> Vec<u8> {
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(kernel),
+        &[],
+        false,
+        false,
+        methods,
     )
 }
 
@@ -256,6 +265,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     design: &[([u8; 16], Vec<u8>)],
     break_database_body: bool,
     break_metadata_body: bool,
+    methods: [u8; 2],
 ) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
@@ -278,11 +288,12 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         &BREP_SEGMENT,
         &[(CARRIER_TYPE_ID, carrier.len())],
         declarations,
+        methods[0],
     );
     if break_metadata_body {
         meta.push(0xff);
     }
-    let bulk = bulk_stream_fixture(&[carrier]);
+    let bulk = bulk_stream_fixture(&[carrier], methods[1]);
     let mut database = database_fixture(declarations.schema);
     if break_database_body {
         database.truncate(20);
@@ -309,11 +320,15 @@ fn primary_envelope_fixture_with_carrier_and_failures(
             .iter()
             .map(|(_, payload)| payload.as_slice())
             .collect::<Vec<_>>();
-        streams.push((DESIGN_BULK, "Bdc", bulk_stream_fixture(&payloads)));
+        streams.push((
+            DESIGN_BULK,
+            "Bdc",
+            bulk_stream_fixture(&payloads, methods[1]),
+        ));
         streams.push((
             DESIGN_META,
             "Mdc",
-            meta_stream_fixture(&DESIGN_SEGMENT, &records, declarations),
+            meta_stream_fixture(&DESIGN_SEGMENT, &records, declarations, methods[0]),
         ));
     }
 
@@ -582,6 +597,7 @@ fn meta_stream_fixture(
     segment: &SegmentIdentity,
     records: &[([u8; 16], usize)],
     declarations: EnvelopeDeclarations,
+    method: u8,
 ) -> Vec<u8> {
     let body = meta_table_body(records);
     let mut bytes = Vec::new();
@@ -598,12 +614,8 @@ fn meta_stream_fixture(
     );
     push_bytes_vec(&mut bytes, b"created");
     push_bytes_vec(&mut bytes, b"modified");
-    bytes.push(1);
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder
-        .write_all(&body)
-        .expect("write synthetic metadata body");
-    bytes.extend_from_slice(&encoder.finish().expect("finish synthetic metadata body"));
+    bytes.push(method);
+    bytes.extend_from_slice(&super::rse_compression::encoded(method, &body));
     bytes
 }
 
@@ -646,7 +658,7 @@ fn meta_table_body(records: &[([u8; 16], usize)]) -> Vec<u8> {
 }
 
 /// One segment's bulk stream; record `n` selects type index `n`.
-fn bulk_stream_fixture(payloads: &[&[u8]]) -> Vec<u8> {
+fn bulk_stream_fixture(payloads: &[&[u8]], method: u8) -> Vec<u8> {
     let mut expanded = Vec::new();
     for (selector, payload) in payloads.iter().enumerate() {
         push_u32(
@@ -661,12 +673,8 @@ fn bulk_stream_fixture(payloads: &[&[u8]]) -> Vec<u8> {
     }
     expanded.extend_from_slice(&u32::MAX.to_le_bytes());
     let mut bytes = vec![0x3c; 16];
-    bytes.extend_from_slice(&0x0104_u16.to_le_bytes());
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder
-        .write_all(&expanded)
-        .expect("write synthetic bulk body");
-    bytes.extend_from_slice(&encoder.finish().expect("finish synthetic bulk body"));
+    bytes.extend_from_slice(&[4, method]);
+    bytes.extend_from_slice(&super::rse_compression::encoded(method, &expanded));
     bytes
 }
 

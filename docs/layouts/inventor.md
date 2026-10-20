@@ -212,7 +212,8 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 16 | `prefix` | `bytes[16]` | little | spec | a 16-byte prefix |
-| 16 | 2 | `form` | `u16` | little | spec | a u16 form |
+| 16 | 1 | `form` | `u8` | little | spec | Low byte of the retained u16 form. |
+| 17 | 1 | `compression_method` | `u8` | little | spec | High byte of the retained u16 form: 1 = zlib; 2 = Zstandard. |
 
 ## `meta_body_prefix`
 

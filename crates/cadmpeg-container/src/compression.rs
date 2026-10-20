@@ -94,6 +94,82 @@ pub fn inflate_zlib_exact<'a>(
     Ok(view)
 }
 
+/// Inflates exactly one Zstandard data frame through the shared bounded decoder.
+/// Rejects skippable frames, concatenated frames, truncation and trailing input.
+pub fn inflate_zstd_exact<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+) -> Result<View<'a>, CodecError> {
+    require_single_zstd_frame(source)?;
+    let mut decoder = ctx.open_zstd(source)?;
+    let mut writer = ctx.begin_expand(ExpandSpec::Unknown)?;
+    let mut chunk = [0_u8; INFLATE_CHUNK];
+    loop {
+        let count = decoder.read_chunk(&mut chunk)?;
+        if count == 0 {
+            break;
+        }
+        writer.write(&chunk[..count])?;
+    }
+    writer.finalize()
+}
+
+// RFC 8878 sections 3.1.1.1 and 3.1.1.2 delimit one frame without decoding it.
+// open_zstd owns content, checksum, dictionary and window validation.
+fn require_single_zstd_frame(mut source: View<'_>) -> Result<(), CodecError> {
+    if source.req_u32_le()? != 0xfd2f_b528 {
+        return Err(CodecError::Malformed(
+            "expected one Zstandard data frame".into(),
+        ));
+    }
+    let flags = source.req_u8()?;
+    let single_segment = flags & 0x20 != 0;
+    if !single_segment {
+        source.req_u8()?;
+    }
+    let dictionary_size = match flags & 3 {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        _ => 4,
+    };
+    source.req_take(dictionary_size)?;
+    let content_size_width = match flags >> 6 {
+        0 => usize::from(single_segment),
+        1 => 2,
+        2 => 4,
+        _ => 8,
+    };
+    source.req_take(content_size_width)?;
+    loop {
+        let low = u32::from(source.req_u8()?);
+        let header = low | (u32::from(source.req_u16_le()?) << 8);
+        let block_size = match (header >> 1) & 3 {
+            0 | 2 => usize::try_from(header >> 3)
+                .map_err(|_| CodecError::Malformed("Zstandard block size overflow".into()))?,
+            1 => 1,
+            _ => {
+                return Err(CodecError::Malformed(
+                    "reserved Zstandard block type".into(),
+                ))
+            }
+        };
+        source.req_take(block_size)?;
+        if header & 1 != 0 {
+            break;
+        }
+    }
+    if flags & 4 != 0 {
+        source.req_u32_le()?;
+    }
+    if !source.is_empty() {
+        return Err(CodecError::Malformed(
+            "Zstandard frame does not exhaust its declared input".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Inflates a raw-DEFLATE member that occupies all of `source`.
 ///
 /// `spec` is charged through [`DecodeContext::begin_expand`].
@@ -193,6 +269,8 @@ mod tests {
         expand_zstd_member_owned, inflate_deflate, inflate_deflate_owned, inflate_zlib_exact,
         inflate_zlib_member, inflate_zlib_member_owned,
     };
+
+    mod zstd;
 
     #[test]
     fn owned_deflate_expansion_refuses_per_expand_limit() {
