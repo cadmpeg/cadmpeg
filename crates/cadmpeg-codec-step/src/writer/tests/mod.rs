@@ -3,6 +3,7 @@
 
 mod collapsed_edges;
 mod cones;
+mod orientation;
 mod reports;
 pub(crate) mod round_trips;
 mod styles;
