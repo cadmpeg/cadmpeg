@@ -294,7 +294,11 @@ pub(crate) fn patch_protein_appearances(
                 )));
             }
             let bytes = if zstd {
-                crate::zip_write::expand_zstd_member(&mut entry, &name)?
+                crate::zip_write::expand_zstd_member(
+                    &mut entry,
+                    &name,
+                    cadmpeg_core::decode::u64_from_index(protein.len()),
+                )?
             } else {
                 crate::container::read_entry_bounded(&mut entry, declared_size, &name)?
             };

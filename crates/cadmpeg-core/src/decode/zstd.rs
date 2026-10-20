@@ -31,6 +31,18 @@
 //! It is not determinable for a compressed block decoded while the buffer is still under its
 //! window and its length unknown; the test `zstd_known_gap_...` pins the frame that gets
 //! through.
+//!
+//! Two differences in memory behaviour, also stated rather than hidden:
+//!
+//! - **The admission bounds the window, not peak heap.** libzstd allocates one window per
+//!   frame. `ruzstd`'s ring buffer grows by reallocation and holds the old and new buffers
+//!   while copying, so a frame that fills its window peaks near two windows plus three
+//!   blocks: about twice the window the admission charged.
+//! - **A failed allocation is not returned.** libzstd reported an allocation failure as an
+//!   error, which this module turned into `retained_allocation_failed`; `ruzstd` panics on a
+//!   null from the allocator for its ring buffer and aborts through the global allocation
+//!   error handler elsewhere, so an allocation that fails inside the decoder now panics or
+//!   aborts instead of returning an error.
 
 use std::io::Read as _;
 
@@ -622,6 +634,35 @@ mod tests {
         let mut output = [0; 7];
         assert_eq!(decoder.read_chunk(&mut output).expect("read"), 7);
         assert_eq!(&output, b"payload");
+    }
+
+    /// A frame that fills its window decodes: twenty 128 KiB blocks under a 1 MiB window,
+    /// whose ring buffer holds a window and a block.
+    #[test]
+    fn zstd_decodes_a_frame_that_fills_its_window() {
+        let block_bytes = usize::try_from(BLOCK_BYTES).expect("block size");
+        let mut blocks = vec![block(false, 1, block_bytes, b"x"); 19];
+        blocks.push(block(true, 1, block_bytes, b"x"));
+        let bytes = windowed(20, &blocks);
+        assert_eq!(decode(&bytes).expect("fits"), vec![b'x'; 20 * block_bytes]);
+    }
+
+    /// A short frame declaring a window above the per-expansion allowance and no content size
+    /// is unsupported, though `ruzstd` would never allocate that window for it; a declared
+    /// content size is what admits it. The admitted frame's 256 MiB window is above `ruzstd`'s
+    /// own default limit (128 MiB in 0.9.1), so it decodes only because the admitted window is
+    /// passed to `ruzstd` as that frame's limit.
+    #[test]
+    fn zstd_short_frame_under_a_large_window_needs_its_content_size() {
+        let bytes = windowed(28, &[raw(true, b"abcd")]);
+        assert!(matches!(
+            decode(&bytes),
+            Err(CodecError::NotImplemented(message)) if message.ends_with("per-expansion allowance")
+        ));
+        let mut sized = MAGIC.to_vec();
+        sized.extend_from_slice(&[0x80, 18 << 3, 4, 0, 0, 0]); // 256 MiB window, content size 4
+        sized.extend(raw(true, b"abcd"));
+        assert_eq!(decode(&sized).expect("frame"), b"abcd");
     }
 
     #[test]

@@ -639,7 +639,11 @@ pub(crate) fn write_semantic(
             }
             let mut bytes = Vec::new();
             if zstd {
-                bytes.extend(crate::zip_write::expand_zstd_member(&mut entry, &name)?);
+                bytes.extend(crate::zip_write::expand_zstd_member(
+                    &mut entry,
+                    &name,
+                    cadmpeg_core::decode::u64_from_index(source_image.len()),
+                )?);
             } else {
                 let mut chunk = [0_u8; 16 * 1024];
                 loop {
