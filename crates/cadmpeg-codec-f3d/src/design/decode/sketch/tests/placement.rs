@@ -1093,3 +1093,23 @@ fn typed_legacy_sketch_pair_reads_wide_member_references_and_head_frame() {
         Some(u64_from_index(head_at + 22))
     );
 }
+
+/// The compact planar line's trailing reference can use the 51-byte typed
+/// spelling; a truncated typed reference is not admitted.
+#[test]
+fn compact_planar_line_admits_a_typed_trailing_reference() {
+    let values: [f64; 9] = [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0];
+    let mut bytes = vec![0u8; 133];
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    typed_sketch_reference(&mut bytes, 37);
+    let parsed =
+        crate::design::decode::sketch::decode_compact_planar_line(&bytes, 0).expect("line parse");
+    assert!(parsed.is_some());
+
+    bytes.truncate(bytes.len() - 2);
+    let truncated =
+        crate::design::decode::sketch::decode_compact_planar_line(&bytes, 0).expect("line parse");
+    assert!(truncated.is_none());
+}

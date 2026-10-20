@@ -332,13 +332,21 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Sketch constraints and complete feature definitions in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
 
-### DR-85. Typed-reference Extrude profile identities
+### DR-85. Typed profile-identity entry fields and other profile forms
 
-**Question.** Which sketch does the multi-curve identity record of a typed-reference Extrude profile selection name, and what are the fields of its entries?
+**Question.** What do the twelve bytes after the secondary identity in a typed profile-identity entry mean, what separates the two loop lists, and which form do the typed Extrude profile groups without a typed profile selection use?
 
-**Known.** `f3d.md` §3.1 "A typed-reference Extrude scope" and `f3d.md` §3.1 "A typed-reference Extrude selection group" give the prologue and the selection group, which the decoder reads. The profile construction operand group's member names a persistent-entity frame chain whose identity record, at the member's record index plus three, is not the 29-byte or 45-byte identity form. It stores ten zero bytes, a typed reference to the chain's first record, u32 `1`, u32 `1`, a u32 entry count, and that many 40-byte entries that start with u32 `2` and a u64 value. In the observed records each entry value equals the `primary_id` of exactly one sketch curve, and all entries of one record name curves of one sketch. The record stores no sketch identity of its own, and its paired header precedes the next chain record. The decoder does not read this form, so the profile stays native.
+**Known.** `f3d.md` §3.1 "A typed-reference profile selection is a construction-operand group member" gives the record grammar and the exact join. The twelve bytes are three u32 values; observed values are small, and the first is `0` or `1`. Some typed Extrude profile groups name members that are not typed profile selections.
 
-**Need.** Typed Extrude features keep a native profile selection and no complete neutral definition until the identity form, the meaning of its entry fields, and the sketch binding are settled from the bytes.
+**Need.** The loop roles and entry fields can distinguish outer and inner boundaries and curve orientation, and the other member form keeps those Extrude profiles native.
+
+### DR-86. Compact planar line z components
+
+**Question.** Are the tiny nonzero z components of some typed-reference compact planar lines, about `1e-76`, exact zeros in the source model?
+
+**Known.** `f3d.md` §3.1 "A compact planar sketch line stores nine f64 values" gives the line with exact zero z components for its start, displacement, and direction. Some typed-reference sketch lines store z values of order `1e-76` in those positions, and the decoder rejects them, so those lines have no neutral sketch entity.
+
+**Need.** Profiles that use such lines stay native until the admission rule for these values is settled.
 
 ### DR-80. Typed parameter tail reference target
 

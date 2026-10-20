@@ -3946,10 +3946,13 @@ fn decode_compact_planar_line(
     if values[2] != 0.0 || values[5] != 0.0 || values[8] != 0.0 {
         return Ok(None);
     }
-    let Some((_, reference_end)) = marked_u32(payload, values_at + 9 * 8) else {
-        return Ok(None);
-    };
-    if payload.get(reference_end..reference_end + 6) != Some(&[0; 6]) {
+    // The values are followed by one reference: the plain eleven-byte
+    // spelling or the 51-byte typed spelling.
+    let reference_at = values_at + 9 * 8;
+    let plain = marked_u32(payload, reference_at).is_some_and(|(_, reference_end)| {
+        payload.get(reference_end..reference_end + 6) == Some(&[0; 6])
+    });
+    if !plain && crate::bytes::typed_local_reference_target(payload, reference_at).is_none() {
         return Ok(None);
     }
     decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)

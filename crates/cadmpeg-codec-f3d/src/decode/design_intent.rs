@@ -142,6 +142,8 @@ pub(super) struct DesignNative {
     design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
     design_extrude_selection_members: Vec<DesignExtrudeSelectionMember>,
     design_entity_selection_operands: Vec<DesignEntitySelectionOperand>,
+    design_profile_curve_selections:
+        Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>,
     design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
     design_edge_operands: Vec<DesignEdgeOperand>,
     design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
@@ -193,6 +195,7 @@ impl DesignNative {
             design_fillet_radius_groups,
             design_extrude_selection_members,
             design_entity_selection_operands,
+            design_profile_curve_selections,
             design_body_recipe_operands,
             design_edge_operands,
             design_edge_treatment_vertex_operands,
@@ -232,6 +235,7 @@ impl DesignNative {
         native.design_fillet_radius_groups = design_fillet_radius_groups;
         native.design_extrude_selection_members = design_extrude_selection_members;
         native.design_entity_selection_operands = design_entity_selection_operands;
+        native.design_profile_curve_selections = design_profile_curve_selections;
         native.design_body_recipe_operands = design_body_recipe_operands;
         native.design_edge_operands = design_edge_operands;
         native.design_edge_treatment_vertex_operands = design_edge_treatment_vertex_operands;
@@ -696,6 +700,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
             scopes: &design.design_parameter_scopes,
+            profile_curves: &design.design_profile_curve_selections,
             groups: &design.design_construction_operand_groups,
             operands: &design.design_entity_selection_operands,
             placements: &design.design_sketch_placements,
@@ -710,6 +715,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
             scopes: &design.design_parameter_scopes,
+            profile_curves: &design.design_profile_curve_selections,
             groups: &design.design_construction_operand_groups,
             operands: &design.design_entity_selection_operands,
             placements: &design.design_sketch_placements,
@@ -724,6 +730,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
             scopes: &design.design_parameter_scopes,
+            profile_curves: &design.design_profile_curve_selections,
             groups: &design.design_construction_operand_groups,
             operands: &design.design_entity_selection_operands,
             placements: &design.design_sketch_placements,
@@ -776,6 +783,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.sketches,
         &crate::design::profile_select::SketchCurveSelectionResolution {
             scopes: &design.design_parameter_scopes,
+            profile_curves: &design.design_profile_curve_selections,
             groups: &design.design_construction_operand_groups,
             operands: &design.design_entity_selection_operands,
             placements: &design.design_sketch_placements,
@@ -1236,6 +1244,12 @@ fn extend_related_design_records(
         )?;
     design.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
+            scan,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+        )?;
+    design.design_profile_curve_selections =
+        crate::design::decode::operands::decode_profile_curve_selections(
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,

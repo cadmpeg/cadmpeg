@@ -504,6 +504,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             &[],
             &[],
             &crate::design::profile_select::SketchCurveSelectionResolution {
+                profile_curves: &[],
                 scopes: &[],
                 groups: &[],
                 operands: &[],
