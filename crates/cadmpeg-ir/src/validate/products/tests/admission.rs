@@ -55,6 +55,7 @@ fn missing_joint(ir: &mut CadIr) {
                 operand: JointOperand {
                     container: OperandContainer::Occurrence {
                         occurrence: "test:model:occurrence#absent".try_into().unwrap(),
+                        occurrence_path: Vec::new(),
                     },
                     object: "first".into(),
                     subelements: Vec::new(),
