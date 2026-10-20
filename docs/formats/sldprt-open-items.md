@@ -128,14 +128,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fill semantics to validate and write the tail directory.
 
-### CM-06. Partition and deltas precedence
-
-**Question.** Which topology record is authoritative when partition and deltas streams describe the same site with different valid records?
-
-**Known.** `sldprt.md` §6 states that partition topology has precedence for shared identities and that deltas records fill missing topology.
-
-**Need.** We must know the native precedence relation to merge partition and deltas topology without retaining stale or duplicate faces.
-
 ### CM-07. `moTransRefPlaneData_c` gap
 
 **Question.** What does the byte run between the `moTransRefPlaneData_c` class token and the first of its nine f64 values encode, and what fixes its length?

@@ -5,16 +5,15 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
-    charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
-    visit_feature_history_operation_records,
+    format_feature_history_id, offset_data_block_bytes, visit_feature_history_operation_records,
 };
 use crate::container::Container;
+use crate::om::branch_items::BranchItems;
 use crate::om::delete_references::DeleteReferences;
 use crate::om::reference_index::PayloadIndexToken;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
 /// Exact counted nullable reference field carried by a `DELETE` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -34,11 +33,11 @@ pub(in crate::native) struct FeatureDeleteConstructionPayload {
     pub(in crate::native) id: String,
     /// Owning `DELETE` operation label.
     pub(in crate::native) operation_label: String,
-    /// Complete five-slot reference field selecting the source blocks.
+    /// Complete counted reference field selecting the source blocks.
     reference_field: String,
     /// Ordered source blocks and the hash of their concatenated bytes.
     #[serde(flatten)]
-    content: FeaturePayloadContent<[FeaturePayloadBlock; 5]>,
+    content: FeaturePayloadContent<BranchItems<FeaturePayloadBlock>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -46,11 +45,22 @@ struct DeleteReferenceFieldWire {
     id: String,
     operation_label: String,
     control: u8,
-    object_indices: [Option<u32>; 5],
-    raw_object_indices: [NativeBytes<Vec<u8>>; 5],
-    data_blocks: [Option<String>; 5],
+    object_indices: Vec<Option<u32>>,
+    raw_object_indices: Vec<NativeBytes<Vec<u8>>>,
+    data_blocks: Vec<Option<String>>,
     source_offset: u64,
-    object_index_source_offsets: [u64; 5],
+    object_index_source_offsets: Vec<u64>,
+}
+
+/// Borrowed sequence projection without retaining a second collection.
+struct Sequence<I>(I);
+impl<I: Iterator + Clone> Serialize for Sequence<I>
+where
+    I::Item: Serialize,
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.clone())
+    }
 }
 
 impl Serialize for FeatureDeleteReferenceField {
@@ -63,26 +73,30 @@ impl Serialize for FeatureDeleteReferenceField {
         wire.serialize_entry("control", &self.references.control())?;
         wire.serialize_entry(
             "object_indices",
-            &slots
-                .each_ref()
-                .map(|slot| slot.as_ref().map(|target| target.0.value())),
+            &Sequence(
+                slots
+                    .iter()
+                    .map(|slot| slot.as_ref().map(|target| target.0.value())),
+            ),
         )?;
         wire.serialize_entry(
             "raw_object_indices",
-            &slots.each_ref().map(|slot| {
+            &Sequence(slots.iter().map(|slot| {
                 NativeBytes::from(slot.as_ref().map_or(NULL_TOKEN, |target| target.0.raw()))
-            }),
+            })),
         )?;
         wire.serialize_entry(
             "data_blocks",
-            &slots
-                .each_ref()
-                .map(|slot| slot.as_ref().and_then(|target| target.1.as_deref())),
+            &Sequence(
+                slots
+                    .iter()
+                    .map(|slot| slot.as_ref().and_then(|target| target.1.as_deref())),
+            ),
         )?;
         wire.serialize_entry("source_offset", &self.references.offset())?;
         wire.serialize_entry(
             "object_index_source_offsets",
-            &self.references.reference_offsets(),
+            &Sequence(self.references.reference_offsets()),
         )?;
         wire.end()
     }
@@ -98,20 +112,28 @@ impl From<FeatureDeleteReferenceField> for DeleteReferenceFieldWire {
             object_indices: value
                 .references
                 .slots()
-                .each_ref()
-                .map(|slot| slot.as_ref().map(|target| target.0.value())),
-            raw_object_indices: (value.references.slots().each_ref().map(|slot| {
-                slot.as_ref()
-                    .map_or_else(|| vec![0xff], |target| target.0.raw().to_vec())
-            }))
-            .map(Into::into),
+                .iter()
+                .map(|slot| slot.as_ref().map(|target| target.0.value()))
+                .collect(),
+            raw_object_indices: value
+                .references
+                .slots()
+                .iter()
+                .map(|slot| {
+                    NativeBytes::from(
+                        slot.as_ref()
+                            .map_or_else(|| vec![0xff], |target| target.0.raw().to_vec()),
+                    )
+                })
+                .collect(),
             data_blocks: value
                 .references
                 .slots()
-                .each_ref()
-                .map(|slot| slot.as_ref().and_then(|target| target.1.clone())),
+                .iter()
+                .map(|slot| slot.as_ref().and_then(|target| target.1.clone()))
+                .collect(),
             source_offset: value.references.offset(),
-            object_index_source_offsets: value.references.reference_offsets(),
+            object_index_source_offsets: value.references.reference_offsets().collect(),
         }
     }
 }
@@ -120,37 +142,46 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
     type Error = String;
 
     fn try_from(wire: DeleteReferenceFieldWire) -> Result<Self, Self::Error> {
-        let slots = std::array::from_fn::<_, 5, _>(|slot| {
-            let target = match wire.object_indices[slot] {
-                Some(index) => Some((
-                    PayloadIndexToken::from_wire(index, &wire.raw_object_indices[slot]).map_err(
-                        |error| format!("object_indices/raw_object_indices[{slot}]: {error}"),
-                    )?,
-                    wire.data_blocks[slot].clone(),
-                )),
-                None => {
-                    if wire.raw_object_indices[slot] != [0xff] {
-                        return Err(format!(
-                            "raw_object_indices[{slot}]: null reference requires ff"
-                        ));
+        let count = wire.object_indices.len();
+        if wire.raw_object_indices.len() != count
+            || wire.data_blocks.len() != count
+            || wire.object_index_source_offsets.len() != count
+        {
+            return Err("object_indices, raw_object_indices, data_blocks and object_index_source_offsets must have equal lengths".into());
+        }
+        let slots = (0..count)
+            .map(|slot| {
+                let target = match wire.object_indices[slot] {
+                    Some(index) => Some((
+                        PayloadIndexToken::from_wire(index, &wire.raw_object_indices[slot])
+                            .map_err(|error| {
+                                format!("object_indices/raw_object_indices[{slot}]: {error}")
+                            })?,
+                        wire.data_blocks[slot].clone(),
+                    )),
+                    None => {
+                        if wire.raw_object_indices[slot] != [0xff] {
+                            return Err(format!(
+                                "raw_object_indices[{slot}]: null reference requires ff"
+                            ));
+                        }
+                        if wire.data_blocks[slot].is_some() {
+                            return Err(format!(
+                                "data_blocks[{slot}]: null reference cannot have a target"
+                            ));
+                        }
+                        None
                     }
-                    if wire.data_blocks[slot].is_some() {
-                        return Err(format!(
-                            "data_blocks[{slot}]: null reference cannot have a target"
-                        ));
-                    }
-                    None
-                }
-            };
-            Ok::<_, String>(target)
-        });
-        let [first, second, third, fourth, fifth] = slots;
-        let references = DeleteReferences::new(
-            wire.source_offset,
-            wire.control,
-            [first?, second?, third?, fourth?, fifth?],
-        )?;
-        if references.reference_offsets() != wire.object_index_source_offsets {
+                };
+                Ok::<_, String>(target)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let references =
+            DeleteReferences::new(wire.source_offset, wire.control, BranchItems::new(slots)?)?;
+        if !references
+            .reference_offsets()
+            .eq(wire.object_index_source_offsets.iter().copied())
+        {
             return Err(
                 "object_index_source_offsets: must follow the DELETE header and token widths"
                     .into(),
@@ -167,14 +198,12 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
 /// Decode exact `DELETE` payload reference fields and independently resolve
 /// their non-null slots without assigning a target object family.
 pub(in crate::native) fn feature_delete_reference_fields(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections();
     let mut fields = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
@@ -186,26 +215,22 @@ pub(in crate::native) fn feature_delete_reference_fields(
                         return Ok(None);
                     };
                     let Some(references) = field.resolve(entry_offset, |token| {
-                        charged_unique_offset_data_block(ctx, &indexed, token.value())
-                    })?
-                    else {
+                        unique_offset_data_block_id(&indexed, token.value())
+                    }) else {
                         return Ok(None);
                     };
                     let id = format_feature_history_id(
-                        ctx,
                         "delete-reference-field",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?;
+                    );
                     let operation_label = format_feature_history_id(
-                        ctx,
                         "operation-label",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?;
-                    ctx.reserve_vec(&mut fields, 1, "NX DELETE reference fields")?;
+                    );
                     Ok(Some(FeatureDeleteReferenceField {
                         id,
                         operation_label,
@@ -228,24 +253,22 @@ pub(in crate::native) fn feature_delete_reference_fields(
 /// Reconstruct one ordered logical payload from each complete same-store
 /// non-null `DELETE` reference field.
 pub(in crate::native) fn feature_delete_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     fields: &[FeatureDeleteReferenceField],
 ) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut output = Vec::new();
     for field in fields {
-        let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
+        let Some(payload) = delete_construction_payload_from_field(field, &blocks)? else {
             continue;
         };
-        ctx.reserve_vec(&mut output, 1, "NX DELETE construction payloads")?;
+
         output.push(payload);
     }
     Ok(output)
 }
 
 fn delete_construction_payload_from_field(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     field: &FeatureDeleteReferenceField,
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
@@ -258,32 +281,12 @@ fn delete_construction_payload_from_field(
     }) {
         return Ok(None);
     }
-
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(slots.len()),
-        "NX DELETE source block references",
-    )?;
-    let mut source_reservation = ctx.reserve_scoped(0, "NX DELETE source block references")?;
     let mut data_blocks = Vec::new();
-    source_reservation.with_storage(|| {
-        ctx.reserve_capacity(
-            &mut data_blocks,
-            slots.len(),
-            "allocate NX DELETE source block references",
-        )
-    })?;
     for reference in slots {
         let Some((_, Some(block))) = reference else {
             return Ok(None);
         };
-        let mut id = String::new();
-        ctx.try_reserve_retained_text(
-            &mut id,
-            block.len(),
-            "allocate NX DELETE source block reference",
-        )?;
-        id.push_str(block);
-        data_blocks.push(id);
+        data_blocks.push(block.clone());
     }
     let Some(store) = data_blocks
         .first()
@@ -298,7 +301,7 @@ fn delete_construction_payload_from_field(
     }) {
         return Ok(None);
     }
-    let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+    let Some(content) = FeaturePayloadContent::from_source(data_blocks, blocks)? else {
         return Ok(None);
     };
     let Some(operation_key) = field
@@ -307,35 +310,35 @@ fn delete_construction_payload_from_field(
     else {
         return Ok(None);
     };
-    let prefix = "nx:feature-history:delete-construction-payload#";
-    let id_len = prefix
-        .len()
-        .checked_add(operation_key.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE construction identity", 0, 1))?;
-    let mut id = ctx.retained_string(id_len, "NX DELETE construction identity")?;
-    write!(&mut id, "{prefix}{operation_key}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX DELETE construction identity", 0, 1))?;
     Ok(Some(FeatureDeleteConstructionPayload {
-        id,
-        operation_label: ctx
-            .copy_retained_text(&field.operation_label, "NX DELETE construction operation")?,
-        reference_field: ctx.copy_retained_text(&field.id, "NX DELETE construction reference")?,
+        id: format!("nx:feature-history:delete-construction-payload#{operation_key}"),
+        operation_label: field.operation_label.clone(),
+        reference_field: field.id.clone(),
         content,
     }))
 }
 
+use super::construction_records::unique_offset_data_block_id;
+
 #[cfg(test)]
 mod tests {
     use super::{DeleteReferenceFieldWire, FeatureDeleteReferenceField};
-    use cadmpeg_core::CodecError;
     use std::collections::BTreeMap;
 
     fn delete_construction_fixture() -> (
         FeatureDeleteReferenceField,
         BTreeMap<String, (&'static [u8], u64)>,
     ) {
-        let field = serde_json::from_str(r#"{"id":"field","operation_label":"nx:feature-history:operation-label#0-0000000001","control":255,"object_indices":[32,33,34,35,36],"raw_object_indices":["f020","f021","f022","f023","f024"],"data_blocks":["nx:om-data-blocks-0:block#32","nx:om-data-blocks-0:block#33","nx:om-data-blocks-0:block#34","nx:om-data-blocks-0:block#35","nx:om-data-blocks-0:block#36"],"source_offset":100,"object_index_source_offsets":[107,109,111,113,115]}"#)
-            .expect("complete DELETE field");
+        let field = serde_json::from_str(
+            r#"{"id":"field","operation_label":"nx:feature-history:operation-label#0-0000000001",
+                "control":255,"object_indices":[32,33,34,35,36],
+                "raw_object_indices":["f020","f021","f022","f023","f024"],
+                "data_blocks":["nx:om-data-blocks-0:block#32","nx:om-data-blocks-0:block#33",
+                               "nx:om-data-blocks-0:block#34","nx:om-data-blocks-0:block#35",
+                               "nx:om-data-blocks-0:block#36"],
+                "source_offset":100,"object_index_source_offsets":[107,109,111,113,115]}"#,
+        )
+        .expect("complete DELETE field");
         let blocks = (32u32..=36)
             .map(|ordinal| {
                 (
@@ -347,59 +350,12 @@ mod tests {
         (field, blocks)
     }
 
-    fn delete_construction_limit_error(
-        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> CodecError {
-        let (field, blocks) = delete_construction_fixture();
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                configure(policy);
-            },
-            |ctx| {
-                super::delete_construction_payload_from_field(ctx, &field, &blocks)
-                    .expect_err("DELETE construction limit refusal")
-            },
-        )
-    }
-
-    #[test]
-    fn delete_construction_refuses_collection_limit() {
-        let error =
-            delete_construction_limit_error(|policy| policy.limits.max_collection_items = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-    }
-
-    #[test]
-    fn delete_construction_refuses_scoped_limit() {
-        let error =
-            delete_construction_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-    }
-
-    #[test]
-    fn delete_construction_refuses_retained_limit() {
-        let error = delete_construction_limit_error(|policy| policy.limits.max_retained_bytes = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-    }
-
-    #[test]
-    fn delete_construction_refuses_work_limit() {
-        let error = delete_construction_limit_error(|policy| policy.limits.max_work_units = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
-    }
-
     #[test]
     fn delete_construction_preserves_complete_source_order() {
         let (field, blocks) = delete_construction_fixture();
 
-        crate::test_support::with_decode_context(|ctx| {
-            let payload = super::delete_construction_payload_from_field(ctx, &field, &blocks)
+        ({
+            let payload = super::delete_construction_payload_from_field(&field, &blocks)
                 .expect("admitted source blocks")
                 .expect("complete DELETE payload");
             assert_eq!(
@@ -414,6 +370,43 @@ mod tests {
             assert_eq!(
                 payload.content.blocks()[4].id,
                 "nx:om-data-blocks-0:block#36"
+            );
+        });
+    }
+
+    #[test]
+    fn six_fragment_delete_preserves_nonconsecutive_field_order() {
+        let (field, mut blocks) = delete_construction_fixture();
+        blocks.insert("nx:om-data-blocks-0:block#6".into(), (b"B", 6));
+        let mut wire = DeleteReferenceFieldWire::from(field);
+        wire.object_indices.insert(2, Some(6));
+        wire.raw_object_indices.insert(2, vec![0xf0, 6].into());
+        wire.data_blocks
+            .insert(2, Some("nx:om-data-blocks-0:block#6".into()));
+        wire.object_index_source_offsets = vec![107, 109, 111, 113, 115, 117];
+        let field = FeatureDeleteReferenceField::try_from(wire).unwrap();
+        crate::test_support::with_decode_context(|_ctx| {
+            let payload = super::delete_construction_payload_from_field(&field, &blocks)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                payload
+                    .content
+                    .blocks()
+                    .iter()
+                    .map(|b| b.source_offset)
+                    .collect::<Vec<_>>(),
+                [32, 33, 6, 34, 35, 36]
+            );
+            let json = serde_json::to_value(&payload).unwrap();
+            assert_eq!(
+                json["sha256"],
+                serde_json::to_value(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"AABAAA"))
+                    .unwrap()
+            );
+            assert_eq!(
+                serde_json::from_value::<super::FeatureDeleteConstructionPayload>(json).unwrap(),
+                payload
             );
         });
     }

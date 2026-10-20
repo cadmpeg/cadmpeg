@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor-native validation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::FaceNativeKey;
 use cadmpeg_core::decode::DecodeContext;
@@ -131,18 +131,8 @@ pub(crate) fn validate_native(
             .difference(&expected_arenas)
             .copied()
             .collect::<Vec<_>>();
-        ctx.sort_unstable_by(
-            &mut missing,
-            Ord::cmp,
-            |item| item.len(),
-            "Inventor missing arena sort",
-        )?;
-        ctx.sort_unstable_by(
-            &mut unexpected,
-            Ord::cmp,
-            |item| item.len(),
-            "Inventor unexpected arena sort",
-        )?;
+        missing.sort_unstable_by(Ord::cmp);
+        unexpected.sort_unstable_by(Ord::cmp);
         return Ok(vec![finding(
             Check::NativeLinks,
             format!(
@@ -1623,7 +1613,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         .metadata
         .iter()
         .map(|record| (record.token.as_str(), record))
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     unique(
         findings,
         data.meta_sections
@@ -1908,7 +1898,7 @@ fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
 }
 
 fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Finding>) {
-    let mut positions = HashMap::<&str, HashSet<u64>>::new();
+    let mut positions = BTreeMap::<&str, HashSet<u64>>::new();
     for (entry_name, ordinal) in data
         .protein_assets
         .iter()
@@ -2137,12 +2127,9 @@ fn validate_assembly(
         &data.assembly_occurrences,
         &data.assembly_placements,
     )?;
-    ctx.stable_sort_by(
-        &mut projected.occurrences,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
-        "Inventor projected occurrence sort",
-    )?;
+    projected
+        .occurrences
+        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     if ir.model.occurrences != projected.occurrences {
         findings.push(finding(
             Check::NativeLinks,
@@ -2183,6 +2170,7 @@ fn unique<T: Eq + std::hash::Hash>(
 
 fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
     Finding {
+        related: Vec::new(),
         check,
         severity: Severity::Error,
         message,

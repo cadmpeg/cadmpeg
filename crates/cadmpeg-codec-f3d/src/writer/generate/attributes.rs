@@ -42,7 +42,6 @@ pub(super) struct AttributeIndex<'a> {
     vertex_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
     body_keys: HashMap<&'a str, &'a cadmpeg_asm::brep::records::BodyNativeKey>,
-    assigned_body_keys: HashMap<&'a str, u64>,
 }
 
 /// Record-table starts of the face and coedge sections, which only a solid
@@ -64,30 +63,11 @@ pub(super) struct AttributeOwnerStarts {
 }
 
 impl<'a> AttributeIndex<'a> {
-    pub(super) fn new(target: &'a CadIr, native: &'a F3dNative) -> Result<Self, CodecError> {
+    pub(super) fn new(target: &'a CadIr, native: &'a F3dNative) -> Self {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
         let mut body_keys = HashMap::new();
         for key in &native.body_native_keys {
             body_keys.entry(key.body.as_str()).or_insert(key);
-        }
-        let mut material_body_keys = HashMap::new();
-        for assignment in &native.design_material_assignments {
-            if let Some(appearance) =
-                crate::materials::appearance_for_assignment(&target.model.appearances, assignment)?
-            {
-                material_body_keys
-                    .entry(appearance.id.as_str())
-                    .or_insert(assignment.asm_body_key);
-            }
-        }
-        let mut assigned_body_keys = HashMap::new();
-        for binding in &target.model.appearance_bindings {
-            let cadmpeg_ir::appearance::AppearanceTarget::Body(body) = &binding.target else {
-                continue;
-            };
-            if let Some(key) = material_body_keys.get(binding.appearance.as_str()) {
-                assigned_body_keys.entry(body.as_str()).or_insert(*key);
-            }
         }
         for link in &native.persistent_design_links {
             if let cadmpeg_ir::attributes::AttributeTarget::Body(id) = &link.target {
@@ -217,7 +197,7 @@ impl<'a> AttributeIndex<'a> {
             .enumerate()
             .map(|(ordinal, coedge)| (coedge.id.as_str().to_owned(), ordinal))
             .collect();
-        Ok(Self {
+        Self {
             creation_timestamps: &native.creation_timestamps,
             body_group_ordinals,
             face_group_ordinals,
@@ -233,8 +213,7 @@ impl<'a> AttributeIndex<'a> {
             vertex_timestamps,
             coedge_sketch_links,
             body_keys,
-            assigned_body_keys,
-        })
+        }
     }
 
     fn body_group_count(&self) -> usize {
@@ -285,13 +264,10 @@ pub(super) fn source_less_body_key(
                 .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
         });
     }
-    let assigned = index.assigned_body_keys.get(body.id.as_str()).copied();
-    let key = assigned.unwrap_or(
-        u64::try_from(body_ordinal)
-            .ok()
-            .and_then(|ordinal| ordinal.checked_add(1))
-            .ok_or_else(|| CodecError::NotImplemented("F3D body ordinal exceeds u64".into()))?,
-    );
+    let key = u64::try_from(body_ordinal)
+        .ok()
+        .and_then(|ordinal| ordinal.checked_add(1))
+        .ok_or_else(|| CodecError::NotImplemented("F3D body ordinal exceeds u64".into()))?;
     i64::try_from(key)
         .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
 }

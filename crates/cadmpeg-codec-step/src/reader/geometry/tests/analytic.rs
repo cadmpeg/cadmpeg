@@ -28,128 +28,6 @@ const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
 const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
-#[test]
-fn apll_point_name_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=APLL_POINT('leader',(1.,2.,3.),.NONE.);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
-            .expect("valid APLL exchange");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "step_string_text",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-                .expect("root fits retained policy");
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
-        },
-    );
-    assert!(
-        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text")
-    );
-}
-
-#[test]
-fn tessellated_curve_name_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.)));#2=TESSELLATED_CURVE_SET('curve name',#1,((1,2)));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
-            .expect("valid tessellation exchange");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "step_string_text",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-                .expect("root fits retained policy");
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
-        },
-    );
-    assert!(
-        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text")
-    );
-}
-
-fn assert_association_name_refuses(
-    source: &[u8],
-    run: impl FnOnce(
-        &crate::parse::Exchange,
-        &mut cadmpeg_ir::document::CadIr,
-        &crate::reader::index::CarrierIndex,
-        &super::super::OwnedCarriers,
-        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-        &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError>,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("valid association exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)
-        .expect("empty model has no carrier index entries");
-    let owned = super::super::topology_owned_carriers(&ir, &index, &ctx)
-        .expect("empty model has no owned carriers");
-    let mut losses = Vec::new();
-    assert!(matches!(
-        run(&exchange, &mut ir, &index, &owned, &mut losses, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
-}
-
-#[test]
-fn geometric_set_member_name_refuses_retained_limit() {
-    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));#2=GEOMETRIC_SET('',(#1));ENDSEC;END-ISO-10303-21;";
-    assert_association_name_refuses(SOURCE, super::super::associate_free_geometric_set_members);
-}
-
-#[test]
-fn representation_member_name_refuses_retained_limit() {
-    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));#2=REPRESENTATION('',(#1),$);ENDSEC;END-ISO-10303-21;";
-    assert_association_name_refuses(SOURCE, super::super::associate_free_representation_members);
-}
-
-#[test]
-fn presentation_carrier_name_refuses_retained_limit() {
-    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
-    assert_association_name_refuses(SOURCE, |exchange, ir, index, owned, losses, ctx| {
-        super::super::associate_presentation_carrier(
-            exchange,
-            ir,
-            index,
-            owned,
-            (1, 1),
-            losses,
-            ctx,
-        )
-    });
-}
-
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
     let Some(SolvedCurveGeometry::Polyline(polyline)) = curve.geometry.solved() else {
         panic!("expected tessellated curve to transfer as a polyline");
@@ -302,7 +180,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
         1
     );
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -320,7 +198,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             && loss.message.contains("no pcurve")
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -382,7 +260,7 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
             && loss.message.contains("no pcurve")
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -426,7 +304,7 @@ fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
 
     assert_eq!(decoded.ir().model.procedural_surfaces.len(), 2);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -443,7 +321,7 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
         .expect("decode NURBS linear-extrusion sheet");
 
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -487,7 +365,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode swept-surface chart witness");
         let surface_id = SurfaceId::mint("step:data:surface#9").expect("identity grammar");
-        let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+        let index = ModelIndex::build(decoded.ir());
         assert_eq!(
             model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -542,7 +420,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
         .expect("decode surface of revolution sheet");
 
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -571,7 +449,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
             && loss.message.contains("no pcurve")
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -618,7 +496,7 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
 #7=GEOMETRIC_CURVE_SET('',(#6));
 #8=SHAPE_REPRESENTATION('',(#7),$);",
     );
-    let index = ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(result.ir());
     let start = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -718,7 +596,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
 
     let numeric_start = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex),
+        &ModelIndex::build(decoded.ir()),
         &CurveId::mint("step:data:curve#13").expect("identity grammar"),
         0.0,
     )
@@ -727,7 +605,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!(numeric_start.y.abs() < 1.0e-12);
     let cartesian_end = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex),
+        &ModelIndex::build(decoded.ir()),
         &CurveId::mint("step:data:curve#14").expect("identity grammar"),
         std::f64::consts::FRAC_PI_2,
     )
@@ -735,7 +613,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!(cartesian_end.x.abs() < 1.0e-12);
     assert!((cartesian_end.y - 6.0).abs() < 1.0e-12);
 
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     let replica_start = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -775,7 +653,7 @@ fn annotation_plane_keeps_its_neutral_plane_reachable() {
         Some("#71")
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#70")
@@ -874,7 +752,7 @@ fn complex_geometry_instances_decode_named_partials() {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
     ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -904,7 +782,7 @@ fn complex_points_and_directions_decode_named_partials() {
             )
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -941,7 +819,7 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
     assert_eq!(source.name, None);
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -967,7 +845,7 @@ fn geometric_surface_representation_salvages_valid_sibling_sets() {
         .iter()
         .any(|loss| { loss.message.contains("skipped non-set member #99") }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -995,7 +873,7 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
         .iter()
         .any(|record| record.id.as_str() == "step:data:shape_representation#4"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1026,7 +904,7 @@ fn unreferenced_curve_is_associated_as_free_geometry() {
         Some("#14")
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1133,7 +1011,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         );
     }
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1216,7 +1094,7 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
                 || record.id.as_str().ends_with("#5")
         }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

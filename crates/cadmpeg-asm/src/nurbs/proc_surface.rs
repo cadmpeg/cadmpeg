@@ -4,13 +4,14 @@
 use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
     compact_rb_blend_spl_sur, cyl_spl_sur, full_rb_blend_spl_sur, rolling_ball_side,
-    var_blend_spl_sur, vertex_blend_spl_sur,
+    var_blend_spl_sur, vertex_blend_spl_sur, SupportCaches,
 };
 use crate::nurbs::core::{curve_block, surface_block};
 use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end};
 use crate::nurbs::proc_curve::{
-    embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
-    optional_embedded_surface_with_bounds, optional_helix_revision,
+    embedded_base_curve_resolving_refs, embedded_support, embedded_surface,
+    embedded_surface_with_ranges, optional_embedded_surface_with_bounds, optional_helix_revision,
+    EmbeddedSupport,
 };
 use crate::nurbs::reader::{normalized, take_native_ident, Nullable, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
@@ -663,54 +664,47 @@ pub(super) fn decode_nullable_embedded_pcurve(
 
 /// Decode a `nullbs`-or-2D-block pcurve slot. Token-space counterpart of
 /// [`decode_nullable_embedded_pcurve`].
-pub(super) fn nullable_embedded_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-) -> Option<Result<Nullable<PcurveNurbs>, cadmpeg_core::CodecError>> {
+pub(super) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("nullbs") {
-        return Some(Ok(Nullable::Null));
+        return Some(Nullable::Null);
     }
     cur.set_pos(saved);
-    let (pcurve, end) = propagate_resource!(pcurve_block_with_end(ctx, cur.toks(), cur.pos())?);
+    let (pcurve, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
     cur.set_pos(end);
-    Some(Ok(Nullable::Value(pcurve)))
+    Some(Nullable::Value(pcurve))
 }
 
-fn g2_side(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-) -> Option<Result<EmbeddedG2Side, cadmpeg_core::CodecError>> {
-    let label = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM G2 side label"));
-    let surface = propagate_resource!(embedded_surface(ctx, cur)?);
-    let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+pub(super) fn g2_side(cur: &mut Cur<'_>) -> Option<EmbeddedG2Side> {
+    let label = cur.take_str()?.to_owned();
+    let EmbeddedSupport { surface, chart, .. } = embedded_support(cur)?;
+    let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
     cur.set_pos(curve_end);
-    let first = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
+    // The first pcurve is the contact track in the support chart, as the
+    // primary pcurve of a rolling-ball side is.
+    let mut first = nullable_embedded_pcurve(cur)?.value();
+    if let Some(pcurve) = &mut first {
+        chart.normalize(pcurve)?;
+    }
     let direction = cur.take_vector3()?;
-    let second = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
-    Some(Ok(EmbeddedG2Side {
+    let second = nullable_embedded_pcurve(cur)?.value();
+    Some(EmbeddedG2Side {
         label,
         surface,
         curve,
         pcurves: [first, second],
         direction: Vector3::new(direction[0], direction[1], direction[2]),
-    }))
+    })
 }
 
-fn bridge_token(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-) -> Option<Result<cadmpeg_ir::geometry::LoftBridgeToken, cadmpeg_core::CodecError>> {
+fn bridge_token(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftBridgeToken> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     match cur.peek()? {
-        Token::True | Token::False => Some(Ok(LoftBridgeToken::Boolean(cur.take_bool()?))),
-        Token::Long(_) => Some(Ok(LoftBridgeToken::Integer(cur.take_long()?))),
-        Token::Double(_) => Some(Ok(LoftBridgeToken::Double(cur.take_f64()?))),
-        Token::Enum(_) => Some(Ok(LoftBridgeToken::Enum(cur.take_enum()?))),
-        Token::Str(_) => Some(
-            ctx.copy_retained_text(cur.take_str()?, "ASM loft bridge text")
-                .map(LoftBridgeToken::Text),
-        ),
+        Token::True | Token::False => Some(LoftBridgeToken::Boolean(cur.take_bool()?)),
+        Token::Long(_) => Some(LoftBridgeToken::Integer(cur.take_long()?)),
+        Token::Double(_) => Some(LoftBridgeToken::Double(cur.take_f64()?)),
+        Token::Enum(_) => Some(LoftBridgeToken::Enum(cur.take_enum()?)),
+        Token::Str(_) => Some(LoftBridgeToken::Text(cur.take_str()?.to_owned())),
         _ => None,
     }
 }
@@ -730,7 +724,7 @@ fn g2_blend_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["g2_blend_spl_sur", "g2blnsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -752,7 +746,7 @@ fn g2_blend_spl_sur(
         };
         let sides = Box::new([first, second]);
         let table = resolver?;
-        let center = propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+        let center = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let center_range = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
@@ -780,7 +774,7 @@ fn g2_blend_spl_sur(
             cache,
             discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
         cur.at_scope_end().then_some(())?;
         return Some(Ok(DecodedProceduralSurface::revision(
@@ -807,7 +801,7 @@ fn g2_blend_spl_sur(
             )),
         )));
     }
-    let first = propagate_resource!(g2_side(ctx, &mut cur)?);
+    let first = g2_side(&mut cur)?;
     let singularity = cur.take_enum()?;
     let first_shape = if cur.peek().is_some_and(Token::is_payload_ident) {
         let saved = cur.pos();
@@ -815,7 +809,7 @@ fn g2_blend_spl_sur(
             EmbeddedG2FirstShape::Full(None)
         } else {
             cur.set_pos(saved);
-            let (surface, surface_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+            let (surface, surface_end) = surface_block(span, cur.pos())?;
             cur.set_pos(surface_end);
             EmbeddedG2FirstShape::Full(Some((
                 surface,
@@ -834,12 +828,9 @@ fn g2_blend_spl_sur(
         {
             None
         } else {
-            match bridge_token(ctx, &mut cur) {
-                Some(token) => Some(propagate_resource!(token)),
-                None => None,
-            }
+            bridge_token(&mut cur)
         };
-        let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value();
+        let pcurve = nullable_embedded_pcurve(&mut cur)?.value();
         EmbeddedG2FirstShape::None {
             coefficients,
             tolerance,
@@ -847,11 +838,10 @@ fn g2_blend_spl_sur(
             pcurve,
         }
     };
-    let second = propagate_resource!(g2_side(ctx, &mut cur)?);
-    let (second_exact, second_exact_end) =
-        propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let second = g2_side(&mut cur)?;
+    let (second_exact, second_exact_end) = surface_block(span, cur.pos())?;
     cur.set_pos(second_exact_end);
-    let (center, center_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let (center, center_end) = curve_block(span, cur.pos())?;
     cur.set_pos(center_end);
     let center_parameters = [cur.take_f64()?, cur.take_f64()?];
     let center_flag = cur.take_long()?;
@@ -863,16 +853,16 @@ fn g2_blend_spl_sur(
     for parameter in &mut trailing_parameters {
         *parameter = cur.take_f64()?;
     }
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     let cache_fit_tolerance = match span.get(cache_end) {
         Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
         _ => None,
     };
     cur.set_pos(cache_end + usize::from(cache_fit_tolerance.is_some()));
     let discontinuities = [
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::G2Blend(Box::new(EmbeddedG2Blend {
@@ -1642,57 +1632,50 @@ pub enum EmbeddedDeformableSurfaceData {
     },
 }
 
-fn compound_loft_scale(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-) -> Option<Result<Nullable<EmbeddedCompoundLoftScale>, cadmpeg_core::CodecError>> {
+fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Nullable<EmbeddedCompoundLoftScale>> {
     if matches!(cur.peek(), Some(Token::True | Token::False)) {
-        return Some(Ok(Nullable::Null));
+        return Some(Nullable::Null);
     }
     let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
         return None;
     }
-    let mut members =
-        propagate_resource!(ctx.collection_vec(count, "ASM compound loft scale members"));
+    let mut members = Vec::new();
     for _ in 0..count {
         let type_code = cur.take_long()?;
-        let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+        let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
         cur.set_pos(curve_end);
-        let data = propagate_resource!(loft_profile_data(ctx, cur, type_code)?);
+        let data = loft_profile_data(cur, type_code)?;
         members.push(EmbeddedLoftProfileMember { curve, data });
     }
-    let (path, path_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+    let (path, path_end) = curve_block(cur.toks(), cur.pos())?;
     cur.set_pos(path_end);
     let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
     if auxiliary_count > 100_000 {
         return None;
     }
-    let mut auxiliaries = propagate_resource!(
-        ctx.collection_vec(auxiliary_count, "ASM compound loft scale auxiliaries")
-    );
+    let mut auxiliaries = Vec::new();
     for _ in 0..auxiliary_count {
-        let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+        let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
         cur.set_pos(curve_end);
         auxiliaries.push(curve);
     }
     let tail = [cur.take_long()?, cur.take_long()?];
-    Some(Ok(Nullable::Value(EmbeddedCompoundLoftScale {
+    Some(Nullable::Value(EmbeddedCompoundLoftScale {
         members,
         path,
         auxiliaries,
         tail,
-    })))
+    }))
 }
 
 /// Exact rational quadratic NURBS of a full native ellipse.
 pub(super) fn ellipse_to_nurbs(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 3],
     normal: [f64; 3],
     major: [f64; 3],
     ratio: f64,
-) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
+) -> Option<NurbsCurve> {
     let length = major[0].hypot(major[1]).hypot(major[2]);
     (length.is_finite() && length > 0.0).then_some(())?;
     let minor_direction = [
@@ -1722,10 +1705,11 @@ pub(super) fn ellipse_to_nurbs(
     let corner = cadmpeg_ir::scalar::NonZeroReal::FRAC_1_SQRT_2;
     let full = cadmpeg_ir::scalar::NonZeroReal::ONE;
     let pole = |point, weight| cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight };
-    propagate_resource!(NurbsCurve::new(
-        ctx,
+    NurbsCurve::new(
         2,
-        vec![0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,],
+        vec![
+            0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
+        ],
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
             points: vec![
                 pole(at(1.0, 0.0), full),
@@ -1740,9 +1724,8 @@ pub(super) fn ellipse_to_nurbs(
             ],
         },
         false,
-    ))
+    )
     .ok()
-    .map(Ok)
 }
 
 /// The highest stream save format version whose revision-gated loft profile
@@ -1777,7 +1760,7 @@ fn revision_loft_profile_data(
         } else {
             None
         };
-        let subdata = propagate_resource!(loft_subdata_form(ctx, cur, true)?);
+        let subdata = loft_subdata_form(cur, true)?;
         let direction = if cur.take_bool()? {
             let value = cur.take_vector3()?;
             Some(Vector3::new(value[0], value[1], value[2]))
@@ -1790,12 +1773,16 @@ fn revision_loft_profile_data(
         Some(type_code) => {
             let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
                 surface,
+                chart,
                 bounds: support_bounds,
             } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
                 Ok(surface) => surface,
                 Err(error) => return Some(Err(error)),
             };
-            let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
+            let mut pcurve = nullable_embedded_pcurve(cur)?.value();
+            if let Some(pcurve) = &mut pcurve {
+                chart.normalize(pcurve)?;
+            }
             let first_flag = cur.take_bool()?;
             let (asm_extension, subdata, direction) = propagate_resource!(tail(cur)?);
             Some(Ok(LoftProfileData::RevisionSupport {
@@ -1811,8 +1798,8 @@ fn revision_loft_profile_data(
             }))
         }
         None => {
-            let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
-            let secondary_pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
+            let pcurve = nullable_embedded_pcurve(cur)?.value();
+            let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
             let (asm_extension, subdata, direction) = propagate_resource!(tail(cur)?);
             Some(Ok(LoftProfileData::RevisionPcurvePair {
                 endpoints,
@@ -1839,10 +1826,7 @@ fn revision_loft_section(
         1,
         cur.rest().len(),
     )?;
-    let mut entries = match ctx.collection_vec(count, "ASM loft sections") {
-        Ok(entries) => entries,
-        Err(error) => return Some(Err(error)),
-    };
+    let mut entries = Vec::new();
     for _ in 0..count {
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
@@ -1852,13 +1836,10 @@ fn revision_loft_section(
             1,
             cur.rest().len(),
         )?;
-        let mut profile = match ctx.collection_vec(member_count, "ASM loft profile members") {
-            Ok(profile) => profile,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut profile = Vec::new();
         for _ in 0..member_count {
             let type_code = cur.take_long()?;
-            let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
+            let curve = embedded_base_curve_resolving_refs(cur, table)?;
             let endpoints = [
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
@@ -1881,7 +1862,7 @@ fn revision_loft_section(
             None
         } else {
             cur.set_pos(saved);
-            let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
+            let curve = embedded_base_curve_resolving_refs(cur, table)?;
             let endpoints = [
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
@@ -1898,14 +1879,9 @@ fn revision_loft_section(
             1,
             cur.rest().len(),
         )?;
-        let mut auxiliaries = match ctx.collection_vec(auxiliary_count, "ASM loft auxiliary curves")
-        {
-            Ok(auxiliaries) => auxiliaries,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut auxiliaries = Vec::new();
         for _ in 0..auxiliary_count {
-            let (auxiliary, auxiliary_end) =
-                propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+            let (auxiliary, auxiliary_end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(auxiliary_end);
             auxiliaries.push(auxiliary);
         }
@@ -1923,18 +1899,14 @@ fn revision_loft_section(
     Some(Ok(entries))
 }
 
-fn loft_subdata(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-) -> Option<Result<cadmpeg_ir::geometry::LoftSubdata, cadmpeg_core::CodecError>> {
-    loft_subdata_form(ctx, cur, false)
+fn loft_subdata(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
+    loft_subdata_form(cur, false)
 }
 
 fn loft_subdata_form(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     revision: bool,
-) -> Option<Result<cadmpeg_ir::geometry::LoftSubdata, cadmpeg_core::CodecError>> {
+) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
     use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
@@ -1959,14 +1931,12 @@ fn loft_subdata_form(
         tokens_per_row,
         cur.rest().len(),
     )?;
-    let mut rows = propagate_resource!(ctx.collection_vec(rows_to_read, "ASM loft subdata rows"));
+    let mut rows = Vec::new();
     for _ in 0..rows_to_read {
         let parameters = [cur.take_f64()?, cur.take_f64()?];
         let mut columns = Vec::new();
         if type_code != 211 {
-            columns = propagate_resource!(
-                ctx.collection_vec(columns_to_read, "ASM loft subdata columns")
-            );
+            columns = Vec::new();
             for _ in 0..columns_to_read {
                 columns.push([cur.take_f64()?, cur.take_f64()?]);
             }
@@ -1986,40 +1956,40 @@ fn loft_subdata_form(
         let [row] = rows.as_slice() else {
             return None;
         };
-        Some(Ok(LoftSubdata::type_211(
+        Some(LoftSubdata::type_211(
             [row_count, column_count],
             row.parameters,
-        )))
+        ))
     } else {
-        LoftSubdata::table(type_code, rows).map(Ok)
+        LoftSubdata::table(type_code, rows)
     }
 }
 
-fn loft_profile_data(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn loft_profile_data(
     cur: &mut Cur<'_>,
     type_code: i64,
-) -> Option<Result<ClassicLoftProfileData, cadmpeg_core::CodecError>> {
-    let surface = propagate_resource!(embedded_surface(ctx, cur)?);
+) -> Option<ClassicLoftProfileData> {
+    let EmbeddedSupport { surface, chart, .. } = embedded_support(cur)?;
     let saved = cur.pos();
     let pcurve = if cur.take_ident() == Some("nullbs") {
         None
     } else {
         cur.set_pos(saved);
-        let (pcurve, end) = propagate_resource!(pcurve_block_with_end(ctx, cur.toks(), cur.pos())?);
+        let (mut pcurve, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
         cur.set_pos(end);
+        chart.normalize(&mut pcurve)?;
         Some(pcurve)
     };
     let first_flag = cur.take_bool()?;
     let asm_extension = cur.take_long()?;
-    let subdata = propagate_resource!(loft_subdata(ctx, cur)?);
+    let subdata = loft_subdata(cur)?;
     let direction = if cur.take_bool()? {
         let value = cur.take_vector3()?;
         Some(Vector3::new(value[0], value[1], value[2]))
     } else {
         None
     };
-    Some(Ok(ClassicLoftProfileData {
+    Some(ClassicLoftProfileData {
         type_code,
         surface,
         pcurve,
@@ -2027,13 +1997,10 @@ fn loft_profile_data(
         asm_extension,
         subdata,
         direction,
-    }))
+    })
 }
 
-fn loft_section(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
+fn loft_section(cur: &mut Cur<'_>) -> Option<Vec<EmbeddedLoftSectionEntry>> {
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(
@@ -2041,7 +2008,7 @@ fn loft_section(
         1,
         cur.rest().len(),
     )?;
-    let mut entries = propagate_resource!(ctx.collection_vec(count, "ASM legacy loft sections"));
+    let mut entries = Vec::new();
     for _ in 0..count {
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
@@ -2051,20 +2018,18 @@ fn loft_section(
             1,
             cur.rest().len(),
         )?;
-        let mut profile = propagate_resource!(
-            ctx.collection_vec(member_count, "ASM legacy loft profile members")
-        );
+        let mut profile = Vec::new();
         for _ in 0..member_count {
             let type_code = cur.take_long()?;
-            let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+            let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(curve_end);
-            let data = propagate_resource!(loft_profile_data(ctx, cur, type_code)?);
+            let data = loft_profile_data(cur, type_code)?;
             profile.push(EmbeddedLoftProfileMember {
                 curve,
                 data: LoftProfileData::Classic(data),
             });
         }
-        let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+        let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
         cur.set_pos(curve_end);
         let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
         // Each auxiliary consumes at least its curve-block marker token.
@@ -2073,12 +2038,9 @@ fn loft_section(
             1,
             cur.rest().len(),
         )?;
-        let mut auxiliaries = propagate_resource!(
-            ctx.collection_vec(auxiliary_count, "ASM legacy loft auxiliary curves")
-        );
+        let mut auxiliaries = Vec::new();
         for _ in 0..auxiliary_count {
-            let (auxiliary, auxiliary_end) =
-                propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+            let (auxiliary, auxiliary_end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(auxiliary_end);
             auxiliaries.push(auxiliary);
         }
@@ -2093,7 +2055,7 @@ fn loft_section(
             },
         });
     }
-    Some(Ok(entries))
+    Some(entries)
 }
 
 fn revision_loft(
@@ -2135,7 +2097,7 @@ fn revision_loft(
         cache,
         discontinuities,
         tail_flag,
-    } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+    } = revision_surface_tail(&mut cur)?;
     cur.at_scope_end().then_some(())?;
     Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
@@ -2162,7 +2124,7 @@ fn loft_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names = ["loft_spl_sur", "loftsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     // The modern name uses the revision-gated layout.
@@ -2171,10 +2133,7 @@ fn loft_spl_sur(
             return Some(decoded);
         }
     }
-    let sections = [
-        propagate_resource!(loft_section(ctx, &mut cur)?),
-        propagate_resource!(loft_section(ctx, &mut cur)?),
-    ];
+    let sections = [loft_section(&mut cur)?, loft_section(&mut cur)?];
     let parameter_ranges = [
         [cur.take_f64()?, cur.take_f64()?],
         [cur.take_f64()?, cur.take_f64()?],
@@ -2186,41 +2145,20 @@ fn loft_spl_sur(
     while toks::marker_at(span, cur.pos()).is_none() {
         match cur.peek()? {
             Token::True | Token::False => {
-                propagate_resource!(ctx.push_vec(
-                    &mut bridge,
-                    LoftBridgeToken::Boolean(cur.take_bool()?),
-                    "ASM loft bridge token"
-                ));
+                bridge.push(LoftBridgeToken::Boolean(cur.take_bool()?));
             }
-            Token::Long(_) => propagate_resource!(ctx.push_vec(
-                &mut bridge,
-                LoftBridgeToken::Integer(cur.take_long()?),
-                "ASM loft bridge token"
-            )),
-            Token::Double(_) => propagate_resource!(ctx.push_vec(
-                &mut bridge,
-                LoftBridgeToken::Double(cur.take_f64()?),
-                "ASM loft bridge token"
-            )),
-            Token::Enum(_) => propagate_resource!(ctx.push_vec(
-                &mut bridge,
-                LoftBridgeToken::Enum(cur.take_enum()?),
-                "ASM loft bridge token"
-            )),
+            Token::Long(_) => bridge.push(LoftBridgeToken::Integer(cur.take_long()?)),
+            Token::Double(_) => bridge.push(LoftBridgeToken::Double(cur.take_f64()?)),
+            Token::Enum(_) => bridge.push(LoftBridgeToken::Enum(cur.take_enum()?)),
             Token::Str(_) => {
                 let value = cur.take_str()?;
-                let value =
-                    propagate_resource!(ctx.copy_retained_text(value, "ASM loft bridge text"));
-                propagate_resource!(ctx.push_vec(
-                    &mut bridge,
-                    LoftBridgeToken::Text(value),
-                    "ASM loft bridge token"
-                ));
+                let value = value.to_owned();
+                bridge.push(LoftBridgeToken::Text(value));
             }
             _ => return None,
         }
     }
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -2254,14 +2192,10 @@ fn revision_cl_scale(
         1,
         cur.rest().len(),
     )?;
-    let mut profile =
-        match ctx.collection_vec(member_count, "ASM revision compound loft profile members") {
-            Ok(profile) => profile,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut profile = Vec::new();
     for _ in 0..member_count {
         let type_code = cur.take_long()?;
-        let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
+        let curve = embedded_base_curve_resolving_refs(cur, table)?;
         let endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
@@ -2284,7 +2218,7 @@ fn revision_cl_scale(
         None
     } else {
         cur.set_pos(saved);
-        let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
+        let curve = embedded_base_curve_resolving_refs(cur, table)?;
         let endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
@@ -2301,16 +2235,9 @@ fn revision_cl_scale(
         1,
         cur.rest().len(),
     )?;
-    let mut auxiliaries = match ctx.collection_vec(
-        auxiliary_count,
-        "ASM revision compound loft auxiliary curves",
-    ) {
-        Ok(auxiliaries) => auxiliaries,
-        Err(error) => return Some(Err(error)),
-    };
+    let mut auxiliaries = Vec::new();
     for _ in 0..auxiliary_count {
-        let (auxiliary, auxiliary_end) =
-            propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+        let (auxiliary, auxiliary_end) = curve_block(cur.toks(), cur.pos())?;
         cur.set_pos(auxiliary_end);
         auxiliaries.push(auxiliary);
     }
@@ -2337,7 +2264,7 @@ fn revision_compound_loft(
         cache,
         discontinuities,
         tail_flag,
-    } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+    } = revision_surface_tail(&mut cur)?;
     let asm_extension_present = revision_loft_carries_asm_extension(table);
     let (base_profile, base_path) =
         match revision_cl_scale(ctx, &mut cur, table, asm_extension_present)? {
@@ -2351,10 +2278,7 @@ fn revision_compound_loft(
         1,
         cur.rest().len(),
     )?;
-    let mut entries = match ctx.collection_vec(entry_count, "ASM revision compound loft sections") {
-        Ok(entries) => entries,
-        Err(error) => return Some(Err(error)),
-    };
+    let mut entries = Vec::new();
     for _ in 0..entry_count {
         let (profile, path) = match revision_cl_scale(ctx, &mut cur, table, asm_extension_present)?
         {
@@ -2378,7 +2302,7 @@ fn revision_compound_loft(
         let value = cur.take_vector3()?;
         EmbeddedCompoundLoftDirection::Vector(Vector3::new(value[0], value[1], value[2]))
     } else {
-        let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+        let (curve, curve_end) = curve_block(span, cur.pos())?;
         cur.set_pos(curve_end);
         EmbeddedCompoundLoftDirection::Curve {
             selector: NonZeroI64::new(selector)?,
@@ -2398,7 +2322,7 @@ fn revision_compound_loft(
             cadmpeg_ir::geometry::RevisionCompoundLoftTail::UpperBound { upper: value }
         }
         [Some(lower), Some(upper)] => {
-            let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
             cadmpeg_ir::geometry::RevisionCompoundLoftTail::Curve {
                 interval: [lower, upper],
@@ -2431,29 +2355,23 @@ fn compound_loft_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(
-        ctx,
-        toks,
-        &["cl_loft_spl_sur"]
-    )?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &["cl_loft_spl_sur"])?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         return revision_compound_loft(ctx, span, resolver);
     }
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let scales = Box::new([
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value(),
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value(),
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value(),
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
     ]);
     let fifth_scale = if matches!(cur.peek(), Some(Token::Long(_))) {
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?)
-            .value()
-            .map(Box::new)
+        compound_loft_scale(&mut cur)?.value().map(Box::new)
     } else {
         None
     };
@@ -2462,11 +2380,11 @@ fn compound_loft_spl_sur(
     let tail = match kind {
         6 => {
             let tail_flags = [cur.take_bool()?, cur.take_bool()?];
-            let scale = Box::new(propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value()?);
+            let scale = Box::new(compound_loft_scale(&mut cur)?.value()?);
             let selector = cur.take_long()?;
             let direction = cur.take_vector3()?;
             let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
-            let (curve, _) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (curve, _) = curve_block(span, cur.pos())?;
             EmbeddedCompoundLoftTail::Six {
                 flags: tail_flags,
                 scale,
@@ -2478,12 +2396,9 @@ fn compound_loft_spl_sur(
         }
         7 => {
             let first_flag = cur.take_bool()?;
-            let first_scale = propagate_resource!(compound_loft_scale(ctx, &mut cur)?)
-                .value()
-                .map(Box::new);
+            let first_scale = compound_loft_scale(&mut cur)?.value().map(Box::new);
             let second_flag = cur.take_bool()?;
-            let second_scale =
-                Box::new(propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value()?);
+            let second_scale = Box::new(compound_loft_scale(&mut cur)?.value()?);
             let selector = cur.take_long()?;
             let direction = cur.take_vector3()?;
             let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
@@ -2504,7 +2419,7 @@ fn compound_loft_spl_sur(
                 let value = cur.take_vector3()?;
                 EmbeddedCompoundLoftDirection::Vector(Vector3::new(value[0], value[1], value[2]))
             } else {
-                let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+                let (curve, curve_end) = curve_block(span, cur.pos())?;
                 cur.set_pos(curve_end);
                 EmbeddedCompoundLoftDirection::Curve {
                     selector: NonZeroI64::new(selector)?,
@@ -2531,17 +2446,14 @@ fn compound_loft_spl_sur(
     )))
 }
 
-fn scaled_compound_loft_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["scaled_cloft_spl_sur", "sclclftsur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let singularity = cur.take_enum()?;
     let (shape, cache_fit_tolerance) = if cur.peek().is_some_and(Token::is_payload_ident) {
-        let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+        let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
         let tolerance = cur.take_f64()? * LEN_TO_MM;
         (EmbeddedScaledCompoundLoftShape::Full, Some(tolerance))
@@ -2550,10 +2462,7 @@ fn scaled_compound_loft_spl_sur(
             [cur.take_range_value()?, cur.take_range_value()?],
             [cur.take_range_value()?, cur.take_range_value()?],
         ];
-        let parameters = [
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-        ];
+        let parameters = [cur.take_float_array()?, cur.take_float_array()?];
         (
             EmbeddedScaledCompoundLoftShape::None {
                 parameter_ranges,
@@ -2563,29 +2472,26 @@ fn scaled_compound_loft_spl_sur(
         )
     };
     let discontinuities = [
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_bool()?;
     let scales = Box::new([
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value(),
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value(),
-        propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
     ]);
     let flags = [cur.take_bool()?, cur.take_bool()?];
     let selector = cur.take_long()?;
     let extended = cur.take_bool()?;
     let branch = if extended {
-        let first_scale = propagate_resource!(compound_loft_scale(ctx, &mut cur)?)
-            .value()
-            .map(Box::new);
+        let first_scale = compound_loft_scale(&mut cur)?.value().map(Box::new);
         if cur.take_bool()? {
-            let second_scale =
-                Box::new(propagate_resource!(compound_loft_scale(ctx, &mut cur)?).value()?);
+            let second_scale = Box::new(compound_loft_scale(&mut cur)?.value()?);
             let selector = cur.take_long()?;
             let direction = cur.take_vector3()?;
             EmbeddedScaledCompoundLoftBranch::ExtendedVector {
@@ -2597,7 +2503,7 @@ fn scaled_compound_loft_spl_sur(
         } else {
             let flag = cur.take_bool()?;
             let singularity = cur.take_enum()?;
-            let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
             EmbeddedScaledCompoundLoftBranch::ExtendedCurve {
                 scale: first_scale,
@@ -2617,7 +2523,7 @@ fn scaled_compound_loft_spl_sur(
                 direction[2],
             ))
         } else {
-            let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
             EmbeddedCompoundLoftDirection::Curve {
                 selector: NonZeroI64::new(selector)?,
@@ -2631,8 +2537,8 @@ fn scaled_compound_loft_spl_sur(
     let first = cur.take_vector3()?;
     let second = cur.take_vector3()?;
     let tail_singularity = cur.take_enum()?;
-    let (tail_curve, _) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
-    Some(Ok(DecodedProceduralSurface::legacy(
+    let (tail_curve, _) = curve_block(span, cur.pos())?;
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(Box::new(
             EmbeddedScaledCompoundLoft {
                 singularity,
@@ -2654,7 +2560,7 @@ fn scaled_compound_loft_spl_sur(
             },
         )),
         cache_fit_tolerance,
-    )))
+    ))
 }
 
 /// Decode one recursive law expression.
@@ -2680,7 +2586,7 @@ fn sweep_law_expression(
             .chars()
             .any(|character| !character.is_whitespace())
             .then_some(())?;
-        let copied = propagate_resource!(ctx.copy_retained_text(source, "ASM sweep law text"));
+        let copied = source.to_owned();
         return Some(Ok(EmbeddedLawExpression::Text(
             cadmpeg_core::text::NonBlankString::new(copied)?,
         )));
@@ -2745,9 +2651,8 @@ fn law_expression_resolving(
             Some(Ok(EmbeddedLawExpression::Transform { scalars, enums }))
         }
         "EDGE" => {
-            let (curve, endpoints) = if let Some(decoded) = curve_block(ctx, cur.toks(), cur.pos())
-            {
-                let (curve, end) = propagate_resource!(decoded);
+            let (curve, endpoints) = if let Some(decoded) = curve_block(cur.toks(), cur.pos()) {
+                let (curve, end) = decoded;
                 cur.set_pos(end);
                 let endpoints = matches!(cur.peek(), Some(Token::True | Token::False))
                     .then(|| {
@@ -2760,8 +2665,7 @@ fn law_expression_resolving(
                 (curve, endpoints)
             } else {
                 let table = resolver?;
-                let curve =
-                    propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
+                let curve = embedded_base_curve_resolving_refs(cur, table)?;
                 let endpoints = Some([
                     cur.take_optional_range_value()?.value(),
                     cur.take_optional_range_value()?.value(),
@@ -2777,8 +2681,8 @@ fn law_expression_resolving(
         }
         "SPLINE_LAW" => {
             let native_id = cur.take_long()?;
-            let knots = propagate_resource!(cur.take_float_array(ctx)?);
-            let controls = propagate_resource!(cur.take_float_array(ctx)?);
+            let knots = cur.take_float_array()?;
+            let controls = cur.take_float_array()?;
             let point = cur.take_position()?;
             Some(Ok(EmbeddedLawExpression::Spline {
                 native_id,
@@ -2802,7 +2706,7 @@ fn law_expression_resolving(
                 "VEC" | "DSURF" => 3,
                 _ => return None,
             };
-            let mut operands = propagate_resource!(ctx.collection_vec(arity, "ASM law operands"));
+            let mut operands = Vec::new();
             for _ in 0..arity {
                 operands.push(propagate_resource!(law_expression_resolving(
                     ctx,
@@ -2811,8 +2715,7 @@ fn law_expression_resolving(
                     resolver
                 )?));
             }
-            let operator =
-                propagate_resource!(ctx.copy_retained_text(operator, "ASM law operator"));
+            let operator = operator.to_owned();
             Some(Ok(EmbeddedLawExpression::Algebraic { operator, operands }))
         }
     }
@@ -2831,7 +2734,7 @@ fn law_formula_resolving(
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedLawFormula, cadmpeg_core::CodecError>> {
-    let name = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM law formula name"));
+    let name = cur.take_str()?.to_owned();
     if name == "null_law" {
         return Some(Ok(EmbeddedLawFormula::Null));
     }
@@ -2839,7 +2742,7 @@ fn law_formula_resolving(
     if count > 100_000 {
         return None;
     }
-    let mut variables = propagate_resource!(ctx.collection_vec(count, "ASM law formula variables"));
+    let mut variables = Vec::new();
     for _ in 0..count {
         variables.push(propagate_resource!(law_expression_resolving(
             ctx, cur, 0, resolver
@@ -2856,7 +2759,7 @@ fn skin_spl_sur(
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["skin_spl_sur", "skinsur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let surface_boolean = cur.take_enum()?;
@@ -2866,12 +2769,11 @@ fn skin_spl_sur(
     let parameter = cur.take_f64()?;
     let inner_count = cur.take_long()?;
     let layout = if cur.peek().is_some_and(Token::is_payload_ident) {
-        let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+        let (curve, curve_end) = curve_block(span, cur.pos())?;
         cur.set_pos(curve_end);
-        let subdata = propagate_resource!(loft_subdata(ctx, &mut cur)?);
+        let subdata = loft_subdata(&mut cur)?;
         let first_tail = cur.take_long()?;
-        let (secondary_curve, secondary_end) =
-            propagate_resource!(curve_block(ctx, span, cur.pos())?);
+        let (secondary_curve, secondary_end) = curve_block(span, cur.pos())?;
         cur.set_pos(secondary_end);
         let second_tail = cur.take_long()?;
         EmbeddedSkinSurfaceLayout::Compact {
@@ -2887,16 +2789,15 @@ fn skin_spl_sur(
         if profile_count > 100_000 {
             return None;
         }
-        let mut profiles =
-            propagate_resource!(ctx.collection_vec(profile_count, "ASM skin surface profiles"));
+        let mut profiles = Vec::new();
         for _ in 0..profile_count {
             let type_code = cur.take_long()?;
-            let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
-            let data = propagate_resource!(loft_profile_data(ctx, &mut cur, type_code)?);
+            let data = loft_profile_data(&mut cur, type_code)?;
             profiles.push(EmbeddedLoftProfileMember { curve, data });
         }
-        let (path, path_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+        let (path, path_end) = curve_block(span, cur.pos())?;
         cur.set_pos(path_end);
         let tail = [cur.take_long()?, cur.take_long()?];
         EmbeddedSkinSurfaceLayout::Profiles {
@@ -2908,19 +2809,18 @@ fn skin_spl_sur(
     let direction = cur.take_vector3()?;
     let trailing_parameter = cur.take_f64()?;
     let formula = propagate_resource!(law_formula(ctx, &mut cur)?);
-    let (parameter_curve, parameter_curve_end) =
-        propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let (parameter_curve, parameter_curve_end) = curve_block(span, cur.pos())?;
     cur.set_pos(parameter_curve_end);
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_bool()?;
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -2947,7 +2847,7 @@ pub(super) fn law_spl_sur(
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["law_spl_sur", "lawsur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = if matches!(cur.peek(), Some(Token::Double(_))) {
@@ -2963,8 +2863,7 @@ pub(super) fn law_spl_sur(
     if count > 100_000 {
         return None;
     }
-    let mut additional =
-        propagate_resource!(ctx.collection_vec(count, "ASM law surface additional formulas"));
+    let mut additional = Vec::new();
     for _ in 0..count {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
@@ -2977,7 +2876,7 @@ pub(super) fn law_spl_sur(
     };
     let (tail, cache_fit_tolerance) = match selector {
         0 => {
-            let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+            let (_, cache_end) = surface_block(span, cur.pos())?;
             cur.set_pos(cache_end);
             let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
             (
@@ -2988,10 +2887,7 @@ pub(super) fn law_spl_sur(
             )
         }
         1 => {
-            let parameters = [
-                propagate_resource!(cur.take_float_array(ctx)?),
-                propagate_resource!(cur.take_float_array(ctx)?),
-            ];
+            let parameters = [cur.take_float_array()?, cur.take_float_array()?];
             let fit_tolerance =
                 cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
             let closures = [cur.take_enum()?, cur.take_enum()?];
@@ -3027,12 +2923,12 @@ pub(super) fn law_spl_sur(
         _ => return None,
     };
     let discontinuities = [
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Law(Box::new(EmbeddedLawSurface {
@@ -3046,26 +2942,23 @@ pub(super) fn law_spl_sur(
     )))
 }
 
-pub(super) fn sub_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+pub(super) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["sub_spl_sur", "subsur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = [
         [cur.take_f64()?, cur.take_f64()?],
         [cur.take_f64()?, cur.take_f64()?],
     ];
-    let support = propagate_resource!(embedded_surface(ctx, &mut cur)?);
-    Some(Ok(DecodedProceduralSurface::legacy(
+    let support = embedded_surface(&mut cur)?;
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::SubSurface {
             support,
             parameter_ranges,
         },
         None,
-    )))
+    ))
 }
 
 fn net_spl_sur(
@@ -3073,13 +2966,10 @@ fn net_spl_sur(
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["net_spl_sur", "netsur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
-    let sections = Box::new([
-        propagate_resource!(loft_section(ctx, &mut cur)?),
-        propagate_resource!(loft_section(ctx, &mut cur)?),
-    ]);
+    let sections = Box::new([loft_section(&mut cur)?, loft_section(&mut cur)?]);
     let mut frame_parameters = [0.0; 12];
     for parameter in &mut frame_parameters {
         *parameter = cur.take_f64()?;
@@ -3096,16 +2986,16 @@ fn net_spl_sur(
         propagate_resource!(law_formula(ctx, &mut cur)?),
         propagate_resource!(law_formula(ctx, &mut cur)?),
     ];
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_bool()?;
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -3128,7 +3018,7 @@ fn sweep_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["sweep_spl_sur", "sweep_sur", "sweepsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -3138,9 +3028,9 @@ fn sweep_spl_sur(
     }
     let primary_kind = cur.take_enum()?;
     let layout = if cur.peek().is_some_and(Token::is_payload_ident) {
-        let (profile, profile_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+        let (profile, profile_end) = curve_block(span, cur.pos())?;
         cur.set_pos(profile_end);
-        let (spine, spine_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+        let (spine, spine_end) = curve_block(span, cur.pos())?;
         cur.set_pos(spine_end);
         let secondary_kind = cur.take_enum()?;
         let mut directions = [Vector3::new(0.0, 0.0, 0.0); 5];
@@ -3173,7 +3063,7 @@ fn sweep_spl_sur(
         }
     } else {
         let mode = cur.take_long()?;
-        let (profile, profile_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+        let (profile, profile_end) = curve_block(span, cur.pos())?;
         cur.set_pos(profile_end);
         let profile_range = [cur.take_f64()?, cur.take_f64()?];
         let profile_frame = if cur.take_bool()? {
@@ -3204,7 +3094,7 @@ fn sweep_spl_sur(
         if matches!(cur.peek(), Some(Token::Long(_))) {
             let branch = cur.take_long()?;
             let trajectory_flag = cur.take_bool()?;
-            let (path, path_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (path, path_end) = curve_block(span, cur.pos())?;
             cur.set_pos(path_end);
             let path_range = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
             let path_parameter = cur.take_f64()?;
@@ -3233,8 +3123,7 @@ fn sweep_spl_sur(
                 }
                 2 => {
                     let guide_flags = [cur.take_bool()?, cur.take_bool()?];
-                    let (guide_curve, guide_end) =
-                        propagate_resource!(curve_block(ctx, span, cur.pos())?);
+                    let (guide_curve, guide_end) = curve_block(span, cur.pos())?;
                     cur.set_pos(guide_end);
                     let guide_range = [cur.take_f64()?, cur.take_f64()?];
                     let guide_modes = [cur.take_long()?, cur.take_long()?];
@@ -3255,10 +3144,9 @@ fn sweep_spl_sur(
                 }
                 3 => {
                     let singularity = cur.take_enum()?;
-                    let support_surface = propagate_resource!(embedded_surface(ctx, &mut cur)?);
+                    let support_surface = embedded_surface(&mut cur)?;
                     let auxiliary_curve = if cur.take_bool()? {
-                        let (curve, curve_end) =
-                            propagate_resource!(curve_block(ctx, span, cur.pos())?);
+                        let (curve, curve_end) = curve_block(span, cur.pos())?;
                         cur.set_pos(curve_end);
                         Some(curve)
                     } else {
@@ -3291,7 +3179,7 @@ fn sweep_spl_sur(
             let law_direction = Vector3::new(vector[0], vector[1], vector[2]);
             let path_mode = cur.take_long()?;
             let path_flag = cur.take_bool()?;
-            let (path, path_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (path, path_end) = curve_block(span, cur.pos())?;
             cur.set_pos(path_end);
             let path_range = [cur.take_f64()?, cur.take_f64()?];
             let path_parameter = cur.take_f64()?;
@@ -3328,16 +3216,16 @@ fn sweep_spl_sur(
             }
         }
     };
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_bool()?;
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -3364,7 +3252,7 @@ fn revision_sweep_sur(
     let revision = PositiveI64::new(cur.take_long()?)?;
     let primary_flag = cur.take_bool()?;
     let mode = cur.take_long()?;
-    let profile = propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+    let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
     let profile_endpoints = [
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
@@ -3408,7 +3296,7 @@ fn revision_sweep_sur(
         let law_direction = cur.take_vector3()?;
         let path_mode = cur.take_long()?;
         let path_flag = cur.take_bool()?;
-        let path = propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+        let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let path_endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
@@ -3454,7 +3342,7 @@ fn revision_sweep_sur(
     } else {
         (cur.take_long()? == 1).then_some(())?;
         let trajectory_flag = cur.take_bool()?;
-        let path = propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+        let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let path_endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
@@ -3492,7 +3380,7 @@ fn revision_sweep_sur(
         cache,
         discontinuities,
         tail_flag: discontinuity_flag,
-    } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+    } = revision_surface_tail(&mut cur)?;
     cur.at_scope_end().then_some(())?;
     Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
@@ -3532,8 +3420,7 @@ fn taper_spl_sur(
         ("swepttapersur", 5),
     ];
     let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
-    let (start, name) =
-        propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &candidates)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &candidates)?;
     let kind = names
         .iter()
         .find_map(|(candidate, kind)| (*candidate == name).then_some(*kind))?;
@@ -3546,25 +3433,28 @@ fn taper_spl_sur(
         let revision = PositiveI64::new(cur.take_long()?)?;
         let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
             surface: support,
+            chart,
             bounds: support_bounds,
         } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
             Ok(support) => support,
             Err(error) => return Some(Err(error)),
         };
         let support = support.into_surface()?;
-        let reference =
-            propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+        let reference = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let reference_endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value();
+        let mut pcurve = nullable_embedded_pcurve(&mut cur)?.value();
+        if let Some(pcurve) = &mut pcurve {
+            chart.normalize(pcurve)?;
+        }
         let parameter = cur.take_f64()?;
         let RevisionSurfaceTail {
             cache,
             discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         // The single trailing logical after the shared tail is the record's own
         // orthogonal-sense field, positionally matching the text form's single
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
@@ -3591,20 +3481,25 @@ fn taper_spl_sur(
             },
         )));
     }
-    let support = propagate_resource!(embedded_surface(ctx, &mut cur)?);
-    let (reference, reference_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let EmbeddedSupport {
+        surface: support,
+        chart,
+        ..
+    } = embedded_support(&mut cur)?;
+    let (reference, reference_end) = curve_block(span, cur.pos())?;
     cur.set_pos(reference_end);
     let saved = cur.pos();
     let pcurve = if cur.take_ident() == Some("nullbs") {
         None
     } else {
         cur.set_pos(saved);
-        let (pcurve, end) = propagate_resource!(pcurve_block_with_end(ctx, span, cur.pos())?);
+        let (mut pcurve, end) = pcurve_block_with_end(span, cur.pos())?;
         cur.set_pos(end);
+        chart.normalize(&mut pcurve)?;
         Some(pcurve)
     };
     let parameter = cur.take_f64()?;
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = if matches!(cur.peek(), Some(Token::Double(_))) {
         Some(cur.take_f64()? * LEN_TO_MM)
@@ -3655,39 +3550,30 @@ fn taper_spl_sur(
     )))
 }
 
-fn comp_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(
-        ctx,
-        toks,
-        &["comp_spl_sur"]
-    )?);
+fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let (start, _) = toks::find_owned_subtype_marker(toks, &["comp_spl_sur"])?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = if matches!(cur.peek(), Some(Token::Double(_))) {
         Some(cur.take_f64()? * LEN_TO_MM)
     } else {
         None
     };
-    let parameters = propagate_resource!(cur.take_float_array(ctx)?);
-    let mut components = propagate_resource!(
-        ctx.collection_vec(parameters.len(), "ASM compound surface components")
-    );
+    let parameters = cur.take_float_array()?;
+    let mut components = Vec::new();
     for parameter in parameters {
         components.push(cadmpeg_ir::geometry::CompoundComponent {
             parameter,
-            component: propagate_resource!(embedded_surface(ctx, &mut cur)?),
+            component: embedded_surface(&mut cur)?,
         });
     }
     cur.at_scope_end().then_some(())?;
-    Some(Ok(DecodedProceduralSurface::legacy(
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Compound { components },
         cache_fit_tolerance,
-    )))
+    ))
 }
 
 /// Approximation data carried by a revision surface tail.
@@ -3731,15 +3617,11 @@ pub struct RevisionSurfaceTail {
 /// U/V intervals in the optional bool-gated form, four closure and singularity
 /// enums, six discontinuity arrays, and a terminating boolean. The decoder
 /// retains the containing record in native form for other values.
-pub fn revision_surface_tail(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-) -> Option<Result<RevisionSurfaceTail, cadmpeg_core::CodecError>> {
+pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
     let enumeration = cur.take_enum()?;
     let cache = match enumeration {
         0 => {
-            let (cache, cache_end) =
-                propagate_resource!(surface_block(ctx, cur.toks(), cur.pos())?);
+            let (cache, cache_end) = surface_block(cur.toks(), cur.pos())?;
             cur.set_pos(cache_end);
             let domains = [
                 [*cache.u_knots().first()?, *cache.u_knots().last()?],
@@ -3771,19 +3653,19 @@ pub fn revision_surface_tail(
         _ => return None,
     };
     let discontinuities = [
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
-        propagate_resource!(cur.take_float_array(ctx)?),
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     let tail_flag = cur.take_bool()?;
-    Some(Ok(RevisionSurfaceTail {
+    Some(RevisionSurfaceTail {
         cache,
         discontinuities,
         tail_flag,
-    }))
+    })
 }
 
 fn off_spl_sur(
@@ -3792,7 +3674,7 @@ fn off_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["off_spl_sur", "offsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let modern = name == "off_spl_sur";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
@@ -3804,6 +3686,7 @@ fn off_spl_sur(
         let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
             surface: support,
             bounds: support_bounds,
+            ..
         } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
             Ok(support) => support,
             Err(error) => return Some(Err(error)),
@@ -3823,7 +3706,7 @@ fn off_spl_sur(
             cache,
             discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
         return Some(Ok(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Offset {
@@ -3845,7 +3728,7 @@ fn off_spl_sur(
             },
         )));
     }
-    let support = propagate_resource!(embedded_surface(ctx, &mut cur)?);
+    let support = embedded_surface(&mut cur)?;
     let distance = cur.take_f64()? * LEN_TO_MM;
     let u_sense = cur.take_enum()?;
     let v_sense = cur.take_enum()?;
@@ -3864,7 +3747,7 @@ fn off_spl_sur(
     } else {
         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}
     };
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -3882,12 +3765,11 @@ fn off_spl_sur(
 }
 
 fn rot_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+) -> Option<DecodedProceduralSurface> {
     let names = ["rot_spl_sur", "rotsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -3897,8 +3779,7 @@ fn rot_spl_sur(
         (name == "rot_spl_sur").then_some(())?;
         let revision = PositiveI64::new(cur.take_long()?)?;
         let table = resolver?;
-        let profile =
-            propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+        let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let profile_endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
@@ -3909,7 +3790,7 @@ fn rot_spl_sur(
             cache,
             discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
         let angular_interval = match &cache {
             RevisionSurfaceCache::Solved { domains, .. } => domains[1],
@@ -3919,7 +3800,7 @@ fn rot_spl_sur(
             profile_endpoints[0].unwrap_or(*profile.knots().first()?),
             profile_endpoints[1].unwrap_or(*profile.knots().last()?),
         ];
-        return Some(Ok(DecodedProceduralSurface::revision(
+        return Some(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Revolution {
                 directrix: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(profile)),
                 axis_origin: Point3::new(
@@ -3944,9 +3825,9 @@ fn rot_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-        )));
+        ));
     }
-    let (directrix, directrix_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let (directrix, directrix_end) = curve_block(span, cur.pos())?;
     cur.set_pos(directrix_end);
     let parameter_interval = [*directrix.knots().first()?, *directrix.knots().last()?];
     let origin = cur.take_position()?;
@@ -3959,11 +3840,11 @@ fn rot_spl_sur(
     let axis_direction = UnitVector3::normalized_nonzero(
         cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
     )?;
-    let (cache, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (cache, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let angular_interval = [*cache.v_knots().first()?, *cache.v_knots().last()?];
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
-    Some(Ok(DecodedProceduralSurface::legacy(
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Revolution {
             directrix: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
             axis_origin,
@@ -3973,16 +3854,15 @@ fn rot_spl_sur(
             revision_form: None,
         },
         cache_fit_tolerance,
-    )))
+    ))
 }
 
 fn sum_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+) -> Option<DecodedProceduralSurface> {
     let names = ["sum_spl_sur", "sumsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -3992,12 +3872,12 @@ fn sum_spl_sur(
         (name == "sum_spl_sur").then_some(())?;
         let revision = PositiveI64::new(cur.take_long()?)?;
         let table = resolver?;
-        let first = propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+        let first = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let first_endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        let second = propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
+        let second = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let second_endpoints = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
@@ -4007,9 +3887,9 @@ fn sum_spl_sur(
             cache,
             discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
-        return Some(Ok(DecodedProceduralSurface::revision(
+        return Some(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Sum {
                 first: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
                 second: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
@@ -4030,11 +3910,11 @@ fn sum_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-        )));
+        ));
     }
-    let (first, first_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let (first, first_end) = curve_block(span, cur.pos())?;
     cur.set_pos(first_end);
-    let (second, second_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let (second, second_end) = curve_block(span, cur.pos())?;
     cur.set_pos(second_end);
     let origin = cur.take_position()?;
     let basepoint = Vector3::new(
@@ -4045,11 +3925,11 @@ fn sum_spl_sur(
     let cache_fit_tolerance = if cur.at_scope_end() {
         None
     } else {
-        let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+        let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
         optional_trailing_cache_tolerance(&mut cur)?.value()
     };
-    Some(Ok(DecodedProceduralSurface::legacy(
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Sum {
             first: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
             second: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
@@ -4057,40 +3937,34 @@ fn sum_spl_sur(
             revision_form: None,
         },
         cache_fit_tolerance,
-    )))
+    ))
 }
 
-fn ruled_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["rule_sur", "rulesur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
-    let (first, first_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let (first, first_end) = curve_block(span, cur.pos())?;
     cur.set_pos(first_end);
-    let (second, second_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+    let (second, second_end) = curve_block(span, cur.pos())?;
     cur.set_pos(second_end);
     let cache_fit_tolerance = if cur.at_scope_end() {
         None
     } else {
-        let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+        let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
         optional_trailing_cache_tolerance(&mut cur)?.value()
     };
-    Some(Ok(DecodedProceduralSurface::legacy(
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Ruled { first, second },
         cache_fit_tolerance,
-    )))
+    ))
 }
 
-fn exact_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["exact_spl_sur", "exactsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -4103,7 +3977,7 @@ fn exact_spl_sur(
             cache,
             discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         // The two unextended parameter intervals, each an ordered [lo, hi] pair
         // of optional bounds. This subtype serializes them U-then-V; loft wrap
         // ranges sharing `RevisionRanges` serialize V-then-U. Store the
@@ -4120,7 +3994,7 @@ fn exact_spl_sur(
         ];
         let extension = cur.take_enum()?;
         cur.at_scope_end().then_some(())?;
-        return Some(Ok(DecodedProceduralSurface::revision(
+        return Some(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Revision {
                     intervals: unextended_ranges,
@@ -4138,9 +4012,9 @@ fn exact_spl_sur(
                     }),
                 },
             },
-        )));
+        ));
     }
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let parameter_ranges = [
@@ -4149,7 +4023,7 @@ fn exact_spl_sur(
     ];
     let extension = cur.take_long()?;
     cur.at_scope_end().then_some(())?;
-    Some(Ok(DecodedProceduralSurface::legacy(
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Exact {
             spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                 ranges: parameter_ranges,
@@ -4158,7 +4032,7 @@ fn exact_spl_sur(
             },
         },
         cache_fit_tolerance,
-    )))
+    ))
 }
 
 fn t_spl_sur(
@@ -4176,8 +4050,7 @@ fn t_spl_sur(
         Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm>),
     }
 
-    let (start, _) =
-        propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &["t_spl_sur"])?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (layout, type_code);
@@ -4190,7 +4063,7 @@ fn t_spl_sur(
             cache,
             discontinuities: tail_discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         let mut bounds = [None; 4];
         for bound in &mut bounds {
             *bound = cur.take_optional_range_value()?.value();
@@ -4208,16 +4081,16 @@ fn t_spl_sur(
             trailing_flags: Vec::new(),
         }));
     } else {
-        let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+        let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
         let cache_fit_tolerance = cur.take_f64()? * LEN_TO_MM;
         let discontinuities = [
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
         ];
         let discontinuity_flag = cur.take_bool()?;
         let parameter_ranges = [
@@ -4236,11 +4109,16 @@ fn t_spl_sur(
         return None;
     }
     cur.bump();
-    let mut subtransform = propagate_resource!(t_spline_subtransform(ctx, &mut cur)?);
+    let mut subtransform = propagate_resource!(t_spline_subtransform(&mut cur)?);
     if let EmbeddedTSplineSubtransform::Reference { index, resolved } = &mut subtransform {
         *resolved = propagate_resource!(usize::try_from(*index)
             .ok()
-            .and_then(|index| resolve_t_spline_subtransform(ctx, index, table, &mut Vec::new()))
+            .and_then(|index| resolve_t_spline_subtransform(
+                ctx,
+                index,
+                table,
+                &mut std::collections::HashSet::new()
+            ))
             .transpose());
     }
     if !matches!(cur.peek(), Some(Token::SubtypeClose)) {
@@ -4293,10 +4171,7 @@ fn t_spl_sur(
                 type_code,
                 subtransform,
                 trailing_value,
-                discontinuities: propagate_resource!(copy_revision_discontinuities(
-                    ctx,
-                    &form.discontinuities
-                )),
+                discontinuities: copy_revision_discontinuities(&form.discontinuities),
                 discontinuity_flag: form.tail_flag,
                 revision_form: Some(*form),
             })),
@@ -4304,18 +4179,15 @@ fn t_spl_sur(
     }))
 }
 
-pub(crate) fn copy_revision_discontinuities(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source: &[Vec<f64>; 6],
-) -> Result<[Vec<f64>; 6], cadmpeg_core::CodecError> {
-    Ok([
-        ctx.copy_slice(&source[0], "ASM revision discontinuities")?,
-        ctx.copy_slice(&source[1], "ASM revision discontinuities")?,
-        ctx.copy_slice(&source[2], "ASM revision discontinuities")?,
-        ctx.copy_slice(&source[3], "ASM revision discontinuities")?,
-        ctx.copy_slice(&source[4], "ASM revision discontinuities")?,
-        ctx.copy_slice(&source[5], "ASM revision discontinuities")?,
-    ])
+pub(crate) fn copy_revision_discontinuities(source: &[Vec<f64>; 6]) -> [Vec<f64>; 6] {
+    [
+        source[0].clone(),
+        source[1].clone(),
+        source[2].clone(),
+        source[3].clone(),
+        source[4].clone(),
+        source[5].clone(),
+    ]
 }
 
 fn deformable_surface_frame(
@@ -4422,35 +4294,31 @@ fn revision_deformable_mode3(
     })
 }
 
-fn defm_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names = ["defm_spl_sur", "defmsur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (support, revision_form_head) = if matches!(cur.peek(), Some(Token::Long(_))) {
         let revision = PositiveI64::new(cur.take_long()?)?;
         (revision.get() == 22_506).then_some(())?;
-        let crate::nurbs::proc_curve::EmbeddedSurfaceWithRanges {
+        let crate::nurbs::proc_curve::EmbeddedSupport {
             surface: support,
             ranges,
-        } = propagate_resource!(embedded_surface_with_ranges(ctx, &mut cur)?);
+            ..
+        } = embedded_surface_with_ranges(&mut cur)?;
         let support_bounds = [ranges[0][0], ranges[0][1], ranges[1][0], ranges[1][1]];
         (support, Some((revision, support_bounds)))
     } else {
-        (propagate_resource!(embedded_surface(ctx, &mut cur)?), None)
+        (embedded_surface(&mut cur)?, None)
     };
     let mode = cur.take_long()?;
     let data = match mode {
         1 => {
             let frame = Box::new(deformable_surface_frame(&mut cur)?);
             let count = usize::try_from(cur.take_long()?).ok()?;
-            let mut parameter_triples = propagate_resource!(
-                ctx.collection_vec(count, "ASM deformable surface parameter triples")
-            );
+            let mut parameter_triples = Vec::new();
             for _ in 0..count {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
@@ -4468,13 +4336,13 @@ fn defm_spl_sur(
             guide_parameter: cur.take_f64()?,
         }),
         5 => {
-            let surface = propagate_resource!(embedded_surface(ctx, &mut cur)?);
+            let surface = embedded_surface(&mut cur)?;
             let native_id = cur.take_long()?;
             let flag = cur.take_bool()?;
             let first_parameter = cur.take_f64()?;
             let selector = cur.take_long()?;
             let second_parameter = cur.take_f64()?;
-            let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
             let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut vectors {
@@ -4484,9 +4352,7 @@ fn defm_spl_sur(
             let frame_parameter = cur.take_f64()?;
             let flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
             let count = usize::try_from(cur.take_long()?).ok()?;
-            let mut parameter_triples = propagate_resource!(
-                ctx.collection_vec(count, "ASM deformable surface curve parameter triples")
-            );
+            let mut parameter_triples = Vec::new();
             for _ in 0..count {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
@@ -4513,7 +4379,7 @@ fn defm_spl_sur(
             let leading_parameter = cur.take_f64()?;
             let leading_flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
             let selector = cur.take_long()?;
-            let surface = propagate_resource!(embedded_surface(ctx, &mut cur)?);
+            let surface = embedded_surface(&mut cur)?;
             let native_id = cur.take_long()?;
             let flag = cur.take_bool()?;
             let first_parameter = cur.take_f64()?;
@@ -4521,7 +4387,7 @@ fn defm_spl_sur(
                 .then(|| cur.take_long())
                 .flatten();
             let second_parameter = cur.take_f64()?;
-            let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
             let frames = Box::new([
                 deformable_vector_frame(&mut cur)?,
@@ -4561,9 +4427,9 @@ fn defm_spl_sur(
             cache,
             discontinuities,
             tail_flag,
-        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
+        } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
-        Some(Ok(DecodedProceduralSurface::revision(
+        Some(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Deformable(Box::new(EmbeddedDeformableSurface {
                 support,
                 layout: EmbeddedDeformableSurfaceLayout::Revision(Box::new(
@@ -4581,21 +4447,21 @@ fn defm_spl_sur(
                 )),
                 data,
             })),
-        )))
+        ))
     } else {
-        let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+        let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
         let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
         let discontinuities = [
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
-            propagate_resource!(cur.take_float_array(ctx)?),
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
         ];
         let discontinuity_flag = cur.take_bool()?;
-        Some(Ok(DecodedProceduralSurface::legacy(
+        Some(DecodedProceduralSurface::legacy(
             DecodedProceduralSurfaceDefinition::Deformable(Box::new(EmbeddedDeformableSurface {
                 support,
                 layout: EmbeddedDeformableSurfaceLayout::Legacy {
@@ -4605,18 +4471,15 @@ fn defm_spl_sur(
                 data,
             })),
             cache_fit_tolerance,
-        )))
+        ))
     }
 }
 
-pub(super) fn helix_spl_sur(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::HelixSurfaceProfile;
 
     let names = ["helix_spl_circ", "helix_spl_line"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let circular = name == "helix_spl_circ";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
@@ -4693,7 +4556,7 @@ pub(super) fn helix_spl_sur(
             .ok()?,
         )
     };
-    Some(Ok(DecodedProceduralSurface::legacy(
+    Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Helix(Box::new(
             cadmpeg_ir::geometry::HelixSurfaceConstruction::try_new(
                 angle_range,
@@ -4704,26 +4567,23 @@ pub(super) fn helix_spl_sur(
             .ok()?,
         )),
         None,
-    )))
+    ))
 }
 
 fn t_spline_subtransform(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedTSplineSubtransform, cadmpeg_core::CodecError>> {
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
             let program_text = cur.take_str()?;
-            let program =
-                propagate_resource!(ctx.copy_retained_text(program_text, "ASM t spline program"));
+            let program = program_text.to_owned();
             let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
                 None
             } else {
                 Some(cur.take_bool()?)
             };
             let values_text = cur.take_str()?;
-            let values =
-                propagate_resource!(ctx.copy_retained_text(values_text, "ASM t spline values"));
+            let values = values_text.to_owned();
             Some(Ok(EmbeddedTSplineSubtransform::Inline {
                 program,
                 separator,
@@ -4742,16 +4602,16 @@ fn resolve_t_spline_subtransform(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: usize,
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
 ) -> Option<Result<cadmpeg_ir::geometry::InlineTSplineSubtransform, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM t spline subtransform"));
     if seen.contains(&index) {
         return None;
     }
-    propagate_resource!(ctx.push_vec(seen, index, "ASM t spline references"));
+    seen.insert(index);
     let span = table.span(index)?.tokens();
     let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
-    let decoded = propagate_resource!(t_spline_subtransform(ctx, &mut Cur::at(span, start))?);
+    let decoded = propagate_resource!(t_spline_subtransform(&mut Cur::at(span, start))?);
     match decoded {
         EmbeddedTSplineSubtransform::Inline {
             program,
@@ -4772,50 +4632,51 @@ pub fn procedural_surface_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    procedural_resolving_refs(ctx, toks, table, &mut Vec::new())
+    procedural_resolving_refs(ctx, toks, table, &mut std::collections::HashSet::new())
 }
 
 fn procedural_resolving_refs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM procedural surface reference"));
-    if let Some(decoded) = defm_spl_sur(ctx, toks)
-        .or_else(|| helix_spl_sur(ctx, toks))
+    if let Some(decoded) = defm_spl_sur(toks)
+        .map(Ok)
+        .or_else(|| helix_spl_sur(toks).map(Ok))
         .or_else(|| t_spl_sur(ctx, toks, table))
-        .or_else(|| exact_spl_sur(ctx, toks))
-        .or_else(|| comp_spl_sur(ctx, toks))
+        .or_else(|| exact_spl_sur(toks).map(Ok))
+        .or_else(|| comp_spl_sur(toks).map(Ok))
         .or_else(|| taper_spl_sur(ctx, toks, Some(table)))
         .or_else(|| loft_spl_sur(ctx, toks, Some(table)))
         .or_else(|| compound_loft_spl_sur(ctx, toks, Some(table)))
-        .or_else(|| scaled_compound_loft_spl_sur(ctx, toks))
-        .or_else(|| sub_spl_sur(ctx, toks))
+        .or_else(|| scaled_compound_loft_spl_sur(toks).map(Ok))
+        .or_else(|| sub_spl_sur(toks).map(Ok))
         .or_else(|| law_spl_sur(ctx, toks))
         .or_else(|| skin_spl_sur(ctx, toks))
         .or_else(|| net_spl_sur(ctx, toks))
         .or_else(|| sweep_spl_sur(ctx, toks, Some(table)))
         .or_else(|| g2_blend_spl_sur(ctx, toks, Some(table)))
-        .or_else(|| ruled_spl_sur(ctx, toks))
-        .or_else(|| sum_spl_sur(ctx, toks, Some(table)))
-        .or_else(|| rot_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| ruled_spl_sur(toks).map(Ok))
+        .or_else(|| sum_spl_sur(toks, Some(table)).map(Ok))
+        .or_else(|| rot_spl_sur(toks, Some(table)).map(Ok))
         .or_else(|| off_spl_sur(ctx, toks, Some(table)))
-        .or_else(|| cyl_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| cyl_spl_sur(toks, Some(table)).map(Ok))
         .or_else(|| {
-            var_blend_spl_sur(ctx, toks, Some(table))
-                .map(|result| result.map(|parsed| parsed.surface))
+            var_blend_spl_sur(ctx, toks, Some(table), SupportCaches::Resolve)
+                .and_then(|result| result.map(|parsed| parsed.surface).transpose())
         })
         .or_else(|| vertex_blend_spl_sur(ctx, toks, Some(table)))
         .or_else(|| full_rb_blend_spl_sur(ctx, toks, table))
-        .or_else(|| compact_rb_blend_spl_sur(ctx, toks))
+        .or_else(|| compact_rb_blend_spl_sur(toks).map(Ok))
     {
         return Some(decoded);
     }
     // Follow references for records whose own construction is absent. A record
     // with an undecoded construction keeps its native data; its references
     // belong to that construction's supports.
-    if propagate_resource!(toks::owned_subtype_defs(ctx, toks)?)
+    if toks::owned_subtype_defs(toks)?
         .iter()
         .any(|(_, name)| *name != "ref")
     {
@@ -4836,7 +4697,7 @@ fn procedural_resolving_refs(
         // the stream rather than skipping the reference and reading the one
         // behind it.
         let target = table.span(index)?.tokens();
-        propagate_resource!(ctx.push_vec(seen, index, "ASM procedural surface references"));
+        seen.insert(index);
         if let Some(decoded) = procedural_resolving_refs(ctx, target, table, seen) {
             return Some(decoded);
         }
@@ -4845,244 +4706,7 @@ fn procedural_resolving_refs(
 }
 
 #[cfg(test)]
-mod reference_allocation_tests {
-    use super::{
-        bridge_token, copy_revision_discontinuities, g2_side, law_expression, law_formula,
-        procedural_surface_resolving_refs, resolve_t_spline_subtransform, sweep_law_expression,
-        t_spline_subtransform,
-    };
-    use crate::nurbs::toks::{Cur, SubtypeTable};
-    use crate::sab::{Record, Token};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    fn table() -> SubtypeTable {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: vec![
-                Token::SubtypeOpen,
-                Token::Ident("t_spl_subtrans_object".into()),
-                Token::SubtypeClose,
-            ]
-            .into(),
-            offset: 0,
-            len: 0,
-        };
-        SubtypeTable::from_records(&ctx, &[record]).unwrap()
-    }
-
-    fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &str) {
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, operation);
-    }
-
-    fn resource_error<T>(result: Result<T, CodecError>) -> CodecError {
-        let Err(error) = result else {
-            panic!("expected resource refusal");
-        };
-        error
-    }
-
-    #[test]
-    fn procedural_surface_reference_vector_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
-        let error =
-            resource_error(procedural_surface_resolving_refs(&ctx, &tokens, &table()).unwrap());
-        assert_refusal(
-            &error,
-            ResourceDimension::CollectionItems,
-            "ASM procedural surface references",
-        );
-    }
-
-    #[test]
-    fn revision_discontinuity_copy_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let source = [
-            vec![1.0],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ];
-        let error = copy_revision_discontinuities(&ctx, &source)
-            .expect_err("one discontinuity exceeds zero items");
-        assert_refusal(
-            &error,
-            ResourceDimension::CollectionItems,
-            "ASM revision discontinuities",
-        );
-    }
-
-    #[test]
-    fn revision_discontinuity_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let source = [
-            vec![1.0],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ];
-        let error = copy_revision_discontinuities(&ctx, &source)
-            .expect_err("one f64 exceeds seven retained bytes");
-        assert_refusal(
-            &error,
-            ResourceDimension::RetainedBytes,
-            "ASM revision discontinuities",
-        );
-    }
-
-    #[test]
-    fn t_spline_reference_vector_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = resource_error(
-            resolve_t_spline_subtransform(&ctx, 0, &table(), &mut Vec::new()).unwrap(),
-        );
-        assert_refusal(
-            &error,
-            ResourceDimension::CollectionItems,
-            "ASM t spline references",
-        );
-    }
-
-    #[test]
-    fn t_spline_program_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [
-            Token::Ident("t_spl_subtrans_object".into()),
-            Token::Str("x".into()),
-            Token::Str("y".into()),
-        ];
-        let Err(error) = t_spline_subtransform(&ctx, &mut Cur::at(&tokens, 0)).unwrap() else {
-            panic!("expected resource refusal");
-        };
-        assert_refusal(
-            &error,
-            ResourceDimension::RetainedBytes,
-            "ASM t spline program",
-        );
-    }
-
-    #[test]
-    fn g2_side_label_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("side".into())];
-        let error = resource_error(g2_side(&ctx, &mut Cur::at(&tokens, 0)).unwrap());
-        assert_refusal(
-            &error,
-            ResourceDimension::RetainedBytes,
-            "ASM G2 side label",
-        );
-    }
-
-    #[test]
-    fn loft_bridge_text_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("bridge".into())];
-        let error = bridge_token(&ctx, &mut Cur::at(&tokens, 0))
-            .unwrap()
-            .expect_err("resource refusal");
-        assert_refusal(
-            &error,
-            ResourceDimension::RetainedBytes,
-            "ASM loft bridge text",
-        );
-    }
-
-    #[test]
-    fn law_name_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("named".into())];
-        let error = resource_error(law_formula(&ctx, &mut Cur::at(&tokens, 0)).unwrap());
-        assert_refusal(
-            &error,
-            ResourceDimension::RetainedBytes,
-            "ASM law formula name",
-        );
-    }
-
-    #[test]
-    fn sweep_law_text_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("X".into())];
-        let error = resource_error(sweep_law_expression(&ctx, &mut Cur::at(&tokens, 0)).unwrap());
-        assert_refusal(
-            &error,
-            ResourceDimension::RetainedBytes,
-            "ASM sweep law text",
-        );
-    }
-
-    #[test]
-    fn law_operator_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<super::EmbeddedLawExpression>(),
-        );
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("ABS".into()), Token::Double(1.0)];
-        let error = resource_error(law_expression(&ctx, &mut Cur::at(&tokens, 0), 0).unwrap());
-        assert_refusal(&error, ResourceDimension::RetainedBytes, "ASM law operator");
-    }
-
-    #[test]
-    fn t_spline_values_copy_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [
-            Token::Ident("t_spl_subtrans_object".into()),
-            Token::Str("x".into()),
-            Token::Str("y".into()),
-        ];
-        let error = resource_error(t_spline_subtransform(&ctx, &mut Cur::at(&tokens, 0)).unwrap());
-        assert_refusal(
-            &error,
-            ResourceDimension::RetainedBytes,
-            "ASM t spline values",
-        );
-    }
-}
+mod reference_allocation_tests {}
 
 #[cfg(test)]
 mod loft_count_tests {
@@ -5090,62 +4714,8 @@ mod loft_count_tests {
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
 
-    fn one_row_one_column_tokens() -> [Token; 7] {
-        [
-            Token::Long(212),
-            Token::Long(1),
-            Token::Long(1),
-            Token::Double(0.0),
-            Token::Double(1.0),
-            Token::Double(2.0),
-            Token::Double(3.0),
-        ]
-    }
-
-    #[test]
-    fn loft_subdata_rows_refuse_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = one_row_one_column_tokens();
-        let error = loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false)
-            .unwrap()
-            .unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "ASM loft subdata rows");
-    }
-
-    #[test]
-    fn loft_subdata_columns_refuse_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = one_row_one_column_tokens();
-        let error = loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false)
-            .unwrap()
-            .unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "ASM loft subdata columns");
-    }
-
     #[test]
     fn huge_column_count_without_pairs_is_refused_before_reservation() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let tokens = [
             Token::Long(212),
             Token::Long(1),
@@ -5153,7 +4723,7 @@ mod loft_count_tests {
             Token::Double(0.0),
             Token::Double(1.0),
         ];
-        assert!(loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).is_none());
+        assert!(loft_subdata_form(&mut Cur::at(&tokens, 0), false).is_none());
     }
 }
 
@@ -5180,7 +4750,7 @@ mod sweep_law_tests {
 
         let law = sweep_law_expression(&resource_ctx, &mut cur)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the sweep law expression")
             .expect("text law");
 
         let EmbeddedLawExpression::Text(value) = law else {
@@ -5211,7 +4781,7 @@ mod sweep_law_tests {
 
         let law = law_expression(&resource_ctx, &mut cur, 0)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law expression")
             .expect("composition law");
 
         assert!(matches!(
@@ -5255,7 +4825,7 @@ mod sweep_law_tests {
 
         let formula = law_formula_resolving(&resource_ctx, &mut cur, None)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law formula")
             .expect("rail formula");
 
         assert_eq!(formula.name(), "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
@@ -5304,13 +4874,6 @@ mod tail_selector_tests {
     /// containing record verbatim.
     #[test]
     fn undefined_tail_form_is_rejected_for_verbatim_retention() {
-        let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &resource_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
         // Enum with value 1, followed by a value that could otherwise open a
         // solved cache block's fields.
         let mut span = Vec::new();
@@ -5320,7 +4883,7 @@ mod tail_selector_tests {
         let toks =
             toks::lex_test_span(&span, RefWidth::Four).expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        assert!(revision_surface_tail(&resource_ctx, &mut cur).is_none());
+        assert!(revision_surface_tail(&mut cur).is_none());
     }
 
     /// Tail form `2` stores no cache and no fit tolerance: the U parameter
@@ -5328,13 +4891,6 @@ mod tail_selector_tests {
     /// singularity, and V singularity.
     #[test]
     fn parameterized_tail_form_decodes_intervals_then_closure_enums() {
-        let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &resource_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
         let mut span = Vec::new();
         push_enum(&mut span, 2);
         // U interval: present lower bound, absent upper bound.
@@ -5360,10 +4916,7 @@ mod tail_selector_tests {
         let toks =
             toks::lex_test_span(&span, RefWidth::Four).expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let tail = revision_surface_tail(&resource_ctx, &mut cur)
-            .transpose()
-            .expect("resource allocation")
-            .expect("parameterized tail");
+        let tail = revision_surface_tail(&mut cur).expect("parameterized tail");
         assert_eq!(cur.pos(), toks.len());
         let RevisionSurfaceCache::Parameterized(parameterization) = tail.cache else {
             panic!("parameterization");
@@ -5385,16 +4938,8 @@ mod ellipse_tests {
     #[test]
     fn numerical_followup_ellipse_accepts_extreme_finite_radii() {
         for radius in [1.0, 1e200, 1e-200] {
-            let curve = super::ellipse_to_nurbs(
-                &cadmpeg_test_support::service_decode_context(),
-                [0.; 3],
-                [0., 0., 1.],
-                [radius, 0., 0.],
-                0.5,
-            )
-            .transpose()
-            .expect("ellipse admission")
-            .unwrap();
+            let curve =
+                super::ellipse_to_nurbs([0.; 3], [0., 0., 1.], [radius, 0., 0.], 0.5).unwrap();
             let poles = curve.control_points();
             assert_eq!(poles[0].x, radius * super::LEN_TO_MM);
             assert_eq!(poles[2].y, 0.5 * radius * super::LEN_TO_MM);

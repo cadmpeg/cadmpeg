@@ -30,7 +30,6 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
         id: "test:model:pcurve#wide-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: crate::geometry::pcurve::PcurveNurbs::new(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-f64::MAX, -f64::MAX, f64::MAX * 0.5, f64::MAX * 0.5],
                 crate::geometry::pcurve::PcurveNurbsPoles::Polynomial {
@@ -38,7 +37,6 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
                 },
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
@@ -55,7 +53,6 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
 fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![f64::MAX * 0.75, f64::MAX * 0.75, f64::MAX, f64::MAX],
@@ -71,7 +68,6 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ));
     let surface_id = SurfaceId::mint("test:model:surface#large-domain").unwrap();
@@ -81,7 +77,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let pcurve = Pcurve {
         id: "test:model:pcurve#large-surface-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
@@ -94,7 +90,10 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         metadata: PcurveMetadata::default(),
     };
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -213,14 +212,7 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
        },
        cache_fit_tolerance: None,
     };
-    ir.model
-        .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
-            &curve,
-            construction,
-        )
-        .unwrap()
-        .unwrap();
+    ir.model.add_procedural_curve(&curve, construction).unwrap();
     ir
 }
 
@@ -390,13 +382,11 @@ fn untrimmed_surface_curve() -> CadIr {
         face: "test:model:face#face".try_into().expect("valid identity"),
         boundary: crate::topology::LoopBoundary::Ring(
             crate::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
                 vec!["test:model:coedge#coedge"
                     .try_into()
                     .expect("valid identity")],
                 Vec::new(),
             )
-            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });
@@ -422,24 +412,20 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(
-            &mapped_surface_curve([2.0, 3.0]),
-            crate::index::StandardIndex,
-        ),
+        &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([2.0, 3.0])),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the procedural support is consistent");
     assert!(findings.is_empty());
 
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(
-            &mapped_surface_curve([3.0, 2.0]),
-            crate::index::StandardIndex,
-        ),
+        &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([3.0, 2.0])),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the procedural support is consistent");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("support side 0"));
 }
@@ -449,13 +435,11 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(
-            &mapped_surface_offset(),
-            crate::index::StandardIndex,
-        ),
+        &crate::index::ModelIndex::new_model_only(&mapped_surface_offset()),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the procedural support is consistent");
     assert!(findings.is_empty());
 
     let mut context_first = mapped_surface_offset();
@@ -498,10 +482,11 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     });
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&context_first, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&context_first),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the procedural support is consistent");
     assert!(findings.is_empty());
 
     let mut ir = mapped_surface_offset();
@@ -517,10 +502,11 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the procedural support is consistent");
     assert_eq!(findings.len(), 2);
     assert!(findings
         .iter()
@@ -536,10 +522,11 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 
     let mut mismatched = ir;
@@ -558,10 +545,11 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     .unwrap();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&mismatched, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&mismatched),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the pcurve is consistent with the surface");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("pcurve mapped through"));
 }
@@ -587,11 +575,9 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     };
     ir.model
         .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
             &SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
             construction,
         )
-        .unwrap()
         .unwrap();
     ir.model.points[0].set_position(
         crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
@@ -639,10 +625,11 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -651,7 +638,6 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     let mut ir = untrimmed_surface_curve();
     ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -662,16 +648,16 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
             Some(vec![1.0, 2.0_f64.sqrt() / 2.0, 1.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -703,10 +689,11 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -718,7 +705,6 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
             .expect("valid identity"),
         geometry: PcurveGeometry::Nurbs {
             nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![-1.0, 0.0, 0.0, 1.0, 1.0, 2.0],
                 vec![
@@ -729,7 +715,6 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
@@ -761,14 +746,12 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
             true,
             Box::new(PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                     None,
                     true,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             }),
         )
@@ -789,7 +772,6 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // surface domain supplies an interior seed on the same branch.
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
@@ -813,7 +795,6 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ));
     let surface_id =
@@ -824,7 +805,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let pcurve = Pcurve {
         id: "test:model:pcurve#pcurve"
             .try_into()
@@ -839,7 +820,10 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         metadata: PcurveMetadata::default(),
     };
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -856,7 +840,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         &pcurve,
         1.0e-12,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the edge pcurve parameter ranges")
     .expect("finite NURBS surface domain should provide recovery seeds");
     assert!(
         ranges.iter().any(|[start, end]| {
@@ -885,7 +869,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
@@ -894,7 +878,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         cache: None,
     };
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
@@ -918,7 +902,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
         definition: ProceduralCurveDefinition::Helix(crate::geometry::HelixCurveConstruction::try_new([0.0, std::f64::consts::TAU], crate::geometry::HelixFrame { center: Point3::new(0.0, 0.0, 0.0), major: Vector3::new(1.0, 0.0, 0.0), minor: Vector3::new(0.0, 1.0, 0.0), pitch: Vector3::new(0.0, 0.0, 1.0), axis: Vector3::new(0.0, 0.0, 1.0) }, 0.0, None).unwrap()),
         cache_fit_tolerance: None,
     });
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 
     ir.model.curves[0].geometry = CurveGeometry::Procedural {
@@ -927,7 +911,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
         cache: None,
     };
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
@@ -961,7 +945,7 @@ fn self_referential_composite_curve_is_invalid() {
     });
 
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -970,7 +954,7 @@ fn self_referential_composite_curve_is_invalid() {
 #[test]
 fn edge_endpoint_mismatch_is_flagged() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         !report
             .findings
@@ -993,7 +977,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     source_tolerant.tolerances.linear =
         crate::scalar::PositiveLength::new(0.02).expect("positive finite tolerance");
     let report =
-        validate_neutral(&source_tolerant, Vec::new()).expect("resource allocation did not fail");
+        validate_neutral(&source_tolerant, Vec::new()).expect("validate the neutral model");
     assert!(
         !report
             .findings
@@ -1014,7 +998,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         ))
         .expect("a finite position is a point"),
     );
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report
             .findings
@@ -1039,15 +1023,8 @@ fn edge_endpoint_mismatch_is_flagged() {
         },
         cache_fit_tolerance: Some(0.99),
     };
-    ir.model
-        .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
-            &curve,
-            procedural,
-        )
-        .unwrap()
-        .unwrap();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    ir.model.add_procedural_curve(&curve, procedural).unwrap();
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report
             .findings
@@ -1060,7 +1037,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     ir.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(1.0))
         .unwrap();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         !report
             .findings
@@ -1084,7 +1061,6 @@ fn pcurve_surface_mismatch_is_flagged() {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#0").expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -1094,7 +1070,6 @@ fn pcurve_surface_mismatch_is_flagged() {
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::general(
@@ -1117,7 +1092,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             isoparametric: None,
             parameter_range: None,
         }];
-        validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+        validate_neutral(&ir, Vec::new()).expect("validate the neutral model")
     };
 
     let consistent = checked(10.0, 0.0, None);
@@ -1159,7 +1134,6 @@ fn pcurve_surface_mismatch_is_flagged() {
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -1169,7 +1143,6 @@ fn pcurve_surface_mismatch_is_flagged() {
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
@@ -1211,15 +1184,10 @@ fn pcurve_surface_mismatch_is_flagged() {
     };
     procedural
         .model
-        .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
-            &surface,
-            construction,
-        )
-        .unwrap()
+        .add_procedural_surface(&surface, construction)
         .unwrap();
     let procedural_report =
-        validate_neutral(&procedural, Vec::new()).expect("resource allocation did not fail");
+        validate_neutral(&procedural, Vec::new()).expect("validate the neutral model");
     assert!(
         !procedural_report
             .findings
@@ -1241,7 +1209,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         );
     });
     let exact_report =
-        validate_neutral(&procedural, Vec::new()).expect("resource allocation did not fail");
+        validate_neutral(&procedural, Vec::new()).expect("validate the neutral model");
     assert!(
         !exact_report
             .findings
@@ -1260,7 +1228,6 @@ fn pcurve_surface_mismatch_is_flagged() {
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-10.0, -10.0, 0.0, 0.0],
                     vec![
@@ -1270,7 +1237,6 @@ fn pcurve_surface_mismatch_is_flagged() {
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
@@ -1291,7 +1257,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     }];
     let ranged_coedge_id = coedge.id.clone();
     let negative = validate_neutral(&negative_parameterization, Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         !negative
             .findings
@@ -1311,7 +1277,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     pcurve_use.parameter_range =
         Some(crate::geometry::DirectedParameterRange::new([-11.0, 0.0]).unwrap());
     let invalid_range = validate_neutral(&negative_parameterization, Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(invalid_range.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")
     }));
@@ -1322,7 +1288,6 @@ fn pcurve_surface_mismatch_is_flagged() {
 fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1334,7 +1299,6 @@ fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     )
 }
@@ -1353,14 +1317,12 @@ fn placed_nurbs_surface(placements: usize) -> Result<SolvedSurfaceGeometry, &'st
 fn nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -1455,10 +1417,11 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the procedural support is consistent");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -1507,10 +1470,11 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     let mut findings = Vec::new();
     check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge_id.as_str())
@@ -1544,9 +1508,12 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -1574,7 +1541,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         seed,
         1.0e300,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the mapped pcurve parameter near point")
     .expect("the halved step reaches the target")
     .get();
     assert!(
@@ -1605,9 +1572,12 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -1625,7 +1595,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
             seed,
             1.0
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the mapped pcurve parameter near point"),
         None
     );
     assert_eq!(
@@ -1637,7 +1607,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
             seed,
             1.0
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the mapped pcurve parameter near point")
         .map(crate::scalar::FiniteReal::get),
         Some(-8.0e307)
     );
@@ -1664,9 +1634,12 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -1695,44 +1668,28 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
             seed,
             0.0
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the mapped pcurve parameter near point"),
         Some(seed)
     );
 }
 
 #[test]
-fn solved_surface_parameter_domains_preserves_session_depth_and_work_refusals() {
+fn solved_surface_parameter_domains_preserves_session_depth_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let geometry = placed_nurbs_surface(2).unwrap();
-    for (dimension, cap, held_frame) in [
-        (ResourceDimension::RecursionDepth, 0, false),
-        (ResourceDimension::RecursionDepth, 2, false),
-        (ResourceDimension::RecursionDepth, 2, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 2, false),
-    ] {
+    for (cap, held_frame) in [(0, false), (2, false), (2, true)] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => unreachable!(),
-        }
+        policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
         let limit = super::solved_surface_parameter_domains(&ctx, &geometry).unwrap_err();
-        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, cap);
         assert_eq!(limit.additional, 1);
-        assert_eq!(
-            limit.operation,
-            match dimension {
-                ResourceDimension::RecursionDepth => "surface parameter domain nesting",
-                _ => "surface parameter domain visit",
-            }
-        );
+        assert_eq!(limit.operation, "surface parameter domain nesting");
         drop(guard);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -1741,38 +1698,22 @@ fn solved_surface_parameter_domains_preserves_session_depth_and_work_refusals() 
 }
 
 #[test]
-fn pcurve_geometry_trim_range_preserves_session_depth_and_work_refusals() {
+fn pcurve_geometry_trim_range_preserves_session_depth_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let geometry = placed_pcurve(2, nurbs_pcurve_leaf()).unwrap();
-    for (dimension, cap, held_frame) in [
-        (ResourceDimension::RecursionDepth, 0, false),
-        (ResourceDimension::RecursionDepth, 2, false),
-        (ResourceDimension::RecursionDepth, 2, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 2, false),
-    ] {
+    for (cap, held_frame) in [(0, false), (2, false), (2, true)] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => unreachable!(),
-        }
+        policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
         let limit = super::pcurve_geometry_trim_range(&ctx, &geometry).unwrap_err();
-        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, cap);
         assert_eq!(limit.additional, 1);
-        assert_eq!(
-            limit.operation,
-            match dimension {
-                ResourceDimension::RecursionDepth => "pcurve trim range nesting",
-                _ => "pcurve trim range visit",
-            }
-        );
+        assert_eq!(limit.operation, "pcurve trim range nesting");
         drop(guard);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -1781,49 +1722,7 @@ fn pcurve_geometry_trim_range_preserves_session_depth_and_work_refusals() {
 }
 
 #[test]
-fn pcurve_seed_storage_preserves_caller_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let pcurve = Pcurve {
-        id: "test:model:pcurve#seed".try_into().unwrap(),
-        geometry: PcurveGeometry::Line(
-            crate::geometry::pcurve::LinePcurve::try_new(
-                Point2::new(0.0, 0.0),
-                Point2::new(1.0, 0.0),
-            )
-            .unwrap(),
-        ),
-        metadata: PcurveMetadata::default(),
-    };
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = super::pcurve_parameter_seeds(&ctx, &pcurve)
-        else {
-            panic!("seed storage must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-}
-
-#[test]
-fn a_verified_pcurve_interval_avoids_unneeded_knot_seed_storage() {
+fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = untrimmed_surface_curve();
     for (point, x) in ir.model.points.iter_mut().zip([0.0, 1.0]) {
@@ -1841,7 +1740,6 @@ fn a_verified_pcurve_interval_avoids_unneeded_knot_seed_storage() {
     knots.extend([1.0, 1.0]);
     ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             knots,
             (0..=1_000)
@@ -1850,19 +1748,22 @@ fn a_verified_pcurve_interval_avoids_unneeded_knot_seed_storage() {
             None,
             false,
         )
-        .unwrap()
         .unwrap(),
     };
     ir.model.coedges[0].pcurves[0].parameter_range =
         Some(DirectedParameterRange::new([0.0, 1.0]).unwrap());
-    let index = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::new_model_only(&ir);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 128;
-    policy.limits.max_work_units = 30_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
-    check_pcurve_surface_consistency(&ctx, &index, &mut findings).unwrap();
+    check_pcurve_surface_consistency(
+        &ctx,
+        &index,
+        &crate::eval::admission::ModelEvaluationPass::new(),
+        &mut findings,
+    )
+    .unwrap();
     assert!(findings.is_empty(), "{findings:?}");
     assert!(ctx.finish_session().is_ok());
 }

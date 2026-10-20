@@ -36,7 +36,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
     assert!(result.ir().native.namespace("catia").is_some());
@@ -117,7 +117,7 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert!(scan.census.fbb_runs > 0);
     assert_eq!(scan.census.edge_delimiters, 0);
@@ -138,7 +138,7 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert_eq!(scan.census.edge_delimiters, 0);
 
@@ -173,7 +173,7 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &topology)
     })
-    .expect("service resource budget")
+    .expect("parse the FBB topology")
     .is_none());
 
     let result = decode(fbb_only_quad_unmatched_edge_catpart());
@@ -197,6 +197,46 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert_valid(&result);
 }
 
+/// Under every allowance up to the one it needs, the standard mesh search
+/// either finds the topology it finds under the production allowance or skips
+/// it with a loss; it never refuses the decode. Each candidate solve also
+/// asserts in test builds that its allowance paid for all of its work.
+#[test]
+fn fbb_only_mesh_incidence_stays_within_every_topology_allowance() {
+    let bytes = fbb_only_quad_unmatched_edge_catpart();
+    let attached = |result: &EditableDecodeResult| {
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str(),
+        ) == 1
+    };
+    let production = decode(bytes.clone());
+    assert!(attached(&production));
+
+    let mut limit = 0;
+    let smallest = loop {
+        let result =
+            crate::test_support::with_standard_topology_limit(limit, || decode(bytes.clone()));
+        if attached(&result) {
+            break result;
+        }
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("exhausted its operation")),
+            "allowance {limit}: {:?}",
+            result.report().losses
+        );
+        limit += 1;
+        assert!(limit < 10_000, "the fixture needs a small allowance");
+    };
+    assert!(limit > 0);
+    assert_eq!(smallest.ir(), production.ir());
+    assert_valid(&smallest);
+}
+
 #[test]
 fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     let bytes = zero_entity_cylinder_parametric_support_catpart();
@@ -205,7 +245,7 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
             ctx,
             bytes.clone()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::ZeroEntity
     );
@@ -240,7 +280,7 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::E5Stream);
     assert!(scan.e5_record_range.is_some());
 
@@ -262,7 +302,7 @@ fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FloatPackedInnerNoFbb);
 
     let result = decode(bytes);
@@ -298,7 +338,7 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
                 .decode(
                     &mut Cursor::new(bytes),
                     &DecodeOptions {
-                        container_only: true,
+                        depth: cadmpeg_core::decode::DecodeDepth::Container,
                         ..DecodeOptions::default()
                     },
                 )
@@ -329,7 +369,7 @@ fn assert_entity_resource_limit(error: &cadmpeg_ir::DecodeFailure) {
 #[test]
 fn container_only_raw_payload_refuses_entity_before_copy() {
     let mut options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     options.policy.limits.max_entities = 0;
@@ -348,7 +388,7 @@ fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
     let retained_len = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget")
+    .expect("scan the container")
     .brep
     .expect("standard B-rep")
     .len();
@@ -356,7 +396,7 @@ fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
     let mut reached = false;
     for _ in 0..512 {
         let mut options = DecodeOptions {
-            container_only: true,
+            depth: cadmpeg_core::decode::DecodeDepth::Container,
             ..DecodeOptions::default()
         };
         options.policy.limits.max_retained_bytes = cap;
@@ -402,7 +442,7 @@ fn full_route_raw_payload_refuses_retained_bytes_before_copy() {
     let retained_len = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget")
+    .expect("scan the container")
     .brep
     .expect("standard B-rep")
     .len();
@@ -475,7 +515,7 @@ fn every_decode_path_populates_v1_annotations() {
             .decode(
                 &mut Cursor::new(standard_catpart()),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )
@@ -494,3 +534,303 @@ fn fuzz_crash_container_bytes_do_not_panic() {
     let _probe = CatiaCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
     let _probe = CatiaCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }
+
+#[test]
+fn sketch_geometry_without_construction_state_stays_native() {
+    use crate::test_support::test_object_graph::{
+        catalog_stream, entity_table_record_with_value, object_graph_from_records,
+        object_graph_record,
+    };
+    let frame = [
+        0x82, 0x86, 0xe8, 0xe0, 0x07, 0x37, 0x8a, 0x81, 0xe8, 0xe7, 0xe8, 0xe8, 0xe8, 0xe7, 0xe8,
+        0xe8, 0xe8, 0xfe,
+    ];
+    let mut pair = vec![0x91, 0x85, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
+    pair.extend_from_slice(&5.75_f64.to_le_bytes());
+    pair.push(0xe6);
+    pair.extend_from_slice(&12.64_f64.to_le_bytes());
+    pair.extend_from_slice(&[0xfe, 0xfe]);
+    let records = [
+        object_graph_record(
+            &[0x04, 0x01, 0x82, 0x84],
+            &[0x3b, 0x82, 0x81, 0x85, 0x81, 0x83, 0xfe],
+        ),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x86], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x81, 0x85], &[0xfe]),
+    ];
+    let mut stream = Vec::new();
+    for (id, value) in [
+        (1, &[0xfe][..]),
+        (2, &[0xfe][..]),
+        (3, pair.as_slice()),
+        (4, &[0xfe][..]),
+        (5, frame.as_slice()),
+        (6, &[0xfe][..]),
+    ] {
+        stream.extend(entity_table_record_with_value(id, value));
+    }
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "Length",
+        "2DPoint",
+    ]));
+    let (bytes, _) = crate::test_support::test_container::outer_container_catpart(&stream);
+    let result = decode(bytes);
+    assert_valid(&result);
+    let model = &result.ir().model;
+    assert_eq!(model.sketches.len(), 1);
+    assert!(
+        model.sketch_entities.is_empty(),
+        "unknown construction state cannot become standard geometry"
+    );
+    assert!(model.sketch_constraints.is_empty());
+    assert!(matches!(
+        model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Resolved { .. }
+    ));
+    let native = result
+        .ir()
+        .native
+        .namespace("catia")
+        .expect("native namespace");
+    let records: Vec<crate::native::CatiaObjectRecord> = native
+        .arena_as("object_graph_records")
+        .expect("typed object records");
+    let entities: Vec<crate::native::entity_record::CatiaEntityRecord> = native
+        .arena_as("entity_records")
+        .expect("typed entity records");
+    let point = records
+        .iter()
+        .find(|r| r.entity_id() == Some(4))
+        .expect("retained point field");
+    assert_eq!(point.entity_id(), Some(4));
+    assert_eq!(point.owner_entity_id(), Some(3));
+    assert_eq!(
+        point
+            .class
+            .as_ref()
+            .expect("retained class selector")
+            .ordinal,
+        6
+    );
+    let owner = entities
+        .iter()
+        .find(|e| e.entity_id == 3)
+        .expect("retained coordinate owner");
+    let crate::native::entity_record::CatiaEntityRecordBody::Nested { value_payload, .. } =
+        &owner.body
+    else {
+        panic!("nested coordinate owner");
+    };
+    assert_eq!(value_payload, &pair);
+    assert!(owner.numeric_pair().is_some());
+}
+
+#[test]
+fn operation_schema_buckets_stay_native_without_feature_ownership() {
+    use crate::test_support::test_container::outer_container_catpart;
+    use crate::test_support::test_object_graph::{
+        catalog_stream, entity_backed_object_graph, object_graph_record,
+    };
+    for label in [
+        "EdgeFillet",
+        "Prism_EndLimit_Length",
+        "Prism_ThickThin1",
+        "Prism_ThickThin2",
+        "Revol_ThickThin1",
+        "CircPattern_RadialNumber",
+        "Sweep_ThickThin1",
+    ] {
+        let mut stream = entity_backed_object_graph(
+            &[
+                object_graph_record(&[0x54, 0x01, 0x82, 0x84, 0x83], &[0xfe]),
+                object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+                object_graph_record(&[0x14, 0x01, 0x81, 0x86], &[0xfe]),
+                object_graph_record(
+                    &[0x14, 0x01, 0x81, 0x87],
+                    &[0xf5, 0x83, 0x81, 0x83, 0x81, 0x82, 0x81, 0xfe],
+                ),
+            ],
+            &[1, 2, 3, 4],
+        );
+        stream.extend(catalog_stream(&[
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            label,
+            "MainTool",
+            "EndAngle",
+            "ConstraintDYS",
+        ]));
+        let result = decode(outer_container_catpart(&stream).0);
+        let namespace = result
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("native namespace");
+        let objects: Vec<crate::native::CatiaDesignObject> = namespace
+            .arena_as("design_objects")
+            .expect("native design objects");
+        let bucket = objects
+            .iter()
+            .find(|object| object.owner_entity_id == 1)
+            .expect("complete owner declaration retains a native bucket");
+        assert_eq!(
+            bucket.owner_class.as_ref().map(|class| class.name.as_str()),
+            Some(label)
+        );
+        assert_eq!(bucket.fields.len(), 2);
+        assert!(
+            result.ir().model.features.is_empty(),
+            "schema label {label} has no operation closure"
+        );
+        let records: Vec<crate::native::CatiaObjectRecord> = namespace
+            .arena_as("object_graph_records")
+            .expect("native object records");
+        assert_eq!(records.len(), 4);
+        let constraint = records
+            .iter()
+            .find(|record| record.entity_id() == Some(4))
+            .expect("native constraint field");
+        assert_eq!(constraint.class_name(), Some("ConstraintDYS"));
+        assert_eq!(
+            constraint
+                .references
+                .iter()
+                .map(crate::native::CatiaObjectRecordReference::entity_id)
+                .collect::<Vec<_>>(),
+            vec![3, 2]
+        );
+        assert_valid(&result);
+    }
+}
+
+#[test]
+fn parameters_without_feature_aggregation_stay_document_scoped() {
+    use crate::test_support::test_container::outer_container_catpart;
+    use crate::test_support::test_object_graph::{
+        catalog_stream, entity_table_record, entity_table_record_with_definition_and_value,
+        object_graph_from_records, object_graph_record,
+    };
+    let mut stream = entity_table_record(1);
+    stream.extend(entity_table_record(2));
+    let mut definition = vec![0, 0, 0x32];
+    definition.extend(7_u32.to_le_bytes());
+    definition.push(0x32);
+    definition.extend(8_u32.to_le_bytes());
+    let mut parameter = entity_table_record_with_definition_and_value(3, &definition, &[0xfe]);
+    parameter[6] = 2;
+    parameter.extend([0x84, 0x88, 0x82, 0x32]);
+    parameter.extend(7_u32.to_le_bytes());
+    parameter.push(0xe6);
+    parameter.extend(3.25_f64.to_le_bytes());
+    parameter.extend([0x81, 0x4a]);
+    let length = u32::try_from(parameter.len()).expect("fixture record length");
+    parameter[2..6].copy_from_slice(&length.to_le_bytes());
+    stream.extend(parameter);
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(&[0x54, 0x01, 0x82, 0x84, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x14, 0x01, 0x81, 0x86], &[0xfe]),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "CurrentFeature",
+        "EndLimit",
+        "Angle",
+        "Real",
+    ]));
+    let result = decode(outer_container_catpart(&stream).0);
+    assert_eq!(result.ir().model.sketches.len(), 1);
+    assert_eq!(result.ir().model.features.len(), 1);
+    assert_eq!(result.ir().model.parameters.len(), 1);
+    let parameter = &result.ir().model.parameters[0];
+    assert_eq!(parameter.name, "Angle");
+    assert_eq!(parameter.ordinal, 0);
+    assert!(
+        matches!(&parameter.value, Some(cadmpeg_ir::features::ParameterValue::Real(value)) if value.get() == 3.25)
+    );
+    assert!(
+        parameter.owner.is_none(),
+        "structural sketch ancestry does not declare parameter aggregation"
+    );
+    let native_ref = parameter
+        .native_ref
+        .as_deref()
+        .expect("parameter native identity");
+    let namespace = result
+        .ir()
+        .native
+        .namespace("catia")
+        .expect("native namespace");
+    let entities: Vec<crate::native::entity_record::CatiaEntityRecord> = namespace
+        .arena_as("entity_records")
+        .expect("native entities");
+    let entity = entities
+        .iter()
+        .find(|entity| entity.id == native_ref)
+        .expect("native parameter entity");
+    assert_eq!(entity.entity_id, 3);
+    assert!(entity.definition_chain_value().is_some());
+    assert_valid(&result);
+}
+
+#[test]
+fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
+    use crate::test_support::test_container::object_main_catpart;
+    use cadmpeg_core::decode::View;
+
+    let stream = crate::test_support::test_a5a8::a8_inline_tail_surface_stream();
+    let header_end = 59;
+    let grid_end = header_end + 9 * 24;
+    let mut physical = stream[header_end..grid_end].to_vec();
+    physical.extend_from_slice(&stream[..header_end]);
+    physical.extend_from_slice(&stream[grid_end..]);
+    let mut file = object_main_catpart(&physical);
+    let directory = 32 + physical.len() + 1;
+    let descriptor = directory + 16;
+    file[descriptor + 80..descriptor + 84].copy_from_slice(&3_u32.to_be_bytes());
+    let mut extents = Vec::new();
+    for (offset, length, logical) in [
+        (16 + 9 * 24, header_end, 0),
+        (16, 9 * 24, header_end),
+        (16 + grid_end, stream.len() - grid_end, grid_end),
+    ] {
+        for value in [offset, length, length, logical, 0] {
+            extents.extend_from_slice(&u32::try_from(value).unwrap().to_be_bytes());
+        }
+    }
+    file.splice(descriptor + 84..descriptor + 104, extents);
+    let directory_length = View::u32_be_at(&file, 28).unwrap() + 40;
+    file[28..32].copy_from_slice(&directory_length.to_be_bytes());
+    let outer_end = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&outer_end.to_be_bytes());
+    let expected = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let reconstructed = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(reconstructed.ir().model, expected.ir().model);
+    assert_eq!(reconstructed.ir().model.surfaces.len(), 1);
+}
+
+mod float_packed_fixtures;

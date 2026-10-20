@@ -3,6 +3,7 @@
 //!
 //! Helpers hand-build `.prt` byte images and embedded-stream payloads. They
 //! construct raw bytes only; no native record type crosses in here.
+
 #![allow(clippy::unwrap_used)]
 
 use super::test_bytes::put_f64;
@@ -19,9 +20,7 @@ use super::test_prt::prt_with_streams;
 /// CYLINDER, and one LINE record laid out back-to-back at their fixed lengths.
 pub(crate) fn partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
-    s.extend_from_slice(b"SCH_TEST_1_9999\x00");
+    s.extend_from_slice(b"PS\x00\x00\x00?: TRANSMIT FILE (partition) created by modeller version 3400176\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     // POINT (type 29): xyz at +16, metres.
     let mut pt = record(0x1d, 40);
@@ -59,19 +58,65 @@ pub(crate) fn partition_stream() -> Vec<u8> {
     s
 }
 
+pub(crate) fn primary_point_stream() -> Vec<u8> {
+    let mut stream = b"PS".to_vec();
+    for text in [
+        b": TRANSMIT FILE (partition) created by test".as_slice(),
+        b"SCH_TEST_13006".as_slice(),
+    ] {
+        stream.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
+        stream.extend_from_slice(text);
+    }
+    stream.extend_from_slice(&0u32.to_be_bytes());
+    let mut point = record(29, 40);
+    put_ref(&mut point, 2, 2);
+    put_ref(&mut point, 8, 1);
+    put_ref(&mut point, 10, 1);
+    put_ref(&mut point, 12, 1);
+    put_ref(&mut point, 14, 1);
+    put_vec3(&mut point, 16, [0.0625, 0.0, 0.0127]);
+    stream.extend(point);
+    stream.extend_from_slice(&[0, 1, 0, 1]);
+    stream
+}
+
 /// Partition stream carrying one complete variable-width Parasolid GROUP record.
 pub(crate) fn parasolid_group_partition_stream() -> Vec<u8> {
-    let mut stream = partition_stream();
+    let mut stream = primary_point_stream();
+    stream.truncate(stream.len() - 4);
+    let geometry = |kind, len, xmt| {
+        let mut bytes = record(kind, len);
+        put_ref(&mut bytes, 2, xmt);
+        for at in (8..=16).step_by(2) {
+            put_ref(&mut bytes, at, 1);
+        }
+        bytes[18] = b'+';
+        bytes
+    };
+    let mut plane = geometry(50, 91, 3);
+    put_vec3(&mut plane, 19, [0.0762, 0.0, 0.0]);
+    put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+    stream.extend(plane);
+    let mut cylinder = geometry(51, 99, 4);
+    put_vec3(&mut cylinder, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cylinder, 67, 0.004_05);
+    put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
+    stream.extend(cylinder);
+    let mut line = geometry(30, 67, 5);
+    put_vec3(&mut line, 19, [0.01, 0.02, 0.03]);
+    put_vec3(&mut line, 43, [1.0, 0.0, 0.0]);
+    stream.extend(line);
     stream.extend_from_slice(&90u16.to_be_bytes());
     stream.extend_from_slice(&10u16.to_be_bytes());
     stream.extend_from_slice(&7u32.to_be_bytes());
     for reference in [3u16, 4, 5, 6] {
         stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
     }
     stream.push(4);
     stream.extend_from_slice(&8u16.to_be_bytes());
-    stream.push(0);
+    stream.extend_from_slice(&[0, 1, 0, 1]);
     stream
 }
 
@@ -182,11 +227,17 @@ pub(crate) fn display_jt_basic_stream() -> Vec<u8> {
 /// object-type UUID, and tri-strip LOD header body decode
 /// `display_jt_shape_lod_elements` and `display_jt_tri_strip_lod_headers`.
 pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
+    display_jt_shape_lod_stream_with_representation(&[0xaa, 0xbb, 0xcc, 0xdd])
+}
+
+/// [`display_jt_shape_lod_stream`] with `representation` as the tri-strip
+/// LOD element's compressed representation.
+pub(crate) fn display_jt_shape_lod_stream_with_representation(representation: &[u8]) -> Vec<u8> {
     const TRI_STRIP_LOD_TYPE: [u8; 16] = [
         0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    // Tri-strip LOD header body: fixed version/binding fields then a short
+    // Tri-strip LOD header body: fixed version/binding fields then the
     // compressed-representation tail (only hashed, not decoded, by the header).
     let mut body = Vec::new();
     body.extend_from_slice(&1u16.to_le_bytes()); // base version
@@ -195,7 +246,7 @@ pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
     body.extend_from_slice(&1u16.to_le_bytes()); // topological mesh version
     body.extend_from_slice(&0u32.to_le_bytes()); // vertex records object id
     body.extend_from_slice(&1u16.to_le_bytes()); // compressed LOD version
-    body.extend_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]); // representation tail
+    body.extend_from_slice(representation); // representation tail
 
     let element = jt_scene_element(TRI_STRIP_LOD_TYPE, 4, 42, &body);
     let mut payload = element;
@@ -232,6 +283,29 @@ pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
     data.extend_from_slice(&7_u32.to_be_bytes()); // attribute type 7
     data.extend_from_slice(&segment);
     data
+}
+
+/// A JT Int32 packet whose arithmetic-coded lane declares one million values
+/// over a 65-entry probability table: 65 million decoder table lookups, above
+/// the per-lane work bound.
+pub(crate) fn jt_arithmetic_packet_above_the_work_bound() -> Vec<u8> {
+    let mut bits = Vec::new();
+    // Symbol, occurrence and value widths, then the value minimum.
+    for (value, width) in [(1_u32, 6), (0, 6), (0, 6), (0, 32)] {
+        bits.extend((0..width).rev().map(|shift| (value >> shift) & 1 != 0));
+    }
+    bits.extend([false; 65]);
+    let mut packet = 1_000_000_u32.to_le_bytes().to_vec();
+    packet.push(3); // arithmetic codec
+    packet.extend_from_slice(&0_u32.to_le_bytes()); // code bit length
+    packet.extend_from_slice(&65_u16.to_be_bytes()); // probability entries
+    for chunk in bits.chunks(8) {
+        let byte = chunk
+            .iter()
+            .fold(0_u8, |byte, bit| (byte << 1) | u8::from(*bit));
+        packet.push(byte << (8 - chunk.len()));
+    }
+    packet
 }
 
 /// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry whose single type-31
@@ -488,10 +562,7 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
 /// `parasolid_attribute_class_uses`) are populated as well.
 pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(
-        b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
-    );
+    s.extend_from_slice(b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     // `00 4f` attribute identifier with identity xmt 201, followed by its
     // `00 50` definition record with identity xmt 202 and one field.
@@ -551,10 +622,7 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
 /// connected-B-rep path without depending on an external CAD file.
 pub(crate) fn topology_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(
-        b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
-    );
+    s.extend_from_slice(b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     let mut body = record(12, 24);
     put_ref(&mut body, 2, 2);
@@ -1134,6 +1202,22 @@ pub(crate) fn charted_intersection_with_approximated_term_stream() -> Vec<u8> {
     stream
 }
 
+/// Replace the chart and both count1 LIMIT rows with the same complete ext11 states.
+fn replace_intersection_hvec_storage(stream: &mut Vec<u8>, chart: usize, entries: Vec<u8>) {
+    assert_eq!(entries.len(), 2 * 88);
+    for (xmt, index) in [(22_u8, 1_usize), (21, 0)] {
+        let term = stream
+            .windows(8)
+            .position(|w| w == [0, 41, 0, 0, 0, 1, 0, xmt])
+            .expect("LIMIT row");
+        stream.splice(
+            term + 10..term + 34,
+            entries[index * 88..(index + 1) * 88].iter().copied(),
+        );
+    }
+    stream.splice(chart + 60..chart + 108, entries);
+}
+
 pub(crate) fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let chart = stream
@@ -1147,7 +1231,7 @@ pub(crate) fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
         put_vec3(&mut entries, at + 56, [1.0, 0.0, 0.0]);
         put_f64(&mut entries, at + 80, [2.0, 5.0][index]);
     }
-    stream.splice(chart + 60..chart + 108, entries);
+    replace_intersection_hvec_storage(&mut stream, chart, entries);
     stream
 }
 
@@ -1183,7 +1267,7 @@ pub(crate) fn two_support_ext11_charted_intersection_curve_stream(ambiguous: boo
         put_vec3(&mut entries, at + 56, [1.0, 0.0, 0.0]);
         put_f64(&mut entries, at + 80, x);
     }
-    stream.splice(chart + 60..chart + 108, entries);
+    replace_intersection_hvec_storage(&mut stream, chart, entries);
     if !ambiguous {
         let uv = stream
             .windows(8)
@@ -1218,49 +1302,42 @@ pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec
 }
 
 pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
-    let chart = crate::test_support::with_decode_context(|ctx| {
+    let chart = {
         crate::intersection::chart_source_records(
-            ctx,
             ext11,
             crate::intersection::ChartPointLayout::Ext11,
         )
-    })
-    .unwrap()
+    }
     .into_iter()
     .next()
     .expect("ext11 chart record");
-    let (_, chart_end) = crate::test_support::with_decode_context(|ctx| {
+    let (_, chart_end) = {
         crate::intersection::chart_source_record_at(
-            ctx,
             ext11,
             chart.pos,
             crate::intersection::ChartPointLayout::Ext11,
         )
-    })
-    .unwrap()
-    .expect("ext11 chart bounds");
+    }
+    .unwrap();
     let mut deltas = DELTAS_PREAMBLE.to_vec();
     deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
-    for term in crate::test_support::with_decode_context(|ctx| {
-        crate::intersection::term_use_records(ctx, ext11)
-    })
-    .unwrap()
-    {
-        let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
+    for term in crate::test_support::with_decode_context(|_ctx| {
+        crate::intersection::term_use_records(ext11, crate::intersection::ChartPointLayout::Ext11)
+    }) {
+        let (_, end) = crate::intersection::term_use_at(
+            ext11,
+            term.pos,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+        .expect("term bounds");
         deltas.extend_from_slice(&ext11[term.pos..end]);
     }
-    let support_uv = crate::test_support::with_decode_context(|ctx| {
-        crate::intersection::support_uv_records(ctx, ext11)
-    })
-    .unwrap()
-    .into_iter()
-    .next()
-    .expect("ext11 support UV");
-    let (_, support_uv_end) = crate::test_support::with_decode_context(|ctx| {
-        crate::intersection::support_uv_record_at(ctx, ext11, support_uv.pos)
-    })
-    .unwrap()
-    .expect("UV bounds");
+    let support_uv = crate::intersection::support_uv_records(ext11)
+        .into_iter()
+        .next()
+        .expect("ext11 support UV");
+    let (_, support_uv_end) =
+        crate::intersection::support_uv_record_at(ext11, support_uv.pos).unwrap();
     deltas.extend_from_slice(&ext11[support_uv.pos..support_uv_end]);
     deltas
 }

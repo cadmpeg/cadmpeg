@@ -48,7 +48,7 @@ fn disconnected_source_shell_is_partitioned_into_connected_ir_shells() {
         .contains("2 disconnected face components"));
     assert!(source_loss.provenance.is_some());
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -139,8 +139,8 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
     assert_eq!(reordered.ir().model.regions[0].shells, region.shells);
 
     for document in [decoded.ir(), reordered.ir()] {
-        let validation = cadmpeg_ir::validate_neutral(document, Vec::new())
-            .expect("resource allocation did not fail");
+        let validation =
+            cadmpeg_ir::validate_neutral(document, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -188,7 +188,7 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
         .all(|face| face.color.is_some()));
     assert_eq!(decoded.ir().model.presentation_layers[0].items.len(), 2);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -215,7 +215,7 @@ fn brep_with_voids_scopes_edges_and_vertices_per_shell_after_shared_shell_use() 
         .iter()
         .any(|loss| loss.message.contains("root #70 rejected")));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -245,7 +245,7 @@ fn first_brep_with_voids_scopes_all_shell_carriers() {
         .iter()
         .all(|loss| !loss.message.contains("root #31 rejected")));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -385,7 +385,7 @@ fn complex_oriented_open_shell_preserves_shell_sense() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -512,7 +512,7 @@ fn shared_edge_references_are_scoped_by_independent_roots_not_record_order() {
     assert!(vertex_ids.contains("step:data:vertex#6-root-33-shell-30"));
     assert!(
         cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 
@@ -607,7 +607,7 @@ fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
         2
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -653,7 +653,7 @@ fn distinct_roots_with_shared_topology_get_owner_scopes() {
         .iter()
         .all(|loss| !loss.message.contains("conflicts with decoded topology")));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -677,7 +677,7 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
         .contains("VERTEX_POINT #6 has unresolved point carrier #3")));
     assert!(
         cadmpeg_ir::validate_neutral(sheet.ir(), sheet.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 
@@ -697,7 +697,7 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
     }));
     assert!(
         cadmpeg_ir::validate_neutral(solid.ir(), solid.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -772,7 +772,7 @@ fn advanced_brep_representation_reuses_its_committed_solid_body() {
         .iter()
         .any(|record| record.id.as_str().contains("advanced_brep_representation")));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -829,6 +829,6 @@ fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
             .contains("ADVANCED_BREP_REPRESENTATION instance(s) as named opaque STEP records")
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

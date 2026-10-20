@@ -1,4 +1,4 @@
-use super::super::reconcile_direct_circle_dimension_carriers;
+use super::super::{reconcile_direct_circle_dimension_carriers, MarkerCircleInputs};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -190,14 +190,12 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
     } = direct_circle_fixture();
 
     reconcile_direct_circle_dimension_carriers(
-        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
-        &mut sketches,
+        sketches.first_mut(),
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
-        std::slice::from_ref(&lane),
-    )
-    .unwrap();
+        &MarkerCircleInputs::new(&[], std::slice::from_ref(&lane)),
+    );
 
     assert!(!entities.iter().any(|entity| entity.id().clone()
         == SketchEntityId::mint("synthetic:test:id#native-circle").unwrap()));
@@ -226,17 +224,15 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
         "synthetic:test:id#native-circle",
         marker_ref,
     )];
-    let mut sketches = vec![sketch(&sketch_id, Vec::new())];
+    let mut sketches = [sketch(&sketch_id, Vec::new())];
 
     reconcile_direct_circle_dimension_carriers(
-        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
-        &mut sketches,
+        sketches.first_mut(),
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
-        std::slice::from_ref(&lane),
-    )
-    .unwrap();
+        &MarkerCircleInputs::new(&[], std::slice::from_ref(&lane)),
+    );
 
     assert_eq!(entities.len(), 1);
     assert!(matches!(
@@ -246,11 +242,58 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
 }
 
 #[test]
-fn marker_circle_projection_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+fn repeated_direct_circle_carriers_keep_the_native_carrier() {
+    let native_id = SketchEntityId::mint("synthetic:test:id#native-circle").unwrap();
+    let reconcile = |change: &dyn Fn(&mut DirectCircleFixture)| {
+        let mut fixture = direct_circle_fixture();
+        change(&mut fixture);
+        let feature = fixture
+            .feature
+            .native_ref
+            .clone()
+            .expect("feature reference");
+        reconcile_direct_circle_dimension_carriers(
+            &mut fixture.entities,
+            fixture.sketches.first_mut(),
+            &fixture.sketch_id,
+            &feature,
+            &MarkerCircleInputs::new(&[], std::slice::from_ref(&fixture.lane)),
+        );
+        fixture
+            .entities
+            .iter()
+            .any(|entity| entity.id() == &native_id)
+    };
+    let typed_copy = |fixture: &DirectCircleFixture, id: &str, sketch: &SketchId| {
+        let typed = fixture.entities[0].clone();
+        SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.clone(),
+            typed.geometry.clone(),
+        )
+        .with_native_ref(typed.native_ref.clone())
+        .with_geometry_ref(typed.geometry_ref.clone())
+    };
+
+    assert!(!reconcile(&|_| {}));
+    assert!(reconcile(&|fixture| {
+        let marker = fixture.lane.sketch_entities[0].clone();
+        fixture.lane.sketch_entities.push(marker);
+    }));
+    assert!(reconcile(&|fixture| {
+        let sketch_id = fixture.sketch_id.clone();
+        let copy = typed_copy(fixture, "synthetic:test:id#typed-copy", &sketch_id);
+        fixture.entities.push(copy);
+    }));
+    assert!(!reconcile(&|fixture| {
+        let other = SketchId::mint("synthetic:test:id#other-sketch").unwrap();
+        let copy = typed_copy(fixture, "synthetic:test:id#other-typed", &other);
+        fixture.entities.push(copy);
+    }));
+}
+
+#[test]
+fn marker_circle_projection_adds_the_typed_circle_profile() {
     let DirectCircleFixture {
         typed_id,
         feature,
@@ -260,7 +303,6 @@ fn marker_circle_projection_refuses_retained_limit() {
         ..
     } = direct_circle_fixture();
     super::super::project_marker_dimensioned_circles(
-        &service,
         &mut entities,
         &mut sketches,
         &[feature],
@@ -273,38 +315,4 @@ fn marker_circle_projection_refuses_retained_limit() {
     assert_eq!(sketches[0].profiles.len(), 2);
     assert_eq!(sketches[0].profiles[0].len(), 1);
     assert_eq!(sketches[0].profiles[0][0].entity, typed_id);
-
-    let DirectCircleFixture {
-        feature,
-        lane,
-        entities,
-        sketches,
-        ..
-    } = direct_circle_fixture();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT circle carrier entity identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut entities = entities.clone();
-            let mut sketches = sketches.clone();
-            let feature = feature.clone();
-            let lane = lane.clone();
-            super::super::project_marker_dimensioned_circles(
-                &limited,
-                &mut entities,
-                &mut sketches,
-                &[feature],
-                &[],
-                &[lane],
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT circle carrier entity identity")
-    );
 }

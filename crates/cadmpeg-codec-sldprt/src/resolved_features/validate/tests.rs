@@ -54,6 +54,7 @@ fn native_validation_rejects_broken_history_root_graph() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut expected_related = Vec::new();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let history = &mut native.feature_histories[0];
         let nested = history
@@ -63,20 +64,47 @@ fn native_validation_rejects_broken_history_root_graph() {
             .unwrap()
             .id
             .clone();
+        expected_related = vec![
+            nested.clone(),
+            history.configurations[0].id.clone(),
+            history
+                .features
+                .iter()
+                .find(|feature| feature.name == "Root")
+                .unwrap()
+                .id
+                .clone(),
+        ];
         history.content = vec![
             HistoryContent::Feature(nested),
             HistoryContent::Configuration("missing-configuration".into()),
         ];
     });
 
-    let messages = crate::resolved_features::validate::validate_native(
+    let findings = crate::resolved_features::validate::validate_native(
         &cadmpeg_test_support::service_decode_context(),
         decoded.ir(),
     )
-    .unwrap()
-    .into_iter()
-    .map(|finding| finding.message)
-    .collect::<Vec<_>>();
+    .unwrap();
+    for (message, expected) in [
+        ("references nested feature", Some(&expected_related[0])),
+        ("references missing configuration", None),
+        ("omits configuration", Some(&expected_related[1])),
+        ("omits feature", Some(&expected_related[2])),
+    ] {
+        let finding = findings
+            .iter()
+            .find(|finding| finding.message.contains(message))
+            .unwrap();
+        assert_eq!(
+            finding.related,
+            expected.into_iter().cloned().collect::<Vec<_>>()
+        );
+    }
+    let messages = findings
+        .into_iter()
+        .map(|finding| finding.message)
+        .collect::<Vec<_>>();
     assert!(messages
         .iter()
         .any(|message| message.contains("references nested feature")));
@@ -89,6 +117,57 @@ fn native_validation_rejects_broken_history_root_graph() {
     assert!(messages
         .iter()
         .any(|message| message.contains("omits feature")));
+}
+
+#[test]
+fn native_validation_reports_omitted_history_roots_in_record_order() {
+    use crate::records::HistoryContent;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="A"/><Configuration Name="B"/><Configuration Name="C"/><Feature Name="R1" Type="Custom" id="1"/><Feature Name="R2" Type="Custom" id="2"/><Feature Name="R3" Type="Custom" id="3"/><Feature Name="R4" Type="Custom" id="4"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut expected = Vec::new();
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
+        let history = &mut native.feature_histories[0];
+        expected.extend(
+            history
+                .configurations
+                .iter()
+                .map(|configuration| format!("omits configuration {}", configuration.id)),
+        );
+        expected.extend(
+            history
+                .features
+                .iter()
+                .filter(|feature| feature.tree_parent.is_none())
+                .map(|feature| format!("omits feature {}", feature.id)),
+        );
+        history.content = vec![HistoryContent::Text("edited".into())];
+    });
+    assert!(expected.len() >= 7, "{expected:?}");
+
+    let omitted = crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .unwrap()
+    .into_iter()
+    .filter_map(|finding| {
+        finding
+            .message
+            .strip_prefix("SolidWorks history root ")
+            .filter(|message| message.starts_with("omits"))
+            .map(str::to_owned)
+    })
+    .collect::<Vec<_>>();
+    assert_eq!(omitted, expected);
 }
 
 #[test]
@@ -108,7 +187,7 @@ fn native_validation_rejects_orphan_history_records() {
         .get_mut("features")
         .unwrap()[0]
         .clone();
-    let mut orphan_fields = orphan.fields().clone();
+    let mut orphan_fields = orphan.fields().unwrap().clone();
     orphan_fields.insert(
         "parent".into(),
         serde_json::Value::String("missing-history".into()),
@@ -214,7 +293,8 @@ fn native_validation_rejects_edited_relation_instance() {
         .contains("relation instances do not match the native payload"));
 }
 
-fn native_validation_route_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+#[test]
+fn native_validation_route_refuses_nesting_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let source = sldprt_with_compact_relation_pair(&triangle_body());
@@ -223,72 +303,18 @@ fn native_validation_route_refusal(dimension: cadmpeg_core::decode::ResourceDime
         .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    let selected = match dimension {
-        ResourceDimension::CollectionItems => &mut policy.limits.max_collection_items,
-        ResourceDimension::RetainedBytes => &mut policy.limits.max_retained_bytes,
-        ResourceDimension::MaterializedBytes => &mut policy.limits.max_materialized_bytes,
-        ResourceDimension::RecursionDepth => &mut policy.limits.max_recursion_depth,
-        ResourceDimension::WorkUnits => &mut policy.limits.max_work_units,
-        _ => panic!("unsupported validation test dimension"),
-    };
-    *selected = 0;
+    policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let CodecError::ResourceLimit(limit) =
         SldprtCodec.validate_native(&ctx, decoded.ir()).unwrap_err()
     else {
         panic!("native validation must propagate a resource refusal");
     };
-    assert_eq!(limit.dimension, dimension);
-    let selected = match dimension {
-        ResourceDimension::CollectionItems => &mut policy.limits.max_collection_items,
-        ResourceDimension::RetainedBytes => &mut policy.limits.max_retained_bytes,
-        ResourceDimension::MaterializedBytes => &mut policy.limits.max_materialized_bytes,
-        ResourceDimension::RecursionDepth => &mut policy.limits.max_recursion_depth,
-        ResourceDimension::WorkUnits => &mut policy.limits.max_work_units,
-        _ => panic!("unsupported validation test dimension"),
-    };
-    *selected = limit.used + limit.additional - 1;
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    policy.limits.max_recursion_depth = limit.used + limit.additional - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     assert!(
         matches!(SldprtCodec.validate_native(&ctx, decoded.ir()), Err(CodecError::ResourceLimit(refusal))
-        if refusal.dimension == dimension && refusal.operation == limit.operation)
+        if refusal.dimension == ResourceDimension::RecursionDepth && refusal.operation == limit.operation)
     );
-}
-
-#[test]
-fn native_validation_route_refuses_collection_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn native_validation_route_keeps_valid_record_copies_in_scoped_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let source = sldprt_with_compact_relation_pair(&triangle_body());
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    assert!(SldprtCodec
-        .validate_native(&ctx, decoded.ir())
-        .unwrap()
-        .is_empty());
-    assert!(ctx.finish_session().is_ok());
-}
-
-#[test]
-fn native_validation_route_refuses_scoped_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-}
-
-#[test]
-fn native_validation_route_refuses_nesting_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::RecursionDepth);
-}
-
-#[test]
-fn native_validation_route_refuses_work_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }

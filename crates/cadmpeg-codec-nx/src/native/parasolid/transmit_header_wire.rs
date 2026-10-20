@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn header_wire_emits_zero_offset_and_rejects_displaced_header() {
-        let json = r#"{"id":"header","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_1","references":[2,3],"byte_len":42,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":0}"#;
+        let json = r#"{"id":"header","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_3501171_35102_13006","maximum_node_type":239,"user_field_size":0,"byte_len":42,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":0}"#;
         let header: ParasolidDeltasTransmitHeader = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&header).unwrap(), json);
         assert_eq!(
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn transmit_header_native_limit_refuses_before_state_copy() {
-        let json = r#"{"id":"nx:parasolid:transmit-header#0","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_1","references":[2,3],"byte_len":42,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":0}"#;
+        let json = r#"{"id":"nx:parasolid:transmit-header#0","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_3501171_35102_13006","maximum_node_type":239,"user_field_size":0,"byte_len":42,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":0}"#;
         let header: ParasolidDeltasTransmitHeader = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &header,

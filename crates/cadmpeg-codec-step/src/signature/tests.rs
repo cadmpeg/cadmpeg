@@ -11,42 +11,6 @@ fn ber_cursor_past_input_refuses_remaining_length() {
     assert_eq!(super::require_empty(&ber), Err("BER cursor exceeds input"));
 }
 
-#[test]
-fn signature_compact_refuses_collection_limit() {
-    let input = b"AAAA";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
-        .expect("root fits selected policy");
-    let error = super::decode_payload(input, &(0..input.len()), &ctx)
-        .expect_err("four compact bytes exceed three collection items");
-    assert!(matches!(
-        error,
-        crate::parse::ParseError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "step_signature_compact_items"
-    ));
-}
-
-#[test]
-fn signature_decoded_bytes_refuse_collection_limit() {
-    let input = b"AAAA";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
-        .expect("root fits selected policy");
-    let error = super::decode_payload(input, &(0..input.len()), &ctx)
-        .expect_err("four compact bytes and three decoded bytes exceed six items");
-    assert!(matches!(
-        error,
-        crate::parse::ParseError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "step_signature_cms_bytes"
-    ));
-}
-
 struct SignatureView {
     span: std::ops::Range<usize>,
     payload: std::ops::Range<usize>,
@@ -69,7 +33,7 @@ impl SignatureView {
 
 fn sections(exchange: &crate::parse::Exchange, input: impl AsRef<[u8]>) -> Vec<SignatureView> {
     let input = input.as_ref();
-    let tokens = crate::test_support::with_service_context(input, crate::lex::lex_with_context)
+    let tokens = crate::test_support::with_service_context(input, crate::test_support::lex)
         .expect("signature tokens");
     let exchange_start = tokens[0].span.start;
     exchange

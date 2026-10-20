@@ -5,16 +5,20 @@ use cadmpeg_test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
-    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, DepthNeed,
+    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
 use crate::examples::{directed_subd_sum, unit_cube};
+use crate::report::check::{Check, Finding, ValidationReport};
 use crate::report::export::FidelityResolution;
+use crate::report::Severity;
+use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -42,7 +46,7 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
 fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum().unwrap();
     let validation_counts = validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .entity_counts;
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -55,6 +59,7 @@ struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NEEDS: DepthNeed = DepthNeed::Recorded;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -113,6 +118,7 @@ struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
     const FORMAT: FormatId = FormatId::new("test");
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
 
@@ -149,6 +155,80 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
         Some(&cadmpeg_core::dialect_id!("test:new"))
     );
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
+}
+
+fn recorded_at(depth: DecodeDepth) -> CadIr {
+    let mut ir = CadIr::empty();
+    ir.set_decode_depth(depth);
+    ir
+}
+
+#[test]
+fn a_full_need_encoder_refuses_a_geometry_document() {
+    let ir = recorded_at(DecodeDepth::Geometry);
+    let error = F3dCoverageEncoder(ArenaCoverage::Complete)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            CodecError::InsufficientDepth {
+                format: "f3d",
+                needed: DecodeDepth::Full,
+                recorded: DecodeDepth::Geometry,
+            }
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_geometry_need_encoder_admits_geometry_and_refuses_container() {
+    let geometry = recorded_at(DecodeDepth::Geometry);
+    CatalogEncoder
+        .plan(
+            EncodeInput::new(&geometry, None),
+            TargetRequest::Explicit("new"),
+        )
+        .unwrap();
+    let container = recorded_at(DecodeDepth::Container);
+    let error = CatalogEncoder
+        .plan(
+            EncodeInput::new(&container, None),
+            TargetRequest::Explicit("new"),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            CodecError::InsufficientDepth {
+                format: "test",
+                needed: DecodeDepth::Geometry,
+                recorded: DecodeDepth::Container,
+            }
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn the_cadir_encoder_writes_the_depth_a_document_records() {
+    assert_eq!(CadirEncoder.needs(), DepthNeed::Recorded);
+    assert_eq!(CadirEncoder.needs().request(), DecodeDepth::Full);
+    for depth in [
+        DecodeDepth::Container,
+        DecodeDepth::Geometry,
+        DecodeDepth::Full,
+    ] {
+        let ir = recorded_at(depth);
+        let plan = CadirEncoder
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut encoded = Vec::new();
+        plan.write_to(&mut encoded).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(written["decode_depth"], depth.as_str());
+    }
 }
 
 #[test]
@@ -240,6 +320,7 @@ struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NEEDS: DepthNeed = DepthNeed::Recorded;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -288,13 +369,153 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
 }
 
 #[test]
-fn written_reported_and_complete_coverage_charge_no_loss() {
+fn written_reported_dropped_and_complete_coverage_charge_no_loss() {
     let ir = unit_cube().expect("valid unit cube fixture");
     for coverage in [
         ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written)),
         ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Reported)),
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Dropped)),
         ArenaCoverage::Complete,
     ] {
         assert_eq!(coverage_losses(&ir, coverage), Vec::new(), "{coverage:?}");
+    }
+}
+
+#[test]
+fn arena_dispositions_carry_each_declared_field() {
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.faces = ArenaDisposition::Dropped;
+    dispositions.features = ArenaDisposition::Omitted;
+    assert!(!dispositions.carries(EntityKind::Face));
+    assert!(!dispositions.carries(EntityKind::Feature));
+    assert!(dispositions.carries(EntityKind::Edge));
+    let reported = uniform_dispositions(ArenaDisposition::Reported);
+    for kind in EntityKind::ALL {
+        assert!(reported.carries(kind), "{kind:?}");
+        assert!(ArenaCoverage::Complete.carries(kind), "{kind:?}");
+    }
+}
+
+struct F3dCoverageEncoder(ArenaCoverage);
+
+impl EncoderBackend for F3dCoverageEncoder {
+    const FORMAT: FormatId = FormatId::new("f3d");
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+    }
+}
+
+fn finding(entity: Option<&str>, message: &str, severity: Severity) -> Finding {
+    Finding {
+        related: Vec::new(),
+        check: Check::ReferentialIntegrity,
+        severity,
+        entity: entity.map(str::to_owned),
+        message: message.into(),
+    }
+}
+
+fn validation_report(findings: Vec<Finding>) -> ValidationReport {
+    ValidationReport {
+        entity_counts: std::collections::BTreeMap::new(),
+        findings,
+        losses: Vec::new(),
+    }
+}
+
+#[test]
+fn carried_errors_exclude_warnings_and_include_unlocated_errors() {
+    let ir = CadIr::empty();
+    let plan = CoverageEncoder(ArenaCoverage::Declared(uniform_dispositions(
+        ArenaDisposition::Dropped,
+    )))
+    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+    .unwrap();
+    let mut report = validation_report(vec![finding(None, "warning", Severity::Warning)]);
+    assert!(plan.carried_errors(&ir, &report).is_empty());
+    report
+        .findings
+        .push(finding(None, "error", Severity::Error));
+    report.findings.push(finding(
+        Some("test:face#missing"),
+        "missing",
+        Severity::Blocking,
+    ));
+    assert_eq!(
+        plan.carried_errors(&ir, &report),
+        vec![&report.findings[1], &report.findings[2]]
+    );
+}
+
+#[test]
+fn carried_errors_follow_model_coverage_and_related_locations() {
+    let ir = unit_cube().expect("valid cube");
+    let face = ir.model.faces[0].identity();
+    let edge = ir.model.edges[0].identity();
+    let report = validation_report(vec![
+        finding(Some(face), "invalid face", Severity::Error),
+        finding(
+            Some(face),
+            &format!("invalid reference `{edge}`."),
+            Severity::Error,
+        ),
+    ]);
+    let mut report = report;
+    report.findings[1].related.push(edge.to_owned());
+    for (disposition, carries_face) in [
+        (ArenaDisposition::Written, true),
+        (ArenaDisposition::Reported, true),
+        (ArenaDisposition::Dropped, false),
+        (ArenaDisposition::Omitted, false),
+    ] {
+        let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+        dispositions.faces = disposition;
+        let plan = CoverageEncoder(ArenaCoverage::Declared(dispositions))
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let expected = if carries_face {
+            vec![&report.findings[0], &report.findings[1]]
+        } else {
+            vec![&report.findings[1]]
+        };
+        assert_eq!(plan.carried_errors(&ir, &report), expected);
+    }
+}
+
+#[test]
+fn carried_errors_follow_native_format_and_complete_coverage() {
+    let mut ir = CadIr::empty();
+    let id = "f3d:test:asm-history#0";
+    ir.native.namespace_mut("f3d").arenas_mut().insert(
+        "asm_histories".into(),
+        vec![crate::NativeRecord::new(
+            crate::ids::Identity::new(id).expect("valid native identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native record")],
+    );
+    ir.finalize();
+    let report = validation_report(vec![finding(
+        Some(id),
+        "invalid native record",
+        Severity::Error,
+    )]);
+    let declared = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written));
+    let cadir = CoverageEncoder(declared)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(cadir.carried_errors(&ir, &report).is_empty());
+    let f3d = F3dCoverageEncoder(declared)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let complete = CoverageEncoder(ArenaCoverage::Complete)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for plan in [f3d, complete] {
+        assert_eq!(plan.carried_errors(&ir, &report), vec![&report.findings[0]]);
     }
 }

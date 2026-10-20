@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry evaluation with caller-owned decode resource admission.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
-use super::admission::{EvaluationAdmission, EvaluationDepthGuard};
+use super::admission::{EvaluationAdmission, EvaluationDepthGuard, EvaluationRefusal};
 use super::{CurveDerivative, EvaluationFailure};
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::NurbsCurve;
@@ -15,7 +15,7 @@ use crate::math::{Point2, Point3};
 use crate::scalar::FiniteReal;
 use crate::units::FinitePoint2;
 
-/// Inline spline support through degree 15; larger windows use admitted backing.
+/// Inline spline support through degree 15; larger windows use heap storage.
 pub(super) const INLINE_SUPPORT: usize = 16;
 
 /// A basis or pole window with bounded inline storage.
@@ -47,12 +47,11 @@ impl<T> std::ops::DerefMut for SupportValues<T> {
     }
 }
 
-/// Scratch admission shared by one evaluation and its recursive calls.
+/// Refusal state shared by one evaluation and its recursive calls.
 pub(super) struct Scratch<'ctx, 'arena> {
     pub(super) admission: EvaluationAdmission<'ctx, 'arena>,
     independent_depth: Cell<usize>,
-    storage: RefCell<Option<ScopedReservation<'ctx>>>,
-    refusal: RefCell<Option<ResourceLimit>>,
+    refusal: Cell<Option<EvaluationRefusal>>,
 }
 
 impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
@@ -60,97 +59,73 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         Self {
             admission: admission.into(),
             independent_depth: Cell::new(0),
-            storage: RefCell::new(None),
-            refusal: RefCell::new(None),
+            refusal: Cell::new(None),
         }
     }
 
-    pub(super) fn admit<T>(&self, result: Result<T, ResourceLimit>) -> Option<T> {
+    pub(super) fn admit<T>(&self, result: Result<T, impl Into<EvaluationRefusal>>) -> Option<T> {
         match result {
             Ok(value) => Some(value),
             Err(error) => {
-                let mut refusal = self.refusal.borrow_mut();
-                if refusal.is_none() {
-                    *refusal = Some(error);
+                if !matches!(
+                    self.refusal.get(),
+                    Some(EvaluationRefusal::ResourceLimit(_))
+                ) {
+                    self.refusal.set(Some(error.into()));
                 }
                 None
             }
         }
     }
 
-    /// The resource refusal recorded by an allocation, charge or evaluation.
-    pub(super) fn refused(&self) -> Option<ResourceLimit> {
-        if let Some(limit) = *self.refusal.borrow() {
-            return Some(limit);
+    /// The refusal recorded by a step or held by the admission. A session
+    /// refusal takes precedence over an exhausted work slice.
+    pub(super) fn refused(&self) -> Option<EvaluationRefusal> {
+        let recorded = self.refusal.get();
+        if let Some(EvaluationRefusal::ResourceLimit(limit)) = recorded {
+            return Some(EvaluationRefusal::ResourceLimit(limit));
         }
-        let original = self
-            .admission
-            .work(0, "observe geometry evaluation refusal")
-            .err();
-        if let Some(limit) = original {
-            *self.refusal.borrow_mut() = Some(limit);
-        }
-        original
+        let refusal = self.admission.refusal().or(recorded);
+        self.refusal.set(refusal);
+        refusal
     }
 
-    /// `Err` with the recorded resource refusal, or `Ok` when nothing was refused.
-    pub(super) fn unless_refused(&self) -> Result<(), ResourceLimit> {
+    /// `Err` with the recorded refusal, or `Ok` when nothing was refused.
+    pub(super) fn unless_refused(&self) -> Result<(), EvaluationRefusal> {
         self.refused().map_or(Ok(()), Err)
     }
 
-    /// The recorded resource refusal, or `absent` when a value is missing for
-    /// another reason.
+    /// The recorded refusal, or `absent` when a value is missing for another
+    /// reason.
     pub(super) fn failure<R>(&self, absent: EvaluationFailure<R>) -> EvaluationFailure<R> {
-        self.refused()
-            .map_or(absent, EvaluationFailure::ResourceLimit)
+        self.refused().map_or(absent, EvaluationFailure::from)
     }
 
-    /// The result, or the recorded resource refusal when one was recorded.
+    /// The result, or the recorded refusal when one was recorded.
     pub(super) fn settle<T, R>(
         &self,
         result: Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
         self.refused()
-            .map_or(result, |limit| Err(EvaluationFailure::ResourceLimit(limit)))
+            .map_or(result, |refusal| Err(EvaluationFailure::from(refusal)))
     }
 
-    pub(super) fn filled<T: Clone>(
-        &self,
-        count: usize,
-        value: T,
-        operation: &'static str,
-        work_operation: &'static str,
-    ) -> Option<Vec<T>> {
-        if self.refusal.borrow().is_some() {
-            return None;
-        }
-        let mut values = Vec::new();
-        self.reserve(&mut values, count, operation)?;
-        for _ in 0..count {
-            self.work(1, work_operation)?;
-            values.push(value.clone());
-        }
-        Some(values)
+    /// `count` copies of `value`, one work step each.
+    pub(super) fn filled<T: Clone>(&self, count: usize, value: T) -> Option<Vec<T>> {
+        self.work(count)?;
+        Some((0..count).map(|_| value.clone()).collect())
     }
 
-    pub(super) fn collect<T>(
-        &self,
-        values: impl IntoIterator<Item = Option<T>>,
-        operation: &'static str,
-        work_operation: &'static str,
-    ) -> Option<Vec<T>> {
-        if self.refusal.borrow().is_some() {
-            return None;
-        }
-        self.work(0, work_operation)?;
+    /// Collect present values, one work step per item drawn.
+    pub(super) fn collect<T>(&self, values: impl IntoIterator<Item = Option<T>>) -> Option<Vec<T>> {
+        self.work(0)?;
         let mut values = values.into_iter();
         let mut output = Vec::new();
         while values.size_hint() != (0, Some(0)) {
-            self.work(1, work_operation)?;
+            self.work(1)?;
             let Some(value) = values.next() else {
                 break;
             };
-            self.reserve(&mut output, 1, operation)?;
             output.push(value?);
         }
         Some(output)
@@ -160,124 +135,63 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
     pub(super) fn support_values<T: Copy + Default>(
         &self,
         values: impl ExactSizeIterator<Item = Option<T>>,
-        operation: &'static str,
-        work_operation: &'static str,
     ) -> Option<SupportValues<T>> {
         let len = values.len();
         if len > INLINE_SUPPORT {
-            return self
-                .collect(values, operation, work_operation)
-                .map(SupportValues::Heap);
+            return self.collect(values).map(SupportValues::Heap);
         }
-        self.work(0, work_operation)?;
+        self.work(0)?;
         let mut output = SupportValues::Inline {
             values: [T::default(); INLINE_SUPPORT],
             len,
         };
         for (index, value) in values.enumerate() {
-            self.work(1, work_operation)?;
+            self.work(1)?;
             output[index] = value?;
         }
         Some(output)
     }
 
-    pub(super) fn reserve<T>(
-        &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Option<()> {
-        self.work(0, operation)?;
-        match self.admission.context() {
-            Some(context) => {
-                let mut storage = self.storage.borrow_mut();
-                if storage.is_none() {
-                    *storage = Some(self.admit(context.reserve_scoped_limit(0, operation))?);
-                }
-                let reservation = storage.as_mut()?;
-                self.admit(context.reserve_scoped_vec_limit(reservation, values, count, operation))
-            }
-            None => self.admit(crate::geometry::nurbs::scratch::reserve_exact(
-                values, count, operation,
-            )),
-        }
+    /// Copy `source`, one work step per copied byte.
+    pub(super) fn copied<T: Copy>(&self, source: &[T]) -> Option<Vec<T>> {
+        self.work(std::mem::size_of_val(source))?;
+        Some(source.to_vec())
     }
 
-    /// Create exact temporary backing with its reservation held by the caller.
-    pub(super) fn temporary_vec<T>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
-        self.work(0, operation)?;
-        let mut values = Vec::new();
-        let storage = match self.admission.context() {
-            Some(context) => {
-                Some(self.admit(context.reserve_temporary_vec(&mut values, count, operation))?)
-            }
-            None => {
-                self.admit(crate::geometry::nurbs::scratch::reserve_exact(
-                    &mut values,
-                    count,
-                    operation,
-                ))?;
-                None
-            }
-        };
-        Some((values, storage))
-    }
-
-    /// Copy retained output through the selected allocation and work policy.
-    pub(super) fn retained_copy<T: Copy>(
-        &self,
-        source: &[T],
-        operation: &'static str,
-    ) -> Option<Vec<T>> {
-        self.work(0, operation)?;
-        let mut values = Vec::new();
-        match self.admission.context() {
-            Some(context) => {
-                self.admit(context.reserve_vec_limit(&mut values, source.len(), operation))?;
-            }
-            None => self.admit(crate::geometry::nurbs::scratch::reserve_exact(
-                &mut values,
-                source.len(),
-                operation,
-            ))?,
-        }
-        for value in source {
-            self.work(std::mem::size_of::<T>(), operation)?;
-            values.push(*value);
-        }
-        Some(values)
-    }
-
-    pub(super) fn work(&self, count: usize, operation: &'static str) -> Option<()> {
-        if self.refusal.borrow().is_some() {
+    pub(super) fn work(&self, count: usize) -> Option<()> {
+        if self.refusal.get().is_some() {
             return None;
         }
-        self.admit(self.admission.work(u64_from_index(count), operation))
+        self.admit(self.admission.work(count))
     }
 
     pub(super) fn enter(&self) -> Option<EvaluationDepthGuard<'_>> {
-        if self.refusal.borrow().is_some() {
+        if self.refusal.get().is_some() {
             return None;
         }
         self.admit(self.admission.enter(&self.independent_depth))
     }
 
-    pub(super) fn finish<T>(self, value: T) -> Result<T, ResourceLimit> {
-        self.unless_refused()?;
-        Ok(value)
-    }
-
-    /// Finishes an evaluation: a recorded refusal, or a resource refusal the
-    /// evaluation reports, is the outer error.
+    /// Finishes an evaluation: a recorded resource refusal, or one the
+    /// evaluation reports, is the outer error. An exhausted work slice stays
+    /// the inner [`EvaluationFailure::WorkExhausted`].
     pub(super) fn finish_evaluation<T, R>(
         self,
         result: Result<T, EvaluationFailure<R>>,
     ) -> Result<Result<T, EvaluationFailure<R>>, ResourceLimit> {
-        outer_refusal(self.finish(result)?)
+        outer_refusal(self.settle(result))
+    }
+
+    /// The optional result, or the recorded refusal when one was recorded: a
+    /// session refusal is the error and an exhausted work slice is no value.
+    pub(super) fn settle_option<T, E: From<ResourceLimit>>(
+        &self,
+        result: Result<Option<T>, E>,
+    ) -> Result<Option<T>, E> {
+        match self.refused() {
+            None => result,
+            Some(refusal) => Ok(refusal.absent()?),
+        }
     }
 }
 
@@ -303,7 +217,7 @@ pub fn outer_refusal<T, R>(
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 /// A procedural carrier without a solved cache has no value here.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn curve_point<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &CurveGeometry,
@@ -325,7 +239,7 @@ pub fn curve_point<'ctx, 'arena: 'ctx>(
 /// reaches no coordinate, and each reads NaN; a projection that overflows
 /// carries each coordinate it reached.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn nurbs_curve_point_at<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     curve: &NurbsCurve,
@@ -353,7 +267,7 @@ pub fn nurbs_curve_point_at<'ctx, 'arena: 'ctx>(
 /// why it has no finite value, as [`super::curve_tangent_solved`] states. A
 /// procedural carrier without a solved cache has no value here.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn curve_tangent<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &CurveGeometry,
@@ -376,7 +290,7 @@ pub fn curve_tangent<'ctx, 'arena: 'ctx>(
 
 /// Evaluate a surface carrier at `(u, v)` on its own parameterization.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn surface_point<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SurfaceGeometry,
@@ -413,7 +327,7 @@ pub fn surface_point<'ctx, 'arena: 'ctx>(
 /// evaluated point as the witness. A caller that wants the domain asks
 /// the carrier for it.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &PcurveGeometry,
@@ -425,8 +339,8 @@ pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
         .and_then(|parameter| {
             let evaluated = super::pcurve_uv_differential(&scratch, geometry, parameter)
                 .ok_or(EvaluationFailure::NoValue)?;
-            if let Some(limit) = evaluated.resource {
-                return Err(EvaluationFailure::ResourceLimit(limit));
+            if let Some(refusal) = evaluated.refusal {
+                return Err(refusal.into());
             }
             evaluated.point.map_err(EvaluationFailure::NonFinite)
         });
@@ -434,43 +348,25 @@ pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
 }
 
 /// Reusable point-evaluation storage for repeated parameters on one NURBS curve.
-/// The basis is admitted once; evaluations mutate that storage and borrow poles.
-pub struct NurbsPointEvaluator<'curve, 'ctx> {
+/// The basis is allocated once; evaluations mutate that storage and borrow poles.
+pub struct NurbsPointEvaluator<'curve> {
     curve: &'curve NurbsCurve,
     basis: SupportValues<f64>,
-    _storage: Option<ScopedReservation<'ctx>>,
 }
 
-impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
-    /// Admit the basis storage before allocating it.
-    pub fn new(
-        ctx: &'ctx DecodeContext<'_>,
-        curve: &'curve NurbsCurve,
-    ) -> Result<Self, ResourceLimit> {
+impl<'curve> NurbsPointEvaluator<'curve> {
+    /// Allocate the basis storage for `curve`.
+    pub fn new(curve: &'curve NurbsCurve) -> Self {
         let support = curve.knots().len() - curve.pole_count();
-        let (basis, storage) = if support <= INLINE_SUPPORT {
-            (
-                SupportValues::Inline {
-                    values: [0.0; INLINE_SUPPORT],
-                    len: support,
-                },
-                None,
-            )
-        } else {
-            {
-                let mut basis = Vec::new();
-                let storage =
-                    ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
-                ctx.charge_work_limit(u64_from_index(support), "IR B-spline basis work")?;
-                basis.extend(std::iter::repeat_n(0.0, support));
-                (SupportValues::Heap(basis), Some(storage))
+        let basis = if support <= INLINE_SUPPORT {
+            SupportValues::Inline {
+                values: [0.0; INLINE_SUPPORT],
+                len: support,
             }
+        } else {
+            SupportValues::Heap((0..support).map(|_| 0.0).collect())
         };
-        Ok(Self {
-            curve,
-            basis,
-            _storage: storage,
-        })
+        Self { curve, basis }
     }
 
     /// Evaluate in the knot domain without allocating another basis or pole window.
@@ -495,7 +391,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 self.curve.pole_count(),
                 parameter.get(),
             )
-            .map_err(EvaluationFailure::ResourceLimit)?
+            .map_err(EvaluationFailure::from)?
             .ok_or(EvaluationFailure::NoValue)?;
             let unreached = EvaluationFailure::NonFinite(super::UNREACHED_POINT);
             super::basis::fill_bspline_basis(
@@ -506,7 +402,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 parameter.get(),
                 &mut self.basis,
             )
-            .map_err(EvaluationFailure::ResourceLimit)?
+            .map_err(EvaluationFailure::from)?
             .ok_or(unreached)?;
             let poles = self.curve.pole_rows();
             let scratch = Scratch::new(ctx);
@@ -537,7 +433,7 @@ mod tests;
 /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
 /// construction; no arm follows an arena id.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn curve_point_solved<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedCurveGeometry,
@@ -556,7 +452,7 @@ pub fn curve_point_solved<'ctx, 'arena: 'ctx>(
 /// alone, so partials outside the finite range at a finite point leave the
 /// point finite.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn surface_point_solved<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedSurfaceGeometry,
@@ -576,7 +472,7 @@ pub fn surface_point_solved<'ctx, 'arena: 'ctx>(
 /// leaves the finite range reaches no coordinate, and each reads NaN; a
 /// projection that overflows carries each coordinate it reached.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn nurbs_surface_point<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     surface: &crate::geometry::nurbs::NurbsSurface,

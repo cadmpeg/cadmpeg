@@ -5,9 +5,9 @@ use super::branch_items::BranchItems;
 use super::discriminators::SurfaceBranchMode;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -152,23 +152,27 @@ impl<B> SurfaceBranch<B> {
     pub(crate) fn terminal_offset(&self) -> u64 {
         self.offset + self.terminal_relative_offset()
     }
+
+    pub(crate) fn end_offset(&self) -> u64 {
+        self.terminal_offset()
+            + cadmpeg_core::decode::u64_from_index(self.terminal.0.raw().len())
+            + 1
+            + cadmpeg_core::decode::u64_from_index(self.suffix.0.len())
+    }
 }
 
 impl SurfaceBranch<()> {
     pub(crate) fn resolve<B>(
         self,
-        ctx: &DecodeContext<'_>,
         file_base: u64,
-        mut target: impl FnMut(PayloadIndexToken) -> Result<B, CodecError>,
-    ) -> Result<Option<SurfaceBranch<B>>, CodecError> {
-        let Some(offset) = self.offset.checked_add(file_base) else {
-            return Ok(None);
-        };
+        mut target: impl FnMut(PayloadIndexToken) -> B,
+    ) -> Option<SurfaceBranch<B>> {
+        let offset = self.offset.checked_add(file_base)?;
         let members = self
             .members
-            .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
-        let terminal = (self.terminal.0, target(self.terminal.0)?);
-        Ok(SurfaceBranch::new(
+            .map_indexed(|_, (token, ())| (token, target(token)));
+        let terminal = (self.terminal.0, target(self.terminal.0));
+        SurfaceBranch::new(
             offset,
             self.mode,
             self.witnessed,
@@ -176,7 +180,7 @@ impl SurfaceBranch<()> {
             terminal,
             self.suffix,
         )
-        .ok())
+        .ok()
     }
 }
 
@@ -194,45 +198,34 @@ impl SurfaceFeaturePayloadBranches {
     }
 }
 
-fn surface_feature_branch_paths(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    payload_offset: usize,
-    at: usize,
-    remaining: u8,
-    terminator: &[u8],
-) -> Result<Vec<Vec<SurfaceBranch<()>>>, CodecError> {
-    let _depth = ctx.enter_nested("NX surface branch path")?;
-    ctx.charge_work(1, "scan NX surface branch path")?;
-    if remaining == 0 {
-        return Ok(Vec::new());
-    }
-    let Some(mode) = payload
+/// One branch group framed at a payload offset, before its suffix.
+struct BranchGroupFrame {
+    mode: SurfaceBranchMode,
+    witnessed: bool,
+    members: BranchItems<(PayloadIndexToken, ())>,
+    terminal: PayloadIndexToken,
+    end: usize,
+}
+
+fn branch_group_frame(payload: &[u8], at: usize) -> Option<BranchGroupFrame> {
+    let mode = payload
         .get(at)
         .copied()
-        .and_then(|value| SurfaceBranchMode::try_from(value).ok())
-    else {
-        return Ok(Vec::new());
-    };
+        .and_then(|value| SurfaceBranchMode::try_from(value).ok())?;
     if payload.get(at + 1) != Some(&0x01) {
-        return Ok(Vec::new());
+        return None;
     }
-    let Some(declared_count @ 2..) = payload.get(at + 2).copied() else {
-        return Ok(Vec::new());
+    let declared_count @ 2.. = payload.get(at + 2).copied()? else {
+        return None;
     };
     let mut cursor = at + 3;
     let mut members = Vec::new();
     for _ in 1..declared_count {
-        let Some(token) = payload.get(cursor..).and_then(PayloadIndexToken::read) else {
-            return Ok(Vec::new());
-        };
+        let token = payload.get(cursor..).and_then(PayloadIndexToken::read)?;
         cursor += token.raw().len();
-        ctx.reserve_vec(&mut members, 1, "NX surface branch members")?;
         members.push((token, ()));
     }
-    let Ok(members) = BranchItems::new(members) else {
-        return Ok(Vec::new());
-    };
+    let members = BranchItems::new(members).ok()?;
     let witnessed = payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count]);
     if witnessed {
         cursor += 2;
@@ -242,98 +235,146 @@ fn surface_feature_branch_paths(
     } else {
         5
     };
-    let Some(zero_lane) = payload.get(cursor..cursor + zero_count) else {
-        return Ok(Vec::new());
-    };
-    if !zero_lane.iter().all(|&byte| byte == 0) {
-        return Ok(Vec::new());
+    if !payload
+        .get(cursor..cursor + zero_count)?
+        .iter()
+        .all(|&byte| byte == 0)
+    {
+        return None;
     }
     cursor += zero_count;
     if payload.get(cursor..cursor + 3) != Some(&[0xff, 0x01, 0x02]) {
-        return Ok(Vec::new());
+        return None;
     }
     cursor += 3;
-    let Some(terminal) = payload.get(cursor..).and_then(PayloadIndexToken::read) else {
-        return Ok(Vec::new());
-    };
+    let terminal = payload.get(cursor..).and_then(PayloadIndexToken::read)?;
     cursor += terminal.raw().len();
     if payload.get(cursor) != Some(&0x00) {
-        return Ok(Vec::new());
+        return None;
     }
-    cursor += 1;
+    Some(BranchGroupFrame {
+        mode,
+        witnessed,
+        members,
+        terminal,
+        end: cursor + 1,
+    })
+}
 
-    let mut paths = Vec::new();
-    for suffix_len in 1..=5 {
-        ctx.charge_work(1, "scan NX surface branch suffix")?;
-        let Some(suffix) = payload.get(cursor..cursor + suffix_len) else {
-            continue;
-        };
-        let next = cursor + suffix_len;
-        let continuations = if remaining == 1 {
-            let mut continuations = Vec::new();
-            if payload.get(next..next + terminator.len()) == Some(terminator) {
-                ctx.reserve_vec(&mut continuations, 1, "NX surface terminal paths")?;
-                continuations.push(Vec::new());
-            }
-            continuations
-        } else {
-            surface_feature_branch_paths(
-                ctx,
-                payload,
-                payload_offset,
-                next,
-                remaining - 1,
-                terminator,
-            )?
-        };
-        if continuations.is_empty() {
-            continue;
-        }
-        let Some(offset) = u64_from_index(payload_offset).checked_add(u64_from_index(at)) else {
-            continue;
-        };
-        for mut continuation in continuations {
-            let mut member_copy = Vec::new();
-            for member in members.as_slice().iter().copied() {
-                ctx.reserve_vec(&mut member_copy, 1, "NX surface branch member copy")?;
-                member_copy.push(member);
-            }
-            let Ok(member_copy) = BranchItems::new(member_copy) else {
-                continue;
-            };
-            ctx.charge_collection_items(u64_from_index(suffix.len()), "NX surface suffix bytes")?;
-            let suffix_copy = ctx.copy_retained(suffix, "NX surface suffix bytes")?;
-            let Ok(suffix_copy) = SurfaceSuffix::new(suffix_copy) else {
-                continue;
-            };
-            let Ok(branch) = SurfaceBranch::new(
-                offset,
-                mode,
-                witnessed,
-                member_copy,
-                (terminal, ()),
-                suffix_copy,
-            ) else {
-                continue;
-            };
-            ctx.reserve_vec(&mut continuation, 1, "NX surface branch path entries")?;
-            continuation.insert(0, branch);
-            ctx.reserve_vec(&mut paths, 1, "NX surface branch paths")?;
-            paths.push(continuation);
-            if paths.len() == 2 {
-                return Ok(paths);
-            }
+/// Search for complete branch paths, memoised on `(offset, remaining groups)`.
+///
+/// Distinct suffix lengths can frame overlapping groups that rejoin, so the
+/// path tree can grow exponentially while the distinct search states stay
+/// bounded by the payload length times the declared group count.
+struct BranchPathSearch<'a> {
+    payload: &'a [u8],
+    terminator: &'a [u8],
+    group_ends: BTreeMap<usize, Option<usize>>,
+    path_counts: BTreeMap<(usize, u8), u8>,
+}
+
+impl<'a> BranchPathSearch<'a> {
+    fn new(payload: &'a [u8], terminator: &'a [u8]) -> Self {
+        Self {
+            payload,
+            terminator,
+            group_ends: BTreeMap::new(),
+            path_counts: BTreeMap::new(),
         }
     }
-    Ok(paths)
+
+    fn group_end(&mut self, at: usize) -> Option<usize> {
+        *self
+            .group_ends
+            .entry(at)
+            .or_insert_with(|| branch_group_frame(self.payload, at).map(|frame| frame.end))
+    }
+
+    fn terminates_at(&self, at: usize) -> bool {
+        self.payload.get(at..at + self.terminator.len()) == Some(self.terminator)
+    }
+
+    /// Number of complete paths of `remaining` groups from `at`, capped at two.
+    fn path_count(&mut self, at: usize, remaining: u8) -> u8 {
+        if let Some(&count) = self.path_counts.get(&(at, remaining)) {
+            return count;
+        }
+        let count = self.uncached_path_count(at, remaining);
+        self.path_counts.insert((at, remaining), count);
+        count
+    }
+
+    fn uncached_path_count(&mut self, at: usize, remaining: u8) -> u8 {
+        if remaining == 0 {
+            return 0;
+        }
+        let Some(end) = self.group_end(at) else {
+            return 0;
+        };
+        let mut count = 0;
+        for suffix_len in 1..=5 {
+            let next = end + suffix_len;
+            if next > self.payload.len() {
+                continue;
+            }
+            let continuations = if remaining == 1 {
+                u8::from(self.terminates_at(next))
+            } else {
+                self.path_count(next, remaining - 1)
+            };
+            count = (count + continuations).min(2);
+            if count == 2 {
+                break;
+            }
+        }
+        count
+    }
+
+    /// Rebuild the single path that [`Self::path_count`] counted from `at`.
+    fn unique_path(
+        &self,
+        payload_offset: usize,
+        mut at: usize,
+        mut remaining: u8,
+    ) -> Option<Vec<SurfaceBranch<()>>> {
+        let mut path = Vec::with_capacity(usize::from(remaining));
+        while remaining > 0 {
+            let frame = branch_group_frame(self.payload, at)?;
+            let next = (1..=5)
+                .map(|suffix_len| frame.end + suffix_len)
+                .find(|&next| {
+                    next <= self.payload.len()
+                        && if remaining == 1 {
+                            self.terminates_at(next)
+                        } else {
+                            self.path_counts.get(&(next, remaining - 1)) == Some(&1)
+                        }
+                })?;
+            let offset = u64_from_index(payload_offset).checked_add(u64_from_index(at))?;
+            let suffix = SurfaceSuffix::new(self.payload.get(frame.end..next)?.to_vec()).ok()?;
+            path.push(
+                SurfaceBranch::new(
+                    offset,
+                    frame.mode,
+                    frame.witnessed,
+                    frame.members,
+                    (frame.terminal, ()),
+                    suffix,
+                )
+                .ok()?,
+            );
+            at = next;
+            remaining -= 1;
+        }
+        Some(path)
+    }
 }
 
 /// Decode the unique exactly framed counted branch group in a bounded `SKIN`
 /// or `Studio Surface` payload.
 pub(crate) fn surface_feature_payload_branches(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<SurfaceFeaturePayloadBranches>, CodecError> {
+) -> Option<SurfaceFeaturePayloadBranches> {
     const SKIN_TERMINATOR: [u8; 11] = [
         0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
     ];
@@ -341,12 +382,9 @@ pub(crate) fn surface_feature_payload_branches(
     let terminator = match record.name() {
         "SKIN" => &SKIN_TERMINATOR[..],
         "Studio Surface" => &STUDIO_TERMINATOR[..],
-        _ => return Ok(None),
+        _ => return None,
     };
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX surface branch groups",
-    )?;
+    let mut search = BranchPathSearch::new(record.payload(), terminator);
     let mut candidate = None;
     for start in record
         .payload()
@@ -375,18 +413,12 @@ pub(crate) fn surface_feature_payload_branches(
         let Some(declared_group_count @ 1..) = record.payload().get(start + 5).copied() else {
             continue;
         };
-        let paths = surface_feature_branch_paths(
-            ctx,
-            record.payload(),
-            record.payload_offset(),
-            start + 6,
-            declared_group_count,
-            terminator,
-        )?;
-        if paths.len() != 1 {
+        if search.path_count(start + 6, declared_group_count) != 1 {
             continue;
         }
-        let Some(branches) = paths.into_iter().next() else {
+        let Some(branches) =
+            search.unique_path(record.payload_offset(), start + 6, declared_group_count)
+        else {
             continue;
         };
         let group = SurfaceFeaturePayloadBranches {
@@ -395,16 +427,83 @@ pub(crate) fn surface_feature_payload_branches(
             branches,
         };
         if candidate.is_some() {
-            return Ok(None);
+            return None;
         }
         candidate = Some(group);
     }
-    Ok(candidate)
+    candidate
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{SurfaceFamily, SurfaceSuffix};
+    use super::{surface_feature_payload_branches, BranchPathSearch, SurfaceFamily, SurfaceSuffix};
+    use crate::om::operation_record::OperationPayload;
+
+    const SKIN_TERMINATOR: [u8; 11] = [
+        0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
+    ];
+
+    /// A root group, then `levels` pairs of groups at suffix lengths 1 and 5
+    /// that frame the same tail, so the path tree doubles at every level.
+    fn rejoining_branch_payload(levels: u8, terminated: bool) -> Vec<u8> {
+        let mut payload = vec![0xa0, 0x5a, 0x14, 0x13, 0x01, levels + 1];
+        payload.extend([0x40, 0x01, 0x02, 0xf0, 0x10, 0, 0, 0, 0, 0]);
+        payload.extend([0xff, 0x01, 0x02, 0xf0, 0x20, 0x00]);
+        for _ in 0..levels {
+            // Suffix byte, then the first group: mode, 0x01, 242 members.
+            payload.extend([0x00, 0x40, 0x01, 0xf2]);
+            // Its first token `f1 40 01` also opens the second group, whose
+            // count byte 0xf0 is the first byte of the token after it.
+            payload.extend([0xf1, 0x40, 0x01, 0xf0, 0xf1, 0xf0, 0x11]);
+            for value in 0..238_u8 {
+                payload.extend([0xf0, value]);
+            }
+            payload.extend([0, 0, 0, 0, 0, 0xff, 0x01, 0x02, 0xf0, 0x22, 0x00]);
+        }
+        payload.push(0x00);
+        if terminated {
+            payload.extend(SKIN_TERMINATOR);
+        } else {
+            payload.extend([0; SKIN_TERMINATOR.len()]);
+        }
+        payload
+    }
+
+    #[test]
+    fn rejoining_branch_groups_are_searched_once_per_offset() {
+        const LEVELS: u8 = 20;
+        let payload = rejoining_branch_payload(LEVELS, false);
+        crate::test_support::with_decode_context(|_ctx| {
+            let mut search = BranchPathSearch::new(&payload, &SKIN_TERMINATOR);
+            assert_eq!(search.path_count(6, LEVELS + 1), 0);
+            assert!(search.path_counts.len() <= 5 * usize::from(LEVELS + 1));
+
+            let record = OperationPayload::new(&payload, 0, "SKIN").unwrap();
+            assert!(surface_feature_payload_branches(record).is_none());
+        });
+    }
+
+    #[test]
+    fn rejoining_branch_groups_keep_path_count_semantics() {
+        crate::test_support::with_decode_context(|_ctx| {
+            let single = rejoining_branch_payload(0, true);
+            let record = OperationPayload::new(&single, 100, "SKIN").unwrap();
+            let group = surface_feature_payload_branches(record).expect("one root group");
+            let branches = group.into_branches();
+            assert_eq!(branches.len(), 1);
+            assert_eq!(branches[0].offset(), 106);
+            assert_eq!(branches[0].terminal().0.value(), 0x20);
+            assert_eq!(branches[0].suffix().clone().into_vec(), [0x00]);
+
+            for levels in [1, 20] {
+                let payload = rejoining_branch_payload(levels, true);
+                let mut search = BranchPathSearch::new(&payload, &SKIN_TERMINATOR);
+                assert_eq!(search.path_count(6, levels + 1), 2);
+                let record = OperationPayload::new(&payload, 0, "SKIN").unwrap();
+                assert!(surface_feature_payload_branches(record).is_none());
+            }
+        });
+    }
 
     #[test]
     fn surface_family_preserves_exact_numeric_domain() {

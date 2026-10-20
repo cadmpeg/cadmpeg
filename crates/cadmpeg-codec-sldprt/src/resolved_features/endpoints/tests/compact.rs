@@ -100,17 +100,10 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
     let markers = [&first, &second, &third, &line, &radius];
 
     assert_eq!(
-        output_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &[],
-            &line,
-            &markers_by_id,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -121,15 +114,7 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius, &competing];
     assert_ne!(
-        output_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &[],
-            &line,
-            &markers_by_id,
-            &markers
-        )
-        .unwrap()
-        .len(),
+        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers).len(),
         2
     );
 }
@@ -218,17 +203,10 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
     let markers = [&first, &second, &third, &line, &radius];
 
     assert_eq!(
-        output_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &[],
-            &line,
-            &markers_by_id,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -239,15 +217,7 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius, &competing];
     assert_ne!(
-        output_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &[],
-            &line,
-            &markers_by_id,
-            &markers
-        )
-        .unwrap()
-        .len(),
+        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers).len(),
         2
     );
 }
@@ -332,17 +302,10 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
 
         assert_eq!(
-            marker_curve_endpoint_markers(
-                &cadmpeg_test_support::service_decode_context(),
-                &payload,
-                &curve,
-                &markers_by_id,
-                &markers
-            )
-            .unwrap()
-            .into_iter()
-            .map(crate::records::SketchInputEntity::id)
-            .collect::<Vec<_>>(),
+            marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+                .into_iter()
+                .map(crate::records::SketchInputEntity::id)
+                .collect::<Vec<_>>(),
             ["curve", "point"]
         );
     }
@@ -408,16 +371,10 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
         Some([1, 2])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         vec!["first", "second"]
     );
 }
@@ -509,16 +466,10 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
     let markers = [&curve, &first, &non_point, &second];
 
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         vec!["first", "second"]
     );
 
@@ -611,13 +562,7 @@ fn compact_legacy_embedded_geometry_preserves_coordinate_roster_ordinals() {
         entity.feature_ref = Some("feature".into());
     }
     let markers = entities.iter().collect::<Vec<_>>();
-    let endpoints = coordinate_roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &entities[3],
-        &markers,
-    )
-    .unwrap();
+    let endpoints = coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers);
     assert_eq!(
         endpoints
             .iter()
@@ -1030,13 +975,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
     let point = marker("point", Some(5), SketchInputKind::Point, Some([1.0, 0.0]));
     let markers = [&curve, &relation, &duplicate_curve, &point];
 
-    assert!(relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
-    .unwrap());
+    assert!(relation_reference_curve_record(&payload, &curve, &markers));
 
     let first_point = marker(
         "first-point",
@@ -1051,13 +990,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
         Some([1.0, 0.0]),
     );
     let markers = [&curve, &first_point, &second_point];
-    assert!(!relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
-    .unwrap());
+    assert!(!relation_reference_curve_record(&payload, &curve, &markers));
 }
 
 #[test]
@@ -1108,55 +1041,29 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
     for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
         payload[..prefix.len()].copy_from_slice(prefix);
         payload[84..84 + prefix.len()].copy_from_slice(prefix);
-        let pair = compact_complete_marker_roster_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            true,
-        )
-        .unwrap()
-        .expect("complete marker roster endpoints");
+        let pair = compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
+            .expect("complete marker roster endpoints");
         assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
     }
 
     let mut terminal = payload[..84].to_vec();
     terminal[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let pair = compact_complete_marker_roster_pair(
-        &cadmpeg_test_support::service_decode_context(),
-        &terminal,
-        &curve,
-        &markers,
-        true,
-    )
-    .unwrap()
-    .expect("terminal complete marker roster endpoints");
+    let pair = compact_complete_marker_roster_pair(&terminal, &curve, &markers, true)
+        .expect("terminal complete marker roster endpoints");
     assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &terminal,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&terminal, &curve, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -1178,13 +1085,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         constructed_marker
     };
     let markers = [&curve, &first, &relation];
-    assert!(relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
-    .unwrap());
+    assert!(relation_reference_curve_record(&payload, &curve, &markers));
 }
 
 #[test]
@@ -1232,37 +1133,16 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
     let markers = [&curve, &first, &second, &third];
 
     assert_eq!(
-        compact_complete_marker_roster_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            true
-        )
-        .unwrap()
-        .map(|pair| [pair[0].id(), pair[1].id()]),
+        compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
+            .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["first", "second"])
     );
     assert_eq!(
-        compact_complete_marker_roster_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            false
-        )
-        .unwrap()
-        .map(|pair| [pair[0].id(), pair[1].id()]),
+        compact_complete_marker_roster_pair(&payload, &curve, &markers, false)
+            .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["second", "third"])
     );
-    assert!(super::compact_complete_marker_roster_endpoints(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
-    .unwrap()
-    .is_empty());
+    assert!(super::compact_complete_marker_roster_endpoints(&payload, &curve, &markers).is_empty());
 }
 
 #[test]
@@ -1314,34 +1194,12 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
         &payload, 0
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
-        ["first", "second"]
-    );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Seven complete-roster entries and two selected endpoints.
-    policy.limits.max_collection_items = 9;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let selected =
-        coordinate_roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers).unwrap();
-    assert_eq!(
-        selected
+        coordinate_roster_curve_endpoint_markers(&payload, &curve, &markers)
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
-    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]
@@ -1391,16 +1249,10 @@ fn current_referenced_compact_roster_falls_back_when_complete_slot_is_not_a_poin
         &payload, 0
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["second", "third"]
     );
 }
@@ -1464,13 +1316,7 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         constructed_marker
     };
     let markers = [&first, &second];
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
-    .unwrap();
+    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
     assert_eq!(
         endpoints
             .iter()
@@ -1551,25 +1397,15 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     };
     let markers = [&first, &second];
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
     let pairs = vec![vec![&first, &second], vec![&second, &coincident]];
-    let (selected, ambiguous) = super::resolve_indexed_marker_candidates(
-        &cadmpeg_test_support::service_decode_context(),
-        (pairs.clone()).into_iter().map(Ok),
-    )
-    .unwrap();
+    let (selected, ambiguous) = super::resolve_indexed_marker_candidates(pairs.clone());
     assert!(!ambiguous);
     assert_eq!(
         selected
@@ -1578,11 +1414,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
-    let (reversed, ambiguous) = super::resolve_indexed_marker_candidates(
-        &cadmpeg_test_support::service_decode_context(),
-        pairs.into_iter().rev().map(Ok),
-    )
-    .unwrap();
+    let (reversed, ambiguous) = super::resolve_indexed_marker_candidates(pairs.into_iter().rev());
     assert!(!ambiguous);
     assert_eq!(
         reversed
@@ -1592,12 +1424,9 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
         ["first", "second"]
     );
     let different = marker("different", Some(3), Some([2.0, 0.0]));
-    let (_, ambiguous) = super::resolve_indexed_marker_candidates(
-        &cadmpeg_test_support::service_decode_context(),
-        ([vec![&first, &second], vec![&second, &different]])
-            .into_iter()
-            .map(Ok),
-    )
-    .unwrap();
+    let (_, ambiguous) = super::resolve_indexed_marker_candidates([
+        vec![&first, &second],
+        vec![&second, &different],
+    ]);
     assert!(ambiguous);
 }

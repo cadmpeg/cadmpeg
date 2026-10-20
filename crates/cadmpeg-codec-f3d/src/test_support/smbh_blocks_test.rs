@@ -8,7 +8,7 @@ pub(crate) fn generated_pcurve_block() -> Vec<u8> {
 }
 
 pub(super) fn generated_planar_pcurve_block() -> Vec<u8> {
-    generated_pcurve_block_with_points([[0.025, -0.05], [0.075, -0.15]])
+    generated_pcurve_block_with_points([[0.025, 0.05], [0.075, 0.15]])
 }
 
 fn generated_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u8> {
@@ -33,7 +33,7 @@ pub(super) fn generated_rational_pcurve_block() -> Vec<u8> {
 }
 
 pub(super) fn generated_planar_rational_pcurve_block() -> Vec<u8> {
-    generated_rational_pcurve_block_with_points([[0.025, -0.05], [0.075, -0.15]])
+    generated_rational_pcurve_block_with_points([[0.025, 0.05], [0.075, 0.15]])
 }
 
 fn generated_rational_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u8> {

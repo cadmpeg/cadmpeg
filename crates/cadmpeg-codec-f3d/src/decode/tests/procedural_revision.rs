@@ -11,7 +11,6 @@
 )]
 
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_test_support::service_decode_context;
 
 use cadmpeg_test_support::edit;
 
@@ -1142,23 +1141,19 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     };
     let target = nurbs.v_count();
     nurbs
-        .try_map_control_points(
-            |index, pole| {
-                let mut pole = pole.get();
-                if index == target {
-                    pole.x = 17.5;
-                    pole.z = -3.25;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == target {
+                pole.x = 17.5;
+                pole.z = -3.25;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
+        .expect("pole edit admission");
     edit::replace(&mut nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();
         {
@@ -1166,7 +1161,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -1180,7 +1174,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(&mut nurbs, |previous| {
@@ -1190,7 +1183,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -1204,14 +1196,12 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     {
         let replacement = true;
         edit::replace(&mut nurbs, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1225,7 +1215,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap()
     };
@@ -1285,16 +1274,13 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         rows[0][1] = 0.65;
     }
     let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         nurbs.pole_grid().raw_points(),
         weight_rows,
-    )
-    .expect("fixture pole pairing admission");
+    );
     {
         let replacement = poles.unwrap();
         edit::replace(&mut nurbs, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1308,7 +1294,6 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
                 replacement,
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -1366,14 +1351,12 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
     *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let expected = nurbs.clone();
 
@@ -1483,7 +1466,7 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
     let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the support isoline")
         .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
@@ -1544,9 +1527,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -1559,11 +1540,10 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let decoded = procedural_surface_resolving_refs(
         &ctx,
         &record.tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, std::slice::from_ref(record))
-            .unwrap(),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
     )
     .transpose()
-    .expect("resource allocation did not fail")
+    .expect("resolve the procedural surface references")
     .expect("the record owns its extrusion");
     assert!(matches!(
         decoded.definition(),
@@ -1591,10 +1571,10 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     assert!(procedural_surface_resolving_refs(
         &ctx,
         &nested_records[0].tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, &nested_records).unwrap(),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
     )
     .transpose()
-    .expect("resource allocation did not fail")
+    .expect("resolve the procedural surface references")
     .is_none());
 }
 

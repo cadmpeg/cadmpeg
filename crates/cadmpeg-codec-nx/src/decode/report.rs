@@ -6,12 +6,12 @@ use super::feature_completeness::operands::{
     pattern_feature_is_incomplete,
 };
 use super::feature_completeness::{
-    active_configuration_state_is_incomplete_for_decode, chamfer_definition_is_incomplete,
-    combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
-    delete_body_definition_is_incomplete, draft_definition_is_incomplete,
-    extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
-    face_blend_definition_is_incomplete, fillet_definition_is_incomplete,
-    hole_definition_is_incomplete, incomplete_expression_parameters, loft_definition_is_incomplete,
+    chamfer_definition_is_incomplete, combine_definition_is_incomplete,
+    datum_coordinate_system_is_incomplete, delete_body_definition_is_incomplete,
+    draft_definition_is_incomplete, extend_surface_definition_is_incomplete,
+    extrude_definition_is_incomplete, face_blend_definition_is_incomplete,
+    fillet_definition_is_incomplete, hole_definition_is_incomplete,
+    incomplete_expression_parameters, loft_definition_is_incomplete,
     offset_surface_definition_is_incomplete, output_free_local_body_construction,
     output_free_native_snapshot, output_free_pattern_construction,
     output_free_trim_surface_construction, projected_curve_direction_is_incomplete,
@@ -20,11 +20,6 @@ use super::feature_completeness::{
     shell_definition_is_incomplete, sphere_definition_is_incomplete,
     sweep_definition_is_incomplete, thicken_definition_is_incomplete,
     trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
-};
-use super::geometry_work::{
-    MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
-    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
-    MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
 };
 use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
 use super::support_uv::pcurve_requires_completion;
@@ -41,24 +36,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display};
 
-fn push_report_loss(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    code: NxLossCode,
-    message: fmt::Arguments<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(message, "nx geometry report loss text")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index("nx".len()),
-        "nx geometry report loss namespace",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(code.code().len()),
-        "nx geometry report loss code",
-    )?;
-    ctx.reserve_vec(losses, 1, "nx geometry report losses")?;
-    losses.push(code.note(message));
-    Ok(())
+fn push_report_loss(losses: &mut Vec<LossNote>, code: NxLossCode, message: fmt::Arguments<'_>) {
+    losses.push(code.note(message.to_string()));
 }
 
 struct JoinedLabels<'a> {
@@ -153,6 +132,17 @@ pub(super) struct CompletionBudgetStatus {
     pub(super) support_uv_lane_geometry_exhausted: bool,
     pub(super) transfer_limit: usize,
     pub(super) support_uv_limit: usize,
+    pub(super) geometry_limits: GeometryWorkLimits,
+}
+
+/// Limits of the model-wide geometry budgets, scaled to the selected records.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct GeometryWorkLimits {
+    pub(super) adaptive: usize,
+    pub(super) pcurve_completion: usize,
+    pub(super) serialized_support_uv: usize,
+    pub(super) support_uv_completion: usize,
+    pub(super) coupled_support_uv: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
@@ -169,85 +159,14 @@ pub(super) struct GeometryReportFacts<'inputs> {
     pub(super) notes: &'inputs [String],
 }
 
-pub(super) fn build_geometry_report(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &Scan,
-    geometry_report_facts: &GeometryReportFacts<'_>,
+/// Reports each model-wide geometric phase that stopped at its local work
+/// bound. The phase skipped its remaining items; decode continued.
+fn push_bounded_completion_losses(
+    losses: &mut Vec<LossNote>,
     ir: &CadIr,
-    model: &crate::native::model::NativeModel,
-) -> Result<DecodeBody, cadmpeg_core::CodecError> {
-    let &GeometryReportFacts {
-        unmatched_delta_tombstone_counts,
-        counts,
-        has_topology,
-        has_unresolved_sub_bodies,
-        tessellation_count,
-        completion_budget,
-        adaptive_geometry_exhausted,
-        dialect_losses,
-        notes,
-    } = geometry_report_facts;
-
-    let has_untransferred_attribute_fields =
-        model.has_untransferred_parasolid_attribute_fields(ctx)?;
-    let mut losses = Vec::new();
-
-    push_report_loss(
-        ctx,
-        &mut losses,
-        NxLossCode::CarrierAnalyticCensus,
-        format_args!(
-            "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
-             metres → millimetres), {} analytic surface carrier(s) ({} plane, {} cylinder, {} \
-             cone, {} sphere, {} torus), and {} analytic curve carrier(s) ({} line, {} circle, {} \
-             ellipse). All parameters are byte-exact at the document's millimetre scale.",
-            counts.points,
-            counts.surfaces(),
-            counts.planes,
-            counts.cylinders,
-            counts.cones,
-            counts.spheres,
-            counts.tori,
-            counts.curves(),
-            counts.lines,
-            counts.circles,
-            counts.ellipses,
-        ),
-    )?;
-
-    if tessellation_count != 0 {
-        push_report_loss(ctx, &mut losses, NxLossCode::CarrierTessellationCensus, format_args!(
-            "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
-        ))?;
-    }
-
-    if !has_topology {
-        push_report_loss(ctx, &mut losses, NxLossCode::TopologyGraphNotReconstructed, format_args!(
-            "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
-                      reconstructed because the surviving typed records did not form a complete \
-                      connected ownership graph. Exact-key supported partition↔deltas replacements \
-                      and deletions were applied before graph construction. Required unresolved \
-                      records prevent their dependent incidence from being emitted; decoded geometry \
-                      then remains unattached.",
-        ))?;
-    }
-
-    if counts.intersection_rejections.total() > 0 {
-        push_report_loss(ctx, &mut losses, NxLossCode::IntersectionRecordsOpaque, format_args!(
-            "{} surface-intersection record(s) without a complete validated CHART_s and \
-                 term-endpoint witness remain opaque constructions. Support-UV values govern \
-                 optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
-                 Parasolid stream is preserved verbatim as an unknown passthrough record so the \
-                 unresolved source bytes remain available. Rejections: {} missing chart, {} missing \
-                 start term, {} missing end term, {} endpoint mismatch.",
-            counts.intersection_rejections.total(),
-            counts.intersection_rejections.missing_chart,
-            counts.intersection_rejections.missing_start_term,
-            counts.intersection_rejections.missing_end_term,
-            counts.intersection_rejections.endpoint_mismatch,
-        ))?;
-    }
-
+    completion_budget: CompletionBudgetStatus,
+    adaptive_geometry_exhausted: bool,
+) {
     let unresolved_intersection_lanes = ir
         .model
         .procedural_curves
@@ -324,7 +243,7 @@ pub(super) fn build_geometry_report(
                 .support_uv_lane_geometry_exhausted
                 .then_some("support-UV lane geometry slices"),
         ];
-        push_report_loss(ctx, &mut losses, NxLossCode::IntersectionPcurveCompletionBounded, format_args!(
+        push_report_loss(losses, NxLossCode::IntersectionPcurveCompletionBounded, format_args!(
             "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
             JoinedLabels { labels: &bounded_phases, separator: " and " },
             MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
@@ -332,34 +251,127 @@ pub(super) fn build_geometry_report(
             completion_budget.support_uv_limit,
             completion_budget.support_uv_limit,
             completion_budget.support_uv_limit,
-            MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
-            MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
-            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
-            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+            completion_budget.geometry_limits.pcurve_completion,
+            completion_budget.geometry_limits.serialized_support_uv,
+            completion_budget.geometry_limits.support_uv_completion,
+            completion_budget.geometry_limits.coupled_support_uv,
             unresolved_intersection_lanes,
-        ))?;
+        ));
     }
 
     if adaptive_geometry_exhausted {
-        push_report_loss(ctx, &mut losses, NxLossCode::GeometryAdaptiveWorkBounded, format_args!(
-            "Model-wide adaptive geometry certification stopped at its {MAX_ADAPTIVE_GEOMETRY_WORK}-unit work bound; \
+        push_report_loss(
+            losses,
+            NxLossCode::GeometryAdaptiveWorkBounded,
+            format_args!(
+                "Model-wide adaptive geometry certification stopped at its {}-unit work bound; \
              unresolved adaptive geometry certification results were left untyped.",
-        ))?;
+                completion_budget.geometry_limits.adaptive,
+            ),
+        );
+    }
+}
+
+pub(super) fn build_geometry_report(
+    scan: &Scan,
+    geometry_report_facts: &GeometryReportFacts<'_>,
+    ir: &CadIr,
+    model: &crate::native::model::NativeModel,
+) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+    let &GeometryReportFacts {
+        unmatched_delta_tombstone_counts,
+        counts,
+        has_topology,
+        has_unresolved_sub_bodies,
+        tessellation_count,
+        completion_budget,
+        adaptive_geometry_exhausted,
+        dialect_losses,
+        notes,
+    } = geometry_report_facts;
+
+    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
+    let mut losses = Vec::new();
+
+    push_report_loss(
+        &mut losses,
+        NxLossCode::CarrierAnalyticCensus,
+        format_args!(
+            "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
+             metres → millimetres), {} analytic surface carrier(s) ({} plane, {} cylinder, {} \
+             cone, {} sphere, {} torus), and {} analytic curve carrier(s) ({} line, {} circle, {} \
+             ellipse). All parameters are byte-exact at the document's millimetre scale.",
+            counts.points,
+            counts.surfaces(),
+            counts.planes,
+            counts.cylinders,
+            counts.cones,
+            counts.spheres,
+            counts.tori,
+            counts.curves(),
+            counts.lines,
+            counts.circles,
+            counts.ellipses,
+        ),
+    );
+
+    if tessellation_count != 0 {
+        push_report_loss(&mut losses, NxLossCode::CarrierTessellationCensus, format_args!(
+            "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
+        ));
     }
 
-    if scan.count(ctx, StreamKind::Deltas)? > 0 {
+    if !has_topology {
+        push_report_loss(&mut losses, NxLossCode::TopologyGraphNotReconstructed, format_args!(
+            "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
+                      reconstructed because the surviving typed records did not form a complete \
+                      connected ownership graph. Exact-key supported partition↔deltas replacements \
+                      and deletions were applied before graph construction. Required unresolved \
+                      records prevent their dependent incidence from being emitted; decoded geometry \
+                      then remains unattached.",
+        ));
+    }
+
+    if counts.intersection_rejections.total() > 0 {
+        push_report_loss(&mut losses, NxLossCode::IntersectionRecordsOpaque, format_args!(
+            "{} surface-intersection record(s) without a unique identity, unambiguous supports, and a complete validated CHART_s and \
+                 term-endpoint witness remain opaque constructions. Support-UV values govern \
+                 optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
+                 Parasolid stream is preserved verbatim as an unknown passthrough record so the \
+                 unresolved source bytes remain available. Rejections: {} missing support, {} duplicate identity, {} missing chart, {} missing \
+                 start term, {} missing end term, {} endpoint mismatch.",
+            counts.intersection_rejections.total(),
+            counts.intersection_rejections.missing_support,
+            counts.intersection_rejections.duplicate_identity,
+            counts.intersection_rejections.missing_chart,
+            counts.intersection_rejections.missing_start_term,
+            counts.intersection_rejections.missing_end_term,
+            counts.intersection_rejections.endpoint_mismatch,
+        ));
+    }
+
+    push_bounded_completion_losses(
+        &mut losses,
+        ir,
+        completion_budget,
+        adaptive_geometry_exhausted,
+    );
+
+    if scan.count(StreamKind::Deltas) > 0 {
         let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
         let unmatched_tombstone_detail = JoinedCounts {
             counts: unmatched_delta_tombstone_counts,
             separator: ", ",
         };
         if unmatched_tombstones == 0 {
-            push_report_loss(ctx, &mut losses, NxLossCode::DeltasApplied, format_args!(
+            push_report_loss(&mut losses, NxLossCode::DeltasApplied, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
+                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
-                 each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
+                 each key within each current body-sequence interval. Type-38 records and deletion \
+                 candidates remained in the native ledger without replay; the paired partition's \
+                 current relation remained authoritative. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
@@ -376,23 +388,24 @@ pub(super) fn build_geometry_report(
                  Spans outside those events were retained with exact inflated-stream bounds and \
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
-                 terminal tombstone resolved to an exact current or earlier-added key.",
-                scan.count(ctx, StreamKind::Deltas)?
-            ))?;
+                 terminal tombstone considered for replay resolved to an exact current or earlier-added key.",
+                scan.count(StreamKind::Deltas)
+            ));
         } else {
-            push_report_loss(ctx, &mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
+            push_report_loss(&mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                    Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
-                 event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
+                    Equal-schema deltas were paired with the preceding partition. Type-38 records and deletion \
+                 candidates remained in the native ledger without replay; the paired partition's \
+                 current relation remained authoritative. Other exact-key revisions in current body-sequence intervals were applied using the last \
+                 event for each key, but {unmatched_tombstones} terminal tombstone(s) considered for replay have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                scan.count(ctx, StreamKind::Deltas)?
-            ))?;
+                scan.count(StreamKind::Deltas)
+            ));
         }
     }
 
     if has_unresolved_sub_bodies {
         push_report_loss(
-            ctx,
             &mut losses,
             NxLossCode::SubBodyCompositionUnresolved,
             format_args!(
@@ -400,65 +413,50 @@ pub(super) fn build_geometry_report(
                  Booleans do not resolve every intermediate body object to a partition image. \
                  Carriers from all sub-bodies are emitted without the unresolved composition that \
                  would remove interior/construction faces.",
-                scan.count(ctx, StreamKind::Partition)?
+                scan.count(StreamKind::Partition)
             ),
-        )?;
+        );
     }
 
-    append_design_intent_losses(ctx, ir, &mut losses)?;
+    append_design_intent_losses(ir, &mut losses)?;
 
     if has_untransferred_attribute_fields {
         push_report_loss(
-            ctx,
             &mut losses,
             NxLossCode::AttributeValueUnresolved,
             format_args!(
                 "A referenced Parasolid attribute value was not transferred because its \
                       complete value relation did not resolve.",
             ),
-        )?;
+        );
     }
 
     for loss in dialect_losses {
-        ctx.reserve_vec(&mut losses, 1, "nx geometry report losses")?;
-        losses.push(loss.try_clone_for_decode(ctx, "nx geometry report dialect loss")?);
-    }
-    let mut copied_notes = ctx.collection_vec(notes.len(), "nx geometry report notes")?;
-    for note in notes {
-        let bytes = ctx.copy_retained(note.as_bytes(), "nx geometry report note text")?;
-        copied_notes.push(String::from_utf8(bytes).map_err(cadmpeg_core::CodecError::malformed)?);
+        losses.push(loss.clone());
     }
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
-        notes: copied_notes,
+        notes: notes.to_vec(),
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
 }
 
 pub(crate) fn append_design_intent_losses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut body_storage = ctx.reserve_scoped(0, "NX report body lookup storage")?;
-    let mut current_body_ids = body_storage.with_storage(|| {
-        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")
-    })?;
+    let mut current_body_ids = Vec::new();
     for body in &ir.model.bodies {
-        current_body_ids.push(body_storage.with_storage(|| {
-            body.id
-                .try_clone_for_decode(ctx, "nx report current body identity")
-        })?);
+        current_body_ids.push(body.id.clone());
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
-    let (active_features, closure_rejection) = match body_storage.with_storage(|| {
-        crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)
-    })? {
-        Ok(active) => (Some(active), None),
-        Err(rejection) => (None, Some(rejection.code())),
-    };
+    let (active_features, closure_rejection) =
+        match crate::native::history::active_feature_closure(ir, &current_body_ids) {
+            Ok(active) => (Some(active), None),
+            Err(rejection) => (None, Some(rejection.code())),
+        };
     let active_features = active_features.filter(|active| {
         active.values().any(|&index| {
             !matches!(
@@ -487,7 +485,6 @@ pub(crate) fn append_design_intent_losses(
     if unresolved_suppression_count != 0 {
         let closure_detail = ClosureDetail(closure_rejection);
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::FeatureSuppressionUnresolved,
             format_args!(
@@ -497,58 +494,31 @@ pub(crate) fn append_design_intent_losses(
                  state lanes, saved toggles, OM registry declarations, and topology ObjectState \
                  values remain non-suppression evidence.{closure_detail}"
             ),
-        )?;
+        );
     }
 
-    let active_configuration_count = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| configuration.active)
-        .count();
-    let mut current_bodies = BTreeSet::new();
-    for body in &ir.model.bodies {
-        ctx.insert_btree_set(&mut current_bodies, &body.id, "nx report current body set")?;
-    }
-    let mut incomplete_configuration_count = 0usize;
-    for configuration in &ir.model.configurations {
-        let incomplete = configuration.bodies.is_none()
-            || active_configuration_count != 1
-            || (configuration.active
-                && configuration.bodies.as_deref().is_none_or(|bodies| {
-                    bodies.len() != current_bodies.len()
-                        || current_bodies.iter().any(|body| !bodies.contains(body))
-                }))
-            || (configuration.active
-                && active_configuration_state_is_incomplete_for_decode(ctx, ir, configuration)?);
-        if incomplete {
-            incomplete_configuration_count += 1;
-        }
-    }
-    if incomplete_configuration_count != 0 {
+    let arrangement_count = ir.model.configurations.len();
+    if arrangement_count != 0 {
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::ConfigurationStateUnresolved,
             format_args!(
-                "Activation, complete body membership, evaluated feature state, or evaluated \
-                 parameter state remains unresolved for {incomplete_configuration_count} NX \
-                 design configuration(s)."
+                "Arrangement-specific component suppression, its controlling expression, \
+                 and positioning constraints remain unresolved for {arrangement_count} NX arrangement(s)."
             ),
-        )?;
+        );
     }
 
-    let incomplete_expression_count = incomplete_expression_parameters(ctx, ir)?.len();
+    let incomplete_expression_count = incomplete_expression_parameters(ir)?.len();
     if incomplete_expression_count != 0 {
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::ExpressionParameterIncomplete,
             format_args!(
                 "Neutral evaluation or dependency semantics remain incomplete for \
                  {incomplete_expression_count} NX expression parameter(s)."
             ),
-        )?;
+        );
     }
 
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
@@ -559,11 +529,6 @@ pub(crate) fn append_design_intent_losses(
         if let FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) =
             feature.evaluation.definition()
         {
-            ctx.admit_btree_entry(
-                &native_feature_kinds,
-                &kind.as_str(),
-                "nx report native feature kinds",
-            )?;
             match native_feature_kinds.entry(kind.as_str()) {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -577,14 +542,13 @@ pub(crate) fn append_design_intent_losses(
             counts: &native_feature_kinds,
         };
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::FeatureNativeKindRetained,
             format_args!(
             "NX feature-history operation(s) remain native-only because their complete neutral \
                  operation semantics are not decoded: {kinds}."
         ),
-        )?;
+        );
     }
 
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
@@ -626,11 +590,7 @@ pub(crate) fn append_design_intent_losses(
             },
             _ => continue,
         };
-        ctx.admit_btree_entry(
-            &unresolved_feature_families,
-            &family,
-            "nx report unresolved feature families",
-        )?;
+
         match unresolved_feature_families.entry(family) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -643,29 +603,21 @@ pub(crate) fn append_design_intent_losses(
             counts: &unresolved_feature_families,
         };
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::FeatureFamilyConstructionUnresolved,
             format_args!(
                 "NX feature family identities were transferred, but their neutral construction \
                  semantics remain unresolved: {families}."
             ),
-        )?;
+        );
     }
 
-    let mut lookup_storage = ctx.reserve_scoped(0, "NX report feature lookup")?;
     let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
     let mut incomplete_feature_construction_families = BTreeMap::<&str, usize>::new();
     let mut generated_body_outputs = BTreeSet::new();
     for state in &ir.model.feature_result_topologies {
         if !state.bodies().is_empty() {
-            lookup_storage.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut generated_body_outputs,
-                    &state.output_of,
-                    "nx report generated body outputs",
-                )
-            })?;
+            generated_body_outputs.insert(&state.output_of);
         }
     }
     for feature in &ir.model.features {
@@ -700,13 +652,6 @@ pub(crate) fn append_design_intent_losses(
                                 && generated_body_outputs.contains(&feature.id))
                     })
             {
-                lookup_storage.with_storage(|| {
-                    ctx.admit_btree_entry(
-                        &incomplete_feature_output_families,
-                        &family,
-                        "nx report incomplete output families",
-                    )
-                })?;
                 match incomplete_feature_output_families.entry(family) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         *entry.get_mut() += 1;
@@ -923,13 +868,6 @@ pub(crate) fn append_design_intent_losses(
             }
             _ => continue,
         };
-        lookup_storage.with_storage(|| {
-            ctx.admit_btree_entry(
-                &incomplete_feature_construction_families,
-                &family,
-                "nx report incomplete construction families",
-            )
-        })?;
         match incomplete_feature_construction_families.entry(family) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -942,28 +880,26 @@ pub(crate) fn append_design_intent_losses(
             counts: &incomplete_feature_output_families,
         };
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::FeatureOutputLineageIncomplete,
             format_args!(
                 "NX typed feature operation output lineage is missing, duplicated, or does not \
                  resolve to a transferred body: {families}."
             ),
-        )?;
+        );
     }
     if !incomplete_feature_construction_families.is_empty() {
         let families = JoinedCountLabels {
             counts: &incomplete_feature_construction_families,
         };
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::FeatureConstructionIncomplete,
             format_args!(
                 "NX typed feature operations have incomplete neutral construction fields: \
                  {families}."
             ),
-        )?;
+        );
     }
 
     let sketch_feature_count = ir
@@ -996,7 +932,6 @@ pub(crate) fn append_design_intent_losses(
         .count();
     if unresolved_sketch_feature_count != 0 {
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::SketchGraphUnresolved,
             format_args!(
@@ -1004,7 +939,7 @@ pub(crate) fn append_design_intent_losses(
                  {unresolved_sketch_feature_count} have no neutral sketch graph because complete \
                  sketch placement and entity semantics are unresolved."
             ),
-        )?;
+        );
     }
 
     let mut active_sketch_ids = BTreeSet::<cadmpeg_ir::sketches::SketchId>::new();
@@ -1019,13 +954,7 @@ pub(crate) fn append_design_intent_losses(
             ..
         }) = feature.evaluation.definition()
         {
-            lookup_storage.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut active_sketch_ids,
-                    sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?,
-                    "nx report active sketch identities",
-                )
-            })?;
+            active_sketch_ids.insert(sketch.clone());
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
@@ -1057,7 +986,6 @@ pub(crate) fn append_design_intent_losses(
         .count();
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
         push_report_loss(
-            ctx,
             losses,
             NxLossCode::SketchNativeSemantics,
             format_args!(
@@ -1065,62 +993,106 @@ pub(crate) fn append_design_intent_losses(
                  geometry record(s) and {native_sketch_constraint_count} sketch constraint \
                  record(s)."
             ),
-        )?;
+        );
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::append_design_intent_losses;
-    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::topology::{Body, BodyKind};
 
-    fn body_ir() -> CadIr {
+    fn unresolved_intersection_ir() -> CadIr {
+        use cadmpeg_ir::geometry::{
+            Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+            ProceduralCurveDefinition, SolvedCurveGeometry,
+        };
+        use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
+
         let mut ir = CadIr::empty();
-        ir.model.bodies.push(Body {
-            id: BodyId::mint("test:model:entity#report-body").expect("identity grammar"),
-            kind: BodyKind::Solid,
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
+        let carrier = CurveId::mint("test:model:entity#report-intersection-carrier")
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            parameter_range: None,
+            id: carrier.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
         });
+        ir.model
+            .add_procedural_curve(
+                &carrier,
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint("test:model:entity#report-intersection")
+                        .expect("identity grammar"),
+                    ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext::try_new(
+                            [None, None].map(|surface| IntcurveSupportSide {
+                                surface,
+                                pcurve: None,
+                            }),
+                            [0.0, 1.0],
+                            [Vec::new(), Vec::new(), Vec::new()],
+                        )
+                        .expect("support context"),
+                        discontinuity_flag: false,
+                        cache: None,
+                    },
+                ),
+            )
+            .expect("procedural attachment");
         ir
     }
 
     #[test]
-    fn design_intent_report_refuses_body_list_at_collection_limit() {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                assert!(matches!(
-                    append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                        if limit.dimension == ResourceDimension::CollectionItems
-                            && limit.operation == "nx report current body identities"
-                ));
-            },
-        );
-    }
+    fn locally_exhausted_geometry_phases_report_bounded_losses() {
+        use super::{CompletionBudgetStatus, PcurveCompletionStatus, SupportUvPhaseStatus};
+        use crate::decode::geometry_work::GeometryWorkBudget;
+        use crate::loss::NxLossCode;
 
-    #[test]
-    fn design_intent_report_refuses_body_copy_at_scoped_limit() {
-        let error = crate::test_support::resource_refusal_at(
-            &[],
-            ResourceDimension::MaterializedBytes,
-            "nx report current body identity",
-            |ctx| append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "nx report current body identity")
-        );
+        crate::test_support::with_decode_context(|ctx| {
+            let adaptive = GeometryWorkBudget::from_context(ctx, 0);
+            let completion = GeometryWorkBudget::from_context(ctx, 0);
+            assert!(!adaptive.charge());
+            assert!(!completion.charge());
+            let completion_budget = CompletionBudgetStatus {
+                pcurves: PcurveCompletionStatus {
+                    geometry_exhausted: completion.exhausted(),
+                    ..PcurveCompletionStatus::default()
+                },
+                serialized: SupportUvPhaseStatus::default(),
+                direct: SupportUvPhaseStatus::default(),
+                coupled: SupportUvPhaseStatus::default(),
+                support_uv_lane_geometry_exhausted: false,
+                transfer_limit: 0,
+                support_uv_limit: 0,
+                geometry_limits: super::GeometryWorkLimits::default(),
+            };
+            let adaptive_geometry_exhausted = adaptive.exhausted();
+            assert!(completion_budget.pcurves.geometry_exhausted);
+            assert!(adaptive_geometry_exhausted);
+
+            let mut losses = Vec::new();
+            super::push_bounded_completion_losses(
+                &mut losses,
+                &unresolved_intersection_ir(),
+                completion_budget,
+                adaptive_geometry_exhausted,
+            );
+            for code in [
+                NxLossCode::IntersectionPcurveCompletionBounded,
+                NxLossCode::GeometryAdaptiveWorkBounded,
+            ] {
+                assert!(
+                    losses.iter().any(|loss| loss.code == code.kind()),
+                    "{} reported",
+                    code.code()
+                );
+            }
+            assert!(losses
+                .iter()
+                .any(|loss| loss.message.contains("pcurve geometry fitting")
+                    && loss.message.contains("2 intersection pcurve lane(s)")));
+            assert!(ctx.resource_refusal().is_none());
+        });
     }
 }

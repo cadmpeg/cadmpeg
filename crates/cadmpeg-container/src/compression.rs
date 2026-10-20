@@ -40,10 +40,7 @@ fn inflate_zlib_writer<'ctx, 'a>(
     spec: ExpandSpec,
 ) -> Result<(ExpandWriter<'ctx, 'a>, usize), CodecError> {
     let input = source.window();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(input.len()),
-        "zlib compressed input",
-    )?;
+    let mut admitted_input = input.len().min(INFLATE_CHUNK);
     let mut decoder = Decompress::new(true);
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
@@ -51,12 +48,19 @@ fn inflate_zlib_writer<'ctx, 'a>(
     loop {
         let before_in = decoder.total_in();
         let before_out = decoder.total_out();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(chunk.len()),
-            "zlib expansion step",
-        )?;
+        let source_end = source_offset
+            .checked_add(INFLATE_CHUNK)
+            .ok_or_else(|| CodecError::Malformed("zlib input overflow".into()))?
+            .min(input.len());
+        if source_end > admitted_input {
+            admitted_input = source_end;
+        }
         let status = decoder
-            .decompress(&input[source_offset..], &mut chunk, FlushDecompress::None)
+            .decompress(
+                &input[source_offset..source_end],
+                &mut chunk,
+                FlushDecompress::None,
+            )
             .map_err(|error| CodecError::malformed(format_args!("invalid zlib member: {error}")))?;
         let consumed = usize::try_from(decoder.total_in() - before_in)
             .map_err(|_| CodecError::Malformed("zlib input overflow".into()))?;
@@ -65,10 +69,6 @@ fn inflate_zlib_writer<'ctx, 'a>(
             .ok_or_else(|| CodecError::Malformed("zlib input overflow".into()))?;
         let produced = usize::try_from(decoder.total_out() - before_out)
             .map_err(|_| CodecError::Malformed("zlib output overflow".into()))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(produced),
-            "zlib expansion copy",
-        )?;
         writer.write(&chunk[..produced])?;
         if status == Status::StreamEnd {
             break;
@@ -119,28 +119,16 @@ fn inflate_deflate_writer<'ctx, 'a>(
     source: View<'_>,
     spec: ExpandSpec,
 ) -> Result<ExpandWriter<'ctx, 'a>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(source.window().len()),
-        "DEFLATE compressed input",
-    )?;
     let mut decoder = DeflateDecoder::new(source.window());
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
     loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(chunk.len()),
-            "DEFLATE expansion step",
-        )?;
         let read = decoder.read(&mut chunk).map_err(|error| {
             CodecError::malformed(format_args!("invalid raw-DEFLATE member: {error}"))
         })?;
         if read == 0 {
             break;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(read),
-            "DEFLATE expansion copy",
-        )?;
         writer.write(&chunk[..read])?;
     }
     if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len()) {
@@ -149,6 +137,46 @@ fn inflate_deflate_writer<'ctx, 'a>(
         ));
     }
     Ok(writer)
+}
+
+/// Expands one ZIP member stored as Zstandard (method 93) into an owned buffer.
+///
+/// For a caller that reads members through `zip`: the workspace builds `zip`
+/// without its `zstd` feature (a libzstd binding), so `zip` cannot expand
+/// method 93 and the member is read as stored, through `by_index_raw`, and
+/// expanded here by `cadmpeg-core`'s decoder, the one [`crate::ArchiveSnapshot`]
+/// uses. The output is held to `spec` and to the member's `crc32`, the checks
+/// `zip` makes on a member it expands itself.
+///
+/// `stored` is copied into `ctx` first, so the caller's buffer need not be
+/// one of `ctx`'s views.
+pub fn expand_zstd_member_owned(
+    ctx: &DecodeContext<'_>,
+    stored: &[u8],
+    spec: ExpandSpec,
+    crc32: u32,
+) -> Result<Vec<u8>, CodecError> {
+    let mut source = ctx.begin_expand(ExpandSpec::Exact(cadmpeg_core::decode::u64_from_index(
+        stored.len(),
+    )))?;
+    source.write(stored)?;
+    let mut decoder = ctx.open_zstd(source.finalize()?)?;
+    let mut writer = ctx.begin_expand(spec)?;
+    let mut chunk = [0_u8; INFLATE_CHUNK];
+    loop {
+        let read = decoder.read_chunk(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        writer.write(&chunk[..read])?;
+    }
+    let bytes = writer.finalize_owned()?;
+    if crc32fast::hash(&bytes) != crc32 {
+        return Err(CodecError::Malformed(
+            "Zstandard ZIP member fails its CRC-32".into(),
+        ));
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -162,37 +190,9 @@ mod tests {
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
     use super::{
-        inflate_deflate, inflate_deflate_owned, inflate_zlib_exact, inflate_zlib_member,
-        inflate_zlib_member_owned,
+        expand_zstd_member_owned, inflate_deflate, inflate_deflate_owned, inflate_zlib_exact,
+        inflate_zlib_member, inflate_zlib_member_owned,
     };
-
-    #[test]
-    fn compression_expansion_admits_work_before_consuming_input() {
-        for zlib in [false, true] {
-            let compressed = if zlib {
-                let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-                encoder.write_all(b"work").expect("payload");
-                encoder.finish().expect("zlib")
-            } else {
-                let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-                encoder.write_all(b"work").expect("payload");
-                encoder.finish().expect("DEFLATE")
-            };
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 0;
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
-            let error = if zlib {
-                inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("zlib work")
-            } else {
-                inflate_deflate_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("DEFLATE work")
-            };
-            assert!(
-                matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
-            );
-        }
-    }
 
     #[test]
     fn owned_deflate_expansion_refuses_per_expand_limit() {
@@ -297,6 +297,64 @@ mod tests {
     }
 
     #[test]
+    fn zlib_member_reports_extent_before_a_large_unconsumed_suffix() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"one member").expect("write member");
+        let mut compressed = encoder.finish().expect("finish member");
+        let member_len = compressed.len();
+        compressed.resize(member_len + 1024 * 1024, 0x55);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
+        let (expanded, consumed) = inflate_zlib_member(&ctx, root, ExpandSpec::Unknown)
+            .expect("a complete member inflates despite the unrelated suffix");
+        assert_eq!(expanded.window(), b"one member");
+        assert_eq!(consumed, member_len);
+    }
+
+    #[test]
+    fn invalid_zlib_candidate_reports_malformed_with_a_large_suffix() {
+        let mut compressed = vec![0x78, 0x9c, 0x07];
+        compressed.resize(1024 * 1024, 0x55);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
+        assert!(matches!(
+            inflate_zlib_member(&ctx, root, ExpandSpec::Unknown),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn large_zlib_member_preserves_consumed_extent_and_requires_its_checksum() {
+        let payload = (0..65_537)
+            .map(|index| u8::try_from(index % 251).expect("remainder fits in one byte"))
+            .collect::<Vec<_>>();
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::none());
+        encoder.write_all(&payload).expect("write member");
+        let compressed = encoder.finish().expect("finish member");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
+                .expect("root");
+        let (expanded, consumed) =
+            inflate_zlib_member(&ctx, root, ExpandSpec::Unknown).expect("large member");
+        assert_eq!(expanded.window(), payload);
+        assert_eq!(consumed, compressed.len());
+        for missing in [1, 4] {
+            let truncated = root
+                .child(0, compressed.len() - missing)
+                .expect("truncated view");
+            assert!(matches!(
+                inflate_zlib_member(&ctx, truncated, ExpandSpec::Unknown),
+                Err(CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
     fn deflate_inflate_accepts_declared_output() {
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
         encoder
@@ -326,7 +384,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
-                .expect("test input fits service profile");
+                .expect("build the decode context");
         assert!(matches!(
             inflate_deflate(&ctx, root, ExpandSpec::Exact(10)),
             Err(CodecError::Malformed(message))
@@ -350,8 +408,7 @@ mod tests {
         assert_eq!(
             ctx.inflate_probe(root, 12, false)
                 .expect("probe")
-                .as_ref()
-                .map(|(bytes, _storage)| bytes.as_slice()),
+                .as_deref(),
             Some(b"Document.xml".as_slice())
         );
         assert!(ctx.inflate_probe(root, 11, false).expect("probe").is_none());
@@ -371,12 +428,38 @@ mod tests {
             DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default())
                 .expect("root");
         assert_eq!(
-            ctx.inflate_probe(root, 12, true)
-                .expect("probe")
-                .as_ref()
-                .map(|(bytes, _storage)| bytes.as_slice()),
+            ctx.inflate_probe(root, 12, true).expect("probe").as_deref(),
             Some(b"Document.xml".as_slice())
         );
         assert!(ctx.inflate_probe(root, 11, true).expect("probe").is_none());
+    }
+
+    /// A Zstandard member is held to its record: the reference frame expands, and a declared
+    /// size or CRC-32 that does not match the frame is refused rather than believed.
+    #[test]
+    fn a_zstandard_member_is_held_to_its_declared_size_and_crc() {
+        let frame = cadmpeg_test_support::zip_fixture::ZSTD_GOLDEN_FRAME;
+        let plain = cadmpeg_test_support::zip_fixture::zstd_golden_plaintext();
+        let size = u64::try_from(plain.len()).expect("plaintext length fits u64");
+        let crc = crc32fast::hash(&plain);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("empty root");
+
+        assert_eq!(
+            expand_zstd_member_owned(&ctx, frame, ExpandSpec::Exact(size), crc)
+                .expect("the reference frame expands"),
+            plain
+        );
+        assert!(matches!(
+            expand_zstd_member_owned(&ctx, frame, ExpandSpec::Exact(size), crc ^ 1),
+            Err(CodecError::Malformed(message)) if message.contains("CRC-32")
+        ));
+        for wrong in [size - 1, size + 1] {
+            assert!(
+                expand_zstd_member_owned(&ctx, frame, ExpandSpec::Exact(wrong), crc).is_err(),
+                "a declared size of {wrong} for {size} bytes was accepted"
+            );
+        }
     }
 }

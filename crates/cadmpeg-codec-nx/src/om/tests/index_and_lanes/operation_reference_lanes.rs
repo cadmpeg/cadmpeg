@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::pattern::{PatternRows, PatternScalarEncoding};
 use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
@@ -9,10 +11,13 @@ use crate::om::PatternPayloadTransformLane;
 fn pattern_lane_for_test(
     record: crate::om::operation_record::OperationPayload<'_>,
 ) -> Option<PatternPayloadTransformLane> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::pattern_payload_transform_lane(ctx, record)
-    })
-    .unwrap()
+    crate::om::pattern_payload_transform_lane(record)
+}
+
+fn projected_references_for_test(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Option<ProjectedCurveReferences> {
+    crate::test_support::with_decode_context(|_ctx| ProjectedCurveReferences::read(record))
 }
 
 struct ObservedPatternScalar {
@@ -73,105 +78,39 @@ impl PatternPayloadTransformLane {
 fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
 
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |_| {},
-        |ctx| {
-            let strings = surface_payload_strings(ctx, bytes).unwrap();
-            assert_eq!(strings.len(), 2);
-            assert_eq!(strings[0].offset, 0);
-            assert_eq!(strings[0].value.as_str(), "Steel");
-            assert_eq!(strings[1].offset, 11);
-            assert_eq!(strings[1].value.as_str(), "×");
+    let strings = surface_payload_strings(bytes);
+    assert_eq!(strings.len(), 2);
+    assert_eq!(strings[0].offset, 0);
+    assert_eq!(strings[0].value.as_str(), "Steel");
+    assert_eq!(strings[1].offset, 11);
+    assert_eq!(strings[1].value.as_str(), "×");
 
-            let truncated = b"\x66\x1b\x03\x05Steel";
-            assert!(surface_payload_strings(ctx, truncated).unwrap().is_empty());
-            let invalid_utf8 = b"\x66\x1b\x03\x01\xff\0";
-            assert!(surface_payload_strings(ctx, invalid_utf8)
-                .unwrap()
-                .is_empty());
-            let control = b"\x66\x1b\x03\x01\n\0";
-            assert!(surface_payload_strings(ctx, control).unwrap().is_empty());
-        },
-    );
-}
-
-#[test]
-fn om_surface_payload_strings_refuse_collection_limit() {
-    let bytes = b"\x66\x1b\x03\x05Steel\0";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = surface_payload_strings(ctx, bytes).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-            );
-        },
-    );
-}
-
-#[test]
-fn om_surface_payload_strings_refuse_retained_limit() {
-    let bytes = b"\x66\x1b\x03\x05Steel\0";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = surface_payload_strings(ctx, bytes).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
-    );
-}
-
-#[test]
-fn om_surface_payload_strings_refuse_work_limit() {
-    let bytes = b"\x66\x1b\x03\x05Steel\0";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = surface_payload_strings(ctx, bytes).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-            );
-        },
-    );
+    let truncated = b"\x66\x1b\x03\x05Steel";
+    assert!(surface_payload_strings(truncated).is_empty());
+    let invalid_utf8 = b"\x66\x1b\x03\x01\xff\0";
+    assert!(surface_payload_strings(invalid_utf8).is_empty());
+    let control = b"\x66\x1b\x03\x01\n\0";
+    assert!(surface_payload_strings(control).is_empty());
 }
 
 #[test]
 fn om_projected_curve_references_require_one_complete_field() {
     let label = "CPROJ";
-    let payload =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0";
-    let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = ProjectedCurveReferences::read(record).expect("complete field");
+    let payload = crate::test_support::test_om::projected_curve_payload();
+    let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
+    let field = projected_references_for_test(record).expect("complete field");
     assert_eq!(
         field
             .into_references()
             .iter()
             .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
-        [(712, 203), (713, 206), (714, 214)]
+        [(712, 251), (713, 254), (714, 262)]
     );
 
-    let mut malformed = payload.to_vec();
-    malformed[17] = 0x00;
-    assert!(ProjectedCurveReferences::read(
+    let mut malformed = payload.clone();
+    malformed[59] = 0xff;
+    assert!(projected_references_for_test(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),
@@ -182,7 +121,7 @@ fn om_projected_curve_references_require_one_complete_field() {
     .is_none());
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(ProjectedCurveReferences::read(
+    assert!(projected_references_for_test(
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),
@@ -198,7 +137,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
     let label = "CPROJ_CMB";
     let payload = b"\x3c\x32\x01\x02\x32\x01\x04\x36\x01\x33\xf1\x03\x18\x33\xf1\x03\x19\x00\xf1\x03\x1a\x00\x00\x00\x00\x00\x00\xf1\x03\x1b\x16\x01\x02\xf1\x03\x18\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1c\x00\x81\x5c\x16\x01\x02\xf1\x03\x19\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1d\x00\x81\x5c\xff\x01\xff\x01\xf1\x03\x1e\xf1\x03\x1f\x04\x02";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = ProjectedCurveReferences::read(record).expect("complete graph");
+    let field = projected_references_for_test(record).expect("complete graph");
     assert_eq!(
         field
             .into_references()
@@ -210,7 +149,9 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
             (793, 214),
             (794, 218),
             (795, 227),
+            (792, 233),
             (796, 246),
+            (793, 255),
             (797, 268),
             (798, 278),
             (799, 281),
@@ -219,7 +160,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
 
     let mut inconsistent = payload.to_vec();
     inconsistent[35] = 0x19;
-    assert!(ProjectedCurveReferences::read(
+    assert!(projected_references_for_test(
         crate::om::operation_record::OperationPayload::new(
             &inconsistent,
             record.payload_offset(),
@@ -231,7 +172,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
 
     let mut malformed = payload.to_vec();
     malformed[84] = 0x00;
-    assert!(ProjectedCurveReferences::read(
+    assert!(projected_references_for_test(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),
@@ -242,7 +183,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
     .is_none());
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(ProjectedCurveReferences::read(
+    assert!(projected_references_for_test(
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),
@@ -574,47 +515,4 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         .unwrap()
     )
     .is_none());
-}
-
-fn pattern_transform_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let bytes = b"\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            let record =
-                crate::om::operation_record::OperationPayload::new(bytes, 0, "Pattern Feature")
-                    .unwrap();
-            crate::om::pattern_payload_transform_lane(ctx, record).unwrap_err()
-        },
-    )
-}
-
-#[test]
-fn pattern_transform_refuses_collection_limit() {
-    let error = pattern_transform_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn pattern_transform_refuses_retained_limit() {
-    let error = pattern_transform_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn pattern_transform_refuses_work_limit() {
-    let error = pattern_transform_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit entries of a byte-counted branch lane with one implicit slot.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -45,31 +43,18 @@ impl<T> BranchItems<T> {
             self.1,
         )
     }
+}
 
-    pub(crate) fn map_indexed_charged<U>(
-        self,
-        ctx: &DecodeContext<'_>,
-        mut f: impl FnMut(usize, T) -> U,
-    ) -> Result<BranchItems<U>, CodecError> {
-        let count = self.0.len();
-        let mut mapped = ctx.collection_vec(count, "NX branch item mapping")?;
-        for (index, item) in self.0.into_iter().enumerate() {
-            mapped.push(f(index, item));
-        }
-        Ok(BranchItems(mapped, self.1))
+impl<T> AsRef<[T]> for BranchItems<T> {
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
     }
+}
 
-    pub(crate) fn try_map_indexed_charged<U>(
-        self,
-        ctx: &DecodeContext<'_>,
-        mut f: impl FnMut(usize, T) -> Result<U, CodecError>,
-    ) -> Result<BranchItems<U>, CodecError> {
-        let count = self.0.len();
-        let mut mapped = ctx.collection_vec(count, "NX branch item mapping")?;
-        for (index, item) in self.0.into_iter().enumerate() {
-            mapped.push(f(index, item)?);
-        }
-        Ok(BranchItems(mapped, self.1))
+impl<T> TryFrom<Vec<T>> for BranchItems<T> {
+    type Error = &'static str;
+    fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
+        Self::new(items)
     }
 }
 

@@ -48,10 +48,13 @@ fn parameter_owner_frame_forms_are_closed() {
         (103, 40, None),
         (100, 41, None),
         (107, 44, None),
+        (100, 41, Some(0)),
         (101, 41, Some(0)),
         (101, 41, Some(1)),
+        (103, 40, Some(1)),
         (104, 40, Some(0)),
         (104, 40, Some(1)),
+        (107, 44, Some(0)),
         (108, 44, Some(0)),
         (108, 44, Some(1)),
     ] {
@@ -67,6 +70,7 @@ fn parameter_owner_frame_forms_are_closed() {
     }
     for (field, value) in [
         ("frame_length", serde_json::json!(0)),
+        ("frame_length", serde_json::json!(99)),
         ("evaluated_value_offset", serde_json::json!(139)),
         ("variant", serde_json::json!(2)),
         ("variant", serde_json::Value::Null),

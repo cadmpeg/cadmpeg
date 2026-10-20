@@ -3,8 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
@@ -14,6 +12,25 @@ use cadmpeg_ir::ids::BodyId;
 pub(super) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_body_closure_witness";
 /// Source property carrying an admitted native primary-body object index.
 pub(super) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
+
+/// Feature dependencies in first-push order, each once.
+#[derive(Default)]
+pub(super) struct FeatureDependencies {
+    ordered: Vec<FeatureId>,
+    seen: BTreeSet<FeatureId>,
+}
+
+impl FeatureDependencies {
+    pub(super) fn push(&mut self, candidate: &FeatureId) {
+        if self.seen.insert(candidate.clone()) {
+            self.ordered.push(candidate.clone());
+        }
+    }
+
+    pub(super) fn into_vec(self) -> Vec<FeatureId> {
+        self.ordered
+    }
+}
 
 /// Ordered feature writers indexed by both native history identity and the
 /// neutral body identity established by projection.
@@ -54,23 +71,12 @@ impl BodyWriterHistory {
 
     pub(super) fn extend_primary_dependencies(
         &self,
-        ctx: &DecodeContext<'_>,
         provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
-        dependencies: &mut Vec<FeatureId>,
-    ) -> Result<(), CodecError> {
-        let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
-            if !dependencies.contains(writer) {
-                ctx.push_vec(
-                    dependencies,
-                    writer.try_clone_for_decode(ctx, "NX primary writer dependencies")?,
-                    "NX primary writer dependencies",
-                )?;
-            }
-            Ok(())
-        };
+        dependencies: &mut FeatureDependencies,
+    ) {
         let mut has_output_writer = false;
         for output in outputs {
             if let Some(writer) = self.outputs.get(output) {
@@ -78,72 +84,37 @@ impl BodyWriterHistory {
                     continue;
                 }
                 has_output_writer = true;
-                append(writer)?;
+                dependencies.push(writer);
             }
         }
         if !has_output_writer {
             if let Some(writer) = native_body.and_then(|body| self.native.get(&body)) {
-                append(writer)?;
+                dependencies.push(writer);
             } else if let Some(writer) =
                 offset_store_body.and_then(|body| self.offset_store.get(body))
             {
-                append(writer)?;
+                dependencies.push(writer);
             }
         }
-        Ok(())
     }
 
     pub(super) fn record_writer(
         &mut self,
-        ctx: &DecodeContext<'_>,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
         feature: &FeatureId,
-    ) -> Result<(), CodecError> {
+    ) {
         if let Some(body) = native_body {
-            if !self.native.contains_key(&body) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<(u32, FeatureId)>()),
-                    "NX native body writer history",
-                )?;
-            }
-            ctx.insert_btree_map(
-                &mut self.native,
-                body,
-                feature.try_clone_for_decode(ctx, "NX native body writer history")?,
-                "NX native body writer history",
-            )?;
+            self.native.insert(body, feature.clone());
         }
         if let Some(data_block) = offset_store_body {
-            if !self.offset_store.contains_key(data_block) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<(String, FeatureId)>()),
-                    "NX offset-store writer history",
-                )?;
-            }
-            ctx.insert_btree_map(
-                &mut self.offset_store,
-                ctx.copy_retained_text(data_block, "NX offset-store writer history")?,
-                feature.try_clone_for_decode(ctx, "NX offset-store writer history")?,
-                "NX offset-store writer history",
-            )?;
+            self.offset_store
+                .insert(data_block.to_owned(), feature.clone());
         }
         for output in outputs {
-            if !self.outputs.contains_key(output) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<(BodyId, FeatureId)>()),
-                    "NX neutral body writer history",
-                )?;
-            }
-            ctx.insert_btree_map(
-                &mut self.outputs,
-                output.try_clone_for_decode(ctx, "NX neutral body writer history")?,
-                feature.try_clone_for_decode(ctx, "NX neutral body writer history")?,
-                "NX neutral body writer history",
-            )?;
+            self.outputs.insert(output.clone(), feature.clone());
         }
-        Ok(())
     }
 
     /// Retract provisional output ownership when a later construction record
@@ -313,225 +284,11 @@ pub(crate) fn active_feature_closure(
         .collect())
 }
 
-/// Resolve the active feature closure while accounting for decode scratch and
-/// the returned identities. The CADIR evaluator uses the context-free form.
-pub(crate) fn active_feature_closure_for_decode(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    bodies: &[BodyId],
-) -> Result<Result<BTreeMap<FeatureId, usize>, ActiveFeatureClosureRejection>, CodecError> {
-    let feature_count = ir.model.features.len();
-    let scratch_nodes = feature_count
-        .checked_mul(
-            std::mem::size_of::<(&FeatureId, (usize, &cadmpeg_ir::features::Feature))>() * 8,
-        )
-        .and_then(|bytes| {
-            feature_count
-                .checked_mul(std::mem::size_of::<(usize, &cadmpeg_ir::features::Feature)>())
-                .and_then(|more| bytes.checked_add(more))
-        })
-        .and_then(|bytes| {
-            bodies
-                .len()
-                .checked_mul(std::mem::size_of::<&BodyId>() * 4)
-                .and_then(|more| bytes.checked_add(more))
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX active feature closure scratch",
-                0,
-                u64_from_index(feature_count),
-            )
-        })?;
-    let _scratch = ctx.reserve_scoped(
-        u64_from_index(scratch_nodes),
-        "NX active feature closure scratch",
-    )?;
-    let mut features = BTreeMap::new();
-    for (index, feature) in ir.model.features.iter().enumerate() {
-        ctx.charge_work(
-            u64_from_index(features.len()),
-            "NX active feature identity lookup",
-        )?;
-        if features.contains_key(&feature.id) {
-            return Ok(Err(
-                ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
-                    feature: feature
-                        .id
-                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
-                },
-            ));
-        }
-        ctx.insert_btree_map(
-            &mut features,
-            &feature.id,
-            (index, feature),
-            "NX active feature identity index",
-        )?;
-    }
-    let mut active_bodies = BTreeSet::new();
-    for body in bodies {
-        ctx.charge_work(u64_from_index(active_bodies.len()), "NX active body lookup")?;
-        ctx.insert_btree_set(&mut active_bodies, body, "NX active bodies")?;
-    }
-    let mut active_features = BTreeMap::new();
-    for (id, &resolved) in &features {
-        ctx.charge_work(
-            u64_from_index(resolved.1.evaluation.outputs().len()),
-            "NX active body writer lookup",
-        )?;
-        if resolved
-            .1
-            .evaluation
-            .outputs()
-            .iter()
-            .any(|body| active_bodies.contains(body))
-        {
-            ctx.insert_btree_map(
-                &mut active_features,
-                *id,
-                resolved,
-                "NX active feature writers",
-            )?;
-        }
-    }
-    let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
-        !matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        )
-    });
-    let has_native_body_witness = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature.evaluation.outputs().len() == active_bodies.len()
-            && feature
-                .evaluation
-                .outputs()
-                .iter()
-                .all(|body| active_bodies.contains(body))
-            && feature
-                .source_properties
-                .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
-    });
-    let has_retained_history_input = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature
-            .source_properties
-            .keys()
-            .any(|key| key.as_str().starts_with("segment_body_binding."))
-    });
-    if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
-        return Ok(Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter));
-    }
-    if !has_neutral_body_writer && has_native_body_witness {
-        for (id, &resolved) in &features {
-            let feature = resolved.1;
-            if feature.native_ref.is_some()
-                && feature.source_tag.is_some()
-                && feature
-                    .source_properties
-                    .get(NATIVE_PRIMARY_BODY_OBJECT_INDEX)
-                    .is_some_and(|reference| !reference.is_empty())
-                && !active_features.contains_key(id)
-            {
-                ctx.insert_btree_map(
-                    &mut active_features,
-                    *id,
-                    resolved,
-                    "NX native active feature witnesses",
-                )?;
-            }
-        }
-    }
-    if active_features.is_empty() {
-        return Ok(Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter));
-    }
-    let mut pending = Vec::new();
-    for &resolved in active_features.values() {
-        ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
-        pending.push(resolved);
-    }
-    while let Some((_, feature)) = pending.pop() {
-        for dependency in &feature.dependencies {
-            ctx.charge_work(
-                u64_from_index(features.len()),
-                "NX active feature dependency lookup",
-            )?;
-            let Some((&dependency_id, &(index, dependency_feature))) =
-                features.get_key_value(dependency)
-            else {
-                return Ok(Err(ActiveFeatureClosureRejection::MissingDependency {
-                    feature: feature
-                        .id
-                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
-                    dependency: dependency
-                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
-                }));
-            };
-            if dependency_feature.ordinal >= feature.ordinal {
-                return Ok(Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
-                    feature: feature
-                        .id
-                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
-                    feature_ordinal: feature.ordinal,
-                    dependency: dependency
-                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
-                    dependency_ordinal: dependency_feature.ordinal,
-                }));
-            }
-            if !active_features.contains_key(dependency_id) {
-                ctx.insert_btree_map(
-                    &mut active_features,
-                    dependency_id,
-                    (index, dependency_feature),
-                    "NX active feature dependencies",
-                )?;
-                ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
-                pending.push((index, dependency_feature));
-            }
-        }
-    }
-    if let Some((_, feature)) = active_features
-        .values()
-        .find(|(_, feature)| feature.suppressed == Some(true))
-    {
-        return Ok(Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-            feature: feature
-                .id
-                .try_clone_for_decode(ctx, "NX active feature closure identity")?,
-        }));
-    }
-    let mut result = BTreeMap::new();
-    for (id, (index, _)) in active_features {
-        let bytes = std::mem::size_of::<(FeatureId, usize)>()
-            .checked_mul(4)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX active feature closure result",
-                    0,
-                    u64_from_index(id.as_str().len()),
-                )
-            })?;
-        ctx.charge_retained(u64_from_index(bytes), "NX active feature closure result")?;
-        ctx.insert_btree_map(
-            &mut result,
-            id.try_clone_for_decode(ctx, "NX active feature closure result")?,
-            index,
-            "NX active feature closure result",
-        )?;
-    }
-    Ok(Ok(result))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        active_feature_closure, active_feature_closure_for_decode, ActiveFeatureClosureRejection,
-        BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+        active_feature_closure, ActiveFeatureClosureRejection, BodyWriterHistory,
+        FeatureDependencies, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::FeatureDefinition;
@@ -540,74 +297,7 @@ mod tests {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
-
-    #[test]
-    fn body_writer_history_refuses_collection_limit() {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
-                let mut history = BodyWriterHistory::default();
-                let error = history
-                    .record_writer(ctx, Some(7), None, &[], &feature)
-                    .unwrap_err();
-                assert!(
-                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn body_writer_history_refuses_retained_limit() {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
-                let mut history = BodyWriterHistory::default();
-                let error = history
-                    .record_writer(ctx, Some(7), None, &[], &feature)
-                    .unwrap_err();
-                assert!(
-                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn primary_writer_dependency_refuses_collection_limit() {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_collection_items = 1;
-            },
-            |ctx| {
-                let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
-                let mut history = BodyWriterHistory::default();
-                history
-                    .record_writer(ctx, Some(7), None, &[], &feature)
-                    .unwrap();
-                let mut dependencies = Vec::new();
-                let error = history
-                    .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
-                    .unwrap_err();
-                assert!(
-                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
-                );
-            },
-        );
-    }
 
     fn history_feature(
         id: &str,
@@ -622,11 +312,7 @@ mod tests {
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependencies,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
             source_properties: cadmpeg_core::text::named_entries(id, source_properties)
                 .expect("the fixture states named properties"),
             source_tag: native.then(|| "NX_OPERATION".to_string()),
@@ -638,11 +324,7 @@ mod tests {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    outputs,
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
             ),
             native_ref: native.then(|| format!("native:{id}")),
         }
@@ -653,64 +335,6 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.features = features;
         (ir, body)
-    }
-
-    fn closure_refusal_for_limit(dimension: ResourceDimension) -> CodecError {
-        let (ir, body) = closure_ir(vec![history_feature(
-            "synthetic:test:id#writer",
-            0,
-            Vec::new(),
-            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
-            BTreeMap::new(),
-            false,
-        )]);
-
-        let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-            ResourceDimension::CollectionItems => |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            ResourceDimension::RetainedBytes => |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            ResourceDimension::MaterializedBytes => |policy| {
-                policy.limits.max_materialized_bytes = 0;
-            },
-            ResourceDimension::WorkUnits => |policy| {
-                policy.limits.max_work_units = 0;
-            },
-            _ => unreachable!("test only covers four closure dimensions"),
-        };
-        crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-            active_feature_closure_for_decode(ctx, &ir, &[body]).expect_err("closure must refuse")
-        })
-    }
-
-    #[test]
-    fn active_feature_closure_refuses_collection_limit() {
-        assert!(
-            matches!(closure_refusal_for_limit(ResourceDimension::CollectionItems), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
-        );
-    }
-
-    #[test]
-    fn active_feature_closure_refuses_retained_limit() {
-        assert!(
-            matches!(closure_refusal_for_limit(ResourceDimension::RetainedBytes), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
-        );
-    }
-
-    #[test]
-    fn active_feature_closure_refuses_scoped_limit() {
-        assert!(
-            matches!(closure_refusal_for_limit(ResourceDimension::MaterializedBytes), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
-        );
-    }
-
-    #[test]
-    fn active_feature_closure_refuses_work_limit() {
-        assert!(
-            matches!(closure_refusal_for_limit(ResourceDimension::WorkUnits), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
-        );
     }
 
     #[test]
@@ -759,11 +383,12 @@ mod tests {
         );
 
         let mut missing = writer();
-        missing.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![FeatureId::mint("synthetic:test:id#missing").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+        missing.dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+                "synthetic:test:id#missing",
+            )
+            .expect("identity grammar")])
+            .unwrap();
         let (ir, body) = closure_ir(vec![missing]);
         assert_eq!(
             active_feature_closure(&ir, &[body]),
@@ -775,11 +400,12 @@ mod tests {
 
         let mut out_of_order = writer();
         out_of_order.ordinal = 1;
-        out_of_order.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+        out_of_order.dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+                "synthetic:test:id#dependency",
+            )
+            .expect("identity grammar")])
+            .unwrap();
         let dependency = history_feature(
             "synthetic:test:id#dependency",
             2,
@@ -815,45 +441,34 @@ mod tests {
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
-        crate::test_support::with_decode_context(|ctx| {
+        ({
             let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
             let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
             let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
             let mut history = BodyWriterHistory::default();
-            history
-                .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &first)
-                .expect("admitted writer history");
+            history.record_writer(Some(7), None, std::slice::from_ref(&body), &first);
 
-            let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    ctx,
-                    None,
-                    Some(8),
-                    None,
-                    std::slice::from_ref(&body),
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(
+                None,
+                Some(8),
+                None,
+                std::slice::from_ref(&body),
+                &mut dependencies,
+            );
 
-            assert_eq!(dependencies, [first]);
+            assert_eq!(dependencies.into_vec(), [first]);
             assert!(history.native_writer(8).is_none());
-            history
-                .record_writer(ctx, Some(8), None, std::slice::from_ref(&body), &second)
-                .expect("admitted writer history");
+            history.record_writer(Some(8), None, std::slice::from_ref(&body), &second);
             assert_eq!(history.native_writer(8), Some(&second));
-            dependencies.clear();
-            history
-                .extend_primary_dependencies(ctx, None, Some(7), None, &[body], &mut dependencies)
-                .expect("admitted writer history");
-            assert_eq!(dependencies, [second]);
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(None, Some(7), None, &[body], &mut dependencies);
+            assert_eq!(dependencies.into_vec(), [second]);
 
-            dependencies.clear();
-            history
-                .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
-                .expect("admitted writer history");
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
             assert_eq!(
-                dependencies,
+                dependencies.into_vec(),
                 [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
             );
         });
@@ -861,31 +476,20 @@ mod tests {
 
     #[test]
     fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
-        crate::test_support::with_decode_context(|ctx| {
+        ({
             let provisional =
                 FeatureId::mint("synthetic:test:id#provisional").expect("identity grammar");
             let retained = FeatureId::mint("synthetic:test:id#retained").expect("identity grammar");
             let created = BodyId::mint("test:model:entity#created").expect("identity grammar");
             let existing = BodyId::mint("test:model:entity#existing").expect("identity grammar");
             let mut history = BodyWriterHistory::default();
-            history
-                .record_writer(
-                    ctx,
-                    None,
-                    None,
-                    &[created.clone(), existing.clone()],
-                    &provisional,
-                )
-                .expect("admitted writer history");
-            history
-                .record_writer(
-                    ctx,
-                    Some(7),
-                    None,
-                    std::slice::from_ref(&existing),
-                    &retained,
-                )
-                .expect("admitted writer history");
+            history.record_writer(
+                None,
+                None,
+                &[created.clone(), existing.clone()],
+                &provisional,
+            );
+            history.record_writer(Some(7), None, std::slice::from_ref(&existing), &retained);
 
             assert!(!history.has_preceding_writer(
                 Some(&provisional),
@@ -900,32 +504,26 @@ mod tests {
                 std::slice::from_ref(&existing)
             ));
 
-            let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    ctx,
-                    Some(&provisional),
-                    Some(7),
-                    None,
-                    std::slice::from_ref(&existing),
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
-            assert_eq!(dependencies, [retained]);
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(
+                Some(&provisional),
+                Some(7),
+                None,
+                std::slice::from_ref(&existing),
+                &mut dependencies,
+            );
+            assert_eq!(dependencies.into_vec(), [retained]);
 
-            let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    ctx,
-                    Some(&provisional),
-                    Some(7),
-                    None,
-                    std::slice::from_ref(&created),
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(
+                Some(&provisional),
+                Some(7),
+                None,
+                std::slice::from_ref(&created),
+                &mut dependencies,
+            );
             assert_eq!(
-                dependencies,
+                dependencies.into_vec(),
                 [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
             );
 
@@ -938,58 +536,45 @@ mod tests {
 
     #[test]
     fn exact_offset_store_identity_orders_writers_without_cross_store_aliases() {
-        crate::test_support::with_decode_context(|ctx| {
+        ({
             let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
             let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
             let mut history = BodyWriterHistory::default();
-            history
-                .record_writer(ctx, None, Some("store-a:block#7"), &[], &first)
-                .expect("admitted writer history");
+            history.record_writer(None, Some("store-a:block#7"), &[], &first);
 
-            let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    ctx,
-                    None,
-                    None,
-                    Some("store-a:block#7"),
-                    &[],
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
-            assert_eq!(dependencies, [first]);
-            dependencies.clear();
-            history
-                .extend_primary_dependencies(
-                    ctx,
-                    None,
-                    None,
-                    Some("store-b:block#7"),
-                    &[],
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
-            assert!(dependencies.is_empty());
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(
+                None,
+                None,
+                Some("store-a:block#7"),
+                &[],
+                &mut dependencies,
+            );
+            assert_eq!(dependencies.into_vec(), [first]);
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(
+                None,
+                None,
+                Some("store-b:block#7"),
+                &[],
+                &mut dependencies,
+            );
+            assert!(dependencies.into_vec().is_empty());
 
-            history
-                .record_writer(ctx, None, Some("store-a:block#7"), &[], &second)
-                .expect("admitted writer history");
+            history.record_writer(None, Some("store-a:block#7"), &[], &second);
             assert_eq!(
                 history.offset_store_writer("store-a:block#7"),
                 Some(&second)
             );
-            dependencies.clear();
-            history
-                .extend_primary_dependencies(
-                    ctx,
-                    None,
-                    None,
-                    Some("store-a:block#7"),
-                    &[],
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
-            assert_eq!(dependencies, [second]);
+            let mut dependencies = FeatureDependencies::default();
+            history.extend_primary_dependencies(
+                None,
+                None,
+                Some("store-a:block#7"),
+                &[],
+                &mut dependencies,
+            );
+            assert_eq!(dependencies.into_vec(), [second]);
         });
     }
 
@@ -1014,19 +599,14 @@ mod tests {
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved {
-                            bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                                vec![body.clone()],
-                                &cadmpeg_test_support::service_decode_context(),
-                            )
+                            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                                body.clone()
+                            ])
                             .expect("distinct bodies"),
                             native: "test".into(),
                         },
                     }),
-                    cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![body.clone()],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .unwrap(),
+                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
                 ),
                 native_ref: None,
             },
@@ -1109,19 +689,12 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                            vec![body.clone()],
-                            &cadmpeg_test_support::service_decode_context(),
-                        )
-                        .expect("distinct bodies"),
+                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
+                            .expect("distinct bodies"),
                         native: "test".into(),
                     },
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![body.clone()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
             ),
             native_ref: None,
         }]);
@@ -1130,5 +703,23 @@ mod tests {
             active_feature_closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter)
         );
+    }
+
+    #[test]
+    fn feature_dependencies_keep_first_push_order_over_many_repeats() {
+        let ids = (0..4096)
+            .map(|index| {
+                FeatureId::mint(format!("synthetic:test:id#feature-{index}"))
+                    .expect("identity grammar")
+            })
+            .collect::<Vec<_>>();
+        let mut dependencies = FeatureDependencies::default();
+        for round in 0..4 {
+            for id in ids.iter().rev().skip(round) {
+                dependencies.push(id);
+            }
+        }
+        let expected = ids.iter().rev().cloned().collect::<Vec<_>>();
+        assert_eq!(dependencies.into_vec(), expected);
     }
 }

@@ -657,7 +657,7 @@ pub(super) fn validate_source_less_history_graph(
     let states = native
         .asm_histories
         .iter()
-        .flat_map(|history| &history.states)
+        .flat_map(crate::history_records::AsmHistory::states)
         .collect::<Vec<_>>();
     let boards = states
         .iter()
@@ -690,11 +690,21 @@ pub(super) fn validate_source_less_history_graph(
             }
         }
     }
+    if let Some(history) = native
+        .asm_histories
+        .iter()
+        .find(|history| history.binding_budget_exceeded)
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize ASM history {} whose bulletin boards and records were not retained",
+            history.id
+        )));
+    }
     for history in &native.asm_histories {
         match history.preamble {
             Some(preamble)
                 if history
-                    .states
+                    .states()
                     .first()
                     .is_some_and(|state| state.state_id == preamble.stream_size)
                     && preamble.history_entry_count >= 0 => {}
@@ -1068,6 +1078,31 @@ pub(super) fn validate_source_less_design_links(
 pub(super) fn validate_source_less_body_kinds(
     model: &cadmpeg_ir::document::Model,
 ) -> Result<(), CodecError> {
+    let edges = model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let curves = model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<HashMap<_, _>>();
+    // A curveless edge is written with a null curve reference, so a decoder
+    // reads it back as collapsed when both endpoints name one vertex.
+    let collapsed = |edge: &cadmpeg_ir::ids::EdgeId| {
+        edges.get(edge).is_some_and(|edge| {
+            edge.start == edge.end
+                && edge.curve().is_none_or(|curve| {
+                    curves.get(curve).is_some_and(|curve| {
+                        matches!(
+                            curve.geometry,
+                            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+                        )
+                    })
+                })
+        })
+    };
     for body in &model.bodies {
         let shell_ids = model
             .regions
@@ -1098,22 +1133,19 @@ pub(super) fn validate_source_less_body_kinds(
             .filter(|loop_| loop_ids.contains(&loop_.id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .collect::<BTreeSet<_>>();
-        let mut uses = BTreeMap::<&cadmpeg_ir::ids::EdgeId, usize>::new();
-        for coedge in model
-            .coedges
-            .iter()
-            .filter(|coedge| coedge_ids.contains(&coedge.id))
-        {
-            *uses.entry(&coedge.edge).or_default() += 1;
-        }
         let derived = if face_ids.is_empty() {
             cadmpeg_ir::topology::BodyKind::Wire
         } else if has_wires {
             cadmpeg_ir::topology::BodyKind::General
-        } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
-            cadmpeg_ir::topology::BodyKind::Solid
         } else {
-            cadmpeg_ir::topology::BodyKind::Sheet
+            cadmpeg_asm::brep::geometry::faced_body_kind(
+                model
+                    .coedges
+                    .iter()
+                    .filter(|coedge| coedge_ids.contains(&coedge.id))
+                    .map(|coedge| (&coedge.edge, coedge.sense)),
+                collapsed,
+            )
         };
         if body.kind != derived {
             return Err(CodecError::InvalidInput(format!(
@@ -1184,13 +1216,6 @@ impl WireOwnershipValidated {
 pub(super) fn validate_source_less_wire_ownership(
     target: &CadIr,
 ) -> Result<WireOwnershipValidated, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-
     let model = &target.model;
     let inconsistent =
         || CodecError::Malformed("source-less F3D wire ownership is inconsistent".into());
@@ -1199,8 +1224,7 @@ pub(super) fn validate_source_less_wire_ownership(
     let shell_ordinal =
         |id: &cadmpeg_ir::ids::ShellId| model.shells.iter().position(|shell| shell.id == *id);
 
-    let mut regions =
-        ctx.collection_vec(model.regions.len(), "collect F3D wire region ownership")?;
+    let mut regions = Vec::new();
     for region in &model.regions {
         let (body, owner, position) = model
             .bodies
@@ -1241,7 +1265,7 @@ pub(super) fn validate_source_less_wire_ownership(
         });
     }
 
-    let mut bodies = ctx.collection_vec(model.bodies.len(), "collect F3D wire body ownership")?;
+    let mut bodies = Vec::new();
     for body in &model.bodies {
         let first_region = body
             .regions
@@ -1262,7 +1286,7 @@ pub(super) fn validate_source_less_wire_ownership(
         });
     }
 
-    let mut shells = ctx.collection_vec(model.shells.len(), "collect F3D wire shell ownership")?;
+    let mut shells = Vec::new();
     for shell in &model.shells {
         let (region, owner, position) = model
             .regions
@@ -1320,7 +1344,7 @@ mod tests {
             }],
             ..F3dNative::default()
         };
-        let attributes = AttributeIndex::new(&target, &native).unwrap();
+        let attributes = AttributeIndex::new(&target, &native);
         let error = validate_source_less_design_links(&target, &native, &attributes)
             .expect_err("unset native evaluation must not coexist with a neutral tolerance");
         assert!(matches!(error, CodecError::InvalidInput(_)));

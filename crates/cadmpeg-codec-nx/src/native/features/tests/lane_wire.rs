@@ -2,7 +2,6 @@
 
 use crate::native::features::extrude_32::FeatureExtrudePayload32Branch;
 use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
-use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use crate::native::features::FeatureBlockDimensions;
 use crate::native::features::FeatureBooleanOperation;
 use crate::native::features::FeatureDatumCsysDescriptor;
@@ -38,70 +37,6 @@ fn sketch_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
             "value_source_offsets",
         ],
     );
-}
-
-#[test]
-fn terminal_discriminator_preserves_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeatureOperationTerminalDiscriminator>(
-        r#"{"id":"lane","operation_label":"operation","type_indices":[7,8],"raw_type_indices":["07","08"],"type_index_source_offsets":[103,104],"flags":"01020304","trailing_indices":[9,10],"raw_trailing_indices":["09","0a"],"trailing_index_source_offsets":[118,119],"source_offset":100}"#,
-        &[
-            "type_indices",
-            "raw_type_indices",
-            "type_index_source_offsets",
-            "trailing_indices",
-            "raw_trailing_indices",
-            "trailing_index_source_offsets",
-        ],
-    );
-}
-
-#[test]
-fn terminal_discriminator_rejects_inconsistent_compact_tokens() {
-    let json = r#"{"id":"lane","operation_label":"operation","type_indices":[4096,8],"raw_type_indices":["9000","08"],"type_index_source_offsets":[103,105],"flags":"01020304","trailing_indices":[9],"raw_trailing_indices":["8009"],"trailing_index_source_offsets":[119],"source_offset":100}"#;
-    check_lane_wire::<FeatureOperationTerminalDiscriminator>(json, &[]);
-    for (field, raw_field, raw) in [
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["900000", "08"]),
-        ),
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["ff", "08"]),
-        ),
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["90", "08"]),
-        ),
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["07", "08"]),
-        ),
-        (
-            "trailing_indices",
-            "raw_trailing_indices",
-            serde_json::json!(["0a"]),
-        ),
-        (
-            "trailing_indices",
-            "raw_trailing_indices",
-            serde_json::json!(["0900"]),
-        ),
-        (
-            "trailing_indices",
-            "raw_trailing_indices",
-            serde_json::json!(["ff"]),
-        ),
-    ] {
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire[raw_field] = raw;
-        let error =
-            serde_json::from_value::<FeatureOperationTerminalDiscriminator>(wire).unwrap_err();
-        assert!(error.to_string().contains(field));
-    }
 }
 
 #[test]
@@ -223,19 +158,19 @@ fn datum_fixed_pair_preserves_values_and_raw_values_wire() {
 }
 
 #[test]
-fn q155_lanes_reject_mismatched_values_and_unknown_markers() {
-    let pattern = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5],"markers":"30","raw_values":["40000000000000"],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
+fn binary64_lanes_reject_mismatched_values_and_unknown_markers() {
+    let pattern = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[32.0],"raw_values":["3040000000000000"],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
     let draft = pattern.replace("construction_payload", "graph_payload");
     for (key, value) in [
         ("values", serde_json::json!([0.25])),
-        ("markers", serde_json::json!("31")),
+        ("raw_values", serde_json::json!(["3140000000000000"])),
     ] {
         let mut invalid: serde_json::Value = serde_json::from_str(pattern).unwrap();
         invalid[key] = value.clone();
-        assert!(serde_json::from_value::<FeaturePatternConstructionFixedLane>(invalid).is_err());
+        assert!(serde_json::from_value::<FeaturePatternConstructionBinary64Lane>(invalid).is_err());
         let mut invalid: serde_json::Value = serde_json::from_str(&draft).unwrap();
         invalid[key] = value;
-        assert!(serde_json::from_value::<FeatureDraftConstructionFixedLane>(invalid).is_err());
+        assert!(serde_json::from_value::<FeatureDraftConstructionBinary64Lane>(invalid).is_err());
     }
 }
 
@@ -307,16 +242,16 @@ fn sketch_scalar_run_derives_payload_positions_across_split_source_blocks() {
 
 #[test]
 fn draft_and_pattern_runs_reject_payload_gaps_and_empty_atoms() {
-    let fixed = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,27],"source_offset":100,"value_source_offsets":[118,900]}"#;
+    let fixed = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[2.0,-32.0],"raw_values":["3000000000000000","b040000000000000"],"payload_offset":0,"value_payload_offsets":[18,27],"source_offset":100,"value_source_offsets":[118,900]}"#;
     assert!(
-        serde_json::from_str::<FeaturePatternConstructionFixedLane>(fixed)
+        serde_json::from_str::<FeaturePatternConstructionBinary64Lane>(fixed)
             .unwrap_err()
             .to_string()
             .contains("value_payload_offsets")
     );
     let draft_fixed = fixed.replace("construction_payload", "graph_payload");
     assert!(
-        serde_json::from_str::<FeatureDraftConstructionFixedLane>(&draft_fixed)
+        serde_json::from_str::<FeatureDraftConstructionBinary64Lane>(&draft_fixed)
             .unwrap_err()
             .to_string()
             .contains("value_payload_offsets")
@@ -347,7 +282,19 @@ fn draft_and_pattern_runs_reject_payload_gaps_and_empty_atoms() {
 
 #[test]
 fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
-    let original: serde_json::Value = serde_json::from_str(r#"{"id":"branch","operation_label":"operation","body_object_index":42,"scalar":1.0,"raw_scalar":"2ff0000000000000","atoms_be":[1031799040],"atom_source_offsets":[33],"atom_indices":[1],"atom_data_blocks":["block#1"],"first_indices":[2],"raw_first_indices":["02"],"first_index_source_offsets":[39],"first_data_blocks":[null],"second_indices":[3],"raw_second_indices":["03"],"second_index_source_offsets":[42],"second_data_blocks":["block#3"],"terminal_object_index":42,"raw_terminal_object_index":"2a","terminal_source_offset":45,"source_offset":20}"#).unwrap();
+    let original: serde_json::Value = serde_json::from_str(
+        r#"{"id":"branch","operation_label":"operation","body_object_index":42,
+            "scalar":1.0,"raw_scalar":"2ff0000000000000",
+            "atoms_be":[1031799040],"atom_source_offsets":[33],"atom_indices":[1],
+            "atom_data_blocks":["block#1"],
+            "first_indices":[2],"raw_first_indices":["02"],"first_index_source_offsets":[39],
+            "first_data_blocks":[null],
+            "second_indices":[3],"raw_second_indices":["03"],"second_index_source_offsets":[42],
+            "second_data_blocks":["block#3"],
+            "terminal_object_index":42,"raw_terminal_object_index":"2a",
+            "terminal_source_offset":45,"source_offset":20}"#,
+    )
+    .unwrap();
     for (field, value) in [
         ("atom_indices", serde_json::json!([2])),
         ("atoms_be", serde_json::json!([0x3dff_0100u32])),
@@ -461,8 +408,8 @@ fn operation_body_reference_lane_rejects_unknown_branch() {
 }
 
 use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
-use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionBinary64Lane;
 
-use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionBinary64Lane;
 
 use crate::native::features::test_support::check_lane_wire;

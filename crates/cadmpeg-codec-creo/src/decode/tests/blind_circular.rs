@@ -32,38 +32,6 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
-fn service_round_support_radius(
-    scan: &crate::container::ContainerScan<'_>,
-    ir: &CadIr,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    feature_id: u32,
-) -> Option<f64> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        round_support_radius(ctx, scan, ir, source_carriers, feature_id)
-    })
-    .expect("service round support admitted")
-}
-
-fn service_single_cap_circular_sweep_geometry<'a>(
-    scan: &'a crate::container::ContainerScan<'_>,
-    feature_id: u32,
-) -> Option<crate::decode::holes::sweep::CircularSweepGeometry<'a>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        single_cap_circular_sweep_geometry(ctx, scan, feature_id)
-    })
-    .expect("service resources")
-}
-
-fn service_two_cap_circular_sweep_geometry<'a>(
-    scan: &'a crate::container::ContainerScan<'_>,
-    feature_id: u32,
-) -> Option<crate::decode::holes::sweep::CircularSweepGeometry<'a>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        two_cap_circular_sweep_geometry(ctx, scan, feature_id)
-    })
-    .expect("service resources")
-}
-
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     let entry =
@@ -140,7 +108,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         .expect("valid section frame"),
     );
 
-    assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_some());
+    assert!(single_cap_circular_sweep_geometry(&scan, 40).is_some());
 
     let reversed_entries = vec![
         entry(143, 204, None),
@@ -197,7 +165,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         )
         .expect("valid section frame"),
     );
-    assert!(service_single_cap_circular_sweep_geometry(&scan, 41).is_some());
+    assert!(single_cap_circular_sweep_geometry(&scan, 41).is_some());
 
     assert!(section_entity_is_generated_profile(
         true,
@@ -209,7 +177,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     ));
 
     scan.features.entity_tables[0].unmark_surface_id(51);
-    assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_none());
+    assert!(single_cap_circular_sweep_geometry(&scan, 40).is_none());
     assert!(!section_entity_is_generated_profile(
         true,
         Some(40),
@@ -296,7 +264,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         .with_surface_ids([828, 831, 836]),
     );
 
-    let sweep = service_two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
+    let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
     assert_eq!(
         sweep
             .cylinder_rows
@@ -326,7 +294,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     );
 
     scan.features.entity_tables[0].unmark_surface_id(831);
-    assert!(service_two_cap_circular_sweep_geometry(&scan, 825).is_none());
+    assert!(two_cap_circular_sweep_geometry(&scan, 825).is_none());
 }
 
 #[test]
@@ -574,9 +542,8 @@ fn unique_parallel_round_supports_define_constant_radius() {
         ]),
         Some(0.5)
     );
-    let cylinder = crate::decode::with_test_decode_ctx(|ctx| {
+    let cylinder = {
         slot_fillet_cylinder(
-            ctx,
             [
                 PlaneEquation {
                     origin: [0.0, -2.0, 0.0],
@@ -606,39 +573,34 @@ fn unique_parallel_round_supports_define_constant_radius() {
                 },
             ],
         )
-    })
-    .expect("service profile admits slot midplanes")
-    .expect("fully constrained slot fillet");
+    }
+    .expect("compute the slot fillet cylinder");
     assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
     assert_eq!(cylinder.axis, [0.0, 1.0, 0.0]);
     assert_eq!(cylinder.radius, 0.5);
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| slot_fillet_cylinder(
-            ctx,
-            [
-                PlaneEquation {
-                    origin: [0.0, -2.0, 0.0],
-                    normal: [0.0, 1.0, 0.0],
-                },
-                PlaneEquation {
-                    origin: [0.0, 3.0, 0.0],
-                    normal: [0.0, 1.0, 0.0],
-                },
-            ],
-            &[
-                PlaneEquation {
-                    origin: [-9.0, 0.0, 0.0],
-                    normal: [1.0, 0.0, 0.0],
-                },
-                PlaneEquation {
-                    origin: [-8.0, 0.0, 0.0],
-                    normal: [1.0, 0.0, 0.0],
-                },
-            ],
-        ))
-        .expect("service profile admits slot midplanes")
-        .is_none()
-    );
+    assert!(slot_fillet_cylinder(
+        [
+            PlaneEquation {
+                origin: [0.0, -2.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+            PlaneEquation {
+                origin: [0.0, 3.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+        ],
+        &[
+            PlaneEquation {
+                origin: [-9.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            PlaneEquation {
+                origin: [-8.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+        ]
+    )
+    .is_none());
 }
 
 #[test]
@@ -674,7 +636,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -789,7 +751,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -819,7 +781,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -867,7 +829,17 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     }
 
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        crate::decode::with_service_context(
+            |ctx| schema_feature_definition(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                5,
+                Some(SchemaClass::Round),
+                "Round"
+            )
+        ).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             ref groups,
         }) if matches!(
@@ -992,22 +964,19 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         });
     }
 
+    assert_eq!(round_observed_radii(&scan, 5), [15.0, 1.0]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_observed_radii(ctx, &scan, 5))
-            .expect("service profile admits observed radii"),
-        [15.0, 1.0]
-    );
-    assert_eq!(
-        service_round_support_radius(
+        round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -1018,7 +987,17 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         None
     );
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        crate::decode::with_service_context(
+            |ctx| schema_feature_definition(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                5,
+                Some(SchemaClass::Round),
+                "Round"
+            )
+        ).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(
@@ -1091,27 +1070,26 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_placed_cylinder_radii(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5
-        ))
-        .expect("service profile admits placed radii"),
-        [15.0, 1.0]
-    );
-    assert_eq!(
-        service_round_support_radius(
+        round_placed_cylinder_radii(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
         ),
+        [15.0, 1.0]
+    );
+    assert_eq!(
+        round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -1122,7 +1100,17 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         None
     );
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        crate::decode::with_service_context(
+            |ctx| schema_feature_definition(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                5,
+                Some(SchemaClass::Round),
+                "Round"
+            )
+        ).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(
@@ -1199,27 +1187,26 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_placed_cylinder_radii(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5
-        ))
-        .expect("service profile admits placed radii"),
-        [15.0, 1.0]
-    );
-    assert_eq!(
-        service_round_support_radius(
+        round_placed_cylinder_radii(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
         ),
+        [15.0, 1.0]
+    );
+    assert_eq!(
+        round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -1230,7 +1217,17 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         None
     );
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        crate::decode::with_service_context(
+            |ctx| schema_feature_definition(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                5,
+                Some(SchemaClass::Round),
+                "Round"
+            )
+        ).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(

@@ -183,8 +183,7 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
                 arena.clone(),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
                     &cadmpeg_test_support::service_decode_context(),
-                    records,
-                    "native arena golden digest"
+                    records
                 )
                 .expect("the native records state canonical JSON")),
             );
@@ -272,7 +271,7 @@ fn archive_entries(archive: &[u8]) -> serde_json::Value {
     let entries = (0..zip.len())
         .map(|index| {
             let mut entry = zip.by_index(index).expect("archive entry");
-            let name = entry.name().to_owned();
+            let name = entry.name().expect("entry name").into_owned();
             let mut payload = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut payload)
                 .unwrap_or_else(|error| panic!("inflate {name}: {error}"));
@@ -590,8 +589,7 @@ mod native_elision {
                 arena_digest(&block, arena),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
                     &cadmpeg_test_support::service_decode_context(),
-                    records,
-                    "native arena golden digest"
+                    records
                 )
                 .expect("the native records state canonical JSON")),
                 "the digest of `{arena}` covers the bytes a CADIR document writes for it"
@@ -648,4 +646,15 @@ mod native_elision {
             assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_err());
         }
     }
+}
+
+/// A geometry-depth decode agrees with the full decode outside the design
+/// arenas. Every input the codec admits is cut to geometry depth.
+#[test]
+fn geometry_depth_agrees_with_full_depth() {
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+        &FcstdCodec,
+        &harness().fixture_inputs(),
+    );
+    assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
 }

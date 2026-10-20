@@ -29,6 +29,8 @@ pub(crate) fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &An
     check!(&ir.model.surfaces);
     check!(&ir.model.curves);
     check!(&ir.model.pcurves);
+    check!(&ir.model.procedural_curves);
+    check!(&ir.model.procedural_surfaces);
     let unknowns = ir.native_unknowns("catia").unwrap();
     check!(&unknowns);
     assert_eq!(annotations.provenance.len(), entity_count);

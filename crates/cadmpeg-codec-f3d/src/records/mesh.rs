@@ -5,7 +5,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::identity::Located;
 use super::references::DesignClassTag;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::features::FinitePoint3;
@@ -77,14 +76,6 @@ impl Serialize for DesignRelaxedGuidText {
 }
 
 impl DesignRelaxedGuidText {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
-    }
-
     /// The original GUID text.
     pub(crate) fn as_str(&self) -> &str {
         self.0.as_str()
@@ -225,39 +216,18 @@ pub(crate) struct DesignMeshTextureTable {
     resources: Vec<DesignMeshTextureResource>,
 }
 
-enum TextureTableError {
-    Payload(String),
-    Resource(CodecError),
-}
-
-impl From<&'static str> for TextureTableError {
-    fn from(message: &'static str) -> Self {
-        Self::Payload(message.into())
-    }
-}
-
 impl DesignMeshTextureTable {
-    pub(crate) fn new_charged(
-        ctx: &DecodeContext<'_>,
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, CodecError> {
-        Self::new_inner(
-            crate::records::admission::RecordAdmission::Charged(ctx),
-            record,
-            resources,
-        )
-        .map_err(|error| match error {
-            TextureTableError::Payload(message) => CodecError::Malformed(message),
-            TextureTableError::Resource(error) => error,
-        })
+        Self::new_inner(record, resources).map_err(CodecError::Malformed)
     }
 
     fn new_inner(
-        admission: crate::records::admission::RecordAdmission<'_, '_>,
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
-    ) -> Result<Self, TextureTableError> {
+    ) -> Result<Self, String> {
         let count =
             u32::try_from(resources.len()).map_err(|_| "textures exceeds the u32 map count")?;
         let expected = u64_from_index(crate::layout::paramesh_texture_table_prefix::LEN)
@@ -285,17 +255,8 @@ impl DesignMeshTextureTable {
                 return Err("textures.resource_guid must be unique ignoring letter case".into());
             }
 
-            admission
-                .reserve_set(&mut flags, 1, "index F3D texture flag ordinals")
-                .map_err(TextureTableError::Resource)?;
             flags.insert(resource.ordinal);
-            admission
-                .reserve_set(&mut filenames, 1, "index F3D texture filename ordinals")
-                .map_err(TextureTableError::Resource)?;
             filenames.insert(resource.filename_ordinal);
-            admission
-                .reserve_set(&mut guids, 1, "index F3D texture GUIDs")
-                .map_err(TextureTableError::Resource)?;
             guids.insert(guid);
         }
         Ok(Self { record, resources })
@@ -307,20 +268,11 @@ impl DesignMeshTextureTable {
         &self.resources
     }
     /// Borrow resources in the serialized flags-map order.
-    pub(crate) fn resources_in_flags_order(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<&DesignMeshTextureResource>, CodecError> {
-        let operation = "order F3D mesh texture resources";
-        let mut resources = ctx.collection_vec(self.resources.len(), operation)?;
+    pub(crate) fn resources_in_flags_order(&self) -> Vec<&DesignMeshTextureResource> {
+        let mut resources = Vec::new();
         resources.extend(&self.resources);
-        ctx.stable_sort_by(
-            &mut resources,
-            |a, b| a.ordinal.cmp(&b.ordinal),
-            |_| 0,
-            operation,
-        )?;
-        Ok(resources)
+        resources.sort_by_key(|a| a.ordinal);
+        resources
     }
     fn flags_count_offset(&self) -> u64 {
         self.record.byte_offset()
@@ -389,15 +341,7 @@ impl DesignMeshTextureTable {
                 asset: row.asset,
             });
         }
-        let table = Self::new_inner(
-            crate::records::admission::RecordAdmission::Admitted,
-            record,
-            resources,
-        )
-        .map_err(|error| match error {
-            TextureTableError::Payload(message) => message,
-            TextureTableError::Resource(error) => error.to_string(),
-        })?;
+        let table = Self::new_inner(record, resources)?;
         if table.flags_count_offset() != flags_count_offset
             || table.filename_count_offset() != filename_count_offset
         {

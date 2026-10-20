@@ -119,7 +119,6 @@ const CARRIED_NATIVE_ARENAS: &[&str] = &[
 pub(crate) fn document_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    operation: &'static str,
 ) -> Result<String, CodecError> {
     // FCStd retains no whole-file source image, so no unknown record is
     // excluded as one.
@@ -130,7 +129,6 @@ pub(crate) fn document_local_sha256(
         "fcstd",
         "",
         CARRIED_NATIVE_ARENAS,
-        operation,
     )
 }
 
@@ -155,7 +153,7 @@ fn admit_unedited(ir: &CadIr) -> Result<(), CodecError> {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let current = document_local_sha256(&ctx, ir, "FCStd write edit digest")?;
+    let current = document_local_sha256(&ctx, ir)?;
     ctx.finish_session()?;
     if current != *expected {
         return Err(CodecError::NotImplemented(

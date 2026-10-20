@@ -1,5 +1,6 @@
 {
   "ir": {
+    "decode_depth": "full",
     "ir_version": "6",
     "model": {
       "appearance_bindings": [],
@@ -208,22 +209,8 @@
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 1.0,
-              "y": 2.0,
-              "z": 3.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "unknown",
+            "record": "catia:payload:unknown#brep-stream"
           },
           "id": "catia:standard:surf#1",
           "source_object": {
@@ -254,16 +241,16 @@
         "alias_rows": [],
         "catalog_entries": [],
         "catalogs": [],
+        "consolidated_chamfers": [],
         "consolidated_circles": [],
         "consolidated_class5b5c_records": [],
+        "consolidated_class60_records": [],
         "consolidated_class61_records": [],
-        "consolidated_cone_faces": [],
         "consolidated_cones": [],
         "consolidated_cylinders": [],
+        "consolidated_domain_relations": [],
         "consolidated_edge_nodes": [],
         "consolidated_edge_runs": [],
-        "consolidated_embedded_cylinders": [],
-        "consolidated_groups": [],
         "consolidated_line_profiles": [],
         "consolidated_owner_packets": [],
         "consolidated_parameter_points": [],
@@ -275,15 +262,20 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
         "finjpl_segments": [],
+        "inline_fields": [],
         "legacy_entity_runs": [],
+        "object_chamfers": [],
         "object_graph_records": [],
         "object_graphs": [],
         "preview_images": [],
         "reference_signature_cohorts": [],
+        "sampled_parameter_maps": [],
         "schema_configuration_row_chains": [],
+        "storage_property_members": [],
         "unknowns": [
           {
             "id": "catia:payload:unknown#brep-stream",
@@ -297,9 +289,8 @@
         ],
         "value_blocks": [],
         "value_schema_selections": [],
+        "zero_entity_allocation_edges": [],
         "zero_entity_edge_strides": [],
-        "zero_entity_endpoint_locus_candidates": [],
-        "zero_entity_endpoint_pair_candidates": [],
         "zero_entity_oriented_use_pairs": [],
         "zero_entity_ownership_roots": [],
         "zero_entity_records": [],
@@ -372,17 +363,17 @@
       "decoded_compact_entity_value_packet_count": 0,
       "decoded_complete_schema_configuration_row_chain_count": 0,
       "decoded_complex_constraint_range_count": 0,
+      "decoded_consolidated_chamfer_count": 0,
+      "decoded_consolidated_chamfer_parameter_point_count": 0,
       "decoded_consolidated_circle_count": 0,
+      "decoded_consolidated_class60_record_count": 0,
       "decoded_consolidated_class61_record_count": 0,
       "decoded_consolidated_cone_count": 0,
-      "decoded_consolidated_cone_face_count": 0,
-      "decoded_consolidated_cone_face_parameter_point_count": 0,
       "decoded_consolidated_cylinder_count": 0,
       "decoded_consolidated_edge_run_count": 0,
       "decoded_consolidated_edge_run_endpoint_locus_count": 0,
       "decoded_consolidated_edge_run_shared_locus_count": 0,
       "decoded_consolidated_edge_run_support_binding_count": 0,
-      "decoded_consolidated_group_count": 0,
       "decoded_consolidated_line_profile_count": 0,
       "decoded_consolidated_parameter_point_count": 0,
       "decoded_consolidated_pcurve_count": 0,
@@ -574,14 +565,13 @@
       "decoded_value_field_count": 0,
       "decoded_value_schema_selection_count": 0,
       "decoded_wide_prefix_entity_suffix_value_count": 0,
+      "decoded_zero_entity_allocation_edge_count": 0,
+      "decoded_zero_entity_bound_edge_stride_record_count": 0,
       "decoded_zero_entity_bound_support_member_count": 0,
-      "decoded_zero_entity_bound_typed_loop_reference_count": 0,
       "decoded_zero_entity_edge_stride_allocation_count": 0,
       "decoded_zero_entity_edge_stride_count": 0,
-      "decoded_zero_entity_edge_stride_surface_support_ref_count": 0,
-      "decoded_zero_entity_edge_stride_topology_ref_count": 0,
-      "decoded_zero_entity_endpoint_locus_candidate_count": 0,
-      "decoded_zero_entity_endpoint_pair_candidate_count": 0,
+      "decoded_zero_entity_edge_stride_topology_distance_count": 0,
+      "decoded_zero_entity_edge_stride_vertex_owner_distance_count": 0,
       "decoded_zero_entity_face_bound_support_run_count": 0,
       "decoded_zero_entity_face_terminal_control_03_count": 0,
       "decoded_zero_entity_face_terminal_control_05_count": 0,
@@ -672,12 +662,6 @@
       "transferred_legacy_formula_count": 0,
       "transferred_legacy_parameter_count": 0,
       "transferred_legacy_selector_parameter_count": 0,
-      "transferred_native_operation_count": 0,
-      "transferred_native_operation_definition_chain_value_count": 0,
-      "transferred_native_operation_definition_value_count": 0,
-      "transferred_native_operation_parameter_count": 0,
-      "transferred_native_operation_range_count": 0,
-      "transferred_native_sketch_entity_count": 0,
       "transferred_parameter_count": 0,
       "transferred_principal_plane_record_count": 0,
       "transferred_relation_program_input_parameter_count": 0,
@@ -742,12 +726,23 @@
     "losses": [
       {
         "code": {
+          "code": "geometry.unresolved-carriers",
+          "kind": "geometry_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "The transferred model retains 0 unresolved curve carriers and 1 unresolved surface carriers without exact procedural constructions. Surface carriers: catia:standard:surf#1.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
           "code": "geometry.carrier-summary",
           "kind": "carrier_summary",
           "namespace": "catia",
           "scope": "namespaced"
         },
-        "message": "3 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 2 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus.",
+        "message": "3 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 1 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 0 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus.",
         "severity": "info"
       },
       {
@@ -763,13 +758,13 @@
       },
       {
         "code": {
-          "code": "geometry.analytic-payload-invalid",
+          "code": "geometry.plane-parameters-invalid",
           "kind": "geometry_not_transferred",
           "namespace": "catia",
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "1 analytic surface record(s) had a non-finite or out-of-range inline payload and were not decoded.",
+        "message": "1 plane surface record(s) were located but not decoded because their tag-bridged parameter records were absent or invalid.",
         "severity": "warning"
       },
       {
@@ -784,9 +779,9 @@
       }
     ],
     "notes": [
-      "outer V5_CFV2 container: directory offset 951 + length 0 = 951 (file size 951); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
+      "outer V5_CFV2 container: directory offset 951 + length 0 = 951 (file size 951); variant: standard nested V5_CFV2 (complete FBB edge/vertex walk): geometry decode supported",
       "nested V5_CFV2 at file offset 380 with a CATIA_V5 CB0001 directory of 2 stream(s)",
-      "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 2 edge-table delimiter(s)",
+      "MainDataStream census: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 2 edge-table delimiter(s)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
     ],
     "transfer": {
@@ -824,6 +819,10 @@
         },
         "catia:standard:shell#unbound-points": {
           "entity": "inferred",
+          "scope": "entity"
+        },
+        "catia:standard:surf#1": {
+          "entity": "unknown",
           "scope": "entity"
         },
         "catia:standard:v#0": {

@@ -1,5 +1,6 @@
 {
   "ir_version": "6",
+  "decode_depth": "full",
   "units": {
     "length": "millimeter"
   },

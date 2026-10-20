@@ -48,7 +48,6 @@ fn configuration_partitions_require_explicit_source_identity() {
     let third = BodyId::mint("test:model:entity#body:third").expect("identity grammar");
 
     assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
         &mut ir,
         vec![
             (7, vec![third.clone()]),
@@ -100,12 +99,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
-    assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut ir,
-        vec![(5, vec![body.clone()])],
-    )
-    .unwrap();
+    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])]).unwrap();
 
     assert!(ir.model.configurations[0].bodies.is_none());
     assert!(ir.model.configurations[1].bodies.is_none());
@@ -137,12 +131,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut ir,
-        vec![(3, vec![body.clone()])],
-    )
-    .unwrap();
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])]).unwrap();
     mark_active_configuration(&mut ir);
 
     assert_eq!(ir.model.configurations.len(), 1);
@@ -197,12 +186,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         native_ref: Some("native:configuration".into()),
     });
 
-    assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut ir,
-        Vec::new(),
-    )
-    .unwrap();
+    assign_configuration_bodies(&mut ir, Vec::new()).unwrap();
     mark_active_configuration(&mut ir);
 
     let configuration = &ir.model.configurations[0];
@@ -254,77 +238,6 @@ fn duplicate_configuration_partition_identities_are_reported() {
     assert!(report.losses.iter().any(|loss| {
         loss.message == "2 configuration record(s) share non-unique geometry partition identities."
     }));
-}
-
-#[test]
-fn configuration_loss_counting_refuses_caller_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut ir = CadIr::empty();
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
-        ordinal: 0,
-        active: true,
-        source_index: Some(5),
-        name: Some("Default".into()),
-        material: None,
-        properties: BTreeMap::new(),
-        bodies: None,
-        parameter_values: BTreeMap::new(),
-        parameter_overrides: BTreeMap::new(),
-        feature_states: BTreeMap::new(),
-        native_ref: Some("native:configuration".into()),
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    let mut report = super::empty_report(true);
-    let error = append_design_losses(&ctx, &ir, &mut report)
-        .expect_err("configuration source index consumes one collection item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "count SLDPRT configuration source indices"
-    ));
-}
-
-#[test]
-fn design_loss_note_refuses_caller_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut ir = CadIr::empty();
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("synthetic:test:id#inactive-configuration")
-            .expect("identity grammar"),
-        ordinal: 0,
-        active: false,
-        source_index: None,
-        name: None,
-        material: None,
-        properties: BTreeMap::new(),
-        bodies: None,
-        parameter_values: BTreeMap::new(),
-        parameter_overrides: BTreeMap::new(),
-        feature_states: BTreeMap::new(),
-        native_ref: None,
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    let mut report = super::empty_report(true);
-    let error = append_design_losses(&ctx, &ir, &mut report)
-        .expect_err("the first design loss consumes one collection item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "append SLDPRT decode loss"
-    ));
 }
 
 #[test]
@@ -428,10 +341,10 @@ fn incoherent_configuration_bodies_are_reported() {
             "synthetic:test:id#duplicate",
             0,
             Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![BodyId::mint("test:model:entity#another-missing-body").unwrap()],
-                    &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                    "test:model:entity#another-missing-body",
                 )
+                .unwrap()])
                 .unwrap(),
             ),
         ),
@@ -439,10 +352,10 @@ fn incoherent_configuration_bodies_are_reported() {
             "synthetic:test:id#missing",
             1,
             Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")],
-                    &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                    "test:model:entity#missing-body",
                 )
+                .expect("identity grammar")])
                 .unwrap(),
             ),
         ),
@@ -531,7 +444,6 @@ fn configuration_suppression_and_override_references_are_coherent() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition.clone()),
         native_ref: None,
     });

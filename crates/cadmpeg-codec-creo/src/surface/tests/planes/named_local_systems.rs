@@ -9,11 +9,10 @@ use crate::surface::{
 
 #[test]
 fn terminal_positional_slot_zero_occupies_one_byte() {
-    let slots = crate::decode::with_test_decode_ctx(|ctx| {
-        scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x18], 2, &scalar::ScalarCache::default())
-            .map(|result| result.map(|table| (table.slots, table.consumed)))
-    })
-    .expect("scalar slots are admitted")
+    let slots = {
+        scalar_slots_with_tokens_and_end(&[0xe4, 0x18], 2, &scalar::ScalarCache::default())
+            .map(|table| (table.slots, table.consumed))
+    }
     .expect("a complete two-slot table")
     .0;
 

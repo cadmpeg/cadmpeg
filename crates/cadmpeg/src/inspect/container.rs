@@ -347,6 +347,29 @@ mod tests {
     }
 
     #[test]
+    fn zip_member_past_the_zstd_window_allowance_names_the_allowance() {
+        use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+
+        // A streamed frame as a level-22 encoder writes it: a 128 MiB window
+        // and no content size. Laid out by `zip_fixture`: `zip` is built
+        // without its `zstd` feature.
+        let file = zip_fixture::archive(&[RawEntry::compressed(
+            "streamed.bin",
+            zip_fixture::ZSTD,
+            &zip_fixture::zstd_streamed_frame(27, b"payload"),
+            b"payload",
+        )]);
+        let error = extract(&file, ResourceLimits::desktop(), "streamed.bin")
+            .expect_err("the member cannot be expanded");
+        let message = format!("{error:#}");
+        assert!(
+            message.starts_with("opening entry 'streamed.bin': ")
+                && message.ends_with("per-expansion allowance"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn lists_compound_storages_and_streams() {
         let file = compound_fixture();
         let Listing::Cfb(rows) =

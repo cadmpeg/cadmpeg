@@ -291,7 +291,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }) => self.encode_draft(face_selection, anchor, angle.as_ref(), *outward),
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands,
-
                 op,
                 keep_tools,
             }) => {
@@ -345,7 +344,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 direction: _,
                 placements,
                 shape,
-
                 extent,
                 bottom,
                 taper_angle,
@@ -373,9 +371,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape,
-
                 path,
-
                 orientation,
                 transition,
                 transformation,

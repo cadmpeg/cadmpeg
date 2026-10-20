@@ -269,7 +269,7 @@ fn document_with_stamp(
 fn assert_layer_record_retained(result: &EditableDecodeResult, layer: &[u8], message: &str) {
     let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
-    let fields = layers[0].fields();
+    let fields = layers[0].fields().unwrap();
     assert_eq!(
         fields
             .get("archive_index")
@@ -372,7 +372,7 @@ fn obsolete_layer_settings_are_consumed_without_typed_layer_fields() {
         let result = decode(document(archive, layer));
         let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
         assert_eq!(layers.len(), 1);
-        let fields = layers[0].fields();
+        let fields = layers[0].fields().unwrap();
         assert_eq!(
             fields.get("name").and_then(serde_json::Value::as_str),
             Some("layer-witness")
@@ -397,7 +397,7 @@ fn malformed_obsolete_layer_settings_are_discarded_without_altering_the_layer() 
     let result = decode(document(archive, layer));
     let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
-    let fields = layers[0].fields();
+    let fields = layers[0].fields().unwrap();
     assert_eq!(
         fields.get("name").and_then(serde_json::Value::as_str),
         Some("layer-witness")
@@ -439,7 +439,7 @@ fn complete_decode_keeps_nil_layer_uuid_absent_and_source_record() {
     assert!(layers[0]
         .id()
         .starts_with("rhino:presentation:layer#index-7-offset-"));
-    let fields = layers[0].fields();
+    let fields = layers[0].fields().unwrap();
     assert!(fields
         .get("source_uuid")
         .is_some_and(serde_json::Value::is_null));

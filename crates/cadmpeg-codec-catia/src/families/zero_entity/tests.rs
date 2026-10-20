@@ -30,7 +30,7 @@ fn decode_zero_entity_falls_back_to_metadata() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, f.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::ZeroEntity);
     assert!(scan.inner.is_none());
 
@@ -74,13 +74,10 @@ fn zero_entity_directory_markers_stay_outside_the_record_stream() {
 
     let scan =
         crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
-            .expect("service resource budget");
+            .expect("scan the container");
     assert_eq!(scan.census.a9_records, 0);
     assert_eq!(scan.variant, Variant::Unknown);
-    let ranges = crate::test_support::with_service_context(|ctx| {
-        crate::container::consolidated_record_ranges(ctx, &scan)
-    })
-    .expect("service budget admits record ranges");
+    let ranges = crate::container::consolidated_record_ranges(&scan);
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert!(native.zero_entity_records.is_empty());
     assert!(native.zero_entity_support_runs.is_empty());
@@ -107,13 +104,10 @@ fn zero_entity_finjpl_records_stay_outside_the_record_stream() {
 
     let scan =
         crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
-            .expect("service resource budget");
+            .expect("scan the container");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::ZeroEntity);
-    let ranges = crate::test_support::with_service_context(|ctx| {
-        crate::container::consolidated_record_ranges(ctx, &scan)
-    })
-    .expect("service budget admits record ranges");
+    let ranges = crate::container::consolidated_record_ranges(&scan);
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert_eq!(native.zero_entity_records.len(), 1);
 }
@@ -147,7 +141,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         other => panic!("expected cylinder, got {other:?}"),
     }
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -229,7 +223,7 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.sides()[1].pcurve, None);
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -266,7 +260,7 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
     assert!(result.ir().model.procedural_curves.is_empty());
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -298,7 +292,6 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     let support_slot = 0x6a + 12 + 13;
     stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());
     let native = crate::native::CatiaNative::decode(&stream);
-    assert!(native.zero_entity_endpoint_pair_candidates.is_empty());
     let [run] = native.zero_entity_support_runs.as_slice() else {
         panic!("one zero-entity support run")
     };
@@ -312,11 +305,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         panic!("one loop")
     };
     assert_eq!(loop_record.member_ids, [6]);
-    assert_eq!(loop_record.typed_references, [1]);
-    assert_eq!(
-        loop_record.typed_records,
-        ["catia:zero-entity:record#1".to_string()]
-    );
+    assert_eq!(loop_record.edge_stride_distances, [1]);
+    assert!(loop_record.edge_stride_records.is_empty());
     assert_eq!(loop_record.terminal_id, 7);
     assert_eq!(loop_record.loop_class, 0x41);
     assert_eq!(loop_record.forward_senses, [true]);
@@ -476,7 +466,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .loops[0]
-        .typed_records[0] = "catia:zero-entity:record#2".to_string();
+        .edge_stride_records
+        .push("catia:zero-entity:record#2".to_string());
     let mut invalid_typed_record_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_typed_record
         .store(&mut invalid_typed_record_namespace)
@@ -508,13 +499,11 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         let replacement = true;
         edit::replace(model_curve, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -580,54 +569,6 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_oriented_endpoint_namespace)
         .expect("store invalid CATIA zero-entity oriented endpoints");
     assert!(crate::native::CatiaNative::load(&invalid_oriented_endpoint_namespace).is_err());
-
-    let mut invalid_endpoint_pair = native.clone();
-    invalid_endpoint_pair
-        .zero_entity_endpoint_pair_candidates
-        .push(crate::native::CatiaZeroEntityEndpointPairCandidate {
-            id: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
-            face_records: [
-                "catia:zero-entity:record#3".to_string(),
-                "catia:zero-entity:record#3".to_string(),
-            ],
-            support_records: [
-                "catia:zero-entity:record#2".to_string(),
-                "catia:zero-entity:record#2".to_string(),
-            ],
-            model_endpoints: crate::test_support::test_b5::points([
-                [0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0],
-            ]),
-            model_midpoint: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-        });
-    let mut invalid_endpoint_pair_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_endpoint_pair
-        .store(&mut invalid_endpoint_pair_namespace)
-        .expect("store invalid CATIA zero-entity endpoint pair");
-    assert!(crate::native::CatiaNative::load(&invalid_endpoint_pair_namespace).is_err());
-
-    let mut invalid_endpoint_locus = native.clone();
-    invalid_endpoint_locus
-        .zero_entity_endpoint_locus_candidates
-        .push(crate::native::CatiaZeroEntityEndpointLocusCandidate {
-            id: "catia:zero-entity:endpoint-locus-candidate#0".to_string(),
-            incident_endpoint_pair_endpoints: vec![
-                crate::native::CatiaZeroEntityEndpointPairEndpoint {
-                    endpoint_pair: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
-                    endpoint_index: crate::families::zero_entity::topology::EdgeEnd::Start,
-                },
-            ]
-            .try_into()
-            .expect("nonempty incidence"),
-            representative_point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(0.0)
-                .expect("zero deviation"),
-        });
-    let mut invalid_endpoint_locus_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_endpoint_locus
-        .store(&mut invalid_endpoint_locus_namespace)
-        .expect("store invalid CATIA zero-entity endpoint-locus candidate");
-    assert!(crate::native::CatiaNative::load(&invalid_endpoint_locus_namespace).is_err());
 
     // A support model endpoint holds an admitted point, so a non-finite
     // coordinate is refused before a native record can hold it.
@@ -762,8 +703,6 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
     };
     assert_eq!(edge_stride.record_ordinal, 1);
     assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
-    assert_eq!(edge_stride.topology_refs, [5, 4, 3]);
-    assert_eq!(edge_stride.surface_support_refs, [7, 8]);
 
     let [pair] = native.zero_entity_oriented_use_pairs.as_slice() else {
         panic!("one zero-entity oriented-use pair")
@@ -1015,14 +954,14 @@ fn decode_reports_separate_zero_entity_topology_registries() {
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT.as_str()
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_DISTANCE_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT.as_str()
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_VERTEX_OWNER_DISTANCE_COUNT.as_str()
         ),
         2
     );
@@ -1075,6 +1014,6 @@ fn decode_reports_separate_zero_entity_topology_registries() {
             && loss.message.contains("1 vertex-incidence record(s)")
             && loss.message.contains("remain separate")
             && loss.message.contains("bind their adjacent vertex owner")
-            && loss.message.contains("loop-to-use")
+            && loss.message.contains("0 physical edge(s) have complete")
     }));
 }

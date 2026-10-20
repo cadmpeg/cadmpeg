@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Siemens NX PRT seed builders.
 
+
+
 use std::io::Write;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
@@ -34,11 +35,8 @@ pub fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
             "NX seed record needs a two-byte header".into(),
         ));
     }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let mut r = ctx.alloc_filled(len, 0_u8, "NX seed record")?;
-    r[0] = 0x00;
-    r[1] = tag;
+    let mut r = vec![0x00, tag];
+    r.resize(len, 0);
     Ok(r)
 }
 
@@ -47,9 +45,7 @@ pub fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
 /// surfaces and the line carry the `+` sense byte at +18.
 fn partition_stream() -> Result<Vec<u8>, CodecError> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
-    s.extend_from_slice(b"SCH_TEST_1_9999\x00");
+    s.extend_from_slice(b"PS\x00\x00\x00?: TRANSMIT FILE (partition) created by modeller version 3400176\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     let mut pt = record(0x1d, 40)?;
     put_ref(&mut pt, 2, 2);
@@ -210,7 +206,6 @@ fn prt_with_file_entry(name: &[u8], payload: &[u8]) -> Result<Vec<u8>, CodecErro
 mod tests {
     use super::{record, single_part_prt_with_partition};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
 
     #[test]
     fn long_partition_has_exact_directory_offset_and_size() {
@@ -248,21 +243,11 @@ mod tests {
             &DecodePolicy::default(),
         )
         .expect("root");
-        let (recovered, _storage) = ctx
+        let recovered = ctx
             .inflate_probe(root, stream.len(), true)
             .expect("probe")
             .expect("zlib partition");
         assert_eq!(recovered, stream);
-    }
-
-    #[test]
-    fn record_refuses_default_collection_limit() {
-        let limit = DecodePolicy::default().limits.max_collection_items;
-        let count = usize::try_from(limit).expect("desktop count fits") + 1;
-        let error = record(1, count).expect_err("seed exceeds desktop collection limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "NX seed record"));
     }
 
     #[test]

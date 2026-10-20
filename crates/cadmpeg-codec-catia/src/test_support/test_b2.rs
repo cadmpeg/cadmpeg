@@ -41,11 +41,11 @@ pub(crate) fn b2_plane_carrier_stream() -> Vec<u8> {
 
 pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
-    for (prefix, values) in [
-        (0x05, vec![2.0f64, 3.0]),
-        (0x09, vec![11.0, 4.0, 5.0]),
-        (0x0d, vec![1.0, 2.0, 3.0, 4.0, 5.0]),
-        (0x11, vec![12.0, 6.0, 7.0]),
+    for (prefix, control, values) in [
+        (0x05, 0x12, vec![2.0f64, 3.0]),
+        (0x09, 0x01, vec![11.0, 4.0, 5.0]),
+        (0x0d, 0x08, vec![-1.0, 2.0, 3.0, 0.6, 0.8]),
+        (0x11, 0x02, vec![12.0, 6.0, 7.0]),
     ] {
         let length = 2 + 8 * values.len();
         bytes.extend_from_slice(&[
@@ -56,7 +56,7 @@ pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
             0x05,
             prefix,
         ]);
-        bytes.push(0x12);
+        bytes.push(control);
         for value in values {
             bytes.extend_from_slice(&le_f64(value));
         }
@@ -71,6 +71,31 @@ pub(crate) fn b2_reference_list_stream() -> Vec<u8> {
     }
     record.extend_from_slice(&le_f64(1.0));
     record
+}
+
+pub(crate) fn b2_compact_parameter_operand_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for operand in [
+        vec![0x04, 220],
+        vec![0x08, 0x6e, 0xff],
+        vec![0x0c, 0x50, 0x5d, 0x1a],
+        vec![0x10, 0xff, 0xff, 0xff, 0xff],
+        vec![0x04, 1],
+    ] {
+        bytes.extend_from_slice(&[
+            0xb2,
+            0x03,
+            0x18,
+            u8::try_from(operand.len() + 1 + 24).expect("compact operand fixture"),
+            0x05,
+        ]);
+        bytes.extend_from_slice(&operand);
+        bytes.push(0x02);
+        for value in [12.0, 6.0, 7.0] {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
+    bytes
 }
 
 pub(crate) fn b2_owner_packet_stream() -> Vec<u8> {
@@ -302,10 +327,20 @@ fn b2_owner_chart_stream_with_encoding(carrier_class: u8, width_coded: bool) -> 
         ),
         _ => unreachable!("carrier class checked above"),
     };
-    for (prefix, values) in [0x05, 0x09, 0x0d, 0x11].into_iter().zip(side_values) {
+    let controls = match carrier_class {
+        0x28 => [0x01, 0x01, 0x02, 0x02],
+        0x2b => [0x02, 0x02, 0x01, 0x01],
+        0x32 => [0x16, 0x06, 0x15, 0x05],
+        _ => unreachable!("carrier class checked above"),
+    };
+    for ((prefix, control), values) in [0x05, 0x09, 0x0d, 0x11]
+        .into_iter()
+        .zip(controls)
+        .zip(side_values)
+    {
         let length = u8::try_from(2 + values.len() * size_of::<f64>())
             .expect("owner-chart parameter-point length");
-        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, length, 0x05, prefix, 0x12]);
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, length, 0x05, prefix, control]);
         for value in values {
             bytes.extend_from_slice(&le_f64(value));
         }
@@ -354,7 +389,7 @@ pub(crate) fn b2_counted_61_stream() -> Vec<u8> {
     ]
 }
 
-pub(crate) fn b2_long_61_stream() -> Vec<u8> {
+pub(crate) fn class61_false_long_stream() -> Vec<u8> {
     let mut payload = vec![0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb, 0x06];
     for member in [0x064a_u16, 0x0650, 0x0656] {
         payload.extend_from_slice(&member.to_le_bytes());
@@ -443,7 +478,7 @@ pub(crate) fn b2_adjacent_face_counted_owner_stream() -> Vec<u8> {
     ]
 }
 
-pub(crate) fn b2_cone_face_stream() -> Vec<u8> {
+pub(crate) fn b2_chamfer_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
     record.extend_from_slice(&[
         0x85, 0x05, 0x08, 0x7f, 0x05, 0x08, 0x14, 0x03, 0xe5, 0xdd, 0x05, 0x01, 0x01, 0x05, 0x03,
@@ -454,9 +489,20 @@ pub(crate) fn b2_cone_face_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_cone_face_parameter_point_stream() -> Vec<u8> {
-    let mut bytes = b2_cone_face_stream();
-    bytes.extend_from_slice(&b2_parameter_point_stream());
+pub(crate) fn b2_chamfer_contact_stream() -> Vec<u8> {
+    let mut bytes = b2_cone_stream();
+    bytes.extend_from_slice(&b2_chamfer_stream());
+    for (operand, control, values) in [
+        (1, 0x01, [1.0, 4.0, 5.0]),
+        (2, 0x01, [2.0, 4.0, 5.0]),
+        (3, 0x02, [4.0, 1.0, 2.0]),
+        (4, 0x02, [5.0, 1.0, 2.0]),
+    ] {
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, 26, 0x05, 4 * operand + 1, control]);
+        for value in values {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
     bytes
 }
 
@@ -569,7 +615,7 @@ pub(crate) fn b2_sphere_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_group_stream() -> Vec<u8> {
+pub(crate) fn b2_class60_reference_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x65, 0x04, 0x05, 0x81, 0x03, 0x05, 0x0d, 0xb2, 0x03, 0x60, 0x02, 0x05, 0x81,
         0x0d,
@@ -761,16 +807,27 @@ pub(crate) fn b2_construction_use_stream_for(domain: [f64; 4]) -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_embedded_cylinder_stream() -> Vec<u8> {
-    b2_embedded_cylinder_stream_with_object_id(0x5678)
+pub(crate) fn b2_wide_cylinder_stream() -> Vec<u8> {
+    b2_wide_cylinder_stream_with_operand(0x5678)
 }
 
-pub(crate) fn b2_embedded_cylinder_stream_with_object_id(object_id: u32) -> Vec<u8> {
+pub(crate) fn b2_wide_cylinder_stream_with_operand(operand: u16) -> Vec<u8> {
     let standalone = b2_cylinder_stream();
+    let token = compact_uint_bytes(u32::from(operand));
     let mut record = vec![
-        0xb2, 0x03, 0x60, 0x02, 0x05, 0x81, 0x0d, 0xb4, 0x03, 0x28, 0x5a,
+        0xb2,
+        0x03,
+        0x60,
+        0x02,
+        0x05,
+        0x81,
+        0x0d,
+        0xb1 + u8::try_from(token.len()).expect("u16 compact header width"),
+        0x03,
+        0x28,
+        0x5a,
     ];
-    record.extend_from_slice(&compact_uint_bytes(object_id));
+    record.extend_from_slice(&token);
     record.extend_from_slice(&standalone[5..]);
     record
 }

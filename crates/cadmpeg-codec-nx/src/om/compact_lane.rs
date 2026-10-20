@@ -74,37 +74,6 @@ impl<T> CountedLane<T, usize> {
 }
 
 impl<O> CountedLane<(), O> {
-    pub(crate) fn try_resolve_charged<T>(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut resolve: impl FnMut(CompactIndexAtom) -> Result<Option<T>, cadmpeg_core::CodecError>,
-    ) -> Result<Option<CountedLane<T, O>>, cadmpeg_core::CodecError> {
-        let Some(target) = resolve(self.anchor.atom)? else {
-            return Ok(None);
-        };
-        let anchor = CompactIndexTarget {
-            atom: self.anchor.atom,
-            target,
-        };
-        let Some(members) = self.members.try_map_charged(ctx, |index| {
-            Ok(Some(CompactIndexTarget {
-                atom: index.atom,
-                target: match resolve(index.atom)? {
-                    Some(target) => target,
-                    None => return Ok(None),
-                },
-            }))
-        })?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(CountedLane {
-            offset: self.offset,
-            anchor,
-            members,
-        }))
-    }
-    #[cfg(test)]
     pub(crate) fn try_resolve<T>(
         self,
         mut resolve: impl FnMut(CompactIndexAtom) -> Option<T>,

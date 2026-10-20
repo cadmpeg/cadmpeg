@@ -10,6 +10,7 @@ use crate::layout::edge_flange_fixed_operation_section as edge_flange;
 use crate::layout::edge_flange_legacy_single_edge_fixed_operation as edge_flange_legacy;
 use crate::layout::edge_flange_multi_edge_fixed_operation as edge_flange_multi;
 use crate::layout::edge_flange_to_object_fixed_operation_section as flange_to_object;
+use crate::layout::hem_common_controls as hem_controls;
 use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
@@ -25,7 +26,7 @@ use crate::records::feature::sheet_metal::DesignHemParameterOwners;
 use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_base_flange_operation(
@@ -81,7 +82,6 @@ const SHEET_METAL_HEADER_SHIFTS: [usize; 2] = [0, 4];
 const MAX_EDGE_WIDTH_DISTANCE_OWNERS: usize = 2;
 
 pub(super) fn exact_edge_flange_operation(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -164,7 +164,7 @@ pub(super) fn exact_edge_flange_operation(
     }
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            edge_flange_operation_at(ctx, bytes, start, paired_at, references, header_shift)?,
+            edge_flange_operation_at(bytes, start, paired_at, references, header_shift)?,
             edge_flange_to_object_operation_at(bytes, start, paired_at, references, header_shift),
         ]
         .into_iter()
@@ -532,7 +532,6 @@ fn legacy_edge_flange_operation_at(
 /// Read the `EdgeFlange` fixed operation section for one candidate header shift
 /// and refuse the candidate unless every slot agrees.
 fn edge_flange_operation_at(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -561,13 +560,7 @@ fn edge_flange_operation_at(
         // Every reference the fixed section names is removed from this pool, so the
         // entries that remain at the end are exactly the unclaimed ones.
         // The three width modes share one fixed ten-slot allocation.
-        let mut unclaimed = match ctx.collection_vec(
-            8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS,
-            "collect F3D unclaimed flange references",
-        ) {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut unclaimed = Vec::new();
         unclaimed.extend_from_slice(references);
         let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
             let at = pool.iter().position(|entry| *entry == index)?;
@@ -822,25 +815,19 @@ fn exact_hem_operation(
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            hem_gap_length_operation_at(
-                bytes,
-                start,
-                paired_at,
-                (*references).clone(),
-                header_shift,
-            ),
+            hem_gap_length_operation_at(bytes, start, paired_at, references.clone(), header_shift),
             hem_radius_angle_operation_at(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references.clone(),
                 header_shift,
             ),
             hem_gap_length_radius_operation_at(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references.clone(),
                 header_shift,
             ),
         ]
@@ -965,6 +952,7 @@ fn hem_gap_length_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
+    let flipped = hem_common_controls(bytes, common)?;
     if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
@@ -1001,6 +989,8 @@ fn hem_gap_length_operation_at(
     }
 
     Some(DesignHemOperation {
+        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
         aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
@@ -1034,6 +1024,7 @@ fn hem_radius_angle_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
+    let flipped = hem_common_controls(bytes, common)?;
     if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
@@ -1067,6 +1058,8 @@ fn hem_radius_angle_operation_at(
     }
 
     Some(DesignHemOperation {
+        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
         aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
@@ -1095,6 +1088,7 @@ fn hem_gap_length_radius_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
+    let flipped = hem_common_controls(bytes, common)?;
     if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
@@ -1129,6 +1123,8 @@ fn hem_gap_length_radius_operation_at(
     }
 
     Some(DesignHemOperation {
+        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
         aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
@@ -1141,6 +1137,25 @@ fn hem_gap_length_radius_operation_at(
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
     })
+}
+
+/// Admit the shared Hem controls without interpreting compatibility lanes.
+fn hem_common_controls(bytes: &[u8], common: usize) -> Option<bool> {
+    if View::u32_le_at(bytes, common.checked_add(hem_controls::BEND_POSITION)?)? != 3
+        || View::u32_le_at(bytes, common.checked_add(hem_controls::COMPATIBILITY_ONE)?)? != 1
+        || bytes.get(
+            common.checked_add(hem_controls::LEGACY_REFERENCES)?
+                ..common.checked_add(hem_controls::COMPATIBILITY_FOUR)?,
+        )? != [0, 0]
+        || View::u32_le_at(bytes, common.checked_add(hem_controls::COMPATIBILITY_FOUR)?)? != 4
+    {
+        return None;
+    }
+    match bytes.get(common.checked_add(hem_controls::FLIP)?)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

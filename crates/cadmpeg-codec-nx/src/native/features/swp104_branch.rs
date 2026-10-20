@@ -33,21 +33,21 @@ pub(in crate::native) struct FeatureSwp104LeadingBranch {
     id: String,
     /// Owning `SWP104` operation label.
     operation_label: String,
-    /// Nonzero construction discriminator.
-    discriminator: NonZeroU8,
+    /// One-based parameter-class index in the owning OM section.
+    parameter_class_index: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
     scalars: [ShiftedBinary64; 4],
-    /// Whether one zero byte precedes the branch mode.
+    /// Whether one zero byte precedes the profile-class index.
     leading_zero: bool,
-    /// Serialized nonzero branch mode.
-    mode: NonZeroU8,
-    /// Exact state lane preceding the terminal marker.
+    /// One-based profile-class index in the owning OM section.
+    profile_class_index: NonZeroU8,
+    /// Exact state lane preceding the successor marker.
     state_lane: Swp104StateLane,
-    /// Ordered nonterminal references.
+    /// Ordered member column references.
     members: BranchItems<Reference>,
-    /// Terminal reference.
-    terminal: Reference,
-    /// Absolute source offset of the discriminator.
+    /// Successor column reference.
+    successor: Reference,
+    /// Absolute source offset of the parameter-class index.
     source_offset: u64,
 }
 
@@ -59,39 +59,29 @@ struct Reference {
 
 impl FeatureSwp104LeadingBranch {
     pub(super) fn from_source(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: String,
         operation_label: String,
         source_offset: u64,
         branch: Swp104PayloadLeadingBranch,
-        resolve: impl Fn(PayloadIndexToken) -> Result<Option<String>, cadmpeg_core::CodecError>,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if source_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len()))
-            .is_none()
-        {
-            return Ok(None);
-        }
-        let reference = |token| {
-            Ok(Reference {
-                token,
-                data_block: resolve(token)?,
-            })
+        resolve: impl Fn(PayloadIndexToken) -> Option<String>,
+    ) -> Option<Self> {
+        source_offset.checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len()))?;
+        let reference = |token| Reference {
+            token,
+            data_block: resolve(token),
         };
-        Ok(Some(Self {
+        Some(Self {
             id,
             operation_label,
             source_offset,
-            discriminator: branch.discriminator,
+            parameter_class_index: branch.parameter_class_index,
             scalars: branch.scalars,
             leading_zero: branch.leading_zero,
-            mode: branch.mode,
+            profile_class_index: branch.profile_class_index,
             state_lane: branch.state_lane,
-            members: branch
-                .members
-                .try_map_indexed_charged(ctx, |_, item| reference(item))?,
-            terminal: reference(branch.terminal)?,
-        }))
+            members: branch.members.map_indexed(|_, item| reference(item)),
+            successor: reference(branch.successor),
+        })
     }
 
     fn members_offset(&self) -> u64 {
@@ -110,7 +100,7 @@ impl FeatureSwp104LeadingBranch {
                 .sum::<u64>()
             + self.state_len()
             + 3
-            + cadmpeg_core::decode::u64_from_index(self.terminal.token.raw().len())
+            + cadmpeg_core::decode::u64_from_index(self.successor.token.raw().len())
             + 1
     }
 }
@@ -119,11 +109,11 @@ impl FeatureSwp104LeadingBranch {
 struct FeatureSwp104LeadingBranchWire {
     id: String,
     operation_label: String,
-    discriminator: NonZeroU8,
+    parameter_class_index: NonZeroU8,
     scalars: [f64; 4],
     raw_scalars: [NativeBytes<[u8; 8]>; 4],
     leading_zero: bool,
-    mode: NonZeroU8,
+    profile_class_index: NonZeroU8,
     declared_count: u8,
     #[serde(
         default,
@@ -133,7 +123,7 @@ struct FeatureSwp104LeadingBranchWire {
     witnessed_count: Option<u8>,
     state_lane: NativeBytes<Vec<u8>>,
     members: BranchItems<ReferenceWire>,
-    terminal: ReferenceWire,
+    successor: ReferenceWire,
     byte_len: u64,
     source_offset: u64,
 }
@@ -144,7 +134,7 @@ impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
         let byte_len = value.byte_len();
         let mut at = value.source_offset + value.members_offset();
         let state_len = value.state_len();
-        let terminal_ordinal = u32::from(value.members.declared_count() - 1);
+        let successor_ordinal = u32::from(value.members.declared_count() - 1);
         let members = value.members.map_indexed(|ordinal, reference| {
             let source_offset = at;
             at += cadmpeg_core::decode::u64_from_index(reference.token.raw().len());
@@ -155,25 +145,25 @@ impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
                 source_offset,
             }
         });
-        let terminal = ReferenceWire {
-            ordinal: terminal_ordinal,
-            token: value.terminal.token,
-            data_block: value.terminal.data_block,
+        let successor = ReferenceWire {
+            ordinal: successor_ordinal,
+            token: value.successor.token,
+            data_block: value.successor.data_block,
             source_offset: at + state_len + 3,
         };
         Self {
             id: value.id,
             operation_label: value.operation_label,
-            discriminator: value.discriminator,
+            parameter_class_index: value.parameter_class_index,
             scalars: value.scalars.map(|scalar| scalar.value().get()),
             raw_scalars: (value.scalars.map(ShiftedBinary64::raw)).map(Into::into),
             leading_zero: value.leading_zero,
-            mode: value.mode,
+            profile_class_index: value.profile_class_index,
             declared_count: members.declared_count(),
             witnessed_count: value.state_lane.witnessed_count(),
             state_lane: (value.state_lane.bytes().to_vec()).into(),
             members,
-            terminal,
+            successor,
             byte_len,
             source_offset: value.source_offset,
         }
@@ -185,6 +175,17 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
     fn try_from(wire: FeatureSwp104LeadingBranchWire) -> Result<Self, Self::Error> {
         if wire.declared_count != wire.members.declared_count() {
             return Err("declared_count must equal members length plus one".to_owned());
+        }
+        if !Swp104PayloadLeadingBranch::consecutive_column_indices(
+            wire.members
+                .as_slice()
+                .iter()
+                .map(|item| item.token)
+                .chain(std::iter::once(wire.successor.token)),
+        ) {
+            return Err(
+                "members and successor must be non-null consecutive column indices".to_owned(),
+            );
         }
         let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
             ShiftedBinary64::from_wire(wire.scalars[i], *wire.raw_scalars[i])
@@ -210,16 +211,16 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
         at = at
             .checked_add(cadmpeg_core::decode::u64_from_index(state_lane.byte_len()) + 3)
             .ok_or("source_offset overflow")?;
-        if wire.terminal.ordinal
+        if wire.successor.ordinal
             != u32::try_from(wire.members.len()).map_err(|_| "members: count exceeds u32")?
         {
-            return Err("terminal ordinal does not match serialized order".to_owned());
+            return Err("successor ordinal does not match serialized order".to_owned());
         }
-        if wire.terminal.source_offset != at {
-            return Err("terminal source_offset does not match serialized position".to_owned());
+        if wire.successor.source_offset != at {
+            return Err("successor source_offset does not match serialized position".to_owned());
         }
         let end = at
-            .checked_add(cadmpeg_core::decode::u64_from_index(wire.terminal.token.raw().len()) + 1)
+            .checked_add(cadmpeg_core::decode::u64_from_index(wire.successor.token.raw().len()) + 1)
             .ok_or("source_offset overflow")?;
         if wire.byte_len != end - wire.source_offset {
             return Err("byte_len does not match serialized frame length".to_owned());
@@ -231,13 +232,13 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            discriminator: wire.discriminator,
+            parameter_class_index: wire.parameter_class_index,
             scalars,
             leading_zero: wire.leading_zero,
-            mode: wire.mode,
+            profile_class_index: wire.profile_class_index,
             state_lane,
             members: wire.members.map_indexed(|_, item| reference(item)),
-            terminal: reference(wire.terminal),
+            successor: reference(wire.successor),
             source_offset: wire.source_offset,
         })
     }
@@ -254,21 +255,9 @@ mod tests {
         operation_label: String,
         source_offset: u64,
         branch: crate::om::Swp104PayloadLeadingBranch,
-        resolve: impl Fn(
-            crate::om::reference_index::PayloadIndexToken,
-        ) -> Result<Option<String>, cadmpeg_core::CodecError>,
+        resolve: impl Fn(crate::om::reference_index::PayloadIndexToken) -> Option<String>,
     ) -> Option<FeatureSwp104LeadingBranch> {
-        crate::test_support::with_decode_context(|ctx| {
-            FeatureSwp104LeadingBranch::from_source(
-                ctx,
-                id,
-                operation_label,
-                source_offset,
-                branch,
-                resolve,
-            )
-        })
-        .unwrap()
+        FeatureSwp104LeadingBranch::from_source(id, operation_label, source_offset, branch, resolve)
     }
 
     #[test]
@@ -284,8 +273,9 @@ mod tests {
                         payload.push(0);
                     }
                     payload.extend([35, 1, member_count + 1]);
-                    for _ in 0..member_count {
-                        payload.extend([240, 1]);
+                    for ordinal in 0..member_count {
+                        let index = 255 - (member_count - 1 - ordinal);
+                        payload.extend([240, index]);
                     }
                     if let Some(count) = witnessed_count {
                         payload.extend([1, count]);
@@ -297,17 +287,15 @@ mod tests {
                     let record =
                         crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
                             .unwrap();
-                    let source = crate::test_support::with_decode_context(|ctx| {
-                        crate::om::swp104_payload_leading_branch(ctx, record)
-                    })
-                    .unwrap()
-                    .unwrap();
+                    let source = crate::om::swp104_payload_leading_branch(record)
+                        .unwrap()
+                        .unwrap();
                     let branch = from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),
                         1200,
                         source.clone(),
-                        |token| Ok(Some(format!("block#{}", token.value()))),
+                        |token| Some(format!("block#{}", token.value())),
                     )
                     .unwrap();
                     let wire = serde_json::to_value(&branch).unwrap();
@@ -316,9 +304,9 @@ mod tests {
                         wire["members"][0]["source_offset"],
                         1240 + u64::from(leading_zero)
                     );
-                    assert_eq!(wire["terminal"]["source_offset"], 1200 + payload.len() - 4);
-                    assert_eq!(wire["terminal"]["ordinal"], member_count);
-                    assert_eq!(wire["terminal"]["data_block"], "block#256");
+                    assert_eq!(wire["successor"]["source_offset"], 1200 + payload.len() - 4);
+                    assert_eq!(wire["successor"]["ordinal"], member_count);
+                    assert_eq!(wire["successor"]["data_block"], "block#256");
                     assert_eq!(
                         serde_json::from_value::<FeatureSwp104LeadingBranch>(wire.clone()).unwrap(),
                         branch
@@ -331,7 +319,7 @@ mod tests {
                         "operation".to_owned(),
                         u64::MAX,
                         source,
-                        |_| Ok(None)
+                        |_| None
                     )
                     .is_none());
                 }

@@ -65,16 +65,10 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[3],
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -86,16 +80,10 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[3],
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -110,16 +98,10 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[3],
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -131,31 +113,19 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[3],
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
     payload[curve_offset + 17..curve_offset + 21].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[3],
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
     payload = compact_104.clone();
@@ -170,16 +140,10 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[3],
-            &markers
-        )
-        .unwrap()
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 

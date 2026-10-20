@@ -73,7 +73,7 @@ fn source_association_is_a_free_carrier_root() {
             instance_path: Vec::new(),
         }),
     });
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
@@ -99,8 +99,7 @@ fn ir_strategy() -> impl Strategy<Value = CadIr> {
         for id in ids {
             ir.model.points.push(point(&id));
         }
-        ir.finalize(&cadmpeg_test_support::service_decode_context())
-            .expect("fixture ordering is admitted");
+        ir.finalize();
         ir
     })
 }
@@ -129,55 +128,38 @@ fn insert_free_vertex_shell(
     region_id: &str,
     shell_id: &str,
 ) {
+    draft.insert(point(point_id)).unwrap();
     draft
-        .insert(
-            point(point_id),
-            &cadmpeg_test_support::service_decode_context(),
-        )
+        .insert(Vertex {
+            id: VertexId::mint(vertex_id).expect("valid identity"),
+            point: PointId::mint(point_id).expect("valid identity"),
+            tolerance: None,
+        })
         .unwrap();
     draft
-        .insert(
-            Vertex {
-                id: VertexId::mint(vertex_id).expect("valid identity"),
-                point: PointId::mint(point_id).expect("valid identity"),
-                tolerance: None,
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
+        .insert(Body {
+            id: BodyId::mint(body_id).expect("valid identity"),
+            kind: BodyKind::Wire,
+            regions: vec![RegionId::mint(region_id).expect("valid identity")],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        })
         .unwrap();
     draft
-        .insert(
-            Body {
-                id: BodyId::mint(body_id).expect("valid identity"),
-                kind: BodyKind::Wire,
-                regions: vec![RegionId::mint(region_id).expect("valid identity")],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
+        .insert(Region {
+            id: RegionId::mint(region_id).expect("valid identity"),
+            body: BodyId::mint(body_id).expect("valid identity"),
+            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
+        })
         .unwrap();
     draft
-        .insert(
-            Region {
-                id: RegionId::mint(region_id).expect("valid identity"),
-                body: BodyId::mint(body_id).expect("valid identity"),
-                shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
-    draft
-        .insert(
-            Shell::with_free_vertex(
-                ShellId::mint(shell_id).expect("valid identity"),
-                RegionId::mint(region_id).expect("valid identity"),
-                VertexId::mint(vertex_id).expect("valid identity"),
-            ),
-            &cadmpeg_test_support::service_decode_context(),
-        )
+        .insert(Shell::with_free_vertex(
+            ShellId::mint(shell_id).expect("valid identity"),
+            RegionId::mint(region_id).expect("valid identity"),
+            VertexId::mint(vertex_id).expect("valid identity"),
+        ))
         .unwrap();
 }
 
@@ -186,7 +168,7 @@ proptest! {
 
     #[test]
     fn generated_documents_validate_clean(ir in ir_strategy()) {
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(
             report.error_count(),
             0,
@@ -199,7 +181,7 @@ proptest! {
     fn census_matches_arena_lengths(ir in ir_strategy()) {
         let census = ir.census();
         prop_assert_eq!(census["points"], ir.model.points.len());
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(&census, &report.entity_counts);
     }
 
@@ -215,7 +197,7 @@ proptest! {
         {
             let mut broken = ir.clone();
             broken.model.points.push(broken.model.points[0].clone());
-            let report = validate_neutral(&broken, Vec::new()).expect("resource allocation did not fail");
+            let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
                 has_error(&report, Check::Identity),
                 "findings: {:?}",
@@ -226,7 +208,7 @@ proptest! {
         if ir.model.points.len() >= 2 {
             let mut broken = ir.clone();
             broken.model.points.swap(0, 1);
-            let report = validate_neutral(&broken, Vec::new()).expect("resource allocation did not fail");
+            let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
                 has_error(&report, Check::ArenaOrder),
                 "findings: {:?}",
@@ -241,8 +223,8 @@ proptest! {
                 point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,
             });
-            broken.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
-            let report = validate_neutral(&broken, Vec::new()).expect("resource allocation did not fail");
+            broken.finalize();
+            let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
                 has_error(&report, Check::ReferentialIntegrity),
                 "findings: {:?}",
@@ -253,8 +235,8 @@ proptest! {
 
     #[test]
     fn validation_is_deterministic(ir in ir_strategy()) {
-        let a = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
-        let b = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let a = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+        let b = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(a.findings, b.findings);
     }
 
@@ -279,7 +261,7 @@ proptest! {
                 id: vertex_id.clone().try_into().expect("valid identity"),
                 point: missing.try_into().expect("valid identity"),
                 tolerance: None,
-            }, &cadmpeg_test_support::service_decode_context())
+            })
             .unwrap();
         let mut base = CadIr::empty();
         let dangling_result = dangling.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap();
@@ -304,8 +286,8 @@ proptest! {
         );
         let mut base = CadIr::empty();
         draft.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
-        base.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
-        let report = validate_neutral(&base, Vec::new()).expect("resource allocation did not fail");
+        base.finalize();
+        let report = validate_neutral(&base, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(
             report.error_count(),
             0,

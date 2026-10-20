@@ -257,7 +257,7 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
             lane.native_payload.len(),
             &HashSet::from([0x802f]),
         )
-        .expect("charged cylinder marker scan"),
+        .expect("cylinder marker scan"),
         vec![crate::resolved_features::selections::CylinderMarkerReference(marker, None)]
     );
 }
@@ -307,7 +307,6 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         name: "diameter-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.008).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
-
         operands: Vec::new(),
     };
     let mut lane = FeatureInputLane {
@@ -344,7 +343,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         sketch_entities: Vec::new(),
     };
     assert_eq!(
-        cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
+        cosmetic_thread_diameter_child_tail(&feature, &lane),
         Some(158..400)
     );
     let mut unrelated = lane.clone();
@@ -358,14 +357,8 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         name.offset = 0;
         unrelated.names.push(name);
     }
-    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
-    limited_policy.limits.max_work_units = 100_000;
-    let (limited_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
-            .unwrap();
     assert_eq!(
-        cosmetic_thread_diameter_child_tail(&limited_ctx, &feature, &unrelated).unwrap(),
+        cosmetic_thread_diameter_child_tail(&feature, &unrelated),
         Some(158..400),
     );
     let references = cosmetic_thread_cylinder_references(
@@ -395,7 +388,6 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         name: "next-feature".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
-
         operands: Vec::new(),
     });
     assert!(cosmetic_thread_cylinder_references(

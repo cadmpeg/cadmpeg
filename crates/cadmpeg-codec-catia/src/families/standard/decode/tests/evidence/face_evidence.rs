@@ -2,13 +2,16 @@
 //! face evidence tests.
 
 use super::{
-    attach_free_vertices, copy_standard_extrusion_definition, native_support_circle_param_range,
-    resolve_standard_endpoint_pairs, standard_extrusion_support_id,
-    standard_native_support_endpoint_pair, AnalyticSurfaceKind, AnnotationBuilder, CadIr, HashMap,
-    HashSet, PcurveGeometry, Point, Point2, Point3, PointId, SolvedSurfaceGeometry,
-    StandardCurveGeometry, StandardCurveSupport, StandardEdgeSupport, StandardSurfaceRecord,
-    Surface, SurfaceGeometry, SurfaceId, SurfacePrefix, Vector3, Vertex, VertexId,
+    attach_free_vertices, native_support_circle_param_range, resolve_standard_endpoint_pairs,
+    standard_native_support_endpoint_pair, AnnotationBuilder, CadIr, PcurveGeometry, Point, Point2,
+    Point3, PointId, SolvedSurfaceGeometry, StandardCurveGeometry, StandardCurveSupport,
+    StandardEdgeSupport, Surface, SurfaceGeometry, SurfaceId, Vector3, Vertex, VertexId,
 };
+use crate::families::standard::decode::copy_standard_extrusion_definition;
+use crate::families::standard::decode::standard_extrusion_support_id;
+use crate::families::standard::records::AnalyticSurfaceKind;
+use crate::families::standard::records::StandardSurfaceRecord;
+use crate::families::standard::records::SurfacePrefix;
 
 #[test]
 fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
@@ -17,9 +20,9 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
+        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
     })
-    .expect("service profile admits free vertex owner");
+    .expect("attach free vertices");
     assert_eq!(ir, before);
     assert_eq!(annotations.build(), AnnotationBuilder::new().build());
 }
@@ -30,7 +33,7 @@ fn standard_surface_entity_limit_refuses_before_first_surface_append() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_entities = 1;
@@ -64,7 +67,7 @@ fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
     crate::test_support::with_entity_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
+            attach_free_vertices(&mut ir, &mut annotations, &mut admission)
         else {
             panic!("free-vertex owner must exceed the entity limit");
         };
@@ -90,302 +93,15 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
+        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
     })
-    .expect("service profile admits free vertex owner");
+    .expect("attach free vertices");
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.regions.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
     assert_eq!(
         ir.model.shells[0].free_vertices(),
         [VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar")]
-    );
-}
-
-#[test]
-fn standard_free_vertex_members_refuse_collection_limit() {
-    let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
-        id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
-        point: PointId::mint("catia:test:point#limit").expect("identity grammar"),
-        tolerance: None,
-    });
-    let limited = crate::test_support::with_collection_limit(1, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
-    })
-    .expect("service context admits the free vertex");
-    assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
-}
-
-#[test]
-fn standard_extrusion_support_refuses_before_surface_storage() {
-    let mut surfaces = Vec::new();
-    let mut supports = HashMap::new();
-    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        standard_extrusion_support_id(
-            ctx,
-            &mut AnnotationBuilder::new(),
-            &mut surfaces,
-            &mut supports,
-            7,
-            geometry.clone(),
-            &mut admission,
-        )
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        standard_extrusion_support_id(
-            ctx,
-            &mut AnnotationBuilder::new(),
-            &mut surfaces,
-            &mut supports,
-            7,
-            geometry,
-            &mut admission,
-        )
-    })
-    .expect("service context admits support");
-    assert_eq!(surfaces.len(), 1);
-    assert_eq!(supports.len(), 1);
-}
-
-#[test]
-fn standard_extrusion_definition_copy_refuses_retained_id_limit() {
-    let directrix =
-        cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
-    let direction =
-        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
-            .expect("finite direction");
-    let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
-        directrix, None, direction, None, None,
-    );
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        copy_standard_extrusion_definition(ctx, &definition)
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let copied = crate::test_support::with_service_context(|ctx| {
-        copy_standard_extrusion_definition(ctx, &definition)
-    })
-    .expect("service context admits the retained directrix identity");
-    assert_eq!(
-        copied,
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),
-    );
-}
-
-#[test]
-fn standard_native_edge_face_carrier_and_candidate_limits_refuse() {
-    let supports = [StandardCurveSupport {
-        pos: 0,
-        tag: 700,
-        faces: [0, 0],
-        geometry: StandardCurveGeometry::Bspline,
-    }];
-    let records = [10u32, 20].map(|target| {
-        StandardSurfaceRecord::Analytic(SurfacePrefix {
-            pos: 0,
-            target,
-            kind: AnalyticSurfaceKind::Cylinder,
-        })
-    });
-    let owners = HashMap::from([(700, HashSet::from([20]))]);
-    for (limit, operation) in [
-        (0, "catia_standard_native_face_carriers"),
-        (2, "catia_standard_native_face_candidates"),
-    ] {
-        let mut faces = [[0, 0]];
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::decode::apply_standard_native_edge_faces(
-                ctx, &mut faces, &supports, &records, &owners,
-            )
-        });
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal.operation == operation)
-        );
-    }
-    let mut faces = [[0, 0]];
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::decode::apply_standard_native_edge_faces(
-            ctx, &mut faces, &supports, &records, &owners,
-        )
-    })
-    .expect("service context admits native face evidence");
-    assert_eq!(faces, [[0, 1]]);
-}
-
-#[test]
-fn standard_face_attachment_refuses_each_collection_boundary() {
-    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
-    let bindings = [(
-        SurfaceId::mint("catia:test:surface#face").expect("identity grammar"),
-        true,
-        0,
-    )];
-    let mut refusals = HashSet::new();
-    for limit in 0..256 {
-        let mut ir = CadIr::empty();
-        let mut annotations = AnnotationBuilder::new();
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            crate::families::standard::decode::attach_standard_faces(
-                ctx,
-                &mut ir,
-                &mut annotations,
-                &bindings,
-                &brep,
-                &mut admission,
-            )
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
-            refusals.insert(refusal.operation);
-        }
-    }
-    for operation in [
-        "catia_standard_shell_face_ids",
-        "catia_standard_model_faces",
-        "catia_standard_body_regions",
-        "catia_standard_model_bodies",
-        "catia_standard_region_shells",
-        "catia_standard_model_regions",
-        "catia_standard_model_shells",
-    ] {
-        assert!(
-            refusals.contains(operation),
-            "missing charge for {operation}"
-        );
-    }
-    let mut ir = CadIr::empty();
-    crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        crate::families::standard::decode::attach_standard_faces(
-            ctx,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bindings,
-            &brep,
-            &mut admission,
-        )
-    })
-    .expect("service context admits the standard face");
-    assert_eq!(ir.model.faces[0].id.as_str(), "catia:standard:face#0");
-    assert_eq!(ir.model.bodies[0].id.as_str(), "catia:standard:body#0");
-    assert_eq!(ir.model.regions[0].id.as_str(), "catia:standard:region#0-0");
-    assert_eq!(ir.model.shells[0].id.as_str(), "catia:standard:shell#0-0");
-    assert_eq!(ir.model.shells[0].faces().len(), 1);
-}
-
-#[test]
-fn standard_face_partition_refuses_each_collection_boundary() {
-    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
-    let bindings = [(
-        SurfaceId::mint("catia:test:surface#partition").expect("identity grammar"),
-        true,
-        0,
-    )];
-    let mut base_ir = CadIr::empty();
-    let mut base_annotations = AnnotationBuilder::new();
-    crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        crate::families::standard::decode::attach_standard_faces(
-            ctx,
-            &mut base_ir,
-            &mut base_annotations,
-            &bindings,
-            &brep,
-            &mut admission,
-        )
-    })
-    .expect("service context admits the initial face");
-    let mut second = base_ir.model.faces[0].clone();
-    second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
-    crate::test_support::with_service_context(|ctx| {
-        crate::assemble::annotate(
-            ctx,
-            &mut base_annotations,
-            &second.id,
-            "MainDataStream+SurfacicReps",
-            0,
-            "surfacic_reps_face_sense",
-            cadmpeg_ir::Exactness::ByteExact,
-        )
-    })
-    .expect("service profile admits second face annotation");
-    base_ir.model.faces.push(second);
-    let components = [vec![0], vec![1]];
-    let mut refusals = HashSet::new();
-    for limit in 0..128 {
-        let mut ir = base_ir.clone();
-        let mut annotations = base_annotations.clone();
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            crate::families::standard::decode::partition_standard_face_components(
-                ctx,
-                &mut ir,
-                &mut annotations,
-                &components,
-                &mut admission,
-            )
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
-            refusals.insert(refusal.operation);
-        }
-    }
-    for operation in [
-        "catia_standard_partition_region_ids",
-        "catia_standard_partition_body_regions",
-        "catia_standard_partition_face_ids",
-        "catia_standard_partition_region_shells",
-        "catia_standard_partition_regions",
-        "catia_standard_partition_shells",
-    ] {
-        assert!(
-            refusals.contains(operation),
-            "missing charge for {operation}"
-        );
-    }
-    let result = crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        crate::families::standard::decode::partition_standard_face_components(
-            ctx,
-            &mut base_ir,
-            &mut base_annotations,
-            &components,
-            &mut admission,
-        )
-    })
-    .expect("service context admits partitioned faces");
-    assert!(result);
-    assert_eq!(base_ir.model.regions.len(), 2);
-    assert_eq!(
-        base_ir.model.regions[1].id.as_str(),
-        "catia:standard:region#0-1"
-    );
-    assert_eq!(
-        base_ir.model.shells[1].id.as_str(),
-        "catia:standard:shell#0-1"
-    );
-    assert_eq!(
-        base_ir.model.shells[1].faces()[0].as_str(),
-        "catia:standard:face#1"
     );
 }
 
@@ -437,16 +153,6 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Bspline,
     };
-    for (limit, operation) in [
-        (0, "catia_standard_resolved_endpoint_rows"),
-        (1, "catia_standard_fallback_endpoint_pairs"),
-    ] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(
-                ctx, &ir, &bindings, &indices, std::slice::from_ref(&support), &[(0..138).collect()])),
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
-        ));
-    }
     let choices = crate::test_support::with_service_context(|ctx| {
         resolve_standard_endpoint_pairs(
             ctx,
@@ -455,13 +161,58 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
             &indices,
             &[support],
             &[(0..138).collect()],
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
     assert_eq!(choices[0].len(), 9_453);
     assert_eq!(choices[0].first(), Some(&[0, 1]));
     assert_eq!(choices[0].last(), Some(&[136, 137]));
+}
+
+#[test]
+fn endpoint_pair_relation_bounds_leave_rows_empty_with_a_loss() {
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    // 400 points state 79,800 relations, past the per-row bound. Two rows of
+    // 300 points state 44,850 each, and the second exceeds the shared remainder.
+    let candidates = [400, 300, 300].map(|count| (0..count).collect::<Vec<_>>());
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let choices = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_endpoint_pairs(
+            ctx,
+            &CadIr::empty(),
+            &[],
+            &std::collections::HashMap::new(),
+            &[support; 3],
+            &candidates,
+            &mut refusal,
+        )
+    })
+    .expect("a bounded enumeration is not a decode error")
+    .expect("endpoint option pass");
+
+    assert_eq!(
+        choices.iter().map(Vec::len).collect::<Vec<_>>(),
+        [0, 44_850, 0]
+    );
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one note for the bounded rows");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyStandardSearchBounded.kind()
+    );
+    assert!(note
+        .message
+        .contains("bound of 65536 relations per edge row"));
+    assert!(note.message.contains("edge rows [0, 2] keep no"));
 }
 
 #[test]
@@ -531,26 +282,6 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
         geometry: StandardCurveGeometry::Bspline,
     };
 
-    let mut operations = HashSet::new();
-    for limit in 0..=32 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            resolve_standard_endpoint_pairs(
-                ctx,
-                &ir,
-                &bindings,
-                &indices,
-                std::slice::from_ref(&support),
-                &[vec![0, 1, 2, 3]],
-            )
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            outcome => panic!("unexpected planar endpoint result: {outcome:?}"),
-        }
-    }
-    assert!(operations.contains("catia_standard_line_singleton_pair"));
     let choices = crate::test_support::with_service_context(|ctx| {
         resolve_standard_endpoint_pairs(
             ctx,
@@ -559,9 +290,10 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
             &indices,
             &[support],
             &[vec![0, 1, 2, 3]],
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 1]]]);
@@ -626,21 +358,18 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
         geometry: super::super::checked_circle(Point3::new(0.0, 0.0, 0.0), 5.0),
     };
 
-    for (limit, operation) in [
-        (0, "catia_standard_resolved_endpoint_rows"),
-        (1, "catia_standard_initial_endpoint_pair"),
-        (2, "catia_standard_circle_endpoint_pairs"),
-    ] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(
-                ctx, &ir, &bindings, &indices, std::slice::from_ref(&support), &[vec![0, 1]])),
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
-        ));
-    }
     let choices = crate::test_support::with_service_context(|ctx| {
-        resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1]])
+        resolve_standard_endpoint_pairs(
+            ctx,
+            &ir,
+            &bindings,
+            &indices,
+            &[support],
+            &[vec![0, 1]],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 0], [0, 1], [1, 1]]]);
@@ -711,33 +440,6 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
         geometry: StandardCurveGeometry::Line,
     });
 
-    let mut operations = HashSet::new();
-    for limit in 0..=32 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            resolve_standard_endpoint_pairs(
-                ctx,
-                &ir,
-                &bindings,
-                &indices,
-                &supports,
-                &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
-            )
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            outcome => panic!("unexpected parallel line endpoint result: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_standard_line_groups",
-        "catia_standard_line_group_edges",
-        "catia_standard_line_endpoint_pairs",
-        "catia_standard_line_pair_copy",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
     let choices = crate::test_support::with_service_context(|ctx| {
         resolve_standard_endpoint_pairs(
             ctx,
@@ -746,109 +448,30 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
             &indices,
             &supports,
             &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 2], [1, 3]], vec![[0, 2], [1, 3]]]);
 }
 
 #[test]
+fn fallback_pair_relation_allowance_grows_with_candidate_points() {
+    use crate::families::standard::decode::fallback_pair_relation_allowance;
+
+    assert_eq!(fallback_pair_relation_allowance(&[vec![0, 1, 2]]), 65_536);
+    assert_eq!(
+        fallback_pair_relation_allowance(&vec![vec![0; 512]; 4]),
+        2048 * 64
+    );
+}
+
+#[test]
 fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
-    let constraint = crate::test_support::with_service_context(|ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &[], &[])
-    })
-    .expect("empty constraint fits service budget");
+    let constraint = super::super::super::StandardLinePairConstraint::new(&[], &[], &[]);
     assert!(constraint.edge_pairs(&[None]).is_none());
-}
-
-#[test]
-fn line_pair_constraint_refuses_collection_growth_before_face_edges() {
-    let points = [Point::new(
-        PointId::mint("catia:test:point#p0").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite point"),
-        None,
-    )];
-    let point_refusal = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &points, &[], &[])
-    });
-    assert!(
-        matches!(point_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_line_constraint_points")
-    );
-    let supports = [StandardCurveSupport {
-        pos: 0,
-        tag: 0,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Line,
-    }];
-    let options = [vec![[0, 1], [1, 2]]];
-    let role_refusal = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
-    });
-    assert!(
-        matches!(role_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_line_constraint_roles")
-    );
-    let face_refusal = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
-    });
-    assert!(
-        matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_line_constraint_faces")
-    );
-    let refused = crate::test_support::with_collection_limit(2, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_line_constraint_face_edges")
-    );
-    crate::test_support::with_service_context(|ctx| {
-        assert!(super::super::super::StandardLinePairConstraint::new(
-            ctx,
-            &[],
-            &supports,
-            &options
-        )
-        .is_ok());
-    });
-}
-
-#[test]
-fn circle_pair_constraint_refuses_nested_range_growth() {
-    let supports = [StandardCurveSupport {
-        pos: 0,
-        tag: 0,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("finite center"),
-            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
-        },
-    }];
-    let options = [vec![[0, 1], [1, 2]]];
-    let face_refusal = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options).map(|_| ())
-    });
-    assert!(
-        matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_circle_constraint_faces")
-    );
-    let refused = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options).map(|_| ())
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_circle_constraint_ranges")
-    );
-    crate::test_support::with_service_context(|ctx| {
-        assert!(
-            super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options)
-                .is_ok()
-        );
-    });
 }
 
 /// A unit-radius cone about +Z whose cross-section radius overflows at
@@ -970,5 +593,174 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
             None
         ),
         Ok(Some([0, 1]))
+    );
+}
+
+#[test]
+fn free_vertices_attach_to_a_shell() {
+    let mut ir = CadIr::empty();
+    ir.model.vertices.push(Vertex {
+        id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
+        point: PointId::mint("catia:test:point#limit").expect("identity grammar"),
+        tolerance: None,
+    });
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        attach_free_vertices(&mut ir, &mut AnnotationBuilder::new(), &mut admission)
+    })
+    .expect("attach free vertices");
+    assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
+}
+
+#[test]
+fn extrusion_support_adds_one_surface_and_support_entry() {
+    use std::collections::HashMap;
+    let mut surfaces = Vec::new();
+    let mut supports = HashMap::new();
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        standard_extrusion_support_id(
+            &mut AnnotationBuilder::new(),
+            &mut surfaces,
+            &mut supports,
+            7,
+            geometry,
+            &mut admission,
+        )
+    })
+    .expect("compute the standard extrusion support ID");
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(supports.len(), 1);
+}
+
+#[test]
+fn native_edge_faces_take_the_surface_owning_the_support_tag() {
+    use std::collections::HashMap;
+    use std::collections::HashSet;
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 700,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let records = [10u32, 20].map(|target| {
+        StandardSurfaceRecord::Analytic(SurfacePrefix {
+            pos: 0,
+            target,
+            kind: AnalyticSurfaceKind::Cylinder,
+        })
+    });
+    let owners = HashMap::from([(700, HashSet::from([20]))]);
+    let mut faces = [[0, 0]];
+    crate::families::standard::decode::apply_standard_native_edge_faces(
+        &mut faces, &supports, &records, &owners,
+    );
+    assert_eq!(faces, [[0, 1]]);
+}
+
+#[test]
+fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#face").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("attach standard faces");
+    assert_eq!(ir.model.faces[0].id.as_str(), "catia:standard:face#0");
+    assert_eq!(ir.model.bodies[0].id.as_str(), "catia:standard:body#0");
+    assert_eq!(ir.model.regions[0].id.as_str(), "catia:standard:region#0-0");
+    assert_eq!(ir.model.shells[0].id.as_str(), "catia:standard:shell#0-0");
+    assert_eq!(ir.model.shells[0].faces().len(), 1);
+}
+
+#[test]
+fn face_partition_splits_components_into_separate_regions_and_shells() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#partition").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut base_ir = CadIr::empty();
+    let mut base_annotations = AnnotationBuilder::new();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut base_ir,
+            &mut base_annotations,
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("attach standard faces");
+    let mut second = base_ir.model.faces[0].clone();
+    second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
+    crate::assemble::annotate(
+        &mut base_annotations,
+        &second.id,
+        "MainDataStream+SurfacicReps",
+        0,
+        "surfacic_reps_face_sense",
+        cadmpeg_ir::Exactness::ByteExact,
+    )
+    .expect("annotate the entity");
+    base_ir.model.faces.push(second);
+    let components = [vec![0], vec![1]];
+    let result = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::partition_standard_face_components(
+            &mut base_ir,
+            &mut base_annotations,
+            &components,
+            &mut admission,
+        )
+    })
+    .expect("partition standard face components");
+    assert!(result);
+    assert_eq!(base_ir.model.regions.len(), 2);
+    assert_eq!(
+        base_ir.model.regions[1].id.as_str(),
+        "catia:standard:region#0-1"
+    );
+    assert_eq!(
+        base_ir.model.shells[1].id.as_str(),
+        "catia:standard:shell#0-1"
+    );
+    assert_eq!(
+        base_ir.model.shells[1].faces()[0].as_str(),
+        "catia:standard:face#1"
+    );
+}
+
+#[test]
+fn extrusion_definition_copy_equals_the_source_definition() {
+    let directrix =
+        cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
+    let direction =
+        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+            .expect("finite direction");
+    let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+        directrix, None, direction, None, None,
+    );
+    let copied = { copy_standard_extrusion_definition(&definition) };
+    assert_eq!(
+        copied,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),
     );
 }

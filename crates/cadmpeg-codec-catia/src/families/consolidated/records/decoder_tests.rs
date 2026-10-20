@@ -17,14 +17,13 @@ use crate::test_support::test_a5_bound::{
     a5_nurbs_pair_bound_edge_stream, a5_topology_edge_run_stream, a5_torus_bound_edge_stream,
 };
 use crate::test_support::test_a5a8::{
-    a5_native_edge_identity_stream, a5_pcurve_stream, a5_surface_stream, a6_pcurve_stream,
+    a5_native_edge_identity_stream, a5_pcurve_stream, a6_pcurve_stream,
 };
 use crate::test_support::test_b2::{
     b2_circle_stream, b2_cylinder_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
-    b2_embedded_cylinder_stream_with_object_id, b2_fixed_owner_boundary_cycle_stream,
-    b2_fixed_owner_boundary_face_node_cycle_stream, b2_line_profile_stream,
-    b2_plane_carrier_stream, b2_resolved_revolution_stream, b2_topology_edge_run_stream,
-    b3_cylinder_stream,
+    b2_fixed_owner_boundary_cycle_stream, b2_line_profile_stream, b2_plane_carrier_stream,
+    b2_resolved_revolution_stream, b2_topology_edge_run_stream,
+    b2_wide_cylinder_stream_with_operand, b3_cylinder_stream,
 };
 use crate::test_support::test_b5::append_b5_record;
 use crate::test_support::test_bytes::{be32, le_f32};
@@ -35,20 +34,14 @@ fn parsed_compact_edge_endpoints(
     bytes: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<crate::families::consolidated::records::ConsolidatedCompactEdgeEndpoints> {
-    crate::test_support::with_service_context(|ctx| {
-        super::consolidated_compact_edge_endpoints_from_records(ctx, bytes, records)
-            .expect("service decode")
-    })
+    super::consolidated_compact_edge_endpoints_from_records(bytes, records)
 }
 
 fn parsed_owner_boundary_cycles(
     bytes: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<crate::families::consolidated::records::ConsolidatedOwnerBoundaryCycle> {
-    crate::test_support::with_service_context(|ctx| {
-        super::consolidated_owner_boundary_cycles_from_records(ctx, bytes, records)
-            .expect("service decode")
-    })
+    super::consolidated_owner_boundary_cycles_from_records(bytes, records)
 }
 
 #[test]
@@ -65,17 +58,15 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
     }
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
-        })
-        .expect("service decode"),
+        crate::families::consolidated::records::object_stream_vertices(&bytes)
+            .expect("decode the object stream vertices"),
         [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
     );
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::consolidated::records::object_stream_vertices(ctx, &bytes[5..])
-    })
-    .expect("service decode")
-    .is_empty());
+    assert!(
+        crate::families::consolidated::records::object_stream_vertices(&bytes[5..])
+            .expect("decode the object stream vertices")
+            .is_empty()
+    );
 
     let mut b5 = Vec::new();
     let mut payload = vec![0x05, 0x08, 0x01];
@@ -89,43 +80,9 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
         b5.extend_from_slice(&le_f32(value));
     }
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::consolidated::records::object_stream_vertices(ctx, &b5)
-        })
-        .expect("service decode"),
+        crate::families::consolidated::records::object_stream_vertices(&b5)
+            .expect("decode the object stream vertices"),
         [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
-    );
-}
-
-#[test]
-fn object_stream_vertex_ranges_rows_and_points_refuse_limits() {
-    let mut bytes = vec![0xb2, 0x03, 0x06, 0x00, 0x05, 0x05, 0x08, 0x01];
-    for value in [1.0_f32, 2.0, 3.0] {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    let records = crate::wire::records::consolidated_records(&bytes);
-    for (limit, operation) in [
-        (0, "catia_object_stream_frame_ranges"),
-        (1, "catia_object_stream_vertex_rows"),
-        (2, "catia_object_stream_vertices"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::object_stream_vertices_from_records(ctx, &bytes, &records)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation),
-            "limit {limit}"
-        );
-    }
-    let vertices = crate::test_support::with_service_context(|ctx| {
-        crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
-    })
-    .expect("service decode");
-    assert_eq!(vertices.len(), 1);
-    assert_eq!(
-        vertices[0].get(),
-        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }
 
@@ -140,23 +97,6 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
         crate::test_support::test_b5::increasing([0.0, 1.0])
     );
     assert_eq!(blocks[0].parameters.range.endpoints(), [0.0, 1.0]);
-}
-
-#[test]
-fn consolidated_edge_resolution_propagates_a5_surface_limit() {
-    let bytes = a5_surface_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            ctx,
-            &bytes,
-            &records,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_a5_distinct_knots"));
 }
 
 #[test]
@@ -206,7 +146,7 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
                 .collect::<Vec<_>>()
         };
     let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
-        .expect("service decode");
+        .expect("resolve the consolidated edge blocks");
     let indexed = crate::test_support::with_service_context(|ctx| {
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             ctx,
@@ -214,51 +154,9 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("service decode")
+        .expect("resolve the consolidated edge blocks")
     });
     assert_eq!(signature(&indexed), signature(&one_shot));
-}
-
-#[test]
-fn consolidated_edge_definition_decodes_general_scalar_layout() {
-    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
-
-    let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 2.0, 1.0e-6, 0.5, 1.5, 1.0, -0.5, 1.0e-6] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    assert_eq!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload),
-        Some(ConsolidatedEdgeDefinitionData::Scalar {
-            operands: [1, 2, 3463],
-            values: vec![
-                crate::test_support::test_b5::finite(0.0),
-                crate::test_support::test_b5::finite(2.0),
-                crate::test_support::test_b5::finite(1.0e-6),
-                crate::test_support::test_b5::finite(0.5),
-                crate::test_support::test_b5::finite(1.5),
-                crate::test_support::test_b5::finite(1.0),
-                crate::test_support::test_b5::finite(-0.5),
-                crate::test_support::test_b5::finite(1.0e-6)
-            ]
-            .try_into()
-            .expect("admitted scalar arity"),
-        })
-    );
-    let mut class24_nine_scalars = payload.clone();
-    class24_nine_scalars.extend_from_slice(&1e-6_f64.to_le_bytes());
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(
-            0x24,
-            &class24_nine_scalars
-        )
-        .is_none()
-    );
-    payload.pop();
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload)
-            .is_none()
-    );
 }
 
 #[test]
@@ -271,7 +169,7 @@ fn class23_nine_scalar_definition_requires_three_equal_triples() {
     }
     assert_eq!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x23, &payload),
-        Some(ConsolidatedEdgeDefinitionData::Scalar {
+        Some(ConsolidatedEdgeDefinitionData::Scalar23 {
             operands: [1, 2, 3463],
             values: vec![
                 crate::test_support::test_b5::finite(0.0),
@@ -289,17 +187,17 @@ fn class23_nine_scalar_definition_requires_three_equal_triples() {
         })
     );
 
-    let mut unequal_tolerances = payload;
     for offset in [6 + 2 * 8, 6 + 8 * 8] {
+        let mut unequal_tolerances = payload.clone();
         unequal_tolerances[offset..offset + 8].copy_from_slice(&2.0_f64.to_le_bytes());
+        assert!(
+            crate::families::consolidated::records::consolidated_edge_definition_data(
+                0x23,
+                &unequal_tolerances
+            )
+            .is_none()
+        );
     }
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(
-            0x23,
-            &unequal_tolerances
-        )
-        .is_none()
-    );
 }
 
 #[test]
@@ -685,7 +583,7 @@ fn consolidated_support_resolution_withholds_cross_family_matches() {
 #[test]
 fn consolidated_support_identity_mismatch_does_not_fall_back_to_geometry() {
     let mut bytes = a5_cone_bound_edge_stream();
-    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x1234));
+    bytes.extend_from_slice(&b2_wide_cylinder_stream_with_operand(0x1234));
 
     let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
         .expect("evaluator allocation succeeds");
@@ -716,7 +614,7 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
     let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(3, 139, 142));
 
     let runs = crate::families::consolidated::records::consolidated_edge_use_runs(&bytes);
     let [run] = runs.as_slice() else {
@@ -753,6 +651,22 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
             }
         )
     ));
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store preceding definition");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load preceding definition"),
+        native
+    );
+    let mut wrong_operand = bytes.clone();
+    wrong_operand[6] = 0x09;
+    assert!(super::consolidated_edge_use_runs(&wrong_operand).is_empty());
+    for (offset, sense) in [(17, 0x84), (26, 0x88)] {
+        let mut wrong_sense = bytes.clone();
+        wrong_sense[offset] = sense;
+        assert!(super::consolidated_edge_use_runs(&wrong_sense).is_empty());
+    }
 }
 
 #[test]
@@ -779,54 +693,20 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
             .and_then(super::ConsolidatedEdgeDefinition::data),
         Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 10 })
     );
-}
-
-#[test]
-fn consolidated_edge_use_rows_and_references_refuse_collection_limits() {
-    use std::collections::HashSet;
-
-    let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let mut refused = HashSet::new();
-    for limit in 0..128 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-            refused.insert(error.operation);
-        }
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store successor layout");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load successor layout"),
+        native
+    );
+    for (offset, sense) in [(28, 0x84), (37, 0x88)] {
+        let mut wrong_sense = bytes;
+        wrong_sense[offset] = sense;
+        assert!(super::consolidated_edge_use_runs(&wrong_sense).is_empty());
     }
-    for operation in [
-        "catia_b2_uses",
-        "catia_b2_use_references",
-        "catia_edge_use_runs",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
-}
-
-#[test]
-fn consolidated_successor_definition_refuses_retained_limit() {
-    let bytes = [
-        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21, 0xb2, 0x03, 0x24, 0x04,
-        0x05, 0x81, 0x29, 0x0f, 0x87, 0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 0x05, 0x2d, 0x88, 0xb2,
-        0x03, 0x06, 0x04, 0x05, 0x82, 0x09, 0x31, 0x84,
-    ];
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let mut found = false;
-    for limit in 0..128 {
-        let result = crate::test_support::with_retained_limit(limit, |ctx| {
-            super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
-        });
-        if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_edge_use_succeeding_definition_payload")
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found);
 }
 
 #[test]
@@ -838,50 +718,15 @@ fn compact_owner_ordinal_selects_the_owned_edge_node() {
         0x07, 0x0b, 0x21,
     ];
     let records = crate::wire::records::consolidated_records(&bytes);
-    let owned = crate::test_support::with_service_context(|ctx| {
-        crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-            ctx, &bytes, &records,
-        )
-    })
-    .expect("service context admits owned edge nodes");
+    let owned = crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+        &bytes, &records,
+    );
     let [owned] = owned.as_slice() else {
         panic!("one owner-selected edge node")
     };
     assert_eq!(owned.owner_pos, 9);
     assert_eq!(owned.allocation_ordinal, 2);
     assert_eq!(owned.node.pos, 37);
-}
-
-#[test]
-fn consolidated_owned_edge_nodes_refuse_each_collection_boundary() {
-    let bytes = [
-        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
-        0x0b, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01, 0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00, 0xb2,
-        0x03, 0x05, 0x03, 0x05, 0x82, 0x0b, 0x57, 0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f,
-        0x07, 0x0b, 0x21,
-    ];
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let mut refusals = std::collections::HashSet::new();
-    for limit in 0..128 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-                ctx, &bytes, &records,
-            )
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
-            refusals.insert(refusal.operation);
-        }
-    }
-    for operation in [
-        "catia_owned_edge_record_indices",
-        "catia_owned_edge_nodes",
-        "catia_owned_edge_results",
-    ] {
-        assert!(
-            refusals.contains(operation),
-            "missing charge for {operation}"
-        );
-    }
 }
 
 #[test]
@@ -911,6 +756,37 @@ fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
         endpoints[1].endpoint_records,
         [first_vertex_pos, second_vertex_pos]
     );
+}
+
+#[test]
+fn compact_endpoint_walk_follows_a_deferring_chain_past_any_recursion_limit() {
+    let first_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let deferring_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x21, 0x05, 0x05, 0x06, 0x32, 0x06, 0x33, 0x21,
+    ];
+    let chain = 2_000;
+    let first_vertex_pos = first_edge.len();
+    let second_vertex_pos = first_vertex_pos + vertex.len();
+    let mut bytes = first_edge.to_vec();
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&vertex);
+    for _ in 0..chain {
+        bytes.extend_from_slice(&deferring_edge);
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let endpoints = parsed_compact_edge_endpoints(&bytes, &records);
+
+    assert_eq!(endpoints.len(), chain + 1);
+    assert_eq!(
+        endpoints[0].endpoint_records,
+        [first_vertex_pos, second_vertex_pos]
+    );
+    assert!(endpoints[1..]
+        .iter()
+        .all(|edge| edge.endpoint_records == [second_vertex_pos, second_vertex_pos]));
 }
 
 #[test]
@@ -1024,202 +900,59 @@ fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
 }
 
 #[test]
-fn compact_endpoint_indexes_scopes_and_memo_refuse_collection_limits() {
-    use std::collections::HashSet;
-
-    let (bytes, _, _, _) = b2_fixed_owner_boundary_cycle_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let mut refused = HashSet::new();
-    for limit in 0..256 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::consolidated_compact_edge_endpoints_from_records(ctx, &bytes, &records)
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-            refused.insert(error.operation);
-        }
-    }
-    for operation in [
-        "catia_compact_endpoint_nodes_by_pos",
-        "catia_compact_endpoint_nodes_by_index",
-        "catia_compact_endpoint_scopes",
-        "catia_compact_endpoint_scope_entries",
-        "catia_compact_endpoint_locations",
-        "catia_compact_endpoint_active",
-        "catia_compact_endpoint_memo",
-        "catia_compact_endpoint_bindings",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
-}
-
-#[test]
-fn fixed_owner_boundary_indexes_and_nested_targets_refuse_collection_limits() {
-    use std::collections::HashSet;
-
-    let mut refused = HashSet::new();
+fn consolidated_edge_definition_decodes_typed_class25_maps() {
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
     for bytes in [
-        b2_fixed_owner_boundary_cycle_stream().0,
-        b2_fixed_owner_boundary_face_node_cycle_stream().0,
+        crate::test_support::test_class25::affine_stream(),
+        crate::test_support::test_class25::sampled_stream(),
     ] {
-        let records = crate::wire::records::consolidated_records(&bytes);
-        for limit in 0..256 {
-            let result = crate::test_support::with_collection_limit(limit, |ctx| {
-                super::consolidated_owner_boundary_cycles_from_records(ctx, &bytes, &records)
-            });
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-                refused.insert(error.operation);
-            }
-        }
+        let mut bytes = bytes;
+        bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+        let native = crate::native::CatiaNative::decode(&bytes);
+        assert!(matches!(
+            native.consolidated_edge_nodes[0]
+                .definition
+                .as_ref()
+                .and_then(CatiaConsolidatedEdgeDefinition::data),
+            Some(ConsolidatedEdgeDefinitionData::Domain25 { .. })
+        ));
+        let mut descriptor_payload = vec![0x08, 0x34, 0x12, 0x02];
+        descriptor_payload.extend_from_slice(&3.0_f64.to_le_bytes());
+        descriptor_payload.extend_from_slice(&7.0_f64.to_le_bytes());
+        let mut described = vec![
+            0xb2,
+            0x03,
+            0x18,
+            u8::try_from(descriptor_payload.len()).expect("small descriptor"),
+            0x05,
+        ];
+        described.extend_from_slice(&descriptor_payload);
+        described.extend_from_slice(&bytes);
+        let runs = super::consolidated_class25_edge_runs(&described);
+        let [run] = runs.as_slice() else {
+            panic!("one described class25 map")
+        };
+        assert_eq!(run.descriptor.record_id, 0x1234);
+        assert_eq!(
+            cadmpeg_ir::scalar::FiniteReal::raw_lane(&run.descriptor.values),
+            [3.0, 7.0]
+        );
+        let native = crate::native::CatiaNative::decode(&described);
+        assert_eq!(
+            native.consolidated_edge_nodes[0]
+                .class25_descriptor
+                .as_ref()
+                .expect("native descriptor")
+                .control,
+            0x02
+        );
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        native.store(&mut namespace).expect("store described map");
+        assert_eq!(
+            crate::native::CatiaNative::load(&namespace).expect("load described map"),
+            native
+        );
     }
-    for operation in [
-        "catia_owner_boundary_endpoints",
-        "catia_owner_boundary_face_nodes",
-        "catia_owner_boundary_record_indices",
-        "catia_owner_boundary_record_sources",
-        "catia_owner_boundary_target_entries",
-        "catia_owner_boundary_target_groups",
-        "catia_owner_boundary_cycles",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
-}
-
-#[test]
-fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
-    use crate::families::consolidated::records::{
-        Class25PersistentLead, Class25ScalarSegment, ConsolidatedEdgeDefinitionData,
-    };
-
-    let operands = [0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
-    let mut plain = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6] {
-        plain.extend_from_slice(&value.to_le_bytes());
-    }
-    assert_eq!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &plain),
-        Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-            operands: [1, 57, 3463],
-            persistent_lead: Class25PersistentLead::Lead0a,
-            values: vec![
-                crate::test_support::test_b5::finite(1.0),
-                crate::test_support::test_b5::finite(2.0),
-                crate::test_support::test_b5::finite(1.0e-6),
-                crate::test_support::test_b5::finite(3.0),
-                crate::test_support::test_b5::finite(4.0),
-                crate::test_support::test_b5::finite(1.0),
-                crate::test_support::test_b5::finite(5.0),
-                crate::test_support::test_b5::finite(1.0e-6)
-            ]
-            .try_into()
-            .expect("admitted scalar arity"),
-        })
-    );
-
-    let mut segmented = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0] {
-        segmented.extend_from_slice(&value.to_le_bytes());
-    }
-    segmented.push(0x82);
-    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 1.0e-6] {
-        segmented.extend_from_slice(&value.to_le_bytes());
-    }
-    assert!(matches!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented),
-        Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            operands: [1, 57, 3463],
-            persistent_lead: Class25PersistentLead::Lead0a,
-            segment: Class25ScalarSegment::M82Six(ref trailing),
-            ..
-        }) if trailing.len() == 6
-    ));
-    segmented[46] = 0x84;
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented)
-            .is_none()
-    );
-
-    let mut odd_lead = plain.clone();
-    odd_lead[3] = 0x0b;
-    odd_lead.drain(odd_lead.len() - 8..);
-    assert!(matches!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &odd_lead),
-        Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-            persistent_lead: Class25PersistentLead::Lead0b,
-            ref values,
-            ..
-        }) if values.len() == 7
-    ));
-
-    let mut long_segment = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0] {
-        long_segment.extend_from_slice(&value.to_le_bytes());
-    }
-    long_segment.push(0x89);
-    for value in 0..20 {
-        long_segment.extend_from_slice(&f64::from(value).to_le_bytes());
-    }
-    assert!(matches!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &long_segment),
-        Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            segment: Class25ScalarSegment::M89(ref trailing),
-            ..
-        }) if trailing.len() == 20
-    ));
-
-    let mut bytes = vec![
-        0xb2,
-        0x03,
-        0x25,
-        u8::try_from(plain.len()).expect("fixture value fits u8"),
-        0x05,
-    ];
-    bytes.extend_from_slice(&plain);
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    assert!(matches!(
-        native.consolidated_edge_nodes[0]
-            .definition
-            .as_ref()
-            .and_then(CatiaConsolidatedEdgeDefinition::data),
-        Some(
-            crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
-                operands: [1, 57, 3463],
-                persistent_lead: Class25PersistentLead::Lead0a,
-                ..
-            }
-        )
-    ));
-
-    let mut descriptor_payload = vec![0x08, 0x34, 0x12, 0x02];
-    descriptor_payload.extend_from_slice(&3.0_f64.to_le_bytes());
-    descriptor_payload.extend_from_slice(&7.0_f64.to_le_bytes());
-    let mut described = vec![
-        0xb2,
-        0x03,
-        0x18,
-        u8::try_from(descriptor_payload.len()).expect("fixture value fits u8"),
-        0x05,
-    ];
-    described.extend_from_slice(&descriptor_payload);
-    described.extend_from_slice(&bytes);
-    let runs = crate::families::consolidated::records::consolidated_class25_edge_runs(&described);
-    let [run] = runs.as_slice() else {
-        panic!("one described class-25 edge run");
-    };
-    assert_eq!(run.descriptor.record_id, 0x1234);
-    assert_eq!(
-        cadmpeg_ir::scalar::FiniteReal::raw_lane(&run.descriptor.values),
-        [3.0, 7.0]
-    );
-    let native = crate::native::CatiaNative::decode(&described);
-    assert_eq!(
-        native.consolidated_edge_nodes[0]
-            .class25_descriptor
-            .as_ref()
-            .expect("native class-25 descriptor")
-            .control,
-        0x02
-    );
 }
 
 #[test]
@@ -1236,9 +969,11 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         bytes
     }
 
-    let mut parameter = vec![0x05, 0x00];
-    parameter.extend_from_slice(&12.0_f64.to_le_bytes());
-    parameter.extend_from_slice(&34.0_f64.to_le_bytes());
+    const MAP_TOLERANCE: f64 = 1.0e-6;
+    let mut parameter = vec![0x05, 0x02];
+    for value in [12.0_f64, 4.0, 9.0] {
+        parameter.extend_from_slice(&value.to_le_bytes());
+    }
     let mut circle = vec![0x05];
     for value in [12.0_f64, 34.0, 5.0, 0.0, 10.0] {
         circle.extend_from_slice(&value.to_le_bytes());
@@ -1246,13 +981,22 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     circle.push(0x01);
     circle.extend_from_slice(&0.0_f64.to_le_bytes());
     let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 10.0, 1.0e-6, 4.0, 9.0, 1.0, -2.0, 1.0e-6] {
+    for value in [
+        0.0_f64,
+        10.0,
+        MAP_TOLERANCE,
+        4.0,
+        9.0,
+        2.0,
+        -8.0,
+        MAP_TOLERANCE,
+    ] {
         definition.extend_from_slice(&value.to_le_bytes());
     }
     let mut bytes = record(0x18, 0x15, &parameter);
     bytes.extend_from_slice(&record(0x19, 0x05, &circle));
     bytes.extend_from_slice(&record(0x23, 0x05, &definition));
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(3, 139, 142));
 
     let runs =
         crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(&bytes);
@@ -1268,6 +1012,40 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     assert_eq!(
         run.definition.frame.pos,
         parameter.len() + circle.len() + 10
+    );
+
+    let mut mismatched_circle = bytes.clone();
+    let circle_lower = parameter.len() + 5 + 5 + 1 + 3 * 8;
+    mismatched_circle[circle_lower..circle_lower + 8].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    assert!(
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(
+            &mismatched_circle
+        )
+        .is_empty()
+    );
+
+    let mut signed_zero_circle = bytes.clone();
+    signed_zero_circle[circle_lower..circle_lower + 8].copy_from_slice(&(-0.0_f64).to_le_bytes());
+    assert!(
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(
+            &signed_zero_circle
+        )
+        .is_empty()
+    );
+
+    let mut reversed_identity = bytes.clone();
+    let definition_payload = parameter.len() + circle.len() + 15;
+    reversed_identity[definition_payload + 1..definition_payload + 3]
+        .copy_from_slice(&[0x09, 0x05]);
+    for (offset, value) in [(30, 0.0_f64), (38, 10.0), (46, 1.0), (54, 0.0)] {
+        let at = definition_payload + offset;
+        reversed_identity[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    assert!(
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(
+            &reversed_identity
+        )
+        .is_empty()
     );
 
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -1294,6 +1072,16 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         native
     );
 
+    let mut inconsistent = native.clone();
+    inconsistent.consolidated_circles[0].range =
+        cadmpeg_ir::topology::IncreasingParameterInterval::new([-1.0, 10.0])
+            .expect("increasing contradictory circle interval");
+    let mut inconsistent_namespace = cadmpeg_ir::NativeNamespace::default();
+    inconsistent
+        .store(&mut inconsistent_namespace)
+        .expect("store contradictory circle");
+    assert!(crate::native::CatiaNative::load(&inconsistent_namespace).is_err());
+
     let mut invalid = native;
     invalid.consolidated_edge_nodes[0]
         .analytic_circle
@@ -1317,140 +1105,23 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
 }
 
 #[test]
-fn analytic_circle_edge_carriers_and_retained_frames_refuse_collection_limits() {
-    use std::collections::HashSet;
-
-    fn record(class: u8, token: u8, payload: &[u8]) -> Vec<u8> {
-        let mut bytes = vec![
-            0xb2,
-            0x03,
-            class,
-            u8::try_from(payload.len()).expect("fixture value fits u8"),
-            token,
-        ];
-        bytes.extend_from_slice(payload);
-        bytes
-    }
-    let mut parameter = vec![0x05, 0x00];
-    parameter.extend_from_slice(&12.0_f64.to_le_bytes());
-    parameter.extend_from_slice(&34.0_f64.to_le_bytes());
-    let mut circle = vec![0x05];
-    for value in [12.0_f64, 34.0, 5.0, 0.0, 10.0] {
-        circle.extend_from_slice(&value.to_le_bytes());
-    }
-    circle.push(0x01);
-    circle.extend_from_slice(&0.0_f64.to_le_bytes());
-    let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 10.0, 0.001, 4.0, 9.0, 1.0, -2.0, 0.001] {
-        definition.extend_from_slice(&value.to_le_bytes());
-    }
-    let mut bytes = record(0x18, 0x15, &parameter);
-    bytes.extend_from_slice(&record(0x19, 0x05, &circle));
-    bytes.extend_from_slice(&record(0x23, 0x05, &definition));
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let mut refused = HashSet::new();
-    for limit in 0..256 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::consolidated_analytic_circle_edge_runs_from_records(ctx, &bytes, &records)
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-            refused.insert(error.operation);
-        }
-    }
-    for operation in [
-        "catia_analytic_circle_carriers",
-        "catia_analytic_circle_use_runs",
-        "catia_analytic_circle_test_definition_payload",
-        "catia_analytic_circle_descriptor_payload",
-        "catia_analytic_circle_edge_runs",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
-}
-
-#[test]
-fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
-    use std::collections::HashSet;
-
+fn class25_edge_run_admits_complete_sampled_map_and_declines_wrong_count() {
     let mut descriptor = vec![0x08, 0x34, 0x12, 0x02];
     descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
     descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
-    let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
-    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0, 1.0, 5.0, 0.001] {
-        definition.extend_from_slice(&value.to_le_bytes());
-    }
     let mut bytes = vec![
         0xb2,
         0x03,
         0x18,
-        u8::try_from(descriptor.len()).expect("fixture value fits u8"),
+        u8::try_from(descriptor.len()).expect("small descriptor"),
         0x05,
     ];
     bytes.extend_from_slice(&descriptor);
-    bytes.extend_from_slice(&[
-        0xb2,
-        0x03,
-        0x25,
-        u8::try_from(definition.len()).expect("fixture value fits u8"),
-        0x05,
-    ]);
-    bytes.extend_from_slice(&definition);
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let mut refused = HashSet::new();
-    for limit in 0..256 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::consolidated_class25_edge_runs_from_records(ctx, &bytes, &records)
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-            refused.insert(error.operation);
-        }
-    }
-    for operation in [
-        "catia_class25_edge_descriptors",
-        "catia_class25_edge_use_runs",
-        "catia_class25_edge_descriptor_values",
-        "catia_class25_edge_runs",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
-}
-
-#[test]
-fn class25_edge_run_accepts_segmented_finite_lane_and_rejects_unknown_marker() {
-    let mut descriptor = vec![0x08, 0x34, 0x12, 0x02];
-    descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
-    descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
-    let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
-    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0] {
-        definition.extend_from_slice(&value.to_le_bytes());
-    }
-    let marker = definition.len();
-    definition.push(0x82);
-    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 0.001] {
-        definition.extend_from_slice(&value.to_le_bytes());
-    }
-    let mut bytes = vec![
-        0xb2,
-        0x03,
-        0x18,
-        u8::try_from(descriptor.len()).expect("fixture value fits u8"),
-        0x05,
-    ];
-    bytes.extend_from_slice(&descriptor);
-    bytes.extend_from_slice(&[
-        0xb2,
-        0x03,
-        0x25,
-        u8::try_from(definition.len()).expect("fixture value fits u8"),
-        0x05,
-    ]);
-    let definition_start = bytes.len();
-    bytes.extend_from_slice(&definition);
+    let map_start = bytes.len();
+    bytes.extend_from_slice(&crate::test_support::test_class25::sampled_stream());
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
     assert_eq!(super::consolidated_class25_edge_runs(&bytes).len(), 1);
-    bytes[definition_start + marker] = 0x84;
+    bytes[map_start + 5 + 6 + 40] = 0x83;
     assert!(super::consolidated_class25_edge_runs(&bytes).is_empty());
 }
 
@@ -1543,7 +1214,7 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -1577,7 +1248,7 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         _ => false,
     });
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -1617,39 +1288,40 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
 }
 
 #[test]
-fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
+fn class23_scalar_deserialization_requires_nine_values() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
-    for (kind, lower, upper) in [("scalar", 8, 9), ("scalar25", 7, 10)] {
-        for count in 0..=11 {
-            let wire = serde_json::json!({"kind": kind, "operands": [1, 2, 3], "persistent_lead": 10, "values": vec![0.0; count]});
-            let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
-            assert_eq!(
-                result.is_ok(),
-                (lower..=upper).contains(&count),
-                "{kind} {count}"
-            );
-        }
+    for count in 0..=11 {
+        let wire = serde_json::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
+        let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
+        assert_eq!(result.is_ok(), count == 9, "scalar23 {count}");
     }
 }
 
 #[test]
-fn edge_use_resolution_does_not_index_unrelated_nodes() {
+fn edge_use_resolution_ignores_unmatched_nodes() {
     let node = [
         0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21,
     ];
     let bytes = node.repeat(1024);
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(records.len(), 1024);
-    let runs = crate::test_support::with_collection_limit(0, |ctx| {
-        super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
-    })
-    .expect("unmatched node windows need no index or payload copies");
+    let runs = super::consolidated_edge_use_runs_from_records(&bytes, &records)
+        .expect("unmatched node windows parse");
     assert!(runs.is_empty());
-    let refused = crate::test_support::with_work_limit(0, |ctx| {
-        super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_edge_use_window_scan")
+}
+
+#[test]
+fn object_stream_vertex_record_reads_one_xyz_point() {
+    let mut bytes = vec![0xb2, 0x03, 0x06, 0x00, 0x05, 0x05, 0x08, 0x01];
+    for value in [1.0_f32, 2.0, 3.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let vertices = crate::families::consolidated::records::object_stream_vertices(&bytes)
+        .expect("decode the object stream vertices");
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(
+        vertices[0].get(),
+        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }

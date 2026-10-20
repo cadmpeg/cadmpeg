@@ -1,46 +1,82 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::families::b5::graph::controls::{B5FramingControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::tests::extended_loop_metadata;
 use crate::families::b5::graph::tests::test_pcurve;
+use crate::families::b5::graph::typed_face_records_from_records;
+use crate::families::b5::graph::typed_loop_records_from_records;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
     canonical_point, canonical_surface_id, counted_references, distance_squared,
-    edge_support_pcurve_references, face_surface_references, incidence_vertex_coordinates,
-    loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
-    loop_references_and_metadata, parameter_incidence, parse_face_record, parse_loop,
-    parse_loop_record, pcurve_parameter_domain, sphere_great_circle_point,
-    typed_face_records_from_records, typed_loop_records_from_records, B5FaceRecord,
-    B5IncidenceLane, B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension,
-    B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization,
-    B5Record, B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
+    edge_pcurve_parameter_values, edge_support_pcurve_references, face_surface_references,
+    incidence_vertex_coordinates, loop_chain_closes, loop_metadata as parse_loop_metadata,
+    loop_references, loop_references_and_metadata, parameter_incidence, parse_face_record,
+    parse_loop, pcurve_parameter_domain, sphere_great_circle_point, B5FaceRecord, B5IncidenceLane,
+    B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
+    B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
+    B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
 };
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-fn parse_face(
-    record: &B5FaceRecord,
-    loops: &BTreeMap<u32, B5Loop>,
-    surfaces: &BTreeMap<u32, B5Surface>,
-    aliases: &BTreeMap<u32, u32>,
-) -> Option<super::super::B5Face> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::parse_face(ctx, record, loops, surfaces, aliases)
-    })
-    .expect("service budget")
+#[test]
+fn endpoint_parameter_duplicates_require_the_same_arc_and_local_parameter() {
+    let start = crate::test_support::test_b5::finite(0.25);
+    let end = crate::test_support::test_b5::finite(0.75);
+    let lane = B5IncidenceLane {
+        curve: 2,
+        parameter: start,
+        control: 6,
+    };
+    let edge_incidences = BTreeMap::from([(3, [20, 21])]);
+    let mut incidences = BTreeMap::from([
+        (
+            20,
+            B5ParameterIncidence {
+                object_id: 20,
+                lanes: vec![lane, lane],
+            },
+        ),
+        (
+            21,
+            B5ParameterIncidence {
+                object_id: 21,
+                lanes: vec![B5IncidenceLane {
+                    parameter: end,
+                    ..lane
+                }],
+            },
+        ),
+    ]);
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        Some([start, end])
+    );
+    incidences.get_mut(&20).expect("start incidence").lanes[1].control = 7;
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        None
+    );
+    incidences.get_mut(&20).expect("start incidence").lanes[1] = lane;
+    incidences.get_mut(&20).expect("start incidence").lanes[1].parameter = end;
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        None
+    );
 }
+
+use super::super::parse_face;
 
 fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::evaluate_pcurve(ctx, pcurve, parameter)
     })
-    .expect("service budget")
+    .expect("evaluate pcurve")
 }
 
-fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<cadmpeg_ir::scalar::FiniteReal>> {
-    crate::test_support::with_service_context(|ctx| super::super::pcurve_nurbs_knots(ctx, pcurve))
-        .expect("service budget")
-}
+use super::super::pcurve_nurbs_knots;
 
 fn pcurve_endpoints(
     pcurve_id: u32,
@@ -50,7 +86,7 @@ fn pcurve_endpoints(
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurve_endpoints(ctx, pcurve_id, edge_id, geometry)
     })
-    .expect("service budget")
+    .expect("compute the pcurve endpoints")
 }
 
 fn lift_parameter_incidence(
@@ -61,34 +97,7 @@ fn lift_parameter_incidence(
     crate::test_support::with_service_context(|ctx| {
         super::super::lift_parameter_incidence(ctx, pcurve_id, parameter, geometry)
     })
-    .expect("service budget")
-}
-
-#[test]
-fn pcurve_knot_expansion_and_evaluation_refuse_the_caller_limit() {
-    let pcurve = test_pcurve(1, 2);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::pcurve_nurbs_knots(ctx, &pcurve)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_expanded_pcurve_knots")
-    );
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::evaluate_pcurve(ctx, &pcurve, 0.5)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_expanded_pcurve_knots")
-    );
-    assert_eq!(evaluate_pcurve(&pcurve, 0.5), Some([0.5, 0.0]));
-    assert_eq!(
-        pcurve_parameter_domain(&pcurve),
-        Some([
-            crate::test_support::test_b5::finite(0.0),
-            crate::test_support::test_b5::finite(1.0),
-        ])
-    );
+    .expect("lift parameter incidence")
 }
 
 fn bind_edge_vertices(
@@ -99,7 +108,7 @@ fn bind_edge_vertices(
     crate::test_support::with_service_context(|ctx| {
         super::super::bind_edge_vertices(ctx, loops, geometry, points)
     })
-    .expect("service budget")
+    .expect("bind edge vertices")
 }
 
 fn bind_native_vertices(
@@ -121,101 +130,15 @@ fn bind_native_vertices(
             points,
         )
     })
-    .expect("service budget")
+    .expect("bind native vertices")
 }
 
 fn point_index(points: &[cadmpeg_ir::features::FinitePoint3]) -> HashMap<[i64; 3], Vec<usize>> {
-    crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, points))
-        .expect("service budget")
+    super::super::point_index(points).expect("compute the point index")
 }
 
-#[test]
-fn topology_binding_refuses_the_caller_collection_limit() {
-    let point = crate::test_support::test_b5::point([0.0, 0.0, 0.0]);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::point_index(ctx, &[point])
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_point_index_cells")
-    );
-
-    let loops = BTreeMap::new();
-    let pcurves = BTreeMap::new();
-    let opaque_pcurves = BTreeMap::new();
-    let surfaces = BTreeMap::new();
-    let profiles = BTreeMap::new();
-    let edge_parameter_incidences = BTreeMap::new();
-    let parameter_incidences = BTreeMap::new();
-    let geometry = B5PcurveContext {
-        pcurves: &pcurves,
-        opaque_pcurves: &opaque_pcurves,
-        surfaces: &surfaces,
-        profiles: &profiles,
-        edge_parameter_incidences: &edge_parameter_incidences,
-        parameter_incidences: &parameter_incidences,
-    };
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::bind_edge_vertices(ctx, &loops, &geometry, &[point])
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_point_index_cells")
-    );
-
-    let native = BTreeMap::from([(7, [11, 12])]);
-    let geometric = BTreeMap::from([(7, [0, 0])]);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::bind_native_vertices(
-            ctx,
-            &loops,
-            &geometry,
-            &native,
-            &geometric,
-            &BTreeMap::new(),
-            &[point],
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_vertex_constraints")
-    );
-    assert!(crate::test_support::with_service_context(|ctx| {
-        super::super::bind_native_vertices(
-            ctx,
-            &loops,
-            &geometry,
-            &native,
-            &geometric,
-            &BTreeMap::new(),
-            &[point],
-        )
-    })
-    .is_ok());
-}
-
-fn merge_pcurve_candidate(
-    pcurves: &mut BTreeMap<u32, B5Pcurve>,
-    conflicts: &mut HashSet<u32>,
-    candidate: B5Pcurve,
-) {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::merge_pcurve_candidate(ctx, pcurves, conflicts, candidate)
-    })
-    .expect("service budget");
-}
-
-fn merge_surface_candidate(
-    surfaces: &mut BTreeMap<u32, B5Surface>,
-    conflicts: &mut HashSet<u32>,
-    object_id: u32,
-    candidate: B5Surface,
-) -> bool {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::merge_surface_candidate(ctx, surfaces, conflicts, object_id, candidate)
-    })
-    .expect("service budget")
-}
+use super::super::merge_pcurve_candidate;
+use super::super::merge_surface_candidate;
 
 fn resolve_surface_aliases(
     records: &[B5Record],
@@ -223,10 +146,8 @@ fn resolve_surface_aliases(
     surfaces: &mut BTreeMap<u32, B5Surface>,
     conflicts: &mut HashSet<u32>,
 ) -> bool {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::resolve_surface_aliases(ctx, records, by_id, surfaces, conflicts)
-    })
-    .expect("service budget")
+    super::super::resolve_surface_aliases(records, by_id, surfaces, conflicts)
+        .expect("resolve surface aliases")
 }
 
 fn surface_alias_carrier(
@@ -234,10 +155,8 @@ fn surface_alias_carrier(
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Surface> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::surface_alias_carrier(ctx, object_id, by_id, surfaces)
-    })
-    .expect("service budget")
+    super::super::surface_alias_carrier(object_id, by_id, surfaces)
+        .expect("compute the surface alias carrier")
 }
 
 fn resolve_targeted_surface(
@@ -247,93 +166,15 @@ fn resolve_targeted_surface(
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
 ) -> Option<B5Surface> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::resolve_targeted_surface(ctx, object_id, records, headers, resolved, rolling)
-    })
-    .expect("service budget")
-}
-
-#[test]
-fn targeted_surface_records_and_resolution_refuse_caller_limits() {
-    let mut bytes = Vec::new();
-    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x27, 9, &[0x80]);
-    let frames = crate::test_support::with_service_context(|ctx| {
-        super::super::collect_object_stream_frames(ctx, &bytes)
-    })
-    .expect("service budget");
-    let object_ids = HashSet::from([9]);
-    for (limit, operation) in [
-        (0, "catia_b5_targeted_surface_records"),
-        (1, "catia_b5_targeted_surface_visited"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::targeted_surfaces_from_frames(
-                ctx,
-                &bytes,
-                &object_ids,
-                &frames,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    let surface = B5Surface::Unknown {
-        family: 0xb5,
-        class: 0x27,
-        payload: vec![1, 2, 3],
-    };
-    let candidate = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::merge_targeted_surface(ctx, &mut HashMap::new(), 9, surface.clone())
-    });
-    assert!(
-        matches!(candidate, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_targeted_surface_candidates")
-    );
-    let copied = crate::test_support::with_retained_limit(2, |ctx| {
-        super::super::copy_surface(ctx, &surface)
-    });
-    assert!(
-        matches!(copied, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_copied_unknown_surface_payload")
-    );
-    let resolved = HashMap::from([(9, Some(surface.clone()))]);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::resolve_targeted_surface(
-            ctx,
-            9,
-            &HashMap::new(),
-            &HashMap::new(),
-            &resolved,
-            &HashMap::new(),
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_targeted_surface_visited")
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            super::super::resolve_targeted_surface(
-                ctx,
-                9,
-                &HashMap::new(),
-                &HashMap::new(),
-                &resolved,
-                &HashMap::new(),
-            )
-        })
-        .expect("service budget"),
-        Some(surface)
-    );
-}
-
-fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
-    crate::test_support::with_service_context(|ctx| {
-        parse_loop_metadata(ctx, bytes, edge_count).expect("service budget")
-    })
+    super::super::resolve_targeted_surface(
+        object_id,
+        records,
+        headers,
+        resolved,
+        rolling,
+        &cadmpeg_core::decode::WorkBudget::new(super::super::MAX_TARGETED_SURFACE_RESOLUTION_STEPS),
+    )
+    .expect("resolve targeted surface")
 }
 
 #[test]
@@ -343,7 +184,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         0x01,
     ];
     assert_eq!(
-        loop_metadata(&base, 2),
+        parse_loop_metadata(&base, 2),
         Some((
             B5LoopMetadata {
                 framing_controls: [B5FramingControl::Control05; 2],
@@ -356,7 +197,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
     for metadata_control in [0x05, 0x09, 0x21, 0x41, 0x71] {
         let extended = extended_loop_metadata(metadata_control);
         let (metadata, edge_controls) =
-            loop_metadata(&extended, 1).expect("complete extended metadata");
+            parse_loop_metadata(&extended, 1).expect("complete extended metadata");
         assert_eq!(
             metadata.framing_controls.map(B5FramingControl::as_byte),
             [0x03, 0x05]
@@ -371,8 +212,8 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
                     crate::test_support::test_b5::finite(3.5),
                     crate::test_support::test_b5::finite(4.25)
                 ],
-                control: metadata_control,
-                floats: [1.0, -2.0, 3.5, 4.25, 5.5, -6.75],
+                controls: [0x0d, 0x05, 0x05, metadata_control, 0x05, 0x01],
+                floats: [-2.0, 1.0, 3.5, 4.25, -6.75, 5.5],
             })
         );
     }
@@ -382,7 +223,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         0x01,
     ];
     let (metadata, edge_controls) =
-        loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
+        parse_loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
     assert_eq!(
         metadata.framing_controls.map(B5FramingControl::as_byte),
         [0x05, 0x03]
@@ -403,10 +244,8 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
             0x01,
         ],
     };
-    let (references, _, edge_controls) = crate::test_support::with_service_context(|ctx| {
-        loop_references_and_metadata(ctx, &record).expect("service budget")
-    })
-    .expect("exact loop payload");
+    let (references, _, edge_controls) =
+        loop_references_and_metadata(&record).expect("exact loop payload");
     assert_eq!(references, [9, 10, 11]);
     assert_eq!(edge_controls, [[1, -1, 1]]);
 
@@ -420,68 +259,117 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
 }
 
 #[test]
-fn loop_record_nested_collections_refuse_each_limit() {
-    let record = B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x62,
-        object_id: 400,
-        payload: vec![
-            0x83, 0x89, 0x8a, 0x8b, 0x81, 0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00,
-            0x01,
-        ],
-    };
-    for (limit, operation) in [
-        (2, "catia_b5_loop_references"),
-        (3, "catia_b5_loop_edge_controls"),
-        (4, "catia_b5_loop_members"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            parse_loop_record(ctx, &record)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    let limited_index = crate::test_support::with_collection_limit(5, |ctx| {
-        typed_loop_records_from_records(ctx, std::slice::from_ref(&record))
-    });
-    assert!(
-        matches!(limited_index, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_typed_loop_records")
-    );
-    let parsed = crate::test_support::with_service_context(|ctx| {
-        typed_loop_records_from_records(ctx, &[record])
-    })
-    .expect("service budget");
-    assert_eq!(parsed.get(&400).map(|loop_| loop_.members.len()), Some(1));
-}
-
-#[test]
 fn loop_metadata_rejects_every_malformed_boundary_and_numeric_domain() {
-    assert!(loop_metadata(&[], 0).is_none());
-    assert!(loop_metadata(&[0x05, 0x05, 0x03], 0).is_none());
-    assert!(loop_metadata(&[0x05, 0x05, 0x03, 0x01, 0x00, 0x01], 0).is_none());
-    assert!(loop_metadata(&[0x09, 0x05, 0x03, 0x01], 0).is_none());
-    assert!(loop_metadata(&[0x05, 0x03, 0x05, 0x01], 0).is_none());
-    assert!(loop_metadata(
+    assert!(parse_loop_metadata(&[], 0).is_none());
+    assert!(parse_loop_metadata(&[0x05, 0x05, 0x03], 0).is_none());
+    assert!(parse_loop_metadata(&[0x05, 0x05, 0x03, 0x01, 0x00, 0x01], 0).is_none());
+    assert!(parse_loop_metadata(&[0x09, 0x05, 0x03, 0x01], 0).is_none());
+    assert!(parse_loop_metadata(&[0x05, 0x03, 0x05, 0x01], 0).is_none());
+    assert!(parse_loop_metadata(
         &[0x05, 0x05, 0x03, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01],
         1
     )
     .is_none());
 
-    for metadata_control in [0x00, 0x04, 0x20, 0x70] {
-        assert!(loop_metadata(&extended_loop_metadata(metadata_control), 1).is_none());
+    for metadata_control in [0x00, 0x03, 0x04, 0x07, 0x20, 0x70, 0xff] {
+        assert!(parse_loop_metadata(&extended_loop_metadata(metadata_control), 1).is_none());
     }
 
     let mut non_finite_scalar = extended_loop_metadata(0x05);
     non_finite_scalar[10..18].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(loop_metadata(&non_finite_scalar, 1).is_none());
+    assert!(parse_loop_metadata(&non_finite_scalar, 1).is_none());
 
     let mut non_finite_float = extended_loop_metadata(0x05);
     non_finite_float[47..51].copy_from_slice(&f32::INFINITY.to_le_bytes());
-    assert!(loop_metadata(&non_finite_float, 1).is_none());
+    assert!(parse_loop_metadata(&non_finite_float, 1).is_none());
+}
+
+#[test]
+fn loop_numeric_terminal_retains_all_six_canonical_controls() {
+    for controls in [
+        [0x0d, 0x05, 0x05, 0x09, 0x09, 0x01],
+        [0x05, 0x05, 0x05, 0x05, 0x05, 0x01],
+        [0x01, 0x15, 0x09, 0xfd, 0x21, 0x01],
+    ] {
+        let mut bytes = extended_loop_metadata(0x05);
+        let positions = [9, 42, 43, 44, 45, 46];
+        for (position, control) in positions.into_iter().zip(controls) {
+            bytes[position] = control;
+        }
+        let (metadata, edge_controls) =
+            parse_loop_metadata(&bytes, 1).expect("complete numeric terminal");
+        assert_eq!(
+            metadata.extension.expect("numeric terminal").controls,
+            controls
+        );
+        assert_eq!(edge_controls, [[1, -1, 1]]);
+        for position in positions {
+            for invalid in [0, 2, 3, 4, 255] {
+                let mut malformed = bytes.clone();
+                malformed[position] = invalid;
+                assert!(parse_loop_metadata(&malformed, 1).is_none());
+            }
+        }
+        let mut truncated = bytes.clone();
+        truncated.pop();
+        assert!(parse_loop_metadata(&truncated, 1).is_none());
+        bytes.push(0x01);
+        assert!(parse_loop_metadata(&bytes, 1).is_none());
+    }
+}
+
+#[test]
+fn loop_numeric_terminal_orders_patch_coordinates_and_cartesian_axis_pairs() {
+    let mut bytes = extended_loop_metadata(0x09);
+    bytes[10..18].copy_from_slice(&4.0_f64.to_le_bytes());
+    bytes[26..34].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_some(),
+        "later U patch permits local reset"
+    );
+    bytes[44] = 0x05;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "same U patch rejects local reset"
+    );
+    bytes[42] = 0x09;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "U patch must not decrease"
+    );
+
+    let mut bytes = extended_loop_metadata(0x05);
+    bytes[18..26].copy_from_slice(&5.0_f64.to_le_bytes());
+    bytes[34..42].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "same V patch rejects local reset"
+    );
+    bytes[45] = 0x09;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_some(),
+        "later V patch permits local reset"
+    );
+    bytes[43] = 0x0d;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "V patch must not decrease"
+    );
+
+    for offset in [47, 55, 63] {
+        let mut bytes = extended_loop_metadata(0x05);
+        bytes[offset..offset + 4].copy_from_slice(&10.0_f32.to_le_bytes());
+        assert!(
+            parse_loop_metadata(&bytes, 1).is_none(),
+            "Cartesian low exceeds high"
+        );
+    }
+    let mut bytes = extended_loop_metadata(0x05);
+    bytes[46] = 0x05;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "terminal compact value must be zero"
+    );
 }
 
 #[test]
@@ -536,129 +424,6 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
 }
 
 #[test]
-fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
-    let pcurve = test_pcurve(1, 10);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::merge_pcurve_candidate(
-            ctx,
-            &mut BTreeMap::new(),
-            &mut HashSet::new(),
-            pcurve.clone(),
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_pcurve_candidates")
-    );
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::merge_pcurve_candidate(
-            ctx,
-            &mut BTreeMap::from([(1, pcurve.clone())]),
-            &mut HashSet::new(),
-            test_pcurve(1, 11),
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_conflicting_pcurves")
-    );
-    let plane = B5Surface::Plane {
-        origin: crate::test_support::test_b5::point([0.0; 3]),
-        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
-        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-    };
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::merge_surface_candidate(
-            ctx,
-            &mut BTreeMap::new(),
-            &mut HashSet::new(),
-            1,
-            plane.clone(),
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_surface_candidates")
-    );
-    let mut other = plane.clone();
-    if let B5Surface::Plane { origin, .. } = &mut other {
-        *origin = crate::test_support::test_b5::point([1.0, 0.0, 0.0]);
-    }
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::merge_surface_candidate(
-            ctx,
-            &mut BTreeMap::from([(1, plane.clone())]),
-            &mut HashSet::new(),
-            1,
-            other.clone(),
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_conflicting_surfaces")
-    );
-    let surfaces = BTreeMap::from([(
-        1,
-        B5Surface::Unknown {
-            family: 0xb5,
-            class: 0x27,
-            payload: vec![1, 2, 3],
-        },
-    )]);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::surface_alias_carrier(ctx, 1, &HashMap::new(), &surfaces)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_surface_alias_visits")
-    );
-    assert!(crate::test_support::with_service_context(|ctx| {
-        super::super::merge_surface_candidate(
-            ctx,
-            &mut BTreeMap::new(),
-            &mut HashSet::new(),
-            1,
-            plane,
-        )
-    })
-    .expect("service budget"));
-}
-
-#[test]
-fn loop_sense_vectors_refuse_the_caller_collection_limit() {
-    let loop_ = B5Loop {
-        object_id: 1,
-        members: test_loop_members(&[2, 3], &[4, 5]),
-        metadata: test_loop_metadata(),
-        surface: 10,
-    };
-    let edges = crate::test_support::with_collection_limit(1, |ctx| loop_.edge_senses(ctx));
-    assert!(
-        matches!(edges, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_loop_edge_senses")
-    );
-    let pcurves = crate::test_support::with_collection_limit(1, |ctx| loop_.pcurve_senses(ctx));
-    assert!(
-        matches!(pcurves, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_loop_pcurve_senses")
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
-            .expect("service budget")
-            .len(),
-        2
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| loop_.pcurve_senses(ctx))
-            .expect("service budget")
-            .len(),
-        2
-    );
-}
-
-#[test]
 fn pcurve_requires_one_complete_clamped_bezier_frame() {
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
     let record = |payload| B5Record {
@@ -668,10 +433,7 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
         object_id: 2,
         payload,
     };
-    let parse_pcurve = |record: &B5Record| {
-        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
-            .expect("service budget")
-    };
+    let parse_pcurve = |record: &B5Record| super::super::parse_pcurve(record);
     assert_eq!(
         parse_pcurve(&record(payload.clone()))
             .expect("complete class-21 pcurve")
@@ -725,44 +487,8 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
 }
 
 #[test]
-fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
-    let record = B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x21,
-        object_id: 2,
-        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
-    };
-    for (limit, operation) in [
-        (1, "catia_b5_class21_distinct_knots"),
-        (2, "catia_b5_class21_multiplicities"),
-        (4, "catia_b5_class21_control_points"),
-        (6, "catia_b5_typed_class21_pcurves"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::typed_class_21_pcurves_from_records(ctx, std::slice::from_ref(&record))
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            super::super::typed_class_21_pcurves_from_records(ctx, &[record])
-        })
-        .expect("service budget")
-        .len(),
-        1
-    );
-}
-
-#[test]
 fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
-    let parse_pcurve = |record: &B5Record| {
-        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
-            .expect("service budget")
-    };
+    let parse_pcurve = |record: &B5Record| super::super::parse_pcurve(record);
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload_with_knots(
         7,
         [10.0, 20.0],
@@ -989,11 +715,11 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         payload.push(0x18);
         payload.extend_from_slice(&reference.to_le_bytes());
     }
-    payload.extend_from_slice(&[0x01, 0x02]);
+    payload.extend_from_slice(&[0x11, 0x05]);
     payload.extend_from_slice(&2.0f64.to_le_bytes());
-    payload.extend_from_slice(&[0x03, 0x04]);
+    payload.extend_from_slice(&[0x03, 0x05]);
     payload.extend_from_slice(&0.0f64.to_le_bytes());
-    payload.extend_from_slice(&[0x05, 0x06]);
+    payload.extend_from_slice(&[0x05, 0x05]);
     let record = B5Record {
         offset: 0,
         family: 0xb5,
@@ -1001,7 +727,7 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         object_id: 10,
         payload,
     };
-    let records = HashMap::from([(10, Some(record))]);
+    let mut records = HashMap::from([(10, Some(record))]);
     let rolling = HashMap::from([(
         1,
         Some(B5Surface::RollingBall {
@@ -1015,6 +741,15 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
     assert_eq!(
         resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
         rolling.get(&1).cloned().flatten()
+    );
+    let record = records
+        .get_mut(&10)
+        .and_then(Option::as_mut)
+        .expect("construction");
+    record.payload[16] = 0x05; // Cylinder selector contradicts the rolling-ball carrier.
+    assert_eq!(
+        resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
+        None
     );
 }
 
@@ -1054,36 +789,6 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
         resolve_targeted_surface(9, &records, &HashMap::new(), &resolved, &HashMap::new(),),
         Some(carrier)
     );
-    let mut refused = std::collections::BTreeSet::new();
-    for limit in 0..20 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::resolve_targeted_surface(
-                ctx,
-                9,
-                &records,
-                &HashMap::new(),
-                &resolved,
-                &HashMap::new(),
-            )
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                refused.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            other => panic!("unexpected offset resolution result: {other:?}"),
-        }
-    }
-    for operation in [
-        "catia_b5_targeted_surface_visited",
-        "catia_b5_targeted_visited_copy",
-        "catia_b5_targeted_offset_carrier",
-        "catia_b5_targeted_offset_source",
-    ] {
-        assert!(
-            refused.contains(operation),
-            "missing refusal at {operation}"
-        );
-    }
 
     let mut wrong_distance = offset.clone();
     wrong_distance.payload[3..11].copy_from_slice(&(-0.25f64).to_le_bytes());
@@ -1105,6 +810,42 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
         &HashMap::new(),
     )
     .is_none());
+}
+
+#[test]
+fn targeted_surface_resolution_stops_a_deep_offset_chain_at_its_own_bound() {
+    let depth =
+        u16::try_from(super::super::MAX_TARGETED_SURFACE_OFFSET_DEPTH + 44).expect("fixture depth");
+    let records = (1..=depth)
+        .map(|object_id| {
+            let next = (object_id + 1).to_le_bytes();
+            let mut payload = vec![0x82, 0x18, next[0], next[1], 0x18, next[0], next[1]];
+            payload.extend_from_slice(&(-0.5f64).to_le_bytes());
+            (
+                u32::from(object_id),
+                Some(B5Record {
+                    offset: usize::from(object_id),
+                    family: 0xb5,
+                    class: 0x30,
+                    object_id: u32::from(object_id),
+                    payload,
+                }),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let budget =
+        cadmpeg_core::decode::WorkBudget::new(super::super::MAX_TARGETED_SURFACE_RESOLUTION_STEPS);
+    let surface = super::super::resolve_targeted_surface(
+        1,
+        &records,
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        &budget,
+    )
+    .expect("a deep offset chain is not a session refusal");
+    assert!(surface.is_none());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -1180,7 +921,6 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
         1,
         Some(B5Surface::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1200,7 +940,6 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid bilinear NURBS"),
         )),
     )]);
@@ -1269,9 +1008,7 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
             payload: vec![0x82, 0x81, 0x82, terminal_control],
         };
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| {
-                parse_face_record(ctx, &record).expect("service budget")
-            }),
+            parse_face_record(&record),
             Some(B5FaceRecord {
                 object_id: 3,
                 references: vec![1, 2],
@@ -1284,12 +1021,7 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
 
         let mut overlong = record;
         overlong.payload.push(terminal_control);
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| {
-                parse_face_record(ctx, &overlong).expect("service budget")
-            }),
-            None
-        );
+        assert_eq!(parse_face_record(&overlong), None);
     }
 }
 
@@ -1302,118 +1034,13 @@ fn counted_face_references_reject_unknown_terminal_controls() {
         object_id: 3,
         payload: vec![0x82, 0x81, 0x82, 0x04],
     };
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            parse_face_record(ctx, &record).expect("service budget")
-        }),
-        None
-    );
+    assert_eq!(parse_face_record(&record), None);
 
     let mut empty = record;
     empty.payload.clear();
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            parse_face_record(ctx, &empty).expect("service budget")
-        }),
-        None
-    );
+    assert_eq!(parse_face_record(&empty), None);
     empty.payload.extend_from_slice(&[0x80, 0x03]);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            parse_face_record(ctx, &empty).expect("service budget")
-        }),
-        None
-    );
-}
-
-#[test]
-fn counted_face_reference_list_refuses_collection_limit() {
-    let record = B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x5f,
-        object_id: 3,
-        payload: vec![0x82, 0x81, 0x82, 0x03],
-    };
-    let limited =
-        crate::test_support::with_collection_limit(1, |ctx| parse_face_record(ctx, &record));
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let parsed = crate::test_support::with_service_context(|ctx| parse_face_record(ctx, &record))
-        .expect("service budget");
-    assert_eq!(
-        parsed.as_ref().map(|face| face.references.as_slice()),
-        Some([1, 2].as_slice())
-    );
-}
-
-#[test]
-fn typed_face_record_index_refuses_collection_limit() {
-    let records = [B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x5f,
-        object_id: 3,
-        payload: vec![0x82, 0x81, 0x82, 0x03],
-    }];
-    let limited = crate::test_support::with_collection_limit(2, |ctx| {
-        typed_face_records_from_records(ctx, &records)
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let parsed = crate::test_support::with_service_context(|ctx| {
-        typed_face_records_from_records(ctx, &records)
-    })
-    .expect("service budget");
-    assert_eq!(
-        parsed.get(&3).map(|face| face.references.as_slice()),
-        Some([1, 2].as_slice())
-    );
-}
-
-#[test]
-fn face_references_can_repeat_one_carrier_through_an_alias() {
-    let plane = B5Surface::Plane {
-        origin: crate::test_support::test_b5::point([0.0; 3]),
-        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
-        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-    };
-    let record = B5FaceRecord {
-        object_id: 30,
-        references: vec![10, 11, 20],
-        terminal_control: Some(B5FramingControl::Control05),
-    };
-    let loops = BTreeMap::from([(
-        20,
-        B5Loop {
-            object_id: 20,
-            members: Vec::new(),
-            metadata: test_loop_metadata(),
-            surface: 10,
-        },
-    )]);
-    let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
-    let aliases = BTreeMap::from([(11, 10)]);
-
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::parse_face(ctx, &record, &loops, &surfaces, &aliases)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_face_loop_ids")
-    );
-
-    let face = parse_face(&record, &loops, &surfaces, &aliases).expect("aliased face");
-    assert_eq!(face.surface, 10);
-    assert_eq!(face.loops, vec![20]);
-
-    assert!(parse_face(&record, &loops, &surfaces, &BTreeMap::new()).is_none());
+    assert_eq!(parse_face_record(&empty), None);
 }
 
 #[test]
@@ -1720,3 +1347,187 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
 }
 
 mod incidence_loci;
+
+#[test]
+fn native_vertex_binding_accepts_an_edge_with_no_loops() {
+    let point = crate::test_support::test_b5::point([0.0, 0.0, 0.0]);
+    let loops = BTreeMap::new();
+    let pcurves = BTreeMap::new();
+    let opaque_pcurves = BTreeMap::new();
+    let surfaces = BTreeMap::new();
+    let profiles = BTreeMap::new();
+    let edge_parameter_incidences = BTreeMap::new();
+    let parameter_incidences = BTreeMap::new();
+    let geometry = B5PcurveContext {
+        pcurves: &pcurves,
+        opaque_pcurves: &opaque_pcurves,
+        surfaces: &surfaces,
+        profiles: &profiles,
+        edge_parameter_incidences: &edge_parameter_incidences,
+        parameter_incidences: &parameter_incidences,
+    };
+    let native = BTreeMap::from([(7, [11, 12])]);
+    let geometric = BTreeMap::from([(7, [0, 0])]);
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::bind_native_vertices(
+            ctx,
+            &loops,
+            &geometry,
+            &native,
+            &geometric,
+            &BTreeMap::new(),
+            &[point],
+        )
+    })
+    .is_ok());
+}
+
+#[test]
+fn targeted_surface_resolution_returns_a_cached_surface() {
+    let surface = B5Surface::Unknown {
+        family: 0xb5,
+        class: 0x27,
+        payload: vec![1, 2, 3],
+    };
+    let resolved = HashMap::from([(9, Some(surface.clone()))]);
+    assert_eq!(
+        resolve_targeted_surface(
+            9,
+            &HashMap::new(),
+            &HashMap::new(),
+            &resolved,
+            &HashMap::new()
+        ),
+        Some(surface)
+    );
+}
+
+#[test]
+fn typed_loop_record_parses_one_member() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x62,
+        object_id: 400,
+        payload: vec![
+            0x83, 0x89, 0x8a, 0x8b, 0x81, 0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00,
+            0x01,
+        ],
+    };
+    let parsed = typed_loop_records_from_records(&[record]);
+    assert_eq!(parsed.get(&400).map(|loop_| loop_.members.len()), Some(1));
+}
+
+#[test]
+fn surface_candidate_merge_admits_a_first_plane() {
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+
+    assert!(super::super::merge_surface_candidate(
+        &mut BTreeMap::new(),
+        &mut HashSet::new(),
+        1,
+        plane
+    ));
+}
+
+#[test]
+fn loop_senses_have_one_entry_per_member() {
+    let loop_ = B5Loop {
+        object_id: 1,
+        members: test_loop_members(&[2, 3], &[4, 5]),
+        metadata: test_loop_metadata(),
+        surface: 10,
+    };
+    assert_eq!(loop_.edge_senses().len(), 2);
+    assert_eq!(loop_.pcurve_senses().len(), 2);
+}
+
+#[test]
+fn class21_linear_pcurve_record_indexes_one_pcurve() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x21,
+        object_id: 2,
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
+    };
+    assert_eq!(
+        super::super::typed_class_21_pcurves_from_records(&[record]).len(),
+        1
+    );
+}
+
+#[test]
+fn face_record_parses_a_counted_reference_list() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    };
+    let parsed = parse_face_record(&record);
+    assert_eq!(
+        parsed.as_ref().map(|face| face.references.as_slice()),
+        Some([1, 2].as_slice())
+    );
+}
+
+#[test]
+fn typed_face_records_index_faces_by_object_id() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    }];
+    let parsed = typed_face_records_from_records(&records);
+    assert_eq!(
+        parsed.get(&3).map(|face| face.references.as_slice()),
+        Some([1, 2].as_slice())
+    );
+}
+
+#[test]
+fn face_reference_slots_after_the_carrier_require_loops() {
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+    let mut record = B5FaceRecord {
+        object_id: 30,
+        references: vec![10, 11, 20],
+        terminal_control: Some(B5FramingControl::Control05),
+    };
+    let mut loops = BTreeMap::from([(
+        20,
+        B5Loop {
+            object_id: 20,
+            members: Vec::new(),
+            metadata: test_loop_metadata(),
+            surface: 10,
+        },
+    )]);
+    let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
+    let aliases = BTreeMap::from([(11, 10)]);
+
+    assert!(parse_face(&record, &loops, &surfaces, &aliases).is_none());
+    assert!(parse_face(&record, &loops, &surfaces, &BTreeMap::new()).is_none());
+
+    record.references = vec![10, 20];
+    let face = parse_face(&record, &loops, &surfaces, &aliases).expect("one carrier and loop");
+    assert_eq!(face.surface, 10);
+    assert_eq!(face.loops, vec![20]);
+    loops.get_mut(&20).expect("owned loop").surface = 11;
+    assert!(parse_face(&record, &loops, &surfaces, &aliases).is_none());
+}

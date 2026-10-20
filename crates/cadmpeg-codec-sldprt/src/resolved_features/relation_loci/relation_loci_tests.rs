@@ -105,24 +105,10 @@ fn line_entity(id: &str, sketch: &SketchId, start: Point2, end: Point2) -> Sketc
 fn point_operand_requires_one_profile_locus() {
     let entity = SketchEntityId::mint("synthetic:test:id#entity").unwrap();
     let locus = SketchLocus::Start(entity.clone());
+    assert_eq!(unique_locus(std::slice::from_ref(&locus)), Some(locus));
+    assert_eq!(unique_locus(&[]), None);
     assert_eq!(
-        unique_locus(
-            &cadmpeg_test_support::service_decode_context(),
-            std::slice::from_ref(&locus)
-        )
-        .unwrap(),
-        Some(locus)
-    );
-    assert_eq!(
-        unique_locus(&cadmpeg_test_support::service_decode_context(), &[]).unwrap(),
-        None
-    );
-    assert_eq!(
-        unique_locus(
-            &cadmpeg_test_support::service_decode_context(),
-            &[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]
-        )
-        .unwrap(),
+        unique_locus(&[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]),
         None
     );
 }
@@ -164,14 +150,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let entities = vec![center, circle.clone()];
 
     assert_eq!(
-        marker_center_dimensioned_entity(
-            &cadmpeg_test_support::service_decode_context(),
-            "center-marker",
-            &sketch,
-            &entities,
-            &parameter
-        )
-        .unwrap(),
+        marker_center_dimensioned_entity("center-marker", &sketch, &entities, &parameter).unwrap(),
         Some(circle.id().clone())
     );
 
@@ -187,14 +166,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     .with_endpoint_refs(circle.endpoint_refs.clone());
     ambiguous.push(duplicate);
     assert_eq!(
-        marker_center_dimensioned_entity(
-            &cadmpeg_test_support::service_decode_context(),
-            "center-marker",
-            &sketch,
-            &ambiguous,
-            &parameter
-        )
-        .unwrap(),
+        marker_center_dimensioned_entity("center-marker", &sketch, &ambiguous, &parameter).unwrap(),
         None
     );
 }
@@ -788,14 +760,12 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         parameter: parameter.id.clone(),
     };
     assert!(!relation_constraint_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
         Some(&parameter),
         &definition,
         &[first.clone(), second.clone()],
     )
     .unwrap());
     assert!(relation_constraint_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
         Some(&rejected_parameter),
         &definition,
         &[first, second],
@@ -1644,8 +1614,5 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
 }
 
 mod dynamic_angles;
-mod repeated_circle_dimensions;
-
 mod physical_loci;
-
-mod admission;
+mod repeated_circle_dimensions;

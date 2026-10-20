@@ -8,23 +8,6 @@ use super::{
 };
 
 #[test]
-fn planar_rechart_refuses_before_absent_chart_candidate() {
-    let (target, stored, loci) = foreign_plane_chart_sites(0.4, [1.0, 2.0]);
-    let scaled = stored
-        .iter()
-        .map(|[u, v]| [*u * 1.5, *v])
-        .collect::<Vec<_>>();
-    assert!(solve_planar_chart_rechart(&scaled, &loci, &target).is_none());
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::solve_planar_chart_rechart(ctx, &scaled, &loci, &target)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_freeform_chart_images")
-    );
-}
-
-#[test]
 fn planar_rechart_recovers_a_foreign_consolidated_chart() {
     let angle = 0.7;
     let shift = [12.5, -4.25];
@@ -124,7 +107,6 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
     let range = [0.0, 1.0];
     let line_through = |first: [f64; 2], last: [f64; 2]| PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![range[0], range[0], range[1], range[1]],
             vec![
@@ -134,7 +116,6 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("valid endpoint witness pcurve"),
     };
     let chart = solve_planar_chart_rechart(&stored, &loci, &target).expect("isometry");
@@ -196,10 +177,10 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
 fn freeform_fallback_retains_exact_consolidated_spheres() {
     let bytes = crate::test_support::test_b2::b2_sphere_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let carriers = crate::test_support::with_service_context(|ctx| {
+    let carriers = crate::test_support::with_service_context(|_ctx| {
         freeform_surface_carriers(
-            ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -219,82 +200,13 @@ fn freeform_fallback_retains_exact_consolidated_spheres() {
 }
 
 #[test]
-fn freeform_surface_carrier_refuses_collection_limit() {
-    let bytes = crate::test_support::test_b2::b2_sphere_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        freeform_surface_carriers(
-            ctx,
-            &bytes,
-            &records,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_freeform_surface_carriers")
-    );
-    let service = crate::test_support::with_service_context(|ctx| {
-        freeform_surface_carriers(
-            ctx,
-            &bytes,
-            &records,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service profile admits sphere carrier");
-    assert_eq!(service.len(), 1);
-}
-
-#[test]
-fn freeform_fallback_carrier_identity_refuses_retained_limit() {
-    let file = crate::test_support::test_container::outer_body_catpart(
-        &crate::test_support::test_b2::b2_sphere_stream(),
-    );
-    let scan = crate::test_support::with_service_context(|ctx| {
-        crate::container::scan_bytes(ctx, file.clone())
-    })
-    .expect("service scan");
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::try_decode_freeform_surfaces(
-            ctx,
-            &scan,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service budget");
-    assert!(service.is_some());
-    let mut found = false;
-    for cap in 0..4096 {
-        let limited = crate::test_support::with_retained_limit(cap, |ctx| {
-            super::super::try_decode_freeform_surfaces(
-                ctx,
-                &scan,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        match limited {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_freeform_payload_id" =>
-            {
-                found = true;
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => {}
-            _ => panic!("fallback carrier passed without its identity refusal"),
-        }
-    }
-    assert!(found, "the retained sweep must reach the payload identity");
-}
-
-#[test]
 fn freeform_fallback_retains_exact_consolidated_tori() {
     let bytes = crate::test_support::test_b2::b2_torus_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let carriers = crate::test_support::with_service_context(|ctx| {
+    let carriers = crate::test_support::with_service_context(|_ctx| {
         freeform_surface_carriers(
-            ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -344,10 +256,10 @@ fn a_cone_record_is_refused_when_read_or_builds_its_freeform_carrier() {
     set(&mut overflow_witness, 16, &[1.0e308, 1.5e308]);
     for bytes in [frame_witness, overflow_witness] {
         let records = crate::wire::records::consolidated_records(&bytes);
-        let carriers = crate::test_support::with_service_context(|ctx| {
+        let carriers = crate::test_support::with_service_context(|_ctx| {
             freeform_surface_carriers(
-                ctx,
                 &bytes,
+                &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
                 &records,
                 &mut crate::nurbs::LaneRefusals::new(),
             )
@@ -389,10 +301,8 @@ fn a_revolution_frame_admitted_when_read_converts_to_a_torus_without_a_second_ax
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     let records = crate::wire::records::consolidated_records(&bytes);
-    let resolved = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
-    })
-    .expect("service decode");
+    let resolved =
+        { crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records) };
     assert_eq!(resolved.len(), 1);
 
     let bindings = with_admission(|admission| {
@@ -403,7 +313,7 @@ fn a_revolution_frame_admitted_when_read_converts_to_a_torus_without_a_second_ax
             admission,
         )
     })
-    .expect("service limits admit freeform model records");
+    .expect("append consolidated revolutions");
     let [binding] = bindings.as_slice() else {
         panic!("the admitted revolution converts to one torus");
     };
@@ -441,12 +351,8 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
         let records = crate::wire::records::consolidated_records(&bytes);
-        let resolved = crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_resolved_revolutions_from_records(
-                ctx, &bytes, &records,
-            )
-        })
-        .expect("service decode");
+        let resolved =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
         assert_eq!(resolved.len(), 1);
         with_admission(|admission| {
             super::super::append_consolidated_revolutions(
@@ -456,7 +362,7 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
                 admission,
             )
         })
-        .expect("service limits admit freeform model records")
+        .expect("append consolidated revolutions")
     };
     assert!(convert(1.0 + deviation).is_empty());
     let bindings = convert(1.0);
@@ -473,10 +379,10 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
 fn freeform_fallback_retains_range_origin_cylinder_carriers() {
     let bytes = crate::test_support::test_b2::b2_range_origin_cylinder_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let carriers = crate::test_support::with_service_context(|ctx| {
+    let carriers = crate::test_support::with_service_context(|_ctx| {
         freeform_surface_carriers(
-            ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -640,4 +546,38 @@ fn standard_carrier_endpoints_refuse_caller_depth() {
         );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
+}
+
+#[test]
+fn b2_sphere_stream_yields_one_freeform_surface_carrier() {
+    let bytes = crate::test_support::test_b2::b2_sphere_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let service = freeform_surface_carriers(
+        &bytes,
+        &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+        &records,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("compute the freeform surface carriers");
+    assert_eq!(service.len(), 1);
+}
+
+#[test]
+fn freeform_fallback_decodes_an_outer_body_sphere() {
+    let file = crate::test_support::test_container::outer_body_catpart(
+        &crate::test_support::test_b2::b2_sphere_stream(),
+    );
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.clone())
+    })
+    .expect("scan the container");
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::try_decode_freeform_surfaces(
+            ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("decode freeform surfaces");
+    assert!(service.is_some());
 }

@@ -29,16 +29,7 @@ fn bind_pattern_inputs_test(
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let bytes = lanes
-        .first()
-        .map_or(&[][..], |lane| lane.native_payload.as_slice());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    bind_pattern_inputs(&ctx, features, histories, lanes)
+    bind_pattern_inputs(features, histories, lanes)
 }
 
 #[test]
@@ -116,7 +107,6 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         name: name.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.001).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: Vec::new(),
     };
     let mut lane = FeatureInputLane {
@@ -177,12 +167,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         Some("profile-child")
     );
     assert_eq!(
-        represented_sketch_features(
-            &cadmpeg_test_support::service_decode_context(),
-            std::slice::from_ref(&history),
-            std::slice::from_ref(&lane)
-        )
-        .unwrap(),
+        represented_sketch_features(std::slice::from_ref(&history), std::slice::from_ref(&lane)),
         HashSet::from([String::from("profile-child")])
     );
 }
@@ -234,7 +219,6 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
@@ -303,7 +287,6 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     };
 
     bind_mirror_surface_planes(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -339,7 +322,6 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     let mut nonmirror_history = history.clone();
     nonmirror_history.features[0].input_class = Some("moCirPattern_c".into());
     bind_mirror_surface_planes(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&nonmirror_history),
         std::slice::from_ref(&lane),
@@ -365,7 +347,6 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     let mut second_face = face.clone();
     second_face.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     bind_mirror_surface_planes(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -504,7 +485,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -523,7 +503,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -548,7 +527,18 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern: admitted_pattern })
-            if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular) } if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))])
+            if matches!(
+                admitted_pattern.definition(),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
+                }
+                    if seeds
+                    == &[
+                        PatternSeed::Feature(
+                            FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")
+                        )
+                    ]
+            )
     ));
 }
 
@@ -640,16 +630,15 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+            "synthetic:test:id#seed",
         )
+        .expect("identity grammar")])
         .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(
@@ -748,10 +737,8 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         ],
     };
 
-    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane)
-        .unwrap();
-    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane)
-        .unwrap();
+    normalize_indexed_curve_entities(&mut lane);
+    bind_resolved_curve_vertices(&mut lane);
 
     assert_eq!(lane.sketch_entities[4].kind(), SketchInputKind::Point);
 }
@@ -819,8 +806,7 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
         ],
     };
 
-    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane)
-        .unwrap();
+    bind_resolved_curve_vertices(&mut lane);
 
     assert_eq!(
         lane.sketch_entities[0].kind(),
@@ -878,7 +864,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         name: format!("name-{index}"),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: Vec::new(),
     };
     let entity = |id: &str, offset| {

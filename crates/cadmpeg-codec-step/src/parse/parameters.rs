@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inline storage for short entity parameter lists.
 
-use super::{CodecError, DecodeContext, Value};
+use super::Value;
 
 pub(super) trait ParameterValues: Default {
     fn is_empty(&self) -> bool;
-    fn push_value(&mut self, value: Value, ctx: &DecodeContext<'_>) -> Result<(), CodecError>;
+    fn push_value(&mut self, value: Value);
 }
 
 impl ParameterValues for Vec<Value> {
@@ -13,8 +13,8 @@ impl ParameterValues for Vec<Value> {
         self.as_slice().is_empty()
     }
 
-    fn push_value(&mut self, value: Value, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        ctx.push_vec(self, value, "step_parse_parameter")
+    fn push_value(&mut self, value: Value) {
+        self.push(value);
     }
 }
 
@@ -35,12 +35,7 @@ impl RecordParameters {
         self
     }
 
-    pub(super) fn prepend(
-        &mut self,
-        value: Value,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
+    pub(super) fn prepend(&mut self, value: Value) {
         match &mut self.0 {
             Storage::Empty => self.0 = Storage::One(value),
             Storage::One(first) => {
@@ -48,18 +43,16 @@ impl RecordParameters {
                 self.0 = Storage::Pair([value, first]);
             }
             Storage::Pair(pair) => {
-                let mut values = ctx.collection_vec(3, operation)?;
+                let mut values = Vec::new();
                 let pair = std::mem::replace(pair, [Value::Omitted, Value::Omitted]);
                 values.push(value);
                 values.extend(pair);
                 self.0 = Storage::Many(values);
             }
             Storage::Many(values) => {
-                ctx.reserve_vec(values, 1, operation)?;
                 values.insert(0, value);
             }
         }
-        Ok(())
     }
 }
 
@@ -68,7 +61,7 @@ impl ParameterValues for RecordParameters {
         self.as_slice().is_empty()
     }
 
-    fn push_value(&mut self, value: Value, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    fn push_value(&mut self, value: Value) {
         match &mut self.0 {
             Storage::Empty => self.0 = Storage::One(value),
             Storage::One(first) => {
@@ -76,15 +69,14 @@ impl ParameterValues for RecordParameters {
                 self.0 = Storage::Pair([first, value]);
             }
             Storage::Pair(pair) => {
-                let mut values = ctx.collection_vec(3, "step_parse_parameter")?;
+                let mut values = Vec::new();
                 let pair = std::mem::replace(pair, [Value::Omitted, Value::Omitted]);
                 values.extend(pair);
                 values.push(value);
                 self.0 = Storage::Many(values);
             }
-            Storage::Many(values) => ctx.push_vec(values, value, "step_parse_parameter")?,
+            Storage::Many(values) => values.push(value),
         }
-        Ok(())
     }
 }
 
@@ -132,64 +124,35 @@ impl<'a> IntoIterator for &'a mut RecordParameters {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    use super::{CodecError, ParameterValues, RecordParameters, Value};
-    use crate::test_support::with_policy_context;
+    use super::{ParameterValues, RecordParameters, Value};
 
     #[test]
-    fn short_parameters_are_inline_and_heap_growth_remains_checked() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        with_policy_context(b"", &policy, |_, ctx| {
-            let mut values = RecordParameters::default();
-            values
-                .push_value(Value::Integer(1), ctx)
-                .expect("inline first");
-            values
-                .push_value(Value::Integer(2), ctx)
-                .expect("inline second");
-            assert!(matches!(values.push_value(Value::Integer(3), ctx),
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.additional == 3));
-            assert_eq!(values.as_slice(), [Value::Integer(1), Value::Integer(2)]);
-        });
-        policy.limits.max_collection_items = 4;
-        with_policy_context(b"", &policy, |_, ctx| {
-            let mut values = RecordParameters::default();
-            for value in 1..=4 {
-                values
-                    .push_value(Value::Integer(value), ctx)
-                    .expect("checked heap population");
-            }
-            assert_eq!(
-                values.as_slice(),
-                [
-                    Value::Integer(1),
-                    Value::Integer(2),
-                    Value::Integer(3),
-                    Value::Integer(4)
-                ]
-            );
-        });
+    fn short_parameters_are_inline_and_longer_lists_grow() {
+        let mut values = RecordParameters::default();
+        for value in 1..=4 {
+            values.push_value(Value::Integer(value));
+        }
+        assert_eq!(
+            values.as_slice(),
+            [
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+                Value::Integer(4)
+            ]
+        );
     }
 
     #[test]
-    fn prepend_uses_inline_storage_and_preserves_values_on_refusal() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        with_policy_context(b"", &policy, |_, ctx| {
-            let mut values = RecordParameters::default();
-            values
-                .push_value(Value::Integer(2), ctx)
-                .expect("inline first");
-            values
-                .prepend(Value::Integer(1), ctx, "test prepend")
-                .expect("inline leading value");
-            assert_eq!(values.as_slice(), [Value::Integer(1), Value::Integer(2)]);
-            assert!(values
-                .prepend(Value::Integer(0), ctx, "test prepend")
-                .is_err());
-            assert_eq!(values.as_slice(), [Value::Integer(1), Value::Integer(2)]);
-        });
+    fn prepend_places_the_value_first() {
+        let mut values = RecordParameters::default();
+        values.push_value(Value::Integer(2));
+        values.prepend(Value::Integer(1));
+        assert_eq!(values.as_slice(), [Value::Integer(1), Value::Integer(2)]);
+        values.prepend(Value::Integer(0));
+        assert_eq!(
+            values.as_slice(),
+            [Value::Integer(0), Value::Integer(1), Value::Integer(2)]
+        );
     }
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use super::super::super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, pcurve_parameter_domain,
     B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5IncidenceLane, B5LogicalVertex,
@@ -5,18 +7,16 @@ use super::super::super::graph::{
     B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
-    b5_edge_support_definition as charged_b5_edge_support_definition, b5_supports_follow_edge,
-    ordered_subrange, orient_b5_supports_to_edge,
+    b5_edge_support_definition, b5_supports_follow_edge, ordered_subrange,
+    orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
-use super::super::surfaces::{rational_arc as charged_rational_arc, revolve_nurbs};
+use super::super::surfaces::{rational_arc, revolve_nurbs};
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
-use crate::families::b5::transfer::{
-    curve_on_parameter_range as charged_curve_on_parameter_range, transfer, SurfacePlan,
-};
+use crate::families::b5::transfer::{curve_on_parameter_range, transfer, SurfacePlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
@@ -28,177 +28,7 @@ use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
-use std::collections::{BTreeMap, HashMap, HashSet};
-
-fn curve_on_parameter_range(
-    curve: CurveGeometry,
-    source: [f64; 2],
-    target: cadmpeg_ir::topology::IncreasingParameterInterval,
-    record: &dyn std::fmt::Display,
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<CurveGeometry> {
-    crate::test_support::with_service_context(|ctx| {
-        charged_curve_on_parameter_range(ctx, curve, source, target, record, refusal)
-    })
-    .expect("service resource budget")
-}
-
-fn rational_arc(
-    center: [f64; 3],
-    direction_x: [f64; 3],
-    direction_y: [f64; 3],
-    radius: f64,
-    interval: [f64; 2],
-    record: &dyn std::fmt::Display,
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<NurbsCurve> {
-    crate::test_support::with_service_context(|ctx| {
-        charged_rational_arc(
-            ctx,
-            center,
-            (direction_x, direction_y),
-            radius,
-            interval,
-            record,
-            refusal,
-        )
-    })
-    .expect("service resource budget")
-}
-
-fn b5_edge_support_definition(
-    supports: &[super::super::B5Support],
-    surface_ids: &HashMap<u32, SurfaceId>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
-    solved_parameter_range: Option<[f64; 2]>,
-) -> Option<(
-    cadmpeg_ir::ids::IdentityNamespace,
-    &'static str,
-    ProceduralCurveDefinition,
-)> {
-    crate::test_support::with_service_context(|ctx| {
-        charged_b5_edge_support_definition(
-            ctx,
-            supports,
-            surface_ids,
-            pcurves,
-            solved_parameter_range,
-        )
-    })
-    .expect("service resource budget")
-}
-
-#[test]
-fn edge_support_pcurve_copy_refuses_collection_limit() {
-    let surfaces = HashMap::from([(
-        10,
-        SurfaceId::mint("catia:b5:surface#10".to_string()).expect("identity grammar"),
-    )]);
-    let pcurves = BTreeMap::from([(
-        20,
-        (
-            PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                    None,
-                    false,
-                )
-                .expect("fixture pcurve construction admission")
-                .expect("valid pcurve"),
-            },
-            false,
-            crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-        ),
-    )]);
-    let supports = [(
-        10,
-        20,
-        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-    )];
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        charged_b5_edge_support_definition(ctx, &supports, &surfaces, &pcurves, None)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_support_pcurve")
-    );
-    assert!(b5_edge_support_definition(&supports, &surfaces, &pcurves, None).is_some());
-}
-
-#[test]
-fn rational_arc_refuses_collection_limit_before_control_net() {
-    let refused = crate::test_support::with_collection_limit(4, |ctx| {
-        charged_rational_arc(
-            ctx,
-            [0.0; 3],
-            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            1.0,
-            [0.0, std::f64::consts::FRAC_PI_2],
-            &"arc",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(matches!(
-        refused,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    assert!(rational_arc(
-        [0.0; 3],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        1.0,
-        [0.0, std::f64::consts::FRAC_PI_2],
-        &"arc",
-        &mut crate::nurbs::LaneRefusals::new()
-    )
-    .is_some());
-}
-
-#[test]
-fn reparameterized_nurbs_knots_refuse_collection_limit_below_need() {
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![10.0, 10.0, 20.0, 20.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid curve"),
-    ));
-    let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
-    let refused = crate::test_support::with_collection_limit(3, |ctx| {
-        charged_curve_on_parameter_range(
-            ctx,
-            curve.clone(),
-            [10.0, 20.0],
-            target,
-            &"curve",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(matches!(
-        refused,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        charged_curve_on_parameter_range(
-            ctx,
-            curve,
-            [10.0, 20.0],
-            target,
-            &"curve",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service budget");
-    assert!(admitted.is_some());
-}
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 fn transfer_vertex_tolerances(
     graph: &B5Graph,
@@ -209,33 +39,20 @@ fn transfer_vertex_tolerances(
     crate::test_support::with_service_context(|ctx| {
         super::super::vertices::transfer_vertex_tolerances(ctx, graph, supports, surfaces, pcurves)
     })
-    .expect("service budget")
+    .expect("transfer vertex tolerances")
 }
 
-fn referenced_surface_ids(
-    roots: impl IntoIterator<Item = u32>,
-    offsets: &BTreeMap<u32, B5OffsetSurface>,
-    supported: &BTreeMap<u32, B5SupportedSurface>,
-    extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
-    aliases: &BTreeMap<u32, u32>,
-) -> HashSet<u32> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::referenced_surface_ids(ctx, roots, offsets, supported, extrusions, aliases)
-    })
-    .expect("service budget")
-}
+use super::super::referenced_surface_ids;
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     let nurbs = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![10.0, 10.0, 20.0, 20.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid affine curve");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
@@ -312,14 +129,12 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(20.0, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid NurbsCurve fixture")
         )))
     );
@@ -328,14 +143,12 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
 #[test]
 fn wide_affine_nurbs_range_maps_finite_exterior_knots() {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-0.01, 0.0, 1.0, 1.01],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("finite NURBS with exterior knots");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -358,14 +171,12 @@ fn wide_affine_nurbs_range_maps_finite_exterior_knots() {
 fn tiny_affine_nurbs_range_maps_when_scale_ratio_overflows() {
     let tiny = f64::MIN_POSITIVE / 4.0;
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, tiny, tiny],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("finite NURBS with a tiny domain");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -476,29 +287,21 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
                 [0.0, 1.0],
                 [0.0, 2.0],
             ]),
-            directrix: B5ExtrusionDirectrix::Intersection {
+            directrix: B5ExtrusionDirectrix::SurfaceCurve {
                 object_id: 80,
-                supports: [
-                    (
-                        90,
-                        91,
-                        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-                    ),
-                    (
-                        100,
-                        101,
-                        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-                    ),
-                ],
+                support: (
+                    90,
+                    91,
+                    crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+                ),
                 parameter_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
-                cache_fit_tolerance: crate::test_support::test_b5::positive(1.0e-6),
             },
         },
     )]);
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &supported, &extrusions, &BTreeMap::new(),),
-        HashSet::from([10, 20, 30, 31, 40, 50, 90, 100])
+        BTreeSet::from([10, 20, 30, 31, 40, 50, 90])
     );
 }
 
@@ -520,24 +323,9 @@ fn surface_closure_follows_aliases_to_native_constructions() {
     )]);
     let aliases = BTreeMap::from([(10, 11), (11, 20)]);
 
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::referenced_surface_ids(
-            ctx,
-            [10],
-            &offsets,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &aliases,
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_referenced_surface_ids")
-    );
-
     assert_eq!(
         referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
-        HashSet::from([10, 30, 40])
+        BTreeSet::from([10, 30, 40])
     );
 }
 
@@ -666,159 +454,59 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
     );
 }
 
-/// An incomplete graph keeps the face whose loop members all carry vertex
-/// loci and excludes the face whose members carry none, so that a carrier
-/// without recoverable geometry cannot pull invented vertices into the
-/// neutral model.
+/// Missing geometry cannot turn a closed source population into a recovered
+/// sheet by discarding one of the two face occurrences on each shared edge.
 #[test]
-fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
-    let plane = |v_offset: f64| B5Surface::Plane {
-        origin: crate::test_support::test_b5::point([0.0, v_offset, 0.0]),
-        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
-        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-    };
-    let line_pcurve = |object_id: u32, surface: u32| B5Pcurve {
-        object_id,
-        surface,
-        degree: 1,
-        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
-        multiplicities: vec![2, 2],
-        control_points: vec![
-            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
-            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
-        ],
-        weights: None,
-        parameter_range: None,
-        parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: None,
-        lifted_endpoints: None,
-    };
-    let incidence = |object_id: u32, curve: u32, parameter: f64| B5ParameterIncidence {
-        object_id,
-        lanes: vec![B5IncidenceLane {
-            curve,
-            parameter: crate::test_support::test_b5::finite(parameter),
-            control: 0,
-        }],
-    };
-    let graph = B5Graph {
-        complete: false,
-        faces: vec![
-            B5Face {
-                object_id: 1,
-                surface: 10,
-                loops: vec![2],
-                terminal_control: None,
-            },
-            B5Face {
-                object_id: 3,
-                surface: 11,
-                loops: vec![4],
-                terminal_control: None,
-            },
-        ],
-        face_records: BTreeMap::new(),
-        loops: BTreeMap::from([
-            (
-                2,
-                B5Loop {
-                    object_id: 2,
-                    members: test_loop_members(&[20, 20, 20], &[30, 31, 32]),
-                    metadata: test_loop_metadata(),
-                    surface: 10,
-                },
-            ),
-            (
-                4,
-                B5Loop {
-                    object_id: 4,
-                    members: test_loop_members(&[21, 21, 21], &[33, 34, 35]),
-                    metadata: test_loop_metadata(),
-                    surface: 11,
-                },
-            ),
-        ]),
-        pcurves: BTreeMap::from([(20, line_pcurve(20, 10)), (21, line_pcurve(21, 11))]),
-        opaque_pcurves: BTreeMap::new(),
-        implicit_pcurves: BTreeMap::new(),
-        surfaces: BTreeMap::from([(10, plane(0.0)), (11, plane(5.0))]),
-        surface_aliases: BTreeMap::new(),
-        offset_surfaces: BTreeMap::new(),
-        extrusion_surfaces: BTreeMap::new(),
-        supported_surfaces: BTreeMap::new(),
-        parameter_incidences: BTreeMap::from([
-            (40, incidence(40, 20, 0.0)),
-            (41, incidence(41, 20, 0.5)),
-            (42, incidence(42, 20, 1.0)),
-        ]),
-        edges: BTreeMap::new(),
-        vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            vec![
-                B5LogicalVertex {
-                    object_id: 50,
-                    point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-                },
-                B5LogicalVertex {
-                    object_id: 51,
-                    point: crate::test_support::test_b5::point([0.5, 0.0, 0.0]),
-                },
-                B5LogicalVertex {
-                    object_id: 52,
-                    point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
-                },
-            ],
-            BTreeMap::from([
-                (30, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)]),
-                (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
-                (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
-            ]),
-        )
-        .expect("valid vertex bindings"),
-        edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
-        vertex_tolerances: BTreeMap::new(),
-        profiles: BTreeMap::new(),
-    };
+fn incomplete_graph_does_not_publish_a_partial_face_body() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream_with_native_vertex_chain();
+    let mut graph = crate::test_support::with_service_context(|ctx| {
+        super::super::super::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service decode")
+    .expect("complete native identity graph");
+    let mut second_face = graph.faces[0].clone();
+    second_face.object_id += 1;
+    let first_loop = graph.faces[0].loops[0];
+    let mut second_loop = graph.loops[&first_loop].clone();
+    second_loop.object_id += 1;
+    second_face.loops = vec![second_loop.object_id];
+    graph.faces.push(second_face);
+    graph.loops.insert(second_loop.object_id, second_loop);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| ownership_plan(ctx, &graph))
+            .expect("service decode")
+            .expect("the complete population has unique loop ownership")
+            .body_kind,
+        BodyKind::Solid
+    );
+    graph
+        .loops
+        .get_mut(&(first_loop + 1))
+        .expect("second loop")
+        .members[0]
+        .pcurve += 1_000;
+    graph.complete = false;
+    assert!(
+        crate::test_support::with_service_context(|ctx| ownership_plan(ctx, &graph))
+            .expect("service decode")
+            .is_none()
+    );
     let mut ir = CadIr::empty();
-
-    crate::test_support::with_service_context(|ctx| {
+    let transferred = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        assert!(transfer(
+        transfer(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            graph,
-            &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
+            &graph,
+            &UnknownId::mint("catia:test:unknown#partial-population".to_string())
                 .expect("identity grammar"),
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
         )
-        .expect("service limits admit B5 topology"));
-    });
-    assert_eq!(
-        ir.model
-            .faces
-            .iter()
-            .map(|face| face.id.as_str())
-            .collect::<Vec<_>>(),
-        ["catia:b5:face#1"]
-    );
-    assert_eq!(
-        ir.model
-            .loops
-            .iter()
-            .map(|loop_| loop_.id.as_str())
-            .collect::<Vec<_>>(),
-        ["catia:b5:loop#2"]
-    );
-    assert_eq!(ir.model.coedges.len(), 3);
-    assert!(!ir
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface.id.as_str().contains("#11")));
+    })
+    .expect("service limits admit the source graph");
+    assert!(!transferred);
+    assert_eq!(ir, CadIr::empty());
 }
 
 #[test]
@@ -948,13 +636,13 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         assert!(transfer(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            graph,
+            &graph,
             &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
                 .expect("identity grammar"),
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
         )
-        .expect("service limits admit B5 topology"));
+        .expect("transfer the B5 topology"));
     });
     assert_eq!(ir.model.pcurves.len(), 3);
     assert_eq!(ir.model.coedges.len(), 3);
@@ -1362,8 +1050,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
 fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     assert!(rational_arc(
         [0.0; 3],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
+        ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         1.0e-300,
         [0.0, 1.0],
         &"test record",
@@ -1371,14 +1058,12 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     )
     .is_none());
     let profile = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid revolution profile");
     assert!(
         crate::test_support::with_service_context(|ctx| revolve_nurbs(
@@ -1390,20 +1075,18 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ))
-        .expect("service resource budget")
+        .expect("revolve NURBS")
         .is_none()
     );
     let mut wide_knots = vec![0.0; 123];
     wide_knots.extend([1.0, 1.0]);
     let wide_profile = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         wide_knots,
         vec![Point3::new(1.0, 0.0, 0.0); 123],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid wide revolution profile");
     assert!(
         crate::test_support::with_service_context(|ctx| revolve_nurbs(
@@ -1415,7 +1098,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ))
-        .expect("service resource budget")
+        .expect("revolve NURBS")
         .is_none()
     );
 }
@@ -1425,7 +1108,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let mut graph = B5Graph {
         complete: true,
         faces: vec![B5Face {
@@ -1471,14 +1154,14 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 
     assert_eq!(
         ownership_plan(&ctx, &graph)
-            .expect("service decode")
+            .expect("build the ownership plan")
             .expect("required invariant")
             .body_kind,
         BodyKind::Sheet
     );
     graph.faces[0].loops.push(2);
     assert!(ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .is_none());
     graph.faces[0].loops.pop();
     graph.faces.push(B5Face {
@@ -1488,7 +1171,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         terminal_control: None,
     });
     assert!(ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .is_none());
     graph.faces.pop();
 
@@ -1512,20 +1195,10 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .insert_edge(7, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])
         .expect("edge references select existing rows");
     let ownership = ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| ownership.components(ctx));
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_face_component_groups")
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| ownership.components(ctx))
-            .expect("service budget")
-            .len(),
-        2
-    );
+    assert_eq!(ownership.components().len(), 2);
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
     assert_eq!(ownership.loop_owners.get(&2), Some(&0));
     assert_eq!(ownership.loop_owners.get(&6), Some(&1));
@@ -1542,7 +1215,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         });
     assert_eq!(
         ownership_plan(&ctx, &graph)
-            .expect("service decode")
+            .expect("build the ownership plan")
             .expect("required invariant")
             .body_kind,
         BodyKind::General
@@ -1556,15 +1229,10 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 
     graph.loops.get_mut(&6).expect("required invariant").members[0].edge = 3;
     let ownership = ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| ownership.components(ctx))
-            .expect("service budget")
-            .len(),
-        1
-    );
+    assert_eq!(ownership.components().len(), 1);
     assert_eq!(ownership.body_kind, BodyKind::Solid);
 
     graph.faces.pop();
@@ -1581,7 +1249,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
         object_id,
         members: test_loop_members(&vec![0; edges.len()], &edges),
@@ -1620,7 +1288,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         &graph,
         BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
     )
-    .expect("service decode")
+    .expect("orient the loop members")
     .expect("required invariant");
     assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
     assert_eq!(
@@ -1674,7 +1342,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
             (3, vec![false; 2]),
         ]),
     )
-    .expect("service decode")
+    .expect("orient the loop members")
     .is_none());
 }
 
@@ -1751,14 +1419,12 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         (
             PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .expect("valid test pcurve"),
             },
             false,
@@ -1908,4 +1574,27 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
         ))
         .expect("evaluator allocation succeeds")
     );
+}
+
+#[test]
+fn nurbs_curve_reparameterizes_onto_a_new_range() {
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![10.0, 10.0, 20.0, 20.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid curve"),
+    ));
+    let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
+    assert!(curve_on_parameter_range(
+        curve,
+        [10.0, 20.0],
+        target,
+        &"curve",
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .is_some());
 }

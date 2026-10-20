@@ -20,9 +20,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         ],
         vec![[0, 1, 2]],
         0.01,
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("polygonal construction admission")
     .unwrap();
     let mut placed = SolvedSurfaceGeometry::Polygonal(polygonal);
     for _ in 0..2 {
@@ -56,13 +54,11 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         ];
         let weights = rational.then(|| vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
         let geometry = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             axis(),
             axis(),
             NurbsSurfaceLanes::new(poles, weights),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         ir.model.surfaces.push(Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))
@@ -107,30 +103,17 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn set_limit(policy: &mut DecodePolicy, dimension: ResourceDimension, limit: u64) {
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = limit,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-        _ => panic!("unexpected test dimension"),
-    }
-}
-
-fn assert_projection_refusal(
-    dimension: ResourceDimension,
-    project: fn(&DecodePolicy) -> Result<(), CodecError>,
-) {
+fn assert_nesting_refusal(project: fn(&DecodePolicy) -> Result<(), CodecError>) {
     let mut policy = DecodePolicy::service();
     project(&policy).unwrap();
     let mut lower = 0;
     let mut upper = 1;
     loop {
-        set_limit(&mut policy, dimension, upper);
+        policy.limits.max_recursion_depth = upper;
         match project(&policy) {
             Ok(()) => break,
             Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
                 upper = upper.checked_mul(2).unwrap();
             }
             Err(error) => panic!("unexpected route error: {error}"),
@@ -138,43 +121,28 @@ fn assert_projection_refusal(
     }
     while lower < upper {
         let midpoint = lower + (upper - lower) / 2;
-        set_limit(&mut policy, dimension, midpoint);
+        policy.limits.max_recursion_depth = midpoint;
         match project(&policy) {
             Ok(()) => upper = midpoint,
             Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
                 lower = midpoint + 1;
             }
             Err(error) => panic!("unexpected route error: {error}"),
         }
     }
     assert!(upper > 0);
-    set_limit(&mut policy, dimension, upper);
+    policy.limits.max_recursion_depth = upper;
     project(&policy).unwrap();
-    set_limit(&mut policy, dimension, upper - 1);
+    policy.limits.max_recursion_depth = upper - 1;
     assert!(
-        matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+        matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth)
     );
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_carrier_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_carrier_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_carrier_nesting_limit() {
-    assert_projection_refusal(ResourceDimension::RecursionDepth, run);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_carrier_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run);
+fn configuration_sketch_projection_carrier_runs_under_service_policy() {
+    run(&DecodePolicy::service()).unwrap();
 }
 
 fn datum_model() -> cadmpeg_ir::CadIr {
@@ -225,11 +193,7 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependencies,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -245,11 +209,7 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             evaluation: ConfigurationEvaluation::Active {
                 outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![plane],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![plane]).unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: None,
                 distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
@@ -278,13 +238,10 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-        vec![
-            FeatureId::mint("synthetic:test:id#plane").unwrap(),
-            FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-        ],
-        &cadmpeg_test_support::service_decode_context(),
-    )
+    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
+        FeatureId::mint("synthetic:test:id#plane").unwrap(),
+        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+    ])
     .unwrap();
     super::inherit_configuration_reference_plane_states(&ctx, &mut ir)?;
     assert_eq!(ir, expected);
@@ -292,23 +249,8 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 #[test]
-fn configuration_datum_state_projection_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_datum);
-}
-
-#[test]
-fn configuration_datum_state_projection_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_datum);
-}
-
-#[test]
 fn configuration_datum_state_projection_refuses_nesting_limit() {
-    assert_projection_refusal(ResourceDimension::RecursionDepth, run_datum);
-}
-
-#[test]
-fn configuration_datum_state_projection_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_datum);
+    assert_nesting_refusal(run_datum);
 }
 
 fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -373,16 +315,6 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-#[test]
-fn configuration_design_projection_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_design);
-}
-
-#[test]
-fn configuration_design_projection_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_design);
-}
-
 fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         DatumPlaneReference, FeatureDefinition, FeatureId, FeatureOperation,
@@ -401,13 +333,10 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-        vec![
-            FeatureId::mint("synthetic:test:id#plane").unwrap(),
-            FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-        ],
-        &cadmpeg_test_support::service_decode_context(),
-    )
+    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
+        FeatureId::mint("synthetic:test:id#plane").unwrap(),
+        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+    ])
     .unwrap();
     let losses = project_configuration_sketch_states(
         &ctx,
@@ -419,21 +348,6 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
     Ok(())
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_unscoped_datum_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_unscoped_datum);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_unscoped_datum_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_unscoped_datum);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_unscoped_datum_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_unscoped_datum);
 }
 
 fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -515,21 +429,6 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
     Ok(())
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_ownership_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_spatial_ownership);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_ownership_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_spatial_ownership);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_ownership_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_spatial_ownership);
 }
 
 fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -640,21 +539,6 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-#[test]
-fn configuration_sketch_projection_refuses_hole_construction_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_hole_construction);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_construction_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_hole_construction);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_construction_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_construction);
-}
-
 fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, HoleShape};
     use cadmpeg_ir::features::{
@@ -744,21 +628,6 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-#[test]
-fn configuration_sketch_projection_refuses_hole_operand_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_hole_operands);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_operand_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_hole_operands);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_operand_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_operands);
-}
-
 fn profile_termination_operands() -> (
     Vec<cadmpeg_ir::features::PlanarProfileRef>,
     Vec<cadmpeg_ir::features::LinearTermination>,
@@ -790,13 +659,7 @@ fn profile_termination_operands() -> (
         PlanarProfileRef::SketchRegions {
             sketch: sketch.clone(),
             regions: vec![
-                SketchProfileRegion::loops(
-                    0,
-                    vec![1, 3],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("fixture loop-region admission")
-                .unwrap(),
+                SketchProfileRegion::loops(0, vec![1, 3]).unwrap(),
                 SketchProfileRegion::trimmed(
                     vec![boundary.clone()],
                     vec![vec![boundary.clone()], vec![boundary]],
@@ -876,9 +739,7 @@ fn profile_termination_operands() -> (
                     local_id: "generated vertex".to_string().try_into().unwrap(),
                 },
                 "vertex native".into(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
@@ -886,18 +747,11 @@ fn profile_termination_operands() -> (
                 state,
                 HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(),
                 "historical vertex".into(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
-            vertex: VertexSelection::native(
-                "native vertex".into(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("selection reference admission")
-            .unwrap(),
+            vertex: VertexSelection::native("native vertex".into()).unwrap(),
         },
     ];
     (planar, terminations)
@@ -978,27 +832,6 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
     Ok(())
 }
 
-#[test]
-fn configuration_sketch_projection_refuses_hole_profile_termination_collection_limit() {
-    assert_projection_refusal(
-        ResourceDimension::CollectionItems,
-        run_hole_profile_termination,
-    );
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_profile_termination_retained_limit() {
-    assert_projection_refusal(
-        ResourceDimension::RetainedBytes,
-        run_hole_profile_termination,
-    );
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_profile_termination_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_profile_termination);
-}
-
 fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         DesignParameter, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
@@ -1018,10 +851,10 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             dependencies: if index == 0 {
                 cadmpeg_ir::features::DistinctMembers::default()
             } else {
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![ParameterId::mint("synthetic:test:id#parameter-0").unwrap()],
-                    &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![ParameterId::mint(
+                    "synthetic:test:id#parameter-0",
                 )
+                .unwrap()])
                 .unwrap()
             },
             properties: std::collections::BTreeMap::from([(
@@ -1092,18 +925,176 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_parameter_overlay_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_parameter_overlay);
+fn configuration_design_projection_runs_under_service_policy() {
+    run_design(&DecodePolicy::service()).unwrap();
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_parameter_overlay_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_parameter_overlay);
+fn configuration_sketch_projection_unscoped_datum_runs_under_service_policy() {
+    run_unscoped_datum(&DecodePolicy::service()).unwrap();
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_parameter_overlay_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_parameter_overlay);
+fn configuration_sketch_projection_ownership_runs_under_service_policy() {
+    run_spatial_ownership(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_hole_construction_runs_under_service_policy() {
+    run_hole_construction(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_hole_operand_runs_under_service_policy() {
+    run_hole_operands(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_hole_profile_termination_runs_under_service_policy() {
+    run_hole_profile_termination(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_parameter_overlay_runs_under_service_policy() {
+    run_parameter_overlay(&DecodePolicy::service()).unwrap();
 }
 
 mod feature_copies;
+
+#[test]
+fn configuration_slots_match_the_linear_lookup() {
+    let mut configurations = Vec::new();
+    for (index, (ordinal, id)) in [
+        (0, None),
+        (1, None),
+        (1, None),
+        (2, Some("2")),
+        (3, Some("5")),
+        (4, Some("5")),
+        (5, Some("x")),
+        (6, Some("3")),
+        (3, None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut configuration = design_configuration(&format!("c{index}"), ordinal, None, None);
+        if let Some(id) = id {
+            configuration
+                .properties
+                .insert(cadmpeg_core::nonblank_literal!("id"), id.into());
+        }
+        configurations.push(configuration);
+    }
+    let slots = super::ConfigurationSlots::new(&configurations);
+    for slot in 0..8 {
+        assert_eq!(
+            slots.index_for_slot(slot),
+            super::configuration_index_for_slot(&configurations, slot),
+            "slot {slot}"
+        );
+    }
+}
+
+#[test]
+fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<(), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+    let mut feature = crate::history::tests::feature("feature", None, 0);
+    feature
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Length"), "12mm".into());
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: std::collections::BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    }];
+    let lanes = [
+        feature_input_lane("lane", Some("0")),
+        feature_input_lane("lane-1", Some("1")),
+    ];
+    let mut base = cadmpeg_ir::CadIr::empty();
+    base.model
+        .configurations
+        .push(design_configuration("first", 0, Some(0), None));
+    base.model
+        .configurations
+        .push(design_configuration("second", 1, Some(1), None));
+    let sources = super::ConfigurationSources {
+        histories: &histories,
+        lanes: &lanes,
+        pmi_dimensions: &[],
+    };
+
+    let mut uncapped = base.clone();
+    let unprojected = super::project_configuration_design_states_within(
+        &ctx,
+        &mut uncapped,
+        sources,
+        None,
+        super::CONFIGURATION_PROJECTION_WORK,
+    )?;
+    assert_eq!(unprojected, 0);
+    assert!(uncapped
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| configuration.feature_states.len() == 1
+            && configuration.parameter_values.len() == 1));
+
+    let one_pass = super::configuration_history_units(&histories).unwrap();
+    let mut capped = base.clone();
+    let unprojected = super::project_configuration_design_states_within(
+        &ctx,
+        &mut capped,
+        sources,
+        None,
+        one_pass,
+    )?;
+    assert_eq!(unprojected, 1);
+    assert_eq!(
+        capped.model.configurations[0],
+        uncapped.model.configurations[0]
+    );
+    assert!(capped.model.configurations[1].feature_states.is_empty());
+    assert!(capped.model.configurations[1].parameter_values.is_empty());
+    let loss = super::configuration_projection_capped_loss(
+        unprojected,
+        super::CONFIGURATION_PROJECTION_WORK,
+    );
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::ConfigProjectionWorkCapped.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "1 configuration(s) were left without projected parameter values and feature states \
+         because the configuration pass exceeded the local work cap \
+         CONFIGURATION_PROJECTION_WORK (67108864)."
+    );
+    Ok(())
+}
+
+#[test]
+fn configuration_projection_work_scales_with_rows_above_the_floor() {
+    use super::{
+        projection_work_limit, CONFIGURATION_PROJECTION_WORK, CONFIGURATION_PROJECTION_WORK_PER_ROW,
+    };
+    let past_floor = CONFIGURATION_PROJECTION_WORK / CONFIGURATION_PROJECTION_WORK_PER_ROW * 4;
+    assert_eq!(
+        projection_work_limit(Some(10)),
+        CONFIGURATION_PROJECTION_WORK
+    );
+    assert_eq!(
+        projection_work_limit(Some(past_floor)),
+        past_floor * CONFIGURATION_PROJECTION_WORK_PER_ROW
+    );
+    assert_eq!(
+        projection_work_limit(Some(usize::MAX)),
+        CONFIGURATION_PROJECTION_WORK
+    );
+    assert_eq!(projection_work_limit(None), CONFIGURATION_PROJECTION_WORK);
+}

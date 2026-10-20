@@ -3,7 +3,7 @@
 
 use crate::decode::sweep::pcurves::RevolutionBoundary;
 
-use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_loops};
+use crate::decode::analytic::carriers::ordered_face_loops;
 use crate::decode::analytic::equations::{
     CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
@@ -20,7 +20,7 @@ use crate::decode::sketch::geometry::section_arc_geometry;
 use crate::decode::sketch::intersect::intersect_incident_section_carriers;
 use crate::decode::sketch::radii::trim_segment_id;
 use crate::decode::sketch_transfer::identity::materialized_saved_section_external_ids;
-use crate::decode::sketch_transfer::profiles::resolved_profile_chains as resolved_profile_chains_admitted;
+use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
 use crate::decode::surfaces::intersection_candidates::{
     axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
 };
@@ -42,9 +42,9 @@ use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
 use cadmpeg_ir::features::{AngularTermination, BooleanOp, RevolutionAxis, RevolveExtent};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::CurveGeometry::Solved;
+use cadmpeg_ir::geometry::SolvedCurveGeometry::Circle;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -56,43 +56,8 @@ const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
 
 const EPS_CONIC_INTERSECTION: f64 = 1.0e-12;
 
-fn resolved_profile_chains(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    sketch: &SketchId,
-    emitted: &BTreeSet<u32>,
-) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        resolved_profile_chains_admitted(ctx, definition, sketch, emitted)
-    })
-    .expect("service profile chains")
-}
-
-fn ordered_face_loops_service<'a>(
-    loops: &[&'a crate::topology::Loop],
-    plane: Option<PlaneEquation>,
-    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
-    solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        ordered_face_loops(ctx, loops, plane, incidence, solved_vertices)
-    })
-    .expect("service face loop ordering")
-}
-
-fn ordered_planar_face_loops_service<'a>(
-    loops: Vec<&'a crate::topology::Loop>,
-    plane: PlaneEquation,
-    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
-    solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        ordered_planar_face_loops(ctx, loops, plane, incidence, solved_vertices)
-    })
-    .expect("service planar loop ordering")
-}
-
 #[test]
-fn ordered_face_loops_refuse_boundary_point_vector() {
+fn ordered_face_loops_keep_a_single_loop_with_one_boundary_point() {
     let half_edge = HalfEdgeId {
         curve_id: 1,
         side: crate::topology::Side::Zero,
@@ -105,27 +70,14 @@ fn ordered_face_loops_refuse_boundary_point_vector() {
     };
     let incidence = BTreeMap::from([(half_edge, &binding)]);
     let points = BTreeMap::from([(1, [0.0, 0.0, 0.0])]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let Err(error) = ordered_face_loops(&ctx, &[&lp], None, &incidence, &points) else {
-        panic!("one boundary point exceeds collection limit")
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo topology plane candidate points")
-    );
     assert_eq!(
-        ordered_face_loops_service(&[&lp], None, &incidence, &points),
+        ordered_face_loops(&[&lp], None, &incidence, &points),
         Some(vec![&lp])
     );
 }
 
 #[test]
-fn ordered_face_loops_refuse_input_references() {
+fn ordered_face_loops_keep_a_single_unbound_loop() {
     let lp = crate::test_support::closed_loop(
         std::num::NonZeroU32::new(9),
         vec![crate::topology::HalfEdgeId {
@@ -133,20 +85,8 @@ fn ordered_face_loops_refuse_input_references() {
             side: crate::topology::Side::Zero,
         }],
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = ordered_face_loops(&ctx, &[&lp], None, &BTreeMap::new(), &BTreeMap::new())
-        .expect_err("loop reference refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo native face ordering loop references")
-    );
     assert_eq!(
-        ordered_face_loops_service(&[&lp], None, &BTreeMap::new(), &BTreeMap::new()),
+        ordered_face_loops(&[&lp], None, &BTreeMap::new(), &BTreeMap::new()),
         Some(vec![&lp])
     );
 }
@@ -225,11 +165,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         saved_section: None,
         offset: 1,
     };
-    let profiles = resolved_profile_chains(
-        &definition,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
-    );
+    let profiles = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &definition,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
     assert_eq!(
@@ -250,12 +194,16 @@ fn profile_chain_follows_trim_vertex_incidence() {
             decoded_entry_count: Some(3),
             offset: 5,
         });
-    assert!(resolved_profile_chains(
-        &incomplete,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_service_context(|ctx| resolved_profile_chains(
+            ctx,
+            &incomplete,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        ))
+        .expect("compute the resolved profile chains")
+        .is_empty()
+    );
     assert_eq!(
         trim_segment_id(
             &incomplete,
@@ -264,12 +212,16 @@ fn profile_chain_follows_trim_vertex_incidence() {
         None
     );
 
-    assert!(resolved_profile_chains(
-        &definition,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32]),
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_service_context(|ctx| resolved_profile_chains(
+            ctx,
+            &definition,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32]),
+        ))
+        .expect("compute the resolved profile chains")
+        .is_empty()
+    );
 
     let mut incomplete_trim_graph = definition.clone();
     incomplete_trim_graph.segments = Some(crate::feature::definitions::FeatureSegmentTable {
@@ -304,11 +256,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .expect("trim table")
         .rows
         .retain(|row| row.external_id != 13);
-    let profiles = resolved_profile_chains(
-        &incomplete_trim_graph,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
-    );
+    let profiles = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &incomplete_trim_graph,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 3);
 
@@ -357,11 +313,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .collect(),
         offset: 4,
     });
-    let arc_profile = resolved_profile_chains(
-        &arcs,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10, 11]),
-    );
+    let arc_profile = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &arcs,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10, 11]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(arc_profile.len(), 1);
     assert!(arc_profile[0].iter().all(|entity| entity.reversed));
 
@@ -399,11 +359,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .collect(),
         offset: 4,
     });
-    let segment_profile = resolved_profile_chains(
-        &segment_graph,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10, 11, 12, 13, 20]),
-    );
+    let segment_profile = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &segment_graph,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10, 11, 12, 13, 20]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(segment_profile.len(), 1);
     assert_eq!(segment_profile[0].len(), 4);
     assert!(!segment_profile[0][0].reversed);
@@ -507,7 +471,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
     )
     .expect("valid section frame");
 
-    let axis = crate::decode::with_test_decode_ctx(|ctx| {
+    let axis = crate::decode::with_service_context(|ctx| {
         resolved_revolution_axis(ctx, &definition, &transform)
     })
     .expect("test section solve")
@@ -532,7 +496,7 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         source_carriers.admit_surface(
             ctx,
             &mut ir,
@@ -563,11 +527,9 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
                 .expect("full turn"),
         },
     };
-    let axis = crate::decode::with_test_decode_ctx(|ctx| {
-        full_turn_revolution_carrier_axis(ctx, &scan, &ir, &source_carriers, 7, Some(&full_turn))
-    })
-    .expect("axis lookup is admitted")
-    .expect("source carrier axis");
+    let axis =
+        { full_turn_revolution_carrier_axis(&scan, &ir, &source_carriers, 7, Some(&full_turn)) }
+            .expect("axis lookup is admitted");
     assert_eq!(axis.origin.get().x, 2.0);
 }
 
@@ -641,15 +603,13 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
+        full_turn_revolution_carrier_axis(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(&full_turn)
-        ))
-        .expect("axis lookup is admitted"),
+        ),
         Some(RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite point fixture"),
@@ -687,7 +647,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     )
     .expect("valid section frame");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| revolution_axis_for_transfer(
+        crate::decode::with_service_context(|ctx| revolution_axis_for_transfer(
             ctx,
             &scan,
             &ir,
@@ -710,18 +670,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"),
         },
     };
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&partial)
-        ))
-        .expect("partial-turn lookup is admitted")
-        .is_none()
-    );
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&partial)
+    )
+    .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
     {
@@ -743,18 +699,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         )
         .expect("valid ConeSurface fixture");
     }
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&full_turn)
-        ))
-        .expect("conflicting-axis lookup is admitted")
-        .is_none()
-    );
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&full_turn)
+    )
+    .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
     {
@@ -794,18 +746,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         radius,
     )
     .expect("valid SphereSurface fixture");
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&full_turn)
-        ))
-        .expect("conflicting-center lookup is admitted")
-        .is_none()
-    );
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&full_turn)
+    )
+    .is_none());
 }
 
 #[test]
@@ -916,7 +864,7 @@ fn named_revolve_transfers_profile_axis() {
             construction,
             op: BooleanOp::NewBody,
         },
-    )) = crate::decode::with_test_decode_ctx(|ctx| {
+    )) = crate::decode::with_service_context(|ctx| {
         named_feature_definition(
             ctx,
             &scan,
@@ -952,7 +900,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Extrude { op, solid, .. },
-    )) = crate::decode::with_test_decode_ctx(|ctx| {
+    )) = crate::decode::with_service_context(|ctx| {
         named_feature_definition(
             ctx,
             &scan,
@@ -985,7 +933,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     });
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             schema_feature_definition(
                 ctx,
                 &scan,
@@ -1043,7 +991,7 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         "Revolve 822",
     ] {
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(
+            crate::decode::with_service_context(|ctx| named_feature_definition(
                 ctx,
                 &scan,
                 &ir,
@@ -1057,7 +1005,7 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         );
     }
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| named_or_referenced_feature_definition(
+        crate::decode::with_service_context(|ctx| named_or_referenced_feature_definition(
             ctx,
             &scan,
             &ir,
@@ -1097,7 +1045,7 @@ fn conflicting_display_states_do_not_select_reference_family() {
     let ir = CadIr::empty();
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| named_or_referenced_feature_definition(
+        crate::decode::with_service_context(|ctx| named_or_referenced_feature_definition(
             ctx,
             &scan,
             &ir,
@@ -1127,7 +1075,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         }),
         offset: 10,
     };
-    let nurbs = crate::decode::with_test_decode_ctx(|ctx| {
+    let nurbs = crate::decode::with_service_context(|ctx| {
         saved_spline_nurbs(ctx, &spline, &mut crate::lane_refusal::LaneRefusals::new())
     })
     .expect("test spline allocation")
@@ -1136,7 +1084,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut point, (index, control)| {
-                let basis = crate::decode::with_test_decode_ctx(|ctx| {
+                let basis = crate::decode::with_service_context(|ctx| {
                     bspline_basis(
                         ctx,
                         index,
@@ -1146,7 +1094,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                         nurbs.control_points().len(),
                     )
                 })
-                .expect("service basis")
+                .expect("evaluate the B-spline basis")
                 .expect("valid basis");
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
@@ -1161,7 +1109,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let derivative = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut derivative, (index, control)| {
-                let basis = crate::decode::with_test_decode_ctx(|ctx| {
+                let basis = crate::decode::with_service_context(|ctx| {
                     bspline_basis_derivative(
                         ctx,
                         index,
@@ -1171,7 +1119,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                         nurbs.control_points().len(),
                     )
                 })
-                .expect("service basis")
+                .expect("evaluate the B-spline basis derivative")
                 .expect("valid basis");
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;
@@ -1182,11 +1130,16 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!((derivative[0] - 1.0).abs() < 1.0e-12);
         assert!(derivative[1].abs() < 1.0e-12 && derivative[2].abs() < 1.0e-12);
     }
-    assert!(
-        matches!(crate::decode::with_test_decode_ctx(|ctx| saved_spline_sketch_geometry(ctx, &spline, &mut crate::lane_refusal::LaneRefusals::new())).expect("test spline allocation").map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
-            Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
-        )
-    );
+    assert!(matches!(
+        crate::decode::with_service_context(
+            |ctx| saved_spline_sketch_geometry(
+                ctx, &spline, &mut crate::lane_refusal::LaneRefusals::new()
+            )
+        ) .expect("test spline allocation").map(
+            cadmpeg_ir::sketches::SketchGeometry::into_definition
+        ),
+        Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
+    ));
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(917),
@@ -1244,7 +1197,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         offset: 1,
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+        crate::decode::with_service_context(|ctx| materialized_saved_section_external_ids(
             ctx,
             &definition,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -1256,7 +1209,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
     let mut incomplete = spline;
     incomplete.declared_point_count = Some(4);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| saved_spline_nurbs(
+        crate::decode::with_service_context(|ctx| saved_spline_nurbs(
             ctx,
             &incomplete,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -1265,7 +1218,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .is_none()
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| saved_spline_sketch_geometry(
+        crate::decode::with_service_context(|ctx| saved_spline_sketch_geometry(
             ctx,
             &incomplete,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -1284,7 +1237,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             incomplete,
         ));
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+        crate::decode::with_service_context(|ctx| materialized_saved_section_external_ids(
             ctx,
             &duplicate_saved_id,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -1317,7 +1270,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .expect("segments")
         .declared_count = 2;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+        crate::decode::with_service_context(|ctx| materialized_saved_section_external_ids(
             ctx,
             &ambiguous_external_id,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -1334,13 +1287,79 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .rows
         .edit_opaque(Vec::pop);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+        crate::decode::with_service_context(|ctx| materialized_saved_section_external_ids(
             ctx,
             &incomplete_segment_table,
             &mut crate::lane_refusal::LaneRefusals::new()
         ))
         .expect("test spline allocation"),
         BTreeSet::from([42])
+    );
+}
+
+#[test]
+fn saved_spline_above_the_interpolation_matrix_cap_is_refused_with_its_bound() {
+    const POINTS: u32 = 1100;
+    let spline = crate::feature::definitions::FeatureSavedSpline {
+        entity_id: Some(7),
+        declared_point_count: Some(POINTS),
+        interpolation_points: (0..POINTS).map(|i| [f64::from(i), 0.0, 0.0]).collect(),
+        interpolation_points_body: Vec::new(),
+        endpoint_tangents: Some(crate::feature::definitions::DecodedField {
+            value: [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            body: Vec::new(),
+        }),
+        parameters: Some(crate::feature::definitions::DecodedField {
+            value: (0..POINTS).map(f64::from).collect(),
+            body: Vec::new(),
+        }),
+        offset: 10,
+    };
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let nurbs =
+        crate::decode::with_service_context(|ctx| saved_spline_nurbs(ctx, &spline, &mut refusal))
+            .expect("the interpolation cap is not a decode failure");
+    assert!(nurbs.is_none());
+    assert_eq!(
+        refusal.take_records(),
+        [
+            "creo saved-spline entity 7 at offset 10 NURBS record: interpolation needs \
+             1214404 dense matrix entries, above MAX_INTERPOLATION_MATRIX_ENTRIES (1048576)"
+        ]
+    );
+}
+
+#[test]
+fn interpolation_grid_above_the_matrix_cap_is_refused_with_its_bound() {
+    const SIDE: u32 = 100;
+    let parameters: Vec<f64> = (0..SIDE).map(f64::from).collect();
+    let points = (0..SIDE)
+        .flat_map(|u| (0..SIDE).map(move |v| [f64::from(u), f64::from(v), 0.0]))
+        .collect();
+    let boundary = || (0..2 * SIDE).map(|_| [0.0; 3]).collect();
+    let grid = crate::interpolation_grid::InterpolationGrid::try_new(
+        points,
+        parameters.clone(),
+        parameters,
+        boundary(),
+        boundary(),
+        [[0.0; 3]; 4],
+    )
+    .expect("grid work admission")
+    .expect("complete interpolation grid");
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let nurbs = crate::decode::with_service_context(|ctx| {
+        interpolation_spline_surface(ctx, &grid, &"interpolation grid fixture", &mut refusal)
+    })
+    .expect("the interpolation cap is not a decode failure");
+    assert!(nurbs.is_none());
+    assert_eq!(
+        refusal.take_records(),
+        [
+            "creo interpolation-spline surface record for interpolation grid fixture: \
+             interpolation needs 2122416 dense matrix entries, above \
+             MAX_INTERPOLATION_MATRIX_ENTRIES (1048576)"
+        ]
     );
 }
 
@@ -1355,9 +1374,8 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     let du = [1.0, 0.0, 1.0];
     let dv = [0.0, 1.0, 2.0];
     let zero = [0.0; 3];
-    let grid = crate::decode::with_test_decode_ctx(|ctx| {
+    let grid = {
         crate::interpolation_grid::InterpolationGrid::try_new(
-            ctx,
             points.to_vec(),
             vec![0.0, 1.0],
             vec![0.0, 1.0],
@@ -1365,10 +1383,10 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
             vec![dv, dv, dv, dv],
             [zero, zero, zero, zero],
         )
-    })
+    }
     .expect("grid work admission")
     .expect("complete interpolation grid");
-    let nurbs = crate::decode::with_test_decode_ctx(|ctx| {
+    let nurbs = crate::decode::with_service_context(|ctx| {
         interpolation_spline_surface(
             ctx,
             &grid,
@@ -1413,20 +1431,15 @@ fn nonplanar_saved_spline_places_as_model_curve() {
     )
     .expect("valid section frame");
     let local = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid local NURBS");
 
-    let placed =
-        crate::decode::with_test_decode_ctx(|ctx| placed_section_nurbs(ctx, &transform, &local))
-            .expect("placement resources")
-            .expect("finite placed NURBS");
+    let placed = placed_section_nurbs(&transform, &local).expect("finite placed NURBS");
 
     assert_eq!(placed.control_points()[0], Point3::new(11.0, 17.0, 32.0));
     assert_eq!(placed.control_points()[1], Point3::new(14.0, 14.0, 35.0));
@@ -1449,33 +1462,25 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
 #[test]
 fn full_revolution_uses_exact_quadratic_circle_poles() {
     let directrix = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid revolution directrix");
-    let surface = crate::decode::with_test_decode_ctx(|ctx| {
-        revolved_nurbs_surface(
-            ctx,
-            &directrix,
-            &RevolutionAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .expect("finite point fixture"),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    0.0, 0.0, 1.0,
-                ))
+    let surface = revolved_nurbs_surface(
+        &directrix,
+        &RevolutionAxis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite point fixture"),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("valid direction fixture"),
-                reference: None,
-            },
-            &"revolution directrix fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service revolution allocation")
+            reference: None,
+        },
+        &"revolution directrix fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("revolution surface");
 
     assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
@@ -1522,7 +1527,6 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     };
     let spline = SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
             vec![
@@ -1534,26 +1538,21 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
             Some(vec![1.0, 0.75, 0.75, 1.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     );
-    let segment = crate::decode::with_test_decode_ctx(|ctx| {
+    let segment = crate::decode::with_service_context(|ctx| {
         crate::decode::sweep::profiles::ProfileEntity::new(ctx, spline.clone(), false)
     })
-    .expect("service profile resources")
+    .expect("construct the profile entity")
     .expect("valid profile entity");
-    let surface = crate::decode::with_test_decode_ctx(|ctx| {
-        revolved_brep_surface(
-            ctx,
-            &transform,
-            &spline,
-            false,
-            &axis,
-            &"revolved spline fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service revolution allocation")
+    let surface = revolved_brep_surface(
+        &transform,
+        &spline,
+        false,
+        &axis,
+        &"revolved spline fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
@@ -1587,36 +1586,30 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &"revolution boundary fixture start",
         &mut start_refusal,
     );
-    let start_pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-        revolution_profile_boundary_pcurve(
-            ctx,
-            &transform,
-            &segment,
-            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
-            &axis,
-            (segment.start(), RevolutionBoundary::Start),
-            &mut start_diagnostics,
-        )
-    })
-    .expect("resource admission")
+    let start_pcurve = revolution_profile_boundary_pcurve(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        &axis,
+        (segment.start(), RevolutionBoundary::Start),
+        &mut start_diagnostics,
+    )
+    .expect("compute the revolution profile boundary pcurve")
     .expect("start boundary pcurve");
     let mut end_refusal = crate::lane_refusal::LaneRefusals::new();
     let mut end_diagnostics = crate::lane_refusal::LaneRefusalContext::new(
         &"revolution boundary fixture end",
         &mut end_refusal,
     );
-    let end_pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-        revolution_profile_boundary_pcurve(
-            ctx,
-            &transform,
-            &segment,
-            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
-            &axis,
-            (segment.end(), RevolutionBoundary::End),
-            &mut end_diagnostics,
-        )
-    })
-    .expect("resource admission")
+    let end_pcurve = revolution_profile_boundary_pcurve(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        &axis,
+        (segment.end(), RevolutionBoundary::End),
+        &mut end_diagnostics,
+    )
+    .expect("compute the revolution profile boundary pcurve")
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
         assert_eq!(
@@ -1639,7 +1632,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         );
     }
 
-    let forward_sense = crate::decode::with_test_decode_ctx(|ctx| {
+    let forward_sense = crate::decode::with_service_context(|ctx| {
         revolution_face_sense(
             ctx,
             &transform,
@@ -1653,9 +1646,9 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
             ),
         )
     })
-    .expect("resource admission")
+    .expect("compute the revolution face sense")
     .expect("forward face sense");
-    let reverse_sense = crate::decode::with_test_decode_ctx(|ctx| {
+    let reverse_sense = crate::decode::with_service_context(|ctx| {
         revolution_face_sense(
             ctx,
             &transform,
@@ -1669,22 +1662,18 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
             ),
         )
     })
-    .expect("resource admission")
+    .expect("compute the revolution face sense")
     .expect("reverse face sense");
     assert_ne!(forward_sense, reverse_sense);
 
-    let reversed = crate::decode::with_test_decode_ctx(|ctx| {
-        revolved_brep_surface(
-            ctx,
-            &transform,
-            &spline,
-            true,
-            &axis,
-            &"reversed revolved spline fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service revolution allocation")
+    let reversed = revolved_brep_surface(
+        &transform,
+        &spline,
+        true,
+        &axis,
+        &"reversed revolved spline fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("reversed revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(reversed)) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");
@@ -1711,7 +1700,7 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
         radius: 2.0,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[plane, sphere]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[plane, sphere]))
             .expect("test carrier solve"),
         Some([0.0, 0.0, 2.0])
     );
@@ -1722,7 +1711,7 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
         radius: 3.0,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[sphere, second_sphere]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[sphere, second_sphere]))
             .expect("test carrier solve"),
         Some([2.0, 0.0, 0.0])
     );
@@ -1733,7 +1722,7 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
         radius: 2.0,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[sphere, secant]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[sphere, secant]))
             .expect("test carrier solve"),
         None
     );
@@ -1774,7 +1763,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 [upper_radius, 0.0, upper_parameter],
                 [0.0, upper_radius, upper_parameter],
             ],
-        ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
+        ), Some((Solved(Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
                     let center = circle_curve.center().get();
     let radius = circle_curve.radius().get();
@@ -1785,7 +1774,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         origin: [3.0 + 7.0_f64.sqrt(), 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],
     });
-    let vertex = crate::decode::with_test_decode_ctx(|ctx| {
+    let vertex = crate::decode::with_service_context(|ctx| {
         solve_carriers(ctx, &[cone, secant_torus, tangent_plane])
     })
     .expect("test carrier solve")
@@ -1803,7 +1792,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
     });
     let tangent_candidates = coaxial_cone_torus_circle_candidates(cone, tangent_torus);
     assert!(
-        matches!(tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle")]
+        matches!(tangent_candidates.as_slice(), [(Solved(Circle(circle_curve)), "coaxial_cone_torus_circle")]
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -1811,7 +1800,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 })
     );
     assert!(
-        matches!(resolve_curve_candidates(tangent_candidates, None), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
+        matches!(resolve_curve_candidates(tangent_candidates, None), Some((Solved(Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -1851,7 +1840,7 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
     assert!(resolve_curve_candidates(candidates.clone(), None).is_none());
     assert!(
         matches!(select_unique_curve_candidate(candidates, [[4.0, 0.0, 0.0], [3.0, 0.0, 1.0]]), Some((
-                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
+                    Solved(Circle(circle_curve)),
                     "axis_containing_plane_torus_meridian_circle",
                 )) if {
                     let center = circle_curve.center().get();
@@ -1868,7 +1857,7 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[plane, torus, tangent_plane]
         ))

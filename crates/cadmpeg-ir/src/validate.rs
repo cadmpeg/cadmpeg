@@ -9,7 +9,7 @@
 //! closure.
 
 use crate::document::CadIr;
-use crate::index::identities::BorrowedIdentities;
+use crate::index::identities::IdentitySet;
 use crate::report::{
     check::{Check, Finding, ValidationReport},
     loss::LossNote,
@@ -28,13 +28,10 @@ pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
-mod orders;
 mod pmi;
 mod presentation;
 mod products;
 mod referential_integrity;
-mod scans;
-mod scratch;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
@@ -72,7 +69,7 @@ use topology::{check_references, check_tolerances, check_topology_tolerances};
 /// Both the carrier-parameterization pass and the geometric-consistency pass
 /// ask this question of the same carrier, so they ask it of one function.
 ///
-/// Each carrier visit enters the caller session and admits its work.
+/// Each nested carrier visit counts against the caller session's recursion depth.
 fn pcurve_parameter_domain(
     ctx: &DecodeContext<'_>,
     geometry: &crate::geometry::pcurve::PcurveGeometry,
@@ -80,7 +77,7 @@ fn pcurve_parameter_domain(
 {
     use crate::geometry::pcurve::PcurveGeometry;
     let _depth = ctx.enter_nested_limit("pcurve parameter domain nesting")?;
-    ctx.charge_work_limit(1, "pcurve parameter domain visit")?;
+
     Ok(match geometry {
         PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
@@ -116,25 +113,44 @@ fn pcurve_parameter_domain(
 }
 
 fn record_finding(
-    ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
     check: Check,
     severity: Severity,
     entity: Option<&str>,
     message: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    ctx.reserve_vec(findings, 1, "validation finding storage")?;
-    let message = ctx.format_retained(message, "validation finding message")?;
-    let entity = entity
-        .map(|id| ctx.copy_retained_text(id, "validation finding identity"))
-        .transpose()?;
+) {
+    let message = std::fmt::format(message);
+    let entity = entity.map(str::to_owned);
     findings.push(Finding {
+        related: Vec::new(),
         check,
         severity,
         message,
         entity,
     });
-    Ok(())
+}
+
+fn record_related_finding(
+    findings: &mut Vec<Finding>,
+    check: Check,
+    severity: Severity,
+    entity: &str,
+    related: &[&str],
+    message: std::fmt::Arguments<'_>,
+) {
+    let mut finding = Finding {
+        check,
+        severity,
+        message: std::fmt::format(message),
+        entity: Some(entity.to_owned()),
+        related: Vec::new(),
+    };
+    for &id in related {
+        if id != entity && !finding.related.iter().any(|previous| previous == id) {
+            finding.related.push(id.to_owned());
+        }
+    }
+    findings.push(finding);
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
@@ -143,54 +159,50 @@ fn validate_model(
     ir: &CadIr,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let index = crate::index::ModelIndex::build(ir);
     validate_model_with_index(ctx, ir, losses, &index)
 }
 
-fn validate_model_with_index(
+fn validate_model_with_index<'ir>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    ir: &'ir CadIr,
     losses: Vec<LossNote>,
-    ids: &crate::index::ModelIndex<'_>,
+    ids: &crate::index::ModelIndex<'ir>,
 ) -> Result<ValidationReport, CodecError> {
     let _depth = ctx.enter_nested("IR neutral validation")?;
-    ctx.charge_work(1, "IR neutral validation")?;
+
     let mut findings = Vec::new();
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ctx, ids.native_view(), &mut findings)?;
-    check_tolerances(ctx, ir, &mut findings)?;
+    check_identity_and_order(ids, &mut findings)?;
+    check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
-    check_pmi(ctx, ir, &mut findings)?;
-    check_coedge_pairing(ctx, ir, &mut findings)?;
-    check_shell_connectivity(ctx, ir, &mut findings)?;
-    check_wire_topology(ctx, ir, &mut findings)?;
+    check_pmi(ir, &mut findings);
+    check_coedge_pairing(ir, &mut findings)?;
+    check_shell_connectivity(ir, &mut findings);
+    check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
-    check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
+    check_native_links(ids.native_view(), ids, &mut findings);
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
-    check_pcurve_surface_consistency(ctx, ids, &mut findings)?;
-    check_procedural_support_consistency(ctx, ids, &mut findings)?;
-    check_topology_tolerances(ctx, ir, &mut findings)?;
-    check_tessellations(ctx, ir, &mut findings)?;
+    let evaluations = crate::eval::admission::ModelEvaluationPass::new();
+    check_pcurve_surface_consistency(ctx, ids, &evaluations, &mut findings)?;
+    check_procedural_support_consistency(ctx, ids, &evaluations, &mut findings)?;
+    evaluations.report(&mut findings);
+    check_topology_tolerances(ir, &mut findings);
+    check_tessellations(ir, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
-    check_spreadsheets(ctx, ir, &mut findings)?;
+    check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
-    let reference_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) {
-            add(id?, ())?;
-        }
-        Ok(())
-    })?;
-    check_presentation(ctx, ir, &reference_ids, &mut findings)?;
-    check_drawings(ctx, ir, &reference_ids, &mut findings)?;
-    check_semantic_annotations(ctx, ir, &reference_ids, &mut findings)?;
-    check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
+    check_presentation(ids, &mut findings);
+    check_drawings(ir, ids, &mut findings);
+    check_semantic_annotations(ir, ids, &mut findings);
+    check_typed_references(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
-        entity_counts: crate::document::census::count(ctx, ids.native_view())?,
+        entity_counts: crate::document::census::count(ids.native_view()),
         findings,
         losses,
     })
@@ -214,16 +226,22 @@ fn validate_annotations<'a>(
     additional: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let all_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) {
-            add(id?, ())?;
-        }
-        for id in additional {
-            add(id, ())?;
-        }
-        Ok(())
-    })?;
+    let mut staged: Vec<&str> = additional.into_iter().collect();
+    staged.sort_unstable();
+    let all_ids = IndexWithStaged { index: ids, staged };
     check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
+}
+
+/// A model index together with identities staged outside the document, sorted.
+struct IndexWithStaged<'i, 'a> {
+    index: &'i crate::index::ModelIndex<'a>,
+    staged: Vec<&'a str>,
+}
+
+impl IdentitySet for IndexWithStaged<'_, '_> {
+    fn contains(&self, id: &str) -> bool {
+        IdentitySet::contains(self.index, id) || self.staged.binary_search(&id).is_ok()
+    }
 }
 
 fn validate_model_with_annotations(
@@ -232,7 +250,7 @@ fn validate_model_with_annotations(
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let index = crate::index::ModelIndex::build(ir);
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
     validate_annotations(
         ctx,
@@ -251,8 +269,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
-        let index =
-            crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
+        let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
         validate_model_with_index(ctx, ir, losses, &index)
     })
 }
@@ -298,7 +315,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let index = crate::index::ModelIndex::build(ir);
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
     validate_annotations(
         ctx,
@@ -327,78 +344,17 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn validation_finding_preserves_the_original_storage_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        for entity in [None, Some("test:model:point#missing")] {
-            for dimension in [
-                ResourceDimension::RetainedBytes,
-                ResourceDimension::CollectionItems,
-                ResourceDimension::WorkUnits,
-                ResourceDimension::MaterializedBytes,
-            ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                    ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = 0;
-                    }
-                    _ => unreachable!(),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut findings = Vec::new();
-                let mut create = || {
-                    super::record_finding(
-                        &ctx,
-                        &mut findings,
-                        crate::report::check::Check::ReferentialIntegrity,
-                        crate::report::Severity::Error,
-                        entity,
-                        format_args!("unresolved reference"),
-                    )
-                };
-                let result = if dimension == ResourceDimension::MaterializedBytes {
-                    ctx.with_scoped_storage("temporary validation findings", create)
-                        .map(|_| ())
-                } else {
-                    create()
-                };
-                let Err(CodecError::ResourceLimit(limit)) = result else {
-                    panic!("finding must refuse");
-                };
-                assert_eq!(limit.dimension, dimension);
-                assert_eq!(
-                    limit.operation,
-                    match dimension {
-                        ResourceDimension::WorkUnits => "validation finding message",
-                        _ => "validation finding storage",
-                    }
-                );
-                assert!(findings.is_empty());
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-                );
-            }
-        }
-    }
-
-    #[test]
     fn validation_finding_keeps_absent_identity_and_formatted_message() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut findings = Vec::new();
         for entity in [None, Some("test:model:point#missing")] {
             super::record_finding(
-                &ctx,
                 &mut findings,
                 crate::report::check::Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 entity,
                 format_args!("unresolved reference {}", 7),
-            )
-            .unwrap();
+            );
         }
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].entity, None);
@@ -420,7 +376,6 @@ mod tests {
     fn nurbs_pcurve_leaf() -> PcurveGeometry {
         PcurveGeometry::Nurbs {
             nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -430,7 +385,6 @@ mod tests {
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         }
     }
@@ -447,38 +401,22 @@ mod tests {
     }
 
     #[test]
-    fn pcurve_parameter_domain_preserves_session_depth_and_work_refusals() {
+    fn pcurve_parameter_domain_preserves_session_depth_refusals() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let geometry = placed_pcurve(2).unwrap();
-        for (dimension, cap, held_frame) in [
-            (ResourceDimension::RecursionDepth, 0, false),
-            (ResourceDimension::RecursionDepth, 2, false),
-            (ResourceDimension::RecursionDepth, 2, true),
-            (ResourceDimension::WorkUnits, 0, false),
-            (ResourceDimension::WorkUnits, 2, false),
-        ] {
+        for (cap, held_frame) in [(0, false), (2, false), (2, true)] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                _ => unreachable!(),
-            }
+            policy.limits.max_recursion_depth = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
             let limit = pcurve_parameter_domain(&ctx, &geometry).unwrap_err();
-            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, cap);
             assert_eq!(limit.additional, 1);
-            assert_eq!(
-                limit.operation,
-                match dimension {
-                    ResourceDimension::RecursionDepth => "pcurve parameter domain nesting",
-                    _ => "pcurve parameter domain visit",
-                }
-            );
+            assert_eq!(limit.operation, "pcurve parameter domain nesting");
             drop(guard);
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -569,7 +507,7 @@ mod tests {
             native_ref: None,
         });
 
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
@@ -584,11 +522,7 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(
-                dependencies,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -631,7 +565,7 @@ mod tests {
             ),
         ];
 
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
 }
@@ -646,10 +580,10 @@ mod caller_policy_tests {
     };
 
     #[test]
-    fn neutral_and_source_validation_preserve_caller_work_limits() {
+    fn neutral_and_source_validation_preserve_caller_depth_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_recursion_depth = 0;
         for sidecar in [false, true] {
             let ctx = DecodeContext::for_loaded_input(&arena, &policy, 1_000_000)
                 .expect("loaded context");
@@ -665,7 +599,7 @@ mod caller_policy_tests {
                 validate_neutral_for_decode(&ctx, &ir, Vec::new())
             };
             assert!(
-                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.limit == 0)
+                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth && limit.limit == 0)
             );
         }
     }

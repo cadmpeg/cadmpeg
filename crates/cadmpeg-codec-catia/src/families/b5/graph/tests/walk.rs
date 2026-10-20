@@ -1,17 +1,20 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use crate::families::b5::graph::collect_object_stream_frames;
 use crate::families::b5::graph::controls::{B5EdgeTerminalControl, B5VertexIncidenceControl};
+use crate::families::b5::graph::propagate_vertex_points;
 use crate::families::b5::graph::tests::object_stream_pcurve;
+use crate::families::b5::graph::topology_surface_references;
+use crate::families::b5::graph::ObjectFrame;
 use crate::families::b5::graph::{
-    a8_class21_pcurves, admit_dependency_records, collect_object_stream_frames,
-    edge_support_pcurve_references_from_frames, edge_vertex_references, face_loop_owner_counts,
-    face_surface_references_from_frames, framed_records, implicit_pcurve_bindings,
-    is_referenced_geometry_class, object_stream_frames, object_stream_populations,
-    object_stream_run_ranges, parameter_incidence, parse, parse_a8_class21_pcurve, parse_edge,
-    parse_extrusion_surface, parse_flat, parse_from_frames, parse_from_records,
-    parse_supported_surface, parse_vertex_incidence_link, record_from_frame, records,
-    records_from_frames, records_from_frames_budgeted, select_object_stream_population,
+    a8_class21_pcurves, admit_dependency_records, edge_vertex_references, face_loop_owner_counts,
+    framed_records, implicit_pcurve_bindings, is_referenced_geometry_class, object_stream_frames,
+    object_stream_populations, object_stream_run_ranges, parameter_incidence, parse,
+    parse_a8_class21_pcurve, parse_edge, parse_extrusion_surface, parse_flat, parse_from_frames,
+    parse_from_records, parse_supported_surface, parse_vertex_incidence_link, records,
+    records_from_frames, select_object_stream_population,
     supported_surface_parameters_match_carrier, supported_surface_pcurves_match, surface_node,
-    targeted_geometry_graph, targeted_geometry_graph_from_frames, topology_root_run_ranges,
-    topology_runs, topology_surface_references, typed_class_21_pcurves,
+    targeted_geometry_graph, topology_root_run_ranges, topology_runs, typed_class_21_pcurves,
     typed_class_21_pcurves_from_records, typed_edge_records, typed_edge_records_from_records,
     typed_face_records, typed_face_records_from_records, typed_loop_records,
     typed_loop_records_from_records, typed_parameter_incidences,
@@ -19,7 +22,7 @@ use crate::families::b5::graph::{
     typed_vertex_incidence_links_from_records, typed_vertex_incidence_rosters,
     typed_vertex_incidence_rosters_from_records, B5Edge, B5ExtrusionDirectrix, B5ExtrusionSurface,
     B5IncidenceLane, B5OffsetSurface, B5Record, B5SupportedSurface, B5SupportedSurfaceParameters,
-    B5Surface, B5VertexIncidenceLink, ObjectFrame,
+    B5Surface, B5VertexIncidenceLink,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -31,7 +34,7 @@ fn parse_extrusion_directrix(
     crate::test_support::with_service_context(|ctx| {
         super::super::parse_extrusion_directrix(ctx, record, records, pcurves)
     })
-    .expect("service budget")
+    .expect("parse extrusion directrix")
 }
 
 fn parse_extrusion_surface_with_context(
@@ -51,57 +54,13 @@ fn parse_extrusion_surface_with_context(
             extrusion_surfaces,
         )
     })
-    .expect("service budget")
-}
-
-fn propagate_vertex_points(
-    constraints: &[([u32; 2], [usize; 2])],
-    adjacency: &HashMap<u32, Vec<usize>>,
-    points: &[cadmpeg_ir::features::FinitePoint3],
-) -> HashMap<u32, usize> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::propagate_vertex_points(ctx, constraints, adjacency, points)
-    })
-    .expect("service budget")
-}
-
-#[test]
-fn retained_object_frames_refuse_the_caller_collection_limit() {
-    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        collect_object_stream_frames(ctx, &bytes)
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_b5_object_frames"));
-    let admitted =
-        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes))
-            .expect("service collection budget");
-    let scanned = object_stream_frames(&bytes).collect::<Vec<_>>();
-    assert_eq!(admitted.len(), scanned.len());
-    assert!(admitted.iter().zip(scanned).all(|(left, right)| {
-        (
-            left.start,
-            left.end,
-            left.family,
-            left.class,
-            left.object_id,
-        ) == (
-            right.start,
-            right.end,
-            right.family,
-            right.class,
-            right.object_id,
-        )
-    }));
+    .expect("parse extrusion surface")
 }
 
 #[test]
 fn contiguous_object_population_borrows_source_bytes() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let populations =
-        crate::test_support::with_service_context(|ctx| object_stream_populations(ctx, &bytes))
-            .expect("service population admission");
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
     assert_eq!(populations.len(), 1);
     assert!(matches!(populations[0], std::borrow::Cow::Borrowed(_)));
     assert_eq!(populations[0].as_ptr(), bytes.as_ptr());
@@ -109,7 +68,7 @@ fn contiguous_object_population_borrows_source_bytes() {
 }
 
 #[test]
-fn attached_population_bytes_use_retained_storage_without_collection_items() {
+fn attached_population_bytes_append_the_detached_frame() {
     let original = crate::test_support::test_b5::b5_closed_triangle_stream();
     let isolated = object_stream_frames(&original)
         .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
@@ -118,10 +77,7 @@ fn attached_population_bytes_use_retained_storage_without_collection_items() {
     bytes.drain(isolated.start..isolated.end);
     bytes.push(0xff);
     bytes.extend_from_slice(&original[isolated.start..isolated.end]);
-    let populations = crate::test_support::with_collection_limit(256, |ctx| {
-        object_stream_populations(ctx, &bytes)
-    })
-    .expect("frame inventories consume slots; copied bytes do not");
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
     assert_eq!(populations.len(), 1);
     assert!(matches!(populations[0], std::borrow::Cow::Owned(_)));
     let expected = original[..isolated.start]
@@ -131,79 +87,91 @@ fn attached_population_bytes_use_retained_storage_without_collection_items() {
         .copied()
         .collect::<Vec<_>>();
     assert_eq!(&*populations[0], expected);
-    let refused =
-        crate::test_support::with_retained_refusal(&bytes, "catia_b5_topology_run_bytes", |ctx| {
-            object_stream_populations(ctx, &bytes)
-        });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b5_topology_run_bytes")
-    );
 }
 
-#[test]
-fn opaque_object_payload_bytes_do_not_consume_collection_items() {
+/// `surfaces` isolated surface frames, then `runs` topology runs whose faces
+/// each reference every surface. Every run is separated from the next.
+fn runs_sharing_isolated_surfaces(surfaces: u32, runs: u32) -> (Vec<u8>, Vec<u8>) {
+    const LOOP: u32 = 9;
     let mut bytes = Vec::new();
-    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 7, &[0; 200]);
-    let populations = crate::test_support::with_collection_limit(64, |ctx| {
-        object_stream_populations(ctx, &bytes)
-    })
-    .expect("large payload requires byte storage, not thousands of slots");
-    assert_eq!(populations.len(), 1);
-    assert_eq!(&*populations[0], bytes);
+    let mut surface_frames = Vec::new();
+    for surface in 0..surfaces {
+        let start = bytes.len();
+        crate::test_support::test_b5::append_b5_record(&mut bytes, 0x27, 100 + surface, &[0; 200]);
+        surface_frames.extend_from_slice(&bytes[start..]);
+        bytes.push(0xff);
+    }
+    for run in 0..runs {
+        for surface in 0..surfaces {
+            let mut face = vec![0x82];
+            face.extend_from_slice(&crate::test_support::test_b5::b5_object_ref(100 + surface));
+            face.extend_from_slice(&crate::test_support::test_b5::b5_object_ref(LOOP));
+            face.push(0x05);
+            let id = 1000 + run * surfaces + surface;
+            crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, id, &face);
+        }
+        bytes.push(0xff);
+    }
+    (bytes, surface_frames)
 }
 
 #[test]
-fn object_population_selection_refuses_before_indexing_runs() {
-    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let mut cap = 0;
-    let mut reached = false;
-    for _ in 0..128 {
-        match crate::test_support::with_collection_limit(cap, |ctx| {
-            select_object_stream_population(ctx, std::slice::from_ref(&bytes), None)
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == "catia_b5_selected_stream_ranges" =>
-            {
-                reached = true;
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                cap = error
-                    .used
-                    .checked_add(error.additional)
-                    .expect("bounded fixture");
-            }
-            Ok(_) => panic!("selection admitted before its index limit"),
-            Err(error) => panic!("unexpected selection refusal: {error}"),
+fn shared_isolated_surfaces_attach_until_the_stream_allowance() {
+    const RUNS: usize = 16;
+    let (bytes, surface_frames) = runs_sharing_isolated_surfaces(4, 16);
+    let allowance = bytes.len() * crate::families::b5::graph::MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE;
+    let attached_runs = allowance / surface_frames.len();
+    assert!(attached_runs > 0 && attached_runs < RUNS);
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let populations = object_stream_populations(&bytes, &mut refusal);
+    assert_eq!(populations.len(), RUNS);
+    for (index, population) in populations.iter().enumerate() {
+        if index < attached_runs {
+            assert!(matches!(population, std::borrow::Cow::Owned(_)));
+            assert!(population.ends_with(&surface_frames));
+        } else {
+            assert!(matches!(population, std::borrow::Cow::Borrowed(_)));
         }
     }
-    assert!(reached, "selection index limit was not reached");
-    let selected = crate::test_support::with_service_context(|ctx| {
-        select_object_stream_population(ctx, std::slice::from_ref(&bytes), None)
-    })
-    .expect("service collection budget");
-    assert!(selected.selected());
-    assert_eq!(selected.source(), bytes);
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one bounded stream");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyB5PopulationBounded.kind()
+    );
+    assert!(note
+        .message
+        .contains(&format!("{} topology runs were read", RUNS - attached_runs)));
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    crate::test_support::with_service_context(|ctx| topology_runs(ctx, &bytes, &mut refusal))
+        .expect("resolve topology runs");
+    let notes = refusal.take_notes();
+    assert!(notes
+        .iter()
+        .any(|note| note.code == crate::loss::CatiaLossCode::TopologyB5PopulationBounded.kind()));
 }
 
 #[test]
-fn topology_run_ranges_refuse_each_caller_collection_limit() {
-    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    for (limit, operation) in [
-        (0, "catia_b5_object_run_ranges"),
-        (1, "catia_b5_topology_run_ranges"),
-    ] {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            topology_root_run_ranges(ctx, &bytes)
-        });
-        assert!(matches!(result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation));
-    }
-    let ranges =
-        crate::test_support::with_service_context(|ctx| topology_root_run_ranges(ctx, &bytes))
-            .expect("service collection budget");
-    assert_eq!(ranges, vec![0..bytes.len()]);
+fn isolated_surfaces_within_the_allowance_attach_without_a_loss() {
+    let (bytes, surface_frames) = runs_sharing_isolated_surfaces(4, 1);
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let populations = object_stream_populations(&bytes, &mut refusal);
+    assert_eq!(populations.len(), 1);
+    assert!(populations[0].ends_with(&surface_frames));
+    assert_eq!(refusal.note_count(), 0);
+}
+
+#[test]
+fn opaque_object_payload_bytes_form_one_population() {
+    let mut bytes = Vec::new();
+    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 7, &[0; 200]);
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
+    assert_eq!(populations.len(), 1);
+    assert_eq!(&*populations[0], bytes);
 }
 
 #[test]
@@ -212,7 +180,7 @@ fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
 
     let pcurve =
         crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
-            .expect("service resource budget")
+            .expect("parse A8 class21 pcurve")
             .expect("complete class-21 jet");
     assert_eq!(pcurve.object_id, 7);
     assert_eq!(pcurve.surface, 3);
@@ -234,7 +202,7 @@ fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
     payload[6] = 0x0d;
     assert_eq!(
         crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
-            .expect("service resource budget"),
+            .expect("parse A8 class21 pcurve"),
         None
     );
 }
@@ -268,69 +236,12 @@ fn a8_class21_jet_uses_frame_extent_for_knot_count() {
     let payload = a8_class21_large_test_payload(knot_count);
     let pcurve =
         crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
-            .expect("service resource budget")
+            .expect("parse A8 class21 pcurve")
             .expect("frame-sized class-21 jet");
 
     assert_eq!(pcurve.distinct_knots.len(), knot_count);
     assert_eq!(pcurve.multiplicities.len(), knot_count);
     assert_eq!(pcurve.control_points.len(), 6 * (knot_count - 1));
-}
-
-#[test]
-fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let payload = a8_class21_test_payload();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Two knots use forty-six items before the retained multiplicity vector.
-    policy.limits.max_collection_items = 46;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = parse_a8_class21_pcurve(&ctx, 7, &payload)
-        .expect_err("multiplicity array exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia B5 pcurve multiplicities"));
-}
-
-#[test]
-fn a8_class21_jet_refuses_before_each_admitted_lane() {
-    let payload = a8_class21_test_payload();
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..64 {
-        match crate::test_support::with_collection_limit(cap, |ctx| {
-            parse_a8_class21_pcurve(ctx, 7, &payload)
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("class-21 fixture must decode"),
-            Err(error) => panic!("unexpected pcurve refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia B5 pcurve distinct knots",
-        "catia B5 pcurve knot values",
-        "catia B5 pcurve u jet",
-        "catia B5 pcurve v jet",
-        "catia B5 pcurve du jet",
-        "catia B5 pcurve dv jet",
-        "catia B5 pcurve ddu jet",
-        "catia B5 pcurve ddv jet",
-        "catia B5 pcurve point jets",
-        "catia B5 pcurve first jets",
-        "catia B5 pcurve second jets",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-    assert!(
-        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
-            .expect("service resource budget")
-            .is_some()
-    );
 }
 
 #[test]
@@ -341,7 +252,7 @@ fn a8_class21_jet_rejects_count_without_frame_extent() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
-            .expect("service resource budget"),
+            .expect("parse A8 class21 pcurve"),
         None
     );
 }
@@ -379,7 +290,7 @@ fn a8_class21_scan_ignores_marker_shaped_nested_payload() {
 
     let pcurves =
         crate::test_support::with_service_context(|ctx| a8_class21_pcurves(ctx, &wrapper))
-            .expect("service resource budget");
+            .expect("compute the A8 class21 pcurves");
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].object_id, 9);
 }
@@ -540,8 +451,7 @@ fn object_stream_runs_end_at_non_frame_bytes() {
     bytes.extend_from_slice(&second);
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes))
-            .expect("service collection budget"),
+        object_stream_run_ranges(&bytes),
         vec![0..first.len(), first.len() + 1..bytes.len()]
     );
 }
@@ -551,22 +461,14 @@ fn object_stream_runs_cross_complete_vertex_allocations() {
     let mut bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5e, 900, &[]);
 
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes))
-            .expect("service collection budget"),
-        vec![0..bytes.len()]
-    );
+    assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
 }
 
 #[test]
-fn object_stream_runs_cross_support_bound_external_pole_allocations() {
-    let bytes = crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
+fn object_stream_runs_include_complete_inline_surface_frames() {
+    let bytes = crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain();
 
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes))
-            .expect("service collection budget"),
-        vec![0..bytes.len()]
-    );
+    assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
 }
 
 #[test]
@@ -580,7 +482,7 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
     let merged = crate::test_support::with_service_context(|ctx| {
         parse_flat(ctx, &separated, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse flat")
     .expect("flat scan can join the separated records");
     assert!(merged.complete);
     assert_ne!(
@@ -589,7 +491,7 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
             &separated,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget"),
+        .expect("parse the B5 graph"),
         Some(merged)
     );
 }
@@ -604,7 +506,7 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
     let graphs = crate::test_support::with_service_context(|ctx| {
         topology_runs(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget");
+    .expect("parse the topology runs");
     assert_eq!(graphs.len(), 2);
     assert!(graphs
         .iter()
@@ -617,7 +519,7 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
     let expected = crate::test_support::with_service_context(|ctx| {
         parse(ctx, &original, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the B5 graph")
     .expect("closed source graph");
     let isolated = object_stream_frames(&original)
         .into_iter()
@@ -635,13 +537,11 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
             &separated,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget"),
+        .expect("parse the B5 graph"),
         Some(expected)
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| object_stream_populations(ctx, &separated))
-            .expect("service collection budget")
-            .len(),
+        object_stream_populations(&separated, &mut crate::nurbs::LaneRefusals::new()).len(),
         1
     );
 }
@@ -652,7 +552,7 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
     let expected = crate::test_support::with_service_context(|ctx| {
         parse(ctx, &original, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the B5 graph")
     .expect("closed source graph");
     let geometry = object_stream_frames(&original)
         .into_iter()
@@ -671,13 +571,11 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
             &separated,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget"),
+        .expect("parse the B5 graph"),
         Some(expected)
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| object_stream_populations(ctx, &separated))
-            .expect("service collection budget")
-            .len(),
+        object_stream_populations(&separated, &mut crate::nurbs::LaneRefusals::new()).len(),
         2
     );
 }
@@ -717,15 +615,8 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&7u32.to_le_bytes());
 
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| topology_root_run_ranges(ctx, &bytes))
-            .expect("service collection budget"),
-        vec![0..bytes.len()]
-    );
-    let selection = crate::test_support::with_service_context(|ctx| {
-        select_object_stream_population(ctx, &[bytes], None)
-    })
-    .expect("service collection budget");
+    assert_eq!(topology_root_run_ranges(&bytes), vec![0..bytes.len()]);
+    let selection = select_object_stream_population(&[bytes], None);
     assert!(selection.selected());
     assert!(!selection.source().is_empty());
 }
@@ -734,9 +625,7 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
 fn indexed_frame_parse_matches_one_shot_parse() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(ctx, &bytes, &frames))
-            .expect("service budget");
+    let records = records_from_frames(&bytes, &frames, None);
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| parse(
@@ -744,14 +633,14 @@ fn indexed_frame_parse_matches_one_shot_parse() {
             &bytes,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget"),
+        .expect("parse the B5 graph"),
         crate::test_support::with_service_context(|ctx| parse_from_frames(
             ctx,
             &bytes,
             &frames,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget")
+        .expect("parse from frames")
     );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| parse(
@@ -759,247 +648,68 @@ fn indexed_frame_parse_matches_one_shot_parse() {
             &bytes,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget"),
+        .expect("parse the B5 graph"),
         crate::test_support::with_service_context(|ctx| parse_from_records(
             ctx,
             &bytes,
             &records,
             &frames,
             true,
+            None,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget")
+        .expect("parse from records")
     );
     assert_eq!(
         typed_face_records(&bytes),
-        crate::test_support::with_service_context(|ctx| {
-            typed_face_records_from_records(ctx, &records).expect("service budget")
-        })
+        typed_face_records_from_records(&records)
     );
     assert_eq!(
         typed_loop_records(&bytes),
-        crate::test_support::with_service_context(|ctx| {
-            typed_loop_records_from_records(ctx, &records).expect("service budget")
-        })
+        typed_loop_records_from_records(&records)
     );
     assert_eq!(
         typed_edge_records(&bytes),
-        crate::test_support::with_service_context(|ctx| {
-            typed_edge_records_from_records(ctx, &records).expect("service budget")
-        })
+        typed_edge_records_from_records(&records)
     );
     assert_eq!(
         typed_vertex_incidence_links(&bytes),
-        crate::test_support::with_service_context(|ctx| {
-            typed_vertex_incidence_links_from_records(ctx, &records).expect("service budget")
-        })
+        typed_vertex_incidence_links_from_records(&records)
     );
     assert_eq!(
         typed_class_21_pcurves(&bytes),
-        crate::test_support::with_service_context(|ctx| {
-            typed_class_21_pcurves_from_records(ctx, &records)
-        })
-        .expect("service budget")
+        typed_class_21_pcurves_from_records(&records)
     );
     assert_eq!(
         typed_parameter_incidences(&bytes),
-        crate::test_support::with_service_context(|ctx| {
-            typed_parameter_incidences_from_records(ctx, &records).expect("service budget")
-        })
+        typed_parameter_incidences_from_records(&records)
     );
     assert_eq!(
         typed_vertex_incidence_rosters(&bytes),
-        crate::test_support::with_service_context(|ctx| {
-            typed_vertex_incidence_rosters_from_records(ctx, &records).expect("service budget")
-        })
+        typed_vertex_incidence_rosters_from_records(&records)
     );
-}
-
-#[test]
-fn typed_edge_record_index_refuses_collection_limit() {
-    let records = [B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x5e,
-        object_id: 17,
-        payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
-    }];
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        typed_edge_records_from_records(ctx, &records)
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let edges = crate::test_support::with_service_context(|ctx| {
-        typed_edge_records_from_records(ctx, &records)
-    })
-    .expect("service budget");
-    assert!(!edges.is_empty());
-}
-
-#[test]
-fn typed_vertex_incidence_link_index_refuses_collection_limit() {
-    let records = [B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x5d,
-        object_id: 17,
-        payload: vec![0x81, 0x92, 0x04],
-    }];
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        typed_vertex_incidence_links_from_records(ctx, &records)
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let links = crate::test_support::with_service_context(|ctx| {
-        typed_vertex_incidence_links_from_records(ctx, &records)
-    })
-    .expect("service budget");
-    assert!(!links.is_empty());
 }
 
 #[test]
 fn budgeted_dependency_admission_matches_one_shot_records() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let expected =
-        crate::test_support::with_service_context(|ctx| records_from_frames(ctx, &bytes, &frames))
-            .expect("service budget");
+    let expected = records_from_frames(&bytes, &frames, None);
     let budget = cadmpeg_core::decode::WorkBudget::new(10_000);
 
-    let actual = crate::test_support::with_service_context(|ctx| {
-        records_from_frames_budgeted(ctx, &bytes, &frames, Some(&budget))
-    })
-    .expect("service budget");
+    let actual = records_from_frames(&bytes, &frames, Some(&budget));
 
     assert_eq!(actual, expected);
     assert!(!budget.exhausted());
 }
 
 #[test]
-fn b5_record_payload_and_dependency_closure_refuse_caller_limits() {
-    let bytes = [0u8; 9];
-    let frame = ObjectFrame {
-        start: 0,
-        end: bytes.len(),
-        family: 0xb5,
-        class: 0x18,
-        object_id: 9,
-    };
-    let retained =
-        crate::test_support::with_retained_limit(0, |ctx| record_from_frame(ctx, &bytes, &frame));
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_record_payload")
-    );
-    let record = B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x5f,
-        object_id: 7,
-        payload: vec![0x81, 0x89],
-    };
-    let candidates = HashMap::from([(9, Some(frame))]);
-    for (limit, operation) in [
-        (0, "catia_b5_existing_dependency_ids"),
-        (1, "catia_b5_pending_dependency_ids"),
-        (2, "catia_b5_admitted_dependency_ids"),
-        (3, "catia_b5_admitted_dependency_records"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    let surfaces = crate::test_support::with_collection_limit(0, |ctx| {
-        topology_surface_references(ctx, std::slice::from_ref(&record))
-    });
-    assert!(
-        matches!(surfaces, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_topology_surface_references")
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
-        })
-        .expect("service budget")
-        .len(),
-        2
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            topology_surface_references(ctx, &[record])
-        })
-        .expect("service budget"),
-        std::collections::HashSet::from([9])
-    );
-}
-
-#[test]
-fn targeted_geometry_record_candidates_refuse_each_collection_limit() {
-    let mut bytes = Vec::new();
-    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x18, 9, &[0x81, 0x89]);
-    let frames =
-        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes))
-            .expect("service budget");
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        targeted_geometry_graph_from_frames(
-            ctx,
-            &bytes,
-            &frames,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_record_payload")
-    );
-    for (limit, operation) in [
-        (0, "catia_b5_targeted_geometry_candidates"),
-        (1, "catia_b5_targeted_geometry_records"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            targeted_geometry_graph_from_frames(
-                ctx,
-                &bytes,
-                &frames,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    crate::test_support::with_service_context(|ctx| {
-        targeted_geometry_graph_from_frames(
-            ctx,
-            &bytes,
-            &frames,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service budget");
-}
-
-#[test]
 fn indexed_population_selection_preserves_records_and_census() {
     let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let expected = crate::test_support::with_service_context(|ctx| {
-        select_object_stream_population(ctx, std::slice::from_ref(&topology), None)
-    })
-    .expect("service collection budget");
+    let expected = select_object_stream_population(std::slice::from_ref(&topology), None);
     let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
-    let actual = crate::test_support::with_service_context(|ctx| {
-        select_object_stream_population(ctx, std::slice::from_ref(&topology), Some(&budget))
-    })
-    .expect("service collection budget");
+    let actual =
+        { select_object_stream_population(std::slice::from_ref(&topology), Some(&budget)) };
 
     assert!(actual.selected());
     assert!(!actual.exhausted());
@@ -1105,7 +815,7 @@ fn targeted_geometry_graph_closes_a_four_span_extrusion_without_topology() {
 
     let graph =
         crate::test_support::with_service_context(|ctx| targeted_geometry_graph(ctx, &bytes))
-            .expect("service resource budget")
+            .expect("compute the targeted geometry graph")
             .expect("geometry-only graph");
     assert!(graph.faces.is_empty());
     assert_eq!(
@@ -1433,7 +1143,10 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         payload: offset_payload,
     };
     let records = HashMap::from([(2, &source), (4, &offset_directrix)]);
-    let pcurves = BTreeMap::from([(3, object_stream_pcurve(7, vec![-3.0, 4.0], None))]);
+    let pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-10.0, -3.0, 4.0, 10.0], Some(20.0)),
+    )]);
     let source_extrusion = B5ExtrusionSurface {
         object_id: 10,
         direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
@@ -1457,7 +1170,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         ]),
     };
     let mut carrier_payload = vec![0x81, 0x84];
-    for value in [0.0f64, 0.0, 1.0, 2.0, 9.0, 1.0, 0.0, 35.0, 7.0] {
+    for value in [0.0f64, 0.0, 1.0, 2.0, 9.0, 1.0, 0.0, 5.0, 2.0] {
         carrier_payload.extend_from_slice(&value.to_le_bytes());
     }
     carrier_payload.extend_from_slice(&[0x01, 0x09]);
@@ -1525,15 +1238,63 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         None
     );
 
-    let mut increasing_auxiliary_scalars = carrier;
     let auxiliary_start = 2 + 7 * 8;
+    let mut increasing_auxiliary_scalars = carrier.clone();
     increasing_auxiliary_scalars.payload[auxiliary_start..auxiliary_start + 8]
-        .copy_from_slice(&7.0f64.to_le_bytes());
-    increasing_auxiliary_scalars.payload[auxiliary_start + 8..auxiliary_start + 16]
-        .copy_from_slice(&35.0f64.to_le_bytes());
+        .copy_from_slice(&1.0f64.to_le_bytes());
+    let increasing_pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-6.0, -3.0, 4.0, 20.0], Some(26.0)),
+    )]);
+    assert!(parse_extrusion_surface_with_context(
+        &increasing_auxiliary_scalars,
+        &records,
+        &increasing_pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_some());
+    let mut five_knot_carrier = carrier.clone();
+    *five_knot_carrier.payload.last_mut().expect("count control") = 0x15;
+    let five_knot_pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-10.0, -3.0, -2.0, 0.0, 2.0, 4.0, 10.0], Some(20.0)),
+    )]);
+    assert!(parse_extrusion_surface_with_context(
+        &five_knot_carrier,
+        &records,
+        &five_knot_pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_some());
+    let mut wrong_count = carrier.clone();
+    *wrong_count.payload.last_mut().expect("count control") = 0x15;
+    assert!(parse_extrusion_surface_with_context(
+        &wrong_count,
+        &records,
+        &pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_none());
+    let missing_flanks = BTreeMap::from([(3, object_stream_pcurve(7, vec![-3.0, 4.0], Some(7.0)))]);
+    assert!(parse_extrusion_surface_with_context(
+        &carrier,
+        &records,
+        &missing_flanks,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_none());
+    let mut swapped_auxiliary_scalars = carrier;
+    swapped_auxiliary_scalars.payload[auxiliary_start..auxiliary_start + 8]
+        .copy_from_slice(&2.0f64.to_le_bytes());
+    swapped_auxiliary_scalars.payload[auxiliary_start + 8..auxiliary_start + 16]
+        .copy_from_slice(&5.0f64.to_le_bytes());
     assert_eq!(
         parse_extrusion_surface_with_context(
-            &increasing_auxiliary_scalars,
+            &swapped_auxiliary_scalars,
             &records,
             &pcurves,
             std::slice::from_ref(&offset_construction),
@@ -1592,13 +1353,16 @@ fn supported_surface_preserves_ordered_support_pcurves() {
             carrier_surface: 2,
             support_surfaces: [3, 4],
             support_pcurves: [5, 6],
-            parameters: B5SupportedSurfaceParameters::ScalarPair {
-                controls: [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
-                scalars: [
-                    crate::test_support::test_b5::positive(101.6),
-                    crate::test_support::test_b5::positive(20.0)
-                ],
-            },
+            parameters: B5SupportedSurfaceParameters::Chamfer(
+                crate::families::chamfer::ChamferParameters::decode(
+                    [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
+                    [
+                        crate::test_support::test_b5::finite(101.6),
+                        crate::test_support::test_b5::finite(20.0)
+                    ]
+                )
+                .expect("valid chamfer")
+            ),
         })
     );
     let scalar_pair = parse_supported_surface(&scalar_pair).expect("two-scalar supported surface");
@@ -1613,19 +1377,23 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &scalar_pair.parameters,
         &plane
     ));
-    let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
-        controls: [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
-        scalars: [
-            crate::test_support::test_b5::positive(0.76),
-            crate::test_support::test_b5::positive(std::f64::consts::FRAC_PI_4),
-        ],
-    };
+    let cone_parameters = B5SupportedSurfaceParameters::Chamfer(
+        crate::families::chamfer::ChamferParameters::decode(
+            [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+            [
+                crate::test_support::test_b5::finite(0.76),
+                crate::test_support::test_b5::finite(std::f64::consts::FRAC_PI_4),
+            ],
+        )
+        .expect("valid chamfer"),
+    );
     let cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4),
+        radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
@@ -1636,21 +1404,22 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &cone_parameters,
         &cone
     ));
-    let wrong_cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+    let other_cone_angle = B5Surface::Cone {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
+        radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
         angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
-    assert!(!supported_surface_parameters_match_carrier(
+    assert!(supported_surface_parameters_match_carrier(
         &cone_parameters,
-        &wrong_cone
+        &other_cone_angle
     ));
     let construction = parse_supported_surface(&record).expect("supported surface");
     let pcurve0 = B5Record {
@@ -1685,7 +1454,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
 fn supported_surface_parameter_matching_is_scale_independent() {
     let radius = 1e-200_f64;
     let parameters = B5SupportedSurfaceParameters::Radius {
-        controls: [0; 6],
+        controls: [0x05, 0x05, 0x03, 0x03, 0x05, 0x05],
         construction_radius: crate::test_support::test_b5::positive_length(radius),
     };
     let cylinder = |carrier_radius| B5Surface::Cylinder {
@@ -1725,46 +1494,75 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(1.0),
         azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
-        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        latitude_range: crate::test_support::test_b5::increasing([
+            -1.0,
+            std::f64::consts::FRAC_PI_2,
+        ]),
         construction_radius: carrier_radius,
         chart_origin: crate::test_support::test_b5::finite(0.0),
     };
 
-    for carrier in [
-        cylinder(radius),
-        torus(radius),
-        sphere(crate::test_support::test_b5::positive_length(radius)),
+    for (selector, closure, carrier) in [
+        (0x05, 0x05, cylinder(radius)),
+        (0x09, 0x05, torus(radius)),
+        (
+            0x0d,
+            0x09,
+            sphere(crate::test_support::test_b5::positive_length(radius)),
+        ),
     ] {
+        let mut parameters = parameters.clone();
+        if let B5SupportedSurfaceParameters::Radius { controls, .. } = &mut parameters {
+            controls[0] = selector;
+            controls[5] = closure;
+        }
         assert!(supported_surface_parameters_match_carrier(
             &parameters,
             &carrier
         ));
     }
-    for carrier in [
-        cylinder(2.0 * radius),
-        torus(2.0 * radius),
-        sphere(crate::test_support::test_b5::positive_length(2.0 * radius)),
+    for (selector, closure, carrier) in [
+        (0x05, 0x05, cylinder(2.0 * radius)),
+        (0x09, 0x05, torus(2.0 * radius)),
+        (
+            0x0d,
+            0x09,
+            sphere(crate::test_support::test_b5::positive_length(2.0 * radius)),
+        ),
     ] {
+        let mut parameters = parameters.clone();
+        if let B5SupportedSurfaceParameters::Radius { controls, .. } = &mut parameters {
+            controls[0] = selector;
+            controls[5] = closure;
+        }
         assert!(!supported_surface_parameters_match_carrier(
             &parameters,
             &carrier
         ));
     }
 
+    assert!(!supported_surface_parameters_match_carrier(
+        &parameters,
+        &torus(radius)
+    ));
     let half_angle = 1e-200_f64;
-    let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
-        controls: [0; 6],
-        scalars: [
-            crate::test_support::test_b5::positive(1.0),
-            crate::test_support::test_b5::positive(half_angle),
-        ],
-    };
-    let cone = |carrier_half_angle| B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+    let cone_parameters = B5SupportedSurfaceParameters::Chamfer(
+        crate::families::chamfer::ChamferParameters::decode(
+            [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+            [
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(half_angle),
+            ],
+        )
+        .expect("valid chamfer"),
+    );
+    let cone = |carrier_radial_angle| B5Surface::Cone {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: carrier_half_angle,
+        radial_angle: carrier_radial_angle,
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
@@ -1775,7 +1573,7 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         &cone_parameters,
         &cone(crate::test_support::test_b5::positive_angle(half_angle))
     ));
-    assert!(!supported_surface_parameters_match_carrier(
+    assert!(supported_surface_parameters_match_carrier(
         &cone_parameters,
         &cone(crate::test_support::test_b5::positive_angle(
             2.0 * half_angle
@@ -1783,91 +1581,36 @@ fn supported_surface_parameter_matching_is_scale_independent() {
     ));
 }
 
-#[test]
-fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let payload = a8_class21_test_payload();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("fixture root admission");
-    let Err(CodecError::ResourceLimit(original)) = parse_a8_class21_pcurve(&ctx, 7, &payload)
-    else {
-        panic!("strict knot refusal must not disappear as a missing candidate");
-    };
-    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(original.operation, "IR strict knot order");
-    assert_eq!(original.used, 0);
-    assert_eq!(original.additional, 1);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-    );
-}
-
 mod topology_walk;
 
 #[test]
-fn populations_share_the_logical_stream_run_index() {
+fn populations_split_each_logical_stream_run() {
     let triangle = crate::test_support::test_b5::b5_closed_triangle_stream();
     let mut bytes = vec![0; 1_048_576];
     for _ in 0..16 {
         bytes.extend_from_slice(&triangle);
         bytes.extend_from_slice(&[0; 16]);
     }
-    let populations = crate::test_support::with_work_limit(4_000_000, |ctx| {
-        object_stream_populations(ctx, &bytes)
-    })
-    .expect("one stream scan and bounded per-run scans fit the allowance");
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
     assert_eq!(populations.len(), 16);
     assert!(populations.iter().all(|population| *population == triangle));
 }
 
 #[test]
-fn indexed_duplicate_records_reuse_source_payloads() {
+fn indexed_duplicate_records_collapse_to_one_record() {
     let mut bytes = Vec::new();
     let payload = vec![0x00; 128];
     for _ in 0..16 {
         crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 7, &payload);
     }
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let records = crate::test_support::with_collection_limit(200, |ctx| {
-        crate::families::b5::graph::indexed_topology_records_and_dependency_candidates(
-            ctx, &bytes, &frames, None,
-        )
-    })
-    .expect("one payload and frame-index entries fit")
+    let records = crate::families::b5::graph::indexed_topology_records_and_dependency_candidates(
+        &bytes, &frames, None,
+    )
     .expect("complete indexed records")
     .0;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].payload, payload);
-}
-
-#[test]
-fn frame_workspace_releases_storage_between_parsing_phases() {
-    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    crate::test_support::with_retained_limit(0, |ctx| {
-        for _ in 0..128 {
-            let (frames, storage) = ctx
-                .with_scoped_storage("test frame phase", || {
-                    collect_object_stream_frames(ctx, &bytes)
-                })
-                .expect("frame index storage is temporary");
-            assert!(!frames.is_empty());
-            drop((frames, storage));
-        }
-    });
-    let refused = crate::test_support::with_materialized_limit(0, |ctx| {
-        ctx.with_scoped_storage("test frame phase", || {
-            collect_object_stream_frames(ctx, &bytes)
-        })
-        .map(|(frames, _)| frames.len())
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b5_object_frames")
-    );
 }
 
 #[test]
@@ -1894,16 +1637,114 @@ fn dependency_closure_admits_each_identity_once_through_back_references() {
         object_id: 0,
         payload,
     };
-    // One existing identity, and one pending identity, admitted identity and output row per dependency.
-    let records = crate::test_support::with_collection_limit(1 + u64::from(COUNT) * 3, |ctx| {
-        admit_dependency_records(ctx, &bytes, &mut vec![root.clone()], &candidates, None)
-    })
-    .expect("back references do not re-admit completed identities");
+    let records = admit_dependency_records(&bytes, &mut vec![root.clone()], &candidates, None);
     assert_eq!(
         records
             .iter()
             .map(|record| record.object_id)
             .collect::<Vec<_>>(),
         (0..=COUNT).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn collected_object_frames_match_the_frame_scan() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let admitted = collect_object_stream_frames(&bytes);
+    let scanned = object_stream_frames(&bytes).collect::<Vec<_>>();
+    assert_eq!(admitted.len(), scanned.len());
+    assert!(admitted.iter().zip(scanned).all(|(left, right)| {
+        (
+            left.start,
+            left.end,
+            left.family,
+            left.class,
+            left.object_id,
+        ) == (
+            right.start,
+            right.end,
+            right.family,
+            right.class,
+            right.object_id,
+        )
+    }));
+}
+
+#[test]
+fn single_closed_triangle_stream_is_selected_as_the_population() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let selected = select_object_stream_population(std::slice::from_ref(&bytes), None);
+    assert!(selected.selected());
+    assert_eq!(selected.source(), bytes);
+}
+
+#[test]
+fn closed_triangle_stream_is_one_topology_root_run() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let ranges = topology_root_run_ranges(&bytes);
+    assert_eq!(ranges, vec![0..bytes.len()]);
+}
+
+#[test]
+fn a8_class21_pcurve_parse_admits_the_test_payload() {
+    let payload = a8_class21_test_payload();
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+            .expect("parse A8 class21 pcurve")
+            .is_some()
+    );
+}
+
+#[test]
+fn class_5e_record_yields_a_typed_edge_record() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5e,
+        object_id: 17,
+        payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
+    }];
+    let edges = typed_edge_records_from_records(&records);
+    assert!(!edges.is_empty());
+}
+
+#[test]
+fn class_5d_record_yields_a_typed_vertex_incidence_link() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5d,
+        object_id: 17,
+        payload: vec![0x81, 0x92, 0x04],
+    }];
+    let links = typed_vertex_incidence_links_from_records(&records);
+    assert!(!links.is_empty());
+}
+
+#[test]
+fn surface_reference_pulls_its_frame_into_the_dependency_closure() {
+    let bytes = [0u8; 9];
+    let frame = ObjectFrame {
+        start: 0,
+        end: bytes.len(),
+        family: 0xb5,
+        class: 0x18,
+        object_id: 9,
+    };
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 7,
+        payload: vec![0x81, 0x89],
+    };
+    let candidates = HashMap::from([(9, Some(frame))]);
+    assert_eq!(
+        admit_dependency_records(&bytes, &mut vec![record.clone()], &candidates, None).len(),
+        2
+    );
+    assert_eq!(
+        topology_surface_references(&[record]),
+        std::collections::HashSet::from([9])
     );
 }

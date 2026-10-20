@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed scalar frames with contiguous, derived payload positions.
 
-use super::fixed::Q155Atom;
 use super::nonempty::NonEmpty;
-use super::scalar::{ShiftedBinary32, ShiftedScalar};
+use super::scalar::{ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 
 pub(crate) trait AtomWidth {
     fn width(&self) -> u64;
@@ -21,7 +20,7 @@ impl AtomWidth for ShiftedBinary32 {
     }
 }
 
-impl AtomWidth for Q155Atom {
+impl AtomWidth for ShiftedBinary64 {
     fn width(&self) -> u64 {
         8
     }
@@ -84,24 +83,20 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
         })
     }
 
-    pub(crate) fn try_map_locations<P>(
+    pub(crate) fn map_locations<P>(
         self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(u64, O) -> Option<P>,
-    ) -> Result<Option<FramedScalarRun<F, P>>, cadmpeg_core::CodecError> {
+    ) -> Option<FramedScalarRun<F, P>> {
         let mut at = self.offset + self.form.prefix_len();
-        let values = self.values.try_map_charged(ctx, |(atom, location)| {
+        let values = self.values.try_map(|(atom, location)| {
             let offset = at;
             at += atom.width();
             Some((atom, map(offset, location)?))
         })?;
-        let Some(values) = values else {
-            return Ok(None);
-        };
-        Ok(Some(FramedScalarRun {
+        Some(FramedScalarRun {
             form: self.form,
             offset: self.offset,
             values,
-        }))
+        })
     }
 }

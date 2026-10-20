@@ -14,7 +14,7 @@ use crate::history::classify::{
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
-use crate::history::project::neutral_feature_id_charged;
+use crate::history::project::neutral_feature_id;
 
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
@@ -214,7 +214,7 @@ pub(in crate::history) fn sync_neutral_features(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
-    enrich_history_parameters_semantic(&ctx, &mut resolved_histories, &native.feature_input_lanes)?;
+    enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
     let resolved_parameter_names = resolved_histories
         .iter()
         .flat_map(|history| &history.features)
@@ -501,7 +501,6 @@ pub(in crate::history) fn sync_neutral_features(
         })
         .collect::<std::collections::HashSet<_>>();
     crate::resolved_features::parameters::sync_changed_feature_scalars(
-        &ctx,
         &native.feature_histories,
         &mut native.feature_input_lanes,
         &changed_parameters,
@@ -512,12 +511,12 @@ pub(in crate::history) fn sync_neutral_features(
         .map(|feature| (feature.id.clone(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let projected_id = neutral_feature_id_charged(&ctx, &record_ids[&feature.id])?;
+        let projected_id = neutral_feature_id(&record_ids[&feature.id])?;
         let expected = feature
             .dependencies
             .iter()
             .map(|dependency| match record_ids.get(dependency) {
-                Some(record) => neutral_feature_id_charged(&ctx, record),
+                Some(record) => neutral_feature_id(record),
                 None => Ok(dependency.clone()),
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
@@ -702,7 +701,7 @@ fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
 
 #[cfg(test)]
 mod tests {
-    use super::{generated_feature_record_id, neutral_feature_id_charged, sync_neutral_features};
+    use super::{generated_feature_record_id, neutral_feature_id, sync_neutral_features};
     use crate::test_support::container::make_block;
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::history::resolved_feature_classes_with_ids;
@@ -837,9 +836,7 @@ mod tests {
             "sldprt:generated:feature#test:model:feature%23original%2523key"
         );
         assert!(cadmpeg_ir::ids::is_valid_identity(&record));
-        let projected =
-            neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), &record)
-                .unwrap();
+        let projected = neutral_feature_id(&record).unwrap();
         assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
     }
     #[test]

@@ -1246,7 +1246,7 @@ fn decode_types_round_with_labeled_edge_selection() {
         Some("44,45")
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1296,7 +1296,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_revolution_extents"];
-    assert_eq!(records[0].fields()["kind"], "full_turn");
+    assert_eq!(records[0].fields().unwrap()["kind"], "full_turn");
 }
 
 #[test]

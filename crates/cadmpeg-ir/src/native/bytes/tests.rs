@@ -61,7 +61,6 @@ fn canonical_payload_is_a_string() {
             id: "test:native:bytes#1",
             bytes: NativeBytes::from(bytes.as_slice()),
         },
-        None,
     )
     .unwrap();
     assert_eq!(record.field("bytes").unwrap(), "000fff");
@@ -83,10 +82,9 @@ fn canonical_payload_uses_string_storage_and_no_byte_slots() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 8;
     policy.limits.max_retained_bytes = 64 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let stored = NativeRecord::from_typed_for_decode(&ctx, &record, None).unwrap();
+    let stored = NativeRecord::from_typed_for_decode(&ctx, &record).unwrap();
     let text = stored.field("bytes").unwrap();
     assert_eq!(text.as_str().unwrap(), "5a".repeat(payload.len()));
     ctx.finish_session().unwrap();
@@ -94,7 +92,7 @@ fn canonical_payload_uses_string_storage_and_no_byte_slots() {
     let arena = DecodeArena::new();
     policy.limits.max_retained_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(NativeRecord::from_typed_for_decode(&ctx, &record, None).is_err());
+    assert!(NativeRecord::from_typed_for_decode(&ctx, &record).is_err());
     assert!(
         matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
     );

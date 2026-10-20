@@ -249,16 +249,8 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         edge_parameter_incidences: &edge_parameter_incidences,
         parameter_incidences: &parameter_incidences,
     };
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            counted_references(ctx, &records[0], 0x05).expect("service budget")
-        }),
-        Some(vec![30, 31])
-    );
-    let incidence = crate::test_support::with_service_context(|ctx| {
-        parameter_incidence(ctx, &records[1]).expect("service budget")
-    })
-    .expect("parameter incidence");
+    assert_eq!(counted_references(&records[0], 0x05), Some(vec![30, 31]));
+    let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
     assert_eq!(
         incidence.lanes,
         [B5IncidenceLane {
@@ -299,7 +291,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             &geometry,
         )
     })
-    .expect("service budget");
+    .expect("compute the incidence vertex coordinates");
 
     assert_eq!(coordinates.len(), 1);
     assert!(
@@ -333,7 +325,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             &geometry,
         )
     })
-    .expect("service budget");
+    .expect("compute the incidence vertex coordinates");
     assert!(conflicting.is_empty());
 
     drop(conflicting_by_id);
@@ -358,7 +350,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             &geometry,
         )
     })
-    .expect("service budget");
+    .expect("compute the incidence vertex coordinates");
     assert!(out_of_domain.is_empty());
 }
 

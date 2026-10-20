@@ -33,7 +33,7 @@ fn lost_edge_reference_native_retained_limit_refuses_before_record_clone() {
 
     let record = lost_edge();
     let arena_name = "lost_edge_references";
-    let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+    let needed = serde_json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -87,7 +87,7 @@ fn material_assignment_native_retained_limit_refuses_before_record_clone() {
         r#", "physical_token":"Mat","physical_token_offset":50,"visual_preset":"Prism-002","visual_preset_offset":80"#,
     );
     let arena_name = "design_material_assignments";
-    let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+    let needed = serde_json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;

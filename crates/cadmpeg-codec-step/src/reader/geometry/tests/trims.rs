@@ -61,7 +61,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
             matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[3.0, 1.0], [4.0, 2.0]], Some(false), Some(false),) if support.as_str() == "step:data:surface#7"),
         _ => false,
     });
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     let trimmed_id = SurfaceId::mint("step:data:surface#8").expect("identity grammar");
     assert_eq!(
         model_surface_point_by_id(
@@ -199,7 +199,7 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
     };
     assert!((parameter_ranges[0][0] - 5.5).abs() < 1.0e-12);
     assert!((parameter_ranges[0][1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-12);
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     let point = model_surface_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -328,7 +328,7 @@ fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
     }
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -362,7 +362,7 @@ fn rectangular_trimmed_surface_keeps_topology_pcurves_in_local_uv_space() {
         _ => false,
     });
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -389,7 +389,7 @@ fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
             && loss.message.contains("#4")
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -494,7 +494,7 @@ fn trimmed_curve_prefers_the_point_under_cartesian_master() {
             .contains("fell back to a parameter trim selector")
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -543,7 +543,7 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains(".F.,.PARAMETER."));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -579,7 +579,7 @@ fn trimmed_curve_forward_sense_wraps_a_closed_basis() {
     assert!((parameter_range.endpoints()[0] - 5.0).abs() < 1.0e-12);
     assert!((parameter_range.endpoints()[1] - (1.0 + std::f64::consts::TAU)).abs() < 1.0e-12);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

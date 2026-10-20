@@ -23,55 +23,12 @@ pub(crate) fn assert_retained_refusal_at<T>(
     );
 }
 
-pub(crate) fn assert_collection_refusal_at<T>(
-    input: &[u8],
-    operation: &str,
-    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems,
-        operation,
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
-                .expect("test input is within the root limit");
-            decode(&ctx)
-        },
-    );
-}
-
-pub(crate) fn materialized_refusal_at<T>(
-    operation: &str,
-    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes,
-        operation,
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("test input is within the root limit");
-            let result = decode(&ctx);
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            }
-            result
-        },
-    )
-}
-
 pub(crate) fn validate_native(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
     let bytes = serde_json::to_vec(ir).expect("test document serializes");
     with_service_context(&bytes, |ctx| {
-        crate::validate_native(ctx, ir).expect("test validation is within resource limits")
+        crate::validate_native(ctx, ir).expect("validate the native records")
     })
 }
 
@@ -86,7 +43,7 @@ pub(crate) fn with_service_context<T>(
     use_context(&ctx)
 }
 
-/// Builds a checked entry with charged digest storage for synthetic fixtures.
+/// Builds a checked entry with its content digest for synthetic fixtures.
 pub(crate) fn entry_record(
     id: String,
     name: String,
@@ -94,8 +51,5 @@ pub(crate) fn entry_record(
     references: Vec<String>,
     data: Vec<u8>,
 ) -> crate::native::EntryRecord {
-    with_service_context(&[], |ctx| {
-        crate::native::EntryRecord::new(ctx, id, name, role, references, data)
-            .expect("valid entry fixture")
-    })
+    crate::native::EntryRecord::new(id, name, role, references, data).expect("valid entry fixture")
 }

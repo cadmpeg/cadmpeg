@@ -47,8 +47,8 @@ The result holds the decoded `CadIr` and a [`DecodeReport`][report]. Read
 `report.losses` before trusting geometry. Call `NxCodec::inspect` for container
 metadata without entity decode. It lists SPLMSSTR directory entries and
 classifies embedded streams as partition, deltas, plain cached body, or preview
-data. Set `DecodeOptions::container_only` for metadata IR without entity
-decoding.
+data. Set `DecodeOptions::depth` to `DecodeDepth::Container` for metadata IR
+without entity decoding.
 
 Run the capability profiler against a directory of `.prt` files for a
 deterministic JSON census:
@@ -74,6 +74,12 @@ IDs and retains every image whose complete nonempty set is covered; otherwise
 selection declines and complete primary-writer lineage falls back to terminal
 partition images. Assembly files can contain only external child-part
 references and produce no inline geometry.
+
+Complete assembly placement frames transfer to the native `assembly_placements`
+arena with exact bytes, row-major matrices, labels, UUIDs, and source offsets.
+Native validation checks the derived fields against those bytes. Translation
+values retain their serialized unit; child-occurrence binding and unit
+assignment remain unresolved.
 
 Embedded JT shape-LOD segments transfer as display tessellation. Validated
 embedded JPEG previews and TIFF material textures transfer as exact document

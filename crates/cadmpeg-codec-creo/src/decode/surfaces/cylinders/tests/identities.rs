@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
 fn hole_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
@@ -154,101 +152,11 @@ fn circular_sweep_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn hole_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
-    let scan = hole_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    super::super::transfer_hole_cylinders(
-        &ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("hole cylinder identity exceeds retained limit")
-}
-
-fn circular_sweep_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
-    let scan = circular_sweep_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    super::super::transfer_circular_sweep_cylinders(
-        &ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("circular sweep cylinder identity exceeds retained limit")
-}
-
-#[test]
-fn hole_cylinder_identity_refuses_retained_limit() {
-    let error = hole_retained_refusal(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo hole cylinder identity"),
-        |cap| Err::<(), _>(hole_retained_refusal(cap)),
-    ));
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo hole cylinder identity"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn hole_cylinder_source_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo hole cylinder source IDs",
-        |limit| Err::<(), _>(hole_retained_refusal(limit)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo hole cylinder source IDs"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn circular_sweep_cylinder_identity_refuses_retained_limit() {
-    let error = circular_sweep_retained_refusal(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo circular sweep cylinder identity"),
-        |cap| Err::<(), _>(circular_sweep_retained_refusal(cap)),
-    ));
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo circular sweep cylinder identity"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn circular_sweep_cylinder_source_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo circular sweep cylinder source IDs",
-        |limit| Err::<(), _>(circular_sweep_retained_refusal(limit)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo circular sweep cylinder source IDs"),
-        "{error:?}"
-    );
-}
-
 #[test]
 fn hole_and_circular_sweep_identities_preserve_service_geometry() {
     let hole = hole_scan();
     let mut hole_ir = cadmpeg_ir::document::CadIr::empty();
-    let hole_count = crate::decode::with_test_decode_ctx(|ctx| {
+    let hole_count = crate::decode::with_service_context(|ctx| {
         super::super::transfer_hole_cylinders(
             ctx,
             &hole,
@@ -274,7 +182,7 @@ fn hole_and_circular_sweep_identities_preserve_service_geometry() {
 
     let sweep = circular_sweep_scan();
     let mut sweep_ir = cadmpeg_ir::document::CadIr::empty();
-    let sweep_count = crate::decode::with_test_decode_ctx(|ctx| {
+    let sweep_count = crate::decode::with_service_context(|ctx| {
         super::super::transfer_circular_sweep_cylinders(
             ctx,
             &sweep,
@@ -296,50 +204,6 @@ fn hole_and_circular_sweep_identities_preserve_service_geometry() {
             .expect("source")
             .object_id,
         "VisibGeom:51"
-    );
-}
-
-#[test]
-fn constrained_slot_cylinder_identity_refuses_retained_limit() {
-    let scan = super::slot_fillet_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo constrained slot cylinder identity"),
-        |cap| {
-            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut trial_policy = policy;
-            trial_policy.limits.max_retained_bytes = cap;
-            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[],
-                &trial_arena,
-                &trial_policy,
-            )
-            .expect("root");
-            super::super::transfer_constrained_slot_fillet_cylinders(
-                &trial_ctx,
-                &scan,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        },
-    );
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::super::transfer_constrained_slot_fillet_cylinders(
-        &ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("constrained slot identity exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo constrained slot cylinder identity"),
-        "{error:?}"
     );
 }
 
@@ -378,74 +242,12 @@ fn cross_section_plane_scan(local_system: bool) -> crate::container::ContainerSc
     scan
 }
 
-fn cross_section_retained_refusal(local_system: bool, limit: u64) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let scan = cross_section_plane_scan(local_system);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    super::super::transfer_cross_section_planes(
-        &ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("cross-section identity exceeds retained limit")
-}
-
-#[test]
-fn cross_section_local_system_identity_refuses_retained_limit() {
-    let error = cross_section_retained_refusal(true, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo cross-section local-system plane identity")
-    );
-}
-
-#[test]
-fn cross_section_local_system_source_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo cross-section local-system plane source IDs",
-        |limit| Err::<(), _>(cross_section_retained_refusal(true, limit)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo cross-section local-system plane source IDs")
-    );
-}
-
-#[test]
-fn cross_section_outline_identity_refuses_retained_limit() {
-    let error = cross_section_retained_refusal(false, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo cross-section outline plane identity")
-    );
-}
-
-#[test]
-fn cross_section_outline_source_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo cross-section outline plane source IDs",
-        |limit| Err::<(), _>(cross_section_retained_refusal(false, limit)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo cross-section outline plane source IDs")
-    );
-}
-
 #[test]
 fn cross_section_plane_identities_preserve_service_geometry() {
     for local_system in [true, false] {
         let scan = cross_section_plane_scan(local_system);
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        let count = crate::decode::with_test_decode_ctx(|ctx| {
+        let count = crate::decode::with_service_context(|ctx| {
             super::super::transfer_cross_section_planes(
                 ctx,
                 &scan,
@@ -509,51 +311,11 @@ fn positional_cone_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn positional_cone_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let scan = positional_cone_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    super::super::transfer_positional_cones(
-        &ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("positional cone identity exceeds retained limit")
-}
-
-#[test]
-fn positional_cone_identity_refuses_retained_limit() {
-    let error = positional_cone_retained_refusal(0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo positional cone identity")
-    );
-}
-
-#[test]
-fn positional_cone_source_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo positional cone source IDs",
-        |limit| Err::<(), _>(positional_cone_retained_refusal(limit)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo positional cone source IDs")
-    );
-}
-
 #[test]
 fn positional_cone_identity_preserves_service_geometry() {
     let scan = positional_cone_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::super::transfer_positional_cones(
             ctx,
             &scan,

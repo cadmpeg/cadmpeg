@@ -1,7 +1,7 @@
 use super::token_parameter_record;
 use crate::loss::IgesLossCode;
 use crate::parameter::{
-    analyze_trailing_pointer_groups_for_global_table_with_context, entity_primary_end,
+    analyze_trailing_pointer_groups_for_global_table, entity_primary_end,
     entity_primary_end_with_records, ParameterRecord, Token, TokenValue,
 };
 use crate::test_support::directory_target;
@@ -145,7 +145,7 @@ fn blank_parameter_field_is_an_omitted_value() {
 
     assert_eq!(result.ir().model.points.len(), 1);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -262,7 +262,7 @@ fn parameter_card_count_includes_comment_card_payload() {
         .unwrap();
 
     let entity = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
-    let fields = entity.fields();
+    let fields = entity.fields().unwrap();
     assert_eq!(fields["parameter_line_count"], 2);
     let retained_comment = crate::test_support::native_bytes(&fields["comment"]);
     assert_eq!(retained_comment.len(), 128 - "116,1,2,3,0;".len());
@@ -298,15 +298,11 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &BTreeMap::new(),
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &BTreeMap::new(),
+        crate::global::GlobalTable::V5Later,
+    );
     assert!(analysis.groups().is_none());
 }
 
@@ -351,15 +347,11 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &BTreeMap::new(),
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &BTreeMap::new(),
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &BTreeMap::new())),
         1
@@ -394,15 +386,11 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-            ctx,
-        )
-        .expect("test-only trailing pointer analysis")
-    });
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1

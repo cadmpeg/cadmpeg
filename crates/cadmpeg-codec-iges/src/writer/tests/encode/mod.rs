@@ -87,7 +87,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
         }));
         let validation =
             cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
-                .expect("resource allocation did not fail");
+                .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -108,7 +108,7 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let (global, _) =
-        crate::test_support::parse_global(&crate::test_support::scan(&written).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::card::scan(&written).unwrap()).unwrap();
     let context = global.length_context().unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.01);
 
@@ -123,7 +123,7 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -274,7 +274,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
         );
         assert!(
             cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok(),
             "{version:?}"
         );
@@ -356,7 +356,7 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
-    let scan = crate::test_support::scan(&written).unwrap();
+    let scan = crate::card::scan(&written).unwrap();
     crate::test_support::parse_global(&scan).unwrap();
     let global_text = scan
         .section(crate::card::Section::Global)
@@ -566,7 +566,7 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
             round_trip.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }
@@ -591,7 +591,6 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
             id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -611,7 +610,6 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                     ),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid test NURBS surface"),
             )),
             source_object: None,
@@ -652,8 +650,8 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         "{:#?}",
         decoded.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert!(entities.iter().any(|record| {
@@ -722,7 +720,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -958,14 +956,12 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             id: pcurve_ids[index].clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(start.x, start.y), pcurve_end],
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .expect("valid sheet pcurve"),
             },
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -989,14 +985,12 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {
                     nurbs: PcurveNurbs::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
                         vec![midpoint, Point2::new(end_position.x, end_position.y)],
                         None,
                         false,
                     )
-                    .expect("fixture pcurve construction admission")
                     .expect("valid split sheet pcurve"),
                 },
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -1028,13 +1022,8 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids.clone(),
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
         ),
     });
     ir.model.faces.push(Face {
@@ -1075,11 +1064,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ];
     let vertex_uses = ir.model.loops[0].anchored_vertex_uses().to_vec();
     ir.model.loops[0]
-        .replace_ring(
-            &cadmpeg_test_support::service_decode_context(),
-            reversed_order.to_vec(),
-            vertex_uses,
-        )
+        .replace_ring(reversed_order.to_vec(), vertex_uses)
         .expect("reversed loop ring remains valid");
     for coedge_id in &reversed_order {
         let coedge = ir
@@ -1121,8 +1106,8 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         "{:#?}",
         decoded.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1148,7 +1133,7 @@ fn encode_regenerates_a_decoded_trimmed_sheet_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1174,7 +1159,7 @@ fn encode_regenerates_decoded_trimmed_sheet_inner_loop_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1201,7 +1186,7 @@ fn encode_regenerates_decoded_model_curve_bounded_sheet_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1229,7 +1214,7 @@ fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1290,17 +1275,13 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
         };
         nurbs
-            .try_map_control_points(
-                |pole_index, point| {
-                    let mut point = point.get();
-                    if pole_index == 0 {
-                        point.u += 0.25;
-                    }
-                    cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|pole_index, point| {
+                let mut point = point.get();
+                if pole_index == 0 {
+                    point.u += 0.25;
+                }
+                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+            })
             .unwrap();
     }
 
@@ -1352,7 +1333,7 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1387,24 +1368,17 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             };
             let mut reversed_points = nurbs.pole_rows().raw_points();
             reversed_points.reverse();
-            let reversed_poles = PcurveNurbsPoles::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                reversed_points,
-                nurbs.pole_rows().weights(),
-            )
-            .expect("fixture pcurve construction admission")
-            .unwrap();
+            let reversed_poles =
+                PcurveNurbsPoles::from_lanes(reversed_points, nurbs.pole_rows().weights()).unwrap();
             {
                 let replacement = reversed_poles;
                 edit::replace(nurbs, |previous| {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-                        &cadmpeg_test_support::service_decode_context(),
                         previous.degree(),
                         previous.knots().to_vec(),
                         replacement,
                         previous.periodic(),
                     )
-                    .expect("fixture pcurve construction admission")
                 })
             }
             .unwrap();
@@ -1429,7 +1403,7 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1488,7 +1462,7 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1582,14 +1556,12 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         id: pcurve_id.clone(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::from(start_uv), Point2::from(end_uv)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("valid source-less pcurve"),
         },
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -1627,7 +1599,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1657,7 +1629,7 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1717,7 +1689,7 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let (global, _) =
-        crate::test_support::parse_global(&crate::test_support::scan(&written).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::card::scan(&written).unwrap()).unwrap();
     let context = global.length_context().unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.25);
 
@@ -1824,7 +1796,7 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
         round_trip.report().losses
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1984,7 +1956,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
     );
     assert!(round_trip.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

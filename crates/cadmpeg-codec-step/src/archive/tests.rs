@@ -5,23 +5,10 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{resolve_uri, root_reference_notes, ReferenceTarget, ROOT_NAME};
 
-fn resolve_uri_for_test<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    base_member: &'a str,
-    uri: &'a str,
-) -> Result<ReferenceTarget<'a>, cadmpeg_core::CodecError> {
-    let mut member_bytes = ctx.reserve_scoped(0, "step_zip_uri_member_temp")?;
-    resolve_uri(ctx, &mut member_bytes, base_member, uri)
-}
-
 #[test]
 fn resolves_archive_relative_uris_and_fragments() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("test context");
     assert_eq!(
-        resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21#target").unwrap(),
+        resolve_uri(ROOT_NAME, "parts/child.p21#target").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/child.p21".into(),
             query: None,
@@ -29,7 +16,7 @@ fn resolves_archive_relative_uris_and_fragments() {
         }
     );
     assert_eq!(
-        resolve_uri_for_test(&ctx, "parts/child.p21", "../shared.p21#value").unwrap(),
+        resolve_uri("parts/child.p21", "../shared.p21#value").unwrap(),
         ReferenceTarget::Internal {
             member: "shared.p21".into(),
             query: None,
@@ -37,11 +24,11 @@ fn resolves_archive_relative_uris_and_fragments() {
         }
     );
     assert_eq!(
-        resolve_uri_for_test(&ctx, ROOT_NAME, "https://example.invalid/part.p21#root").unwrap(),
+        resolve_uri(ROOT_NAME, "https://example.invalid/part.p21#root").unwrap(),
         ReferenceTarget::External
     );
     assert_eq!(
-        resolve_uri_for_test(&ctx, "parts/sub/child.p21", "./../shared.p21#value").unwrap(),
+        resolve_uri("parts/sub/child.p21", "./../shared.p21#value").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/shared.p21".into(),
             query: None,
@@ -49,7 +36,7 @@ fn resolves_archive_relative_uris_and_fragments() {
         }
     );
     assert_eq!(
-        resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21?query=../outside#target").unwrap(),
+        resolve_uri(ROOT_NAME, "parts/child.p21?query=../outside#target").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/child.p21".into(),
             query: Some("query=../outside"),
@@ -60,98 +47,15 @@ fn resolves_archive_relative_uris_and_fragments() {
 
 #[test]
 fn rejects_archive_relative_traversal() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("test context");
-    assert!(resolve_uri_for_test(&ctx, ROOT_NAME, "../outside.p21").is_err());
-    assert!(resolve_uri_for_test(&ctx, ROOT_NAME, "parts//child.p21").is_err());
-}
-
-#[test]
-fn uri_components_refuse_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("test context");
-    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21")
-        .expect_err("two URI components exceed one item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "step_zip_uri_components"
-    ));
-}
-
-#[test]
-fn uri_member_refuses_temporary_byte_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        u64::try_from(4 * std::mem::size_of::<&str>()).expect("pointer size fits u64");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("test context");
-    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "a")
-        .expect_err("one URI component leaves no temporary byte for its member");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "step_zip_uri_member"
-    ));
-}
-
-#[test]
-fn uri_base_member_refuses_temporary_byte_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        u64::try_from(ROOT_NAME.len() - 1).expect("member and component slots fit u64");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("test context");
-    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "#target")
-        .expect_err("base member needs one more temporary byte");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "step_zip_uri_member"
-    ));
-}
-
-#[test]
-fn root_reference_note_refuses_retained_byte_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("test context");
-    let mut notes = Vec::new();
-    let error = super::push_reference_note(
-        &ctx,
-        &mut notes,
-        "internal resource ",
-        crate::parse::ReferenceName::Entity(1),
-        "part.p21",
-        None,
-        None,
-    )
-    .expect_err("the note requires more than four retained bytes");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "step_zip_reference_note"
-    ));
+    assert!(resolve_uri(ROOT_NAME, "../outside.p21").is_err());
+    assert!(resolve_uri(ROOT_NAME, "parts//child.p21").is_err());
 }
 
 use std::io::{Cursor, Read as _};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -169,6 +73,37 @@ fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
         std::io::Write::write_all(&mut writer, bytes).unwrap();
     }
     writer.finish().unwrap().into_inner()
+}
+
+/// A Zstandard frame carrying `plain` in RAW (uncompressed) blocks.
+///
+/// The workspace has no Zstandard ENCODER: `zip`'s `zstd` feature and the `zstd` crate are both
+/// libzstd bindings and are not built, and `ruzstd` is used for decoding only.  A raw-block
+/// frame is fully specified by RFC 8878 without one: magic, a single-segment header with a
+/// four-byte content size and no checksum, then blocks of at most 64 KiB whose three-byte header
+/// is `last | type 0 << 1 | size << 3`.  It is a conforming frame any decoder reads, which is all
+/// the archive-profile tests here need -- they are about the ZIP method number, not the codec.
+fn zstd_raw_frame(plain: &[u8]) -> Vec<u8> {
+    const BLOCK: usize = 64 * 1024;
+    let mut frame = vec![0x28, 0xB5, 0x2F, 0xFD];
+    // Frame_Content_Size flag 2 (four bytes), Single_Segment set, no checksum, no dictionary.
+    frame.push(0b1010_0000);
+    frame.extend_from_slice(
+        &u32::try_from(plain.len())
+            .expect("fixture fits a four-byte content size")
+            .to_le_bytes(),
+    );
+    let mut chunks = plain.chunks(BLOCK).peekable();
+    if chunks.peek().is_none() {
+        frame.extend_from_slice(&[1, 0, 0]);
+    }
+    while let Some(chunk) = chunks.next() {
+        let last = u32::from(chunks.peek().is_none());
+        let header = last | (u32::try_from(chunk.len()).expect("block fits") << 3);
+        frame.extend_from_slice(&header.to_le_bytes()[..3]);
+        frame.extend_from_slice(chunk);
+    }
+    frame
 }
 
 fn step_zip_with_comment(entries: &[(&str, &[u8], CompressionMethod)], comment: &str) -> Vec<u8> {
@@ -493,43 +428,14 @@ fn root_reference_notes_use_the_contextually_parsed_exchange() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("ZIP fits the service profile");
+        .expect("build the decode context");
     let opened = super::open_root(&ctx, view).expect("open ZIP root");
-    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &ctx)
+    let (exchange, _) = crate::parse::parse(opened.view.window(), &ctx)
         .expect("parse root under the active context");
     assert_eq!(
-        root_reference_notes(&ctx, &opened.archive, &exchange).expect("resolve parsed references"),
+        root_reference_notes(&opened.archive, &exchange).expect("resolve parsed references"),
         vec!["internal resource #10 -> parts/child.p21#target"]
     );
-}
-
-#[test]
-fn root_reference_note_refuses_collection_limit() {
-    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let bytes = step_zip(&[
-        (ROOT_NAME, root, CompressionMethod::Stored),
-        ("parts/child.p21", b"child", CompressionMethod::Stored),
-    ]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let service = cadmpeg_core::decode::DecodePolicy::service();
-    let (service_ctx, view) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &service)
-            .expect("ZIP fits the service profile");
-    let opened = super::open_root(&service_ctx, view).expect("open ZIP root");
-    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &service_ctx)
-        .expect("parse root under the service context");
-    let mut limited = service;
-    limited.limits.max_collection_items = 2;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &limited)
-        .expect("ZIP fits the limited profile");
-    let error = root_reference_notes(&ctx, &opened.archive, &exchange)
-        .expect_err("two URI components leave no item for the note");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "step_zip_reference_notes"
-    ));
 }
 
 #[test]
@@ -567,16 +473,11 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
     let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors()[0].value else {
         panic!("root forwarding anchor");
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(root, &arena, &policy)
-        .expect("test context");
     let ReferenceTarget::Internal {
         member,
         query,
         fragment,
-    } = resolve_uri_for_test(&ctx, ROOT_NAME, resource_uri)
-        .expect("resolve forwarded ZIP resource")
+    } = resolve_uri(ROOT_NAME, resource_uri).expect("resolve forwarded ZIP resource")
     else {
         panic!("forwarded ZIP resource became external");
     };
@@ -1027,7 +928,16 @@ fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
-    let zstd = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Zstd)]);
+    // A Zstandard root member.  Laid out by `zip_fixture` rather than by `ZipWriter`: `zip` is
+    // built without its `zstd` feature (a libzstd binding), so the writer cannot emit method 93
+    // and `CompressionMethod::Zstd` does not exist.  Such a root is read, and the noncanonical
+    // compression is reported.
+    let zstd = zip_fixture::archive(&[RawEntry::compressed(
+        "ISO-10303.p21",
+        zip_fixture::ZSTD,
+        &zstd_raw_frame(root),
+        root,
+    )]);
     let summary = codec
         .inspect(&mut Cursor::new(zstd), &InspectOptions::default())
         .expect("recover safely readable noncanonical root compression");
@@ -1155,61 +1065,20 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
 }
 
 #[test]
-fn forwarded_anchor_lookup_refuses_caller_work_limit() {
+fn forwarded_anchor_lookup_finds_late_and_missing_anchors() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<aa>=<https://example.invalid/a>;<ab>=<https://example.invalid/b>;<ac>=<https://example.invalid/c>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid anchor exchange");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 5;
-    crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
-        let error = super::forwarded_reference_uri(&exchange, "#ac", ctx)
-            .expect_err("late anchor comparison exceeds work allowance");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "step_zip_anchor_lookup"
-                && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
-    });
-    crate::test_support::with_service_context(SOURCE, |_, ctx| {
-        assert_eq!(
-            super::forwarded_reference_uri(&exchange, "#ac", ctx).unwrap(),
-            "https://example.invalid/c"
-        );
-        assert_eq!(
-            super::forwarded_reference_uri(&exchange, "#missing", ctx).unwrap(),
-            "#missing"
-        );
-    });
-}
-
-#[test]
-fn zip_detection_resource_refusals_reach_the_caller() {
-    let bytes = step_zip(&[(ROOT_NAME, b"root", CompressionMethod::Stored)]);
-    for dimension in [
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-    ] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = 0;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = 0;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root");
-        assert!(
-            matches!(super::has_root_marker(&ctx, root), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-        );
-    }
+    let anchors = super::anchor_targets(&exchange);
+    assert_eq!(
+        super::forwarded_reference_uri(&anchors, "#ac"),
+        "https://example.invalid/c"
+    );
+    assert_eq!(
+        super::forwarded_reference_uri(&anchors, "#missing"),
+        "#missing"
+    );
 }
 
 #[test]
@@ -1259,14 +1128,23 @@ fn optional_archive_profile_defects_preserve_geometry_and_declarations() {
     let baseline = StepCodec::default()
         .decode(&mut Cursor::new(root), &DecodeOptions::default())
         .unwrap();
-    for (name, compression) in [
-        ("preview.bin", CompressionMethod::Zstd),
-        ("π-preview.bin", CompressionMethod::Stored),
-    ] {
-        let bytes = step_zip(&[
+    // The Zstandard arm is laid out by `zip_fixture`: `zip` is built without its `zstd` feature,
+    // so `ZipWriter` cannot emit method 93 (see `zstd_raw_frame`).
+    for bytes in [
+        zip_fixture::archive(&[
+            RawEntry::stored("ISO-10303.p21", root),
+            RawEntry::compressed(
+                "preview.bin",
+                zip_fixture::ZSTD,
+                &zstd_raw_frame(b"preview"),
+                b"preview",
+            ),
+        ]),
+        step_zip(&[
             ("ISO-10303.p21", root, CompressionMethod::Stored),
-            (name, b"preview", compression),
-        ]);
+            ("π-preview.bin", b"preview", CompressionMethod::Stored),
+        ]),
+    ] {
         let result = EditableDecodeResult::from(
             StepCodec::default()
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -1294,6 +1172,54 @@ fn optional_archive_profile_defects_preserve_geometry_and_declarations() {
         .unwrap()
         .is_ok());
     }
+}
+
+#[test]
+fn zstd_window_past_the_allowance_skips_an_ancillary_member_and_leaves_the_root_unsupported() {
+    let root = include_bytes!("../writer/tests/data/periodic_two_rims.p21");
+    // A streamed frame as a level-22 encoder writes it: a 128 MiB window and no
+    // content size. Laid out by `zip_fixture`: `zip` is built without its `zstd`
+    // feature.
+    let streamed = |member: &str| {
+        let entries = [ROOT_NAME, "preview.bin"].map(|name| {
+            let bytes: &[u8] = if name == ROOT_NAME { root } else { b"preview" };
+            if name == member {
+                let frame = zip_fixture::zstd_streamed_frame(27, bytes);
+                RawEntry::compressed(name, zip_fixture::ZSTD, &frame, bytes)
+            } else {
+                RawEntry::stored(name, bytes)
+            }
+        });
+        zip_fixture::archive(&entries)
+    };
+    let codec = StepCodec::default();
+    let baseline = codec
+        .decode(&mut Cursor::new(root), &DecodeOptions::default())
+        .unwrap();
+
+    let result = EditableDecodeResult::from(
+        codec
+            .decode(
+                &mut Cursor::new(streamed("preview.bin")),
+                &DecodeOptions::default(),
+            )
+            .expect("an ancillary member past the window allowance does not refuse the root"),
+    );
+    assert_eq!(result.ir().model, baseline.ir().model);
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()
+        && loss.message.contains("\"preview.bin\"")));
+
+    let error = codec
+        .decode(
+            &mut Cursor::new(streamed(ROOT_NAME)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("the required root cannot be skipped");
+    assert!(
+        matches!(&error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::NotImplemented(message)) if message.ends_with("per-expansion allowance")),
+        "{error:?}"
+    );
 }
 
 #[test]

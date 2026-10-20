@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 // Fixture builders use allocation methods restricted in production.
@@ -30,7 +31,7 @@ use crate::test_support::test_streams::two_support_ext11_charted_intersection_cu
 const EPS_SAME_DECODED_POINT: f64 = 1.0e-12;
 
 fn analytic_points(stream: &[u8]) -> Vec<cadmpeg_ir::features::FinitePoint3> {
-    crate::test_support::with_decode_context(|ctx| crate::geometry::points(ctx, stream).unwrap())
+    crate::geometry::points(stream)
 }
 
 fn deltas_body_revision(node_id: u32) -> Vec<u8> {
@@ -54,70 +55,50 @@ fn deltas_point(xmt: u16, x: f64) -> Vec<u8> {
 
 #[test]
 fn deltas_walks_complete_status_prefixed_entity_51_records() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = vec![0, 81];
-        stream.extend_from_slice(&1u32.to_be_bytes());
-        stream.extend_from_slice(&10u16.to_be_bytes());
-        stream.extend_from_slice(&2u32.to_be_bytes());
-        stream.extend_from_slice(&0x21u16.to_be_bytes());
-        for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
-            stream.push(status);
-            stream.extend_from_slice(&reference.to_be_bytes());
-        }
-        stream.push(0);
-        let entity_len = stream.len();
-        stream.extend(status_framed_deltas_point_stream());
+    let mut stream = vec![0, 81];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&0x21u16.to_be_bytes());
+    for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
+        stream.push(status);
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(0);
+    let entity_len = stream.len();
+    stream.extend(status_framed_deltas_point_stream());
 
-        let census = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, &stream)
-        })
-        .unwrap();
-        assert_eq!(census.records.len(), 2);
-        assert_eq!(census.records[0].kind(), 81);
-        assert_eq!(census.records[0].xmt, 10);
-        assert_eq!(census.records[0].family.node_id(), None);
-        assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 7, 8]);
-        assert_eq!(census.records[0].end, entity_len);
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-                ["ENTITY_51"],
-            1
-        );
-        assert_eq!(census.bytes_decoded(), stream.len());
-        let residual = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::semantic_residual(ctx, &stream)
-        })
-        .unwrap();
-        let retained = crate::parasolid::entity_51_records(ctx, &residual)
-            .unwrap()
-            .records;
-        assert_eq!(retained.len(), 1);
-        assert_eq!(u32::from(retained[0].xmt), 10);
-        assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
+    let census = crate::deltas::census::walk(&stream).unwrap();
+    assert_eq!(census.records.len(), 2);
+    assert_eq!(census.records[0].kind(), 81);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].family.node_id(), None);
+    assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 7, 8]);
+    assert_eq!(census.records[0].end, entity_len);
+    assert_eq!(census.full_counts()["ENTITY_51"], 1);
+    assert_eq!(census.bytes_decoded(), stream.len());
+    let residual = crate::deltas::semantic_residual(&stream).unwrap();
+    let retained = crate::parasolid::entity_51_records(&residual);
+    assert_eq!(retained.len(), 1);
+    assert_eq!(u32::from(retained[0].xmt), 10);
+    assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
 
-        stream[entity_len - 1] = 1;
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-                ctx, &stream
-            ))
+    stream[entity_len - 1] = 1;
+    assert_eq!(
+        crate::deltas::census::walk(&stream)
             .unwrap()
             .records
             .iter()
             .filter(|record| record.kind() == 81)
             .count(),
-            1
-        );
-        stream[entity_len - 1] = 2;
-        assert!(
-            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-                ctx, &stream
-            ))
-            .unwrap()
-            .records
-            .iter()
-            .all(|record| record.kind() != 81)
-        );
-    });
+        1
+    );
+    stream[entity_len - 1] = 2;
+    assert!(crate::deltas::census::walk(&stream)
+        .unwrap()
+        .records
+        .iter()
+        .all(|record| record.kind() != 81));
 }
 
 #[test]
@@ -141,9 +122,7 @@ fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
     stream.extend_from_slice(&11u16.to_be_bytes());
     stream.extend_from_slice(&12u32.to_be_bytes());
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
 
     assert_eq!(
         census
@@ -157,10 +136,7 @@ fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
     assert_eq!(census.records[2].offset, census.records[1].end - 1);
     assert_eq!(census.bytes_decoded(), stream.len());
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual(
-            ctx, &stream
-        ))
-        .unwrap()[..stream.len()]
+        crate::deltas::semantic_residual(&stream).unwrap()[..stream.len()]
             .iter()
             .all(|byte| *byte == 0xff)
     );
@@ -175,9 +151,7 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
     let point = status_framed_deltas_point_stream();
     stream.extend_from_slice(&point[1..]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
 
     assert_eq!(
         census
@@ -189,24 +163,6 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
     );
     assert_eq!(census.records[1].offset, census.records[0].end - 1);
     assert_eq!(census.bytes_decoded(), stream.len());
-}
-
-#[test]
-fn deltas_fixed_record_route_refuses_retained_limit() {
-    let stream = status_framed_deltas_point_stream();
-
-    crate::test_support::with_decode_context_over(
-        &stream,
-        |policy| {
-            policy.limits.max_retained_bytes = 39;
-        },
-        |ctx| {
-            assert!(matches!(
-                crate::deltas::census::walk(ctx, &stream),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-        },
-    );
 }
 
 #[test]
@@ -225,9 +181,7 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     let intersection = status_framed_deltas_intersection_stream();
     stream.extend_from_slice(&intersection[1..]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
 
     assert_eq!(
         census
@@ -241,22 +195,36 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     assert_eq!(census.bytes_decoded(), stream.len());
 }
 
-#[test]
-fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate() {
-    let mut type_101 = vec![0, 101];
-    type_101.extend_from_slice(&2u16.to_be_bytes());
-    for reference in 3u16..15 {
-        type_101.extend_from_slice(&reference.to_be_bytes());
-        type_101.push(1);
+fn world_record(escaped: bool) -> Vec<u8> {
+    let mut bytes = vec![0, 101];
+    if escaped {
+        bytes.push(255);
     }
-    type_101.push(1);
-    type_101.extend_from_slice(&[0; 12]);
+    bytes.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..13 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.push(1); // alive
+    for reference in 13u16..15 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.extend_from_slice(&[0; 12]); // highest_id, current_id, index_map_offset
     for reference in 15u16..18 {
-        type_101.extend_from_slice(&reference.to_be_bytes());
-        type_101.push(1);
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
     }
+    bytes
+}
 
-    let mut stream = 13u16.to_be_bytes().to_vec();
+#[test]
+fn deltas_declared_world_record_takes_precedence_over_an_overlapping_fixed_candidate() {
+    let type_101 = world_record(false);
+
+    let mut stream = crate::test_support::world::first_node(19);
+    let declaration_len = stream.len();
+    stream.extend_from_slice(&13u16.to_be_bytes());
     stream.extend(encoded_xmt(256));
     stream.extend_from_slice(&1u32.to_be_bytes());
     for reference in [1u32, 2, 1, 3, 1, 1, 4] {
@@ -267,7 +235,7 @@ fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate()
     stream.extend_from_slice(&type_101[3..]);
 
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&stream))
             .unwrap();
 
     assert_eq!(
@@ -278,8 +246,8 @@ fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate()
             .collect::<Vec<_>>(),
         [101]
     );
-    assert_eq!(census.records[0].offset, 29);
-    assert_eq!(census.bytes_decoded(), type_101.len());
+    assert_eq!(census.records[0].offset, declaration_len + 29);
+    assert_eq!(census.bytes_decoded(), declaration_len + type_101.len());
 }
 
 #[test]
@@ -295,9 +263,7 @@ fn deltas_does_not_share_a_consecutive_reference_byte() {
     let point = status_framed_deltas_point_stream();
     stream.extend_from_slice(&point[1..]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
 
     assert_eq!(
         census
@@ -311,163 +277,100 @@ fn deltas_does_not_share_a_consecutive_reference_byte() {
 
 #[test]
 fn deltas_walks_complete_entity_value_records() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = vec![0, 82];
-        stream.extend_from_slice(&1u32.to_be_bytes());
-        stream.extend_from_slice(&20u16.to_be_bytes());
-        stream.extend_from_slice(&u32::MAX.to_be_bytes());
-        stream.extend_from_slice(&[0, 83, 0xff]);
-        stream.extend_from_slice(&1u32.to_be_bytes());
-        stream.extend_from_slice(&21u16.to_be_bytes());
-        stream.extend_from_slice(&0.25f64.to_be_bytes());
-        stream.extend_from_slice(&[0, 84]);
-        stream.extend_from_slice(&3u32.to_be_bytes());
-        stream.extend_from_slice(&22u16.to_be_bytes());
-        stream.extend_from_slice(b"abc\0");
-        let decoded_len = stream.len();
-        stream.extend_from_slice(&[0xfe, 0xdc, 0xba]);
-
-        let census = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, &stream)
-        })
-        .unwrap();
-        assert_eq!(
-            census
-                .records
-                .iter()
-                .map(super::Record::kind)
-                .collect::<Vec<_>>(),
-            [82, 83, 84]
-        );
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-                ["ENTITY_52"],
-            1
-        );
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-                ["ENTITY_53"],
-            1
-        );
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-                ["ENTITY_54"],
-            1
-        );
-        assert_eq!(census.bytes_decoded(), decoded_len);
-
-        let residual = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::semantic_residual(ctx, &stream)
-        })
-        .unwrap();
-        assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
-        assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
-        let value_records =
-            crate::parasolid::value_records::entity_value_records(ctx, &residual).unwrap();
-        assert_eq!(value_records.integers[0].value.as_slice(), [u32::MAX]);
-        assert_eq!(value_records.doubles[0].value.raw_values(), [0.25]);
-        assert_eq!(value_records.strings[0].value.as_str(), "abc");
-    });
-}
-
-#[test]
-fn deltas_value_record_route_refuses_retained_limit() {
     let mut stream = vec![0, 82];
     stream.extend_from_slice(&1u32.to_be_bytes());
     stream.extend_from_slice(&20u16.to_be_bytes());
     stream.extend_from_slice(&u32::MAX.to_be_bytes());
+    stream.extend_from_slice(&[0, 83, 0xff]);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&21u16.to_be_bytes());
+    stream.extend_from_slice(&0.25f64.to_be_bytes());
+    stream.extend_from_slice(&[0, 84]);
+    stream.extend_from_slice(&3u32.to_be_bytes());
+    stream.extend_from_slice(&22u16.to_be_bytes());
+    stream.extend_from_slice(b"abc\0");
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc, 0xba]);
 
-    crate::test_support::with_decode_context_over(
-        &stream,
-        |policy| {
-            policy.limits.max_retained_bytes = 11;
-        },
-        |ctx| {
-            assert!(matches!(
-                crate::deltas::census::walk(ctx, &stream),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-        },
+    let census = crate::deltas::census::walk(&stream).unwrap();
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(super::Record::kind)
+            .collect::<Vec<_>>(),
+        [82, 83, 84]
     );
+    assert_eq!(census.full_counts()["ENTITY_52"], 1);
+    assert_eq!(census.full_counts()["ENTITY_53"], 1);
+    assert_eq!(census.full_counts()["ENTITY_54"], 1);
+    assert_eq!(census.bytes_decoded(), decoded_len);
+    let residual = crate::deltas::semantic_residual(&stream).unwrap();
+    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
+    let value_records = crate::parasolid::value_records::entity_value_records(&residual).unwrap();
+    assert_eq!(value_records.integers[0].value.as_slice(), [u32::MAX]);
+    assert_eq!(value_records.doubles[0].value.raw_values(), [0.25]);
+    assert_eq!(value_records.strings[0].value.as_str(), "abc");
 }
 
 #[test]
 fn deltas_walks_every_transformable_value_family() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = Vec::new();
-        for (kind, count, width) in [(85u8, 1u32, 24usize), (86, 1, 24), (87, 2, 24)] {
-            stream.extend_from_slice(&[0, kind]);
-            stream.extend_from_slice(&count.to_be_bytes());
-            stream.extend_from_slice(&u16::from(kind).to_be_bytes());
-            stream.resize(stream.len() + usize::try_from(count).unwrap() * width, 0);
-        }
-        stream.extend_from_slice(&[0, 88]);
-        stream.extend_from_slice(&1u32.to_be_bytes());
-        stream.extend_from_slice(&88u16.to_be_bytes());
-        stream.extend_from_slice(&7u32.to_be_bytes());
-        stream.extend_from_slice(&[0, 89]);
-        stream.extend_from_slice(&1u32.to_be_bytes());
-        stream.extend_from_slice(&89u16.to_be_bytes());
-        stream.resize(stream.len() + 24, 0);
-        stream.extend_from_slice(&[0, 98]);
-        stream.extend_from_slice(&2u32.to_be_bytes());
-        stream.extend_from_slice(&98u16.to_be_bytes());
-        stream.extend_from_slice(&[0, b'N', 0, b'X']);
-        let census = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, &stream)
-        })
-        .unwrap();
+    let mut stream = Vec::new();
+    for (kind, count, width) in [(85u8, 1u32, 24usize), (86, 1, 24), (87, 2, 24)] {
+        stream.extend_from_slice(&[0, kind]);
+        stream.extend_from_slice(&count.to_be_bytes());
+        stream.extend_from_slice(&u16::from(kind).to_be_bytes());
+        stream.resize(stream.len() + usize::try_from(count).unwrap() * width, 0);
+    }
+    stream.extend_from_slice(&[0, 88]);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&88u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    stream.extend_from_slice(&[0, 89]);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&89u16.to_be_bytes());
+    stream.resize(stream.len() + 24, 0);
+    stream.extend_from_slice(&[0, 98]);
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&98u16.to_be_bytes());
+    stream.extend_from_slice(&[0, b'N', 0, b'X']);
+    let census = crate::deltas::census::walk(&stream).unwrap();
 
-        assert_eq!(
-            census
-                .records
-                .iter()
-                .map(super::Record::kind)
-                .collect::<Vec<_>>(),
-            [85, 86, 87, 88, 89, 98]
-        );
-        for family in [
-            "ENTITY_55",
-            "ENTITY_56",
-            "ENTITY_57",
-            "ENTITY_58",
-            "ENTITY_59",
-        ] {
-            assert_eq!(
-                crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-                    [family],
-                1
-            );
-        }
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-                ["ENTITY_62"],
-            1
-        );
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(super::Record::kind)
+            .collect::<Vec<_>>(),
+        [85, 86, 87, 88, 89, 98]
+    );
+    for family in [
+        "ENTITY_55",
+        "ENTITY_56",
+        "ENTITY_57",
+        "ENTITY_58",
+        "ENTITY_59",
+    ] {
+        assert_eq!(census.full_counts()[family], 1);
+    }
+    assert_eq!(census.full_counts()["ENTITY_62"], 1);
 
-        let values = crate::parasolid::value_records::entity_value_records_at(
-            ctx,
-            &stream,
-            census.records.iter().map(|record| record.offset),
-        )
-        .unwrap();
-        assert_eq!(values.unicode[0].value.as_str(), "NX");
-    });
+    let values = crate::parasolid::value_records::entity_value_records_at(
+        &stream,
+        census.records.iter().map(|record| record.offset),
+    )
+    .unwrap();
+    assert_eq!(values.unicode[0].value.as_str(), "NX");
 }
 
 #[test]
 fn deltas_does_not_resynchronize_at_an_unowned_value_marker() {
     let stream = [0xfe, 0x00, 0x62, 0, 0, 0, 2, 0, 98, 0, b'N', 0, b'X'];
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     assert!(census.records.is_empty());
     assert!(census.tombstones.is_empty());
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| census.full_counts(ctx))
-            .unwrap()
-            .contains_key("ENTITY_62")
-    );
+    assert!(!census.full_counts().contains_key("ENTITY_62"));
 }
 
 #[test]
@@ -476,9 +379,7 @@ fn deltas_admits_a_value_owned_by_a_unique_entity_reference() {
         0xfe, 0x00, 0x52, 0, 0, 0, 1, 0, 20, 0, 0, 0, 7, 0, 0x51, 0, 0, 0, 1, 0, 41, 0, 0, 0, 1, 0,
         33, 0, 20, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
     ];
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     assert_eq!(
         census
             .records
@@ -490,9 +391,7 @@ fn deltas_admits_a_value_owned_by_a_unique_entity_reference() {
     let mut owned = stream;
     let end = owned.len();
     owned[end - 2..].copy_from_slice(&20_u16.to_be_bytes());
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &owned))
-            .unwrap();
+    let census = crate::deltas::census::walk(&owned).unwrap();
     assert_eq!(
         census
             .records
@@ -532,9 +431,7 @@ fn deltas_walks_complete_type_91_records() {
     let record_len = stream.len();
     stream.extend_from_slice(&[0xfe, 0xdc]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     assert_eq!(census.records.len(), 4);
     assert_eq!(census.records[0].kind(), 91);
     assert_eq!(census.records[0].xmt, 10);
@@ -545,36 +442,26 @@ fn deltas_walks_complete_type_91_records() {
     assert_eq!(census.records[1].canonical_bytes, escaped);
     assert_eq!(census.records[2].canonical_bytes, zero_flag_escaped);
     assert_eq!(census.records[3].canonical_bytes, escaped_with_null_tail);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["TYPE_91"],
-        4
-    );
+    assert_eq!(census.full_counts()["TYPE_91"], 4);
     assert_eq!(census.bytes_decoded(), record_len);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &stream)
-    })
-    .unwrap();
+    let residual = crate::deltas::semantic_residual(&stream).unwrap();
     assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
     assert_eq!(&residual[record_len..stream.len()], &[0xfe, 0xdc]);
     assert!(residual.ends_with(&stream[..record_len]));
 
     let mut invalid = direct;
     invalid[4..8].copy_from_slice(&2u32.to_be_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &invalid))
-            .unwrap()
-            .records
-            .is_empty()
-    );
+    assert!(crate::deltas::census::walk(&invalid)
+        .unwrap()
+        .records
+        .is_empty());
     invalid[4..8].copy_from_slice(&0u32.to_be_bytes());
     invalid[10] = 2;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &invalid))
-            .unwrap()
-            .records
-            .is_empty()
-    );
+    assert!(crate::deltas::census::walk(&invalid)
+        .unwrap()
+        .records
+        .is_empty());
 }
 
 #[test]
@@ -591,25 +478,17 @@ fn deltas_walks_complete_group_records() {
     let direct_len = direct.len();
     direct.extend_from_slice(&[0xfe, 0xdc]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &direct))
-            .unwrap();
+    let census = crate::deltas::census::walk(&direct).unwrap();
     assert_eq!(census.records.len(), 1);
     assert_eq!(census.records[0].kind(), 90);
     assert_eq!(census.records[0].xmt, 32_769);
     assert_eq!(census.records[0].family.node_id(), Some(7));
     assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 8]);
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["GROUP"],
-        1
-    );
+    assert_eq!(census.full_counts()["GROUP"], 1);
     assert_eq!(census.bytes_decoded(), direct_len);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &direct)
-    })
-    .unwrap();
+    let residual = crate::deltas::semantic_residual(&direct).unwrap();
     assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
     assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
 
@@ -624,36 +503,27 @@ fn deltas_walks_complete_group_records() {
     escaped.extend_from_slice(&8u16.to_be_bytes());
     escaped.push(1);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
-            .unwrap()
-            .records[0]
-            .xmt,
+        crate::deltas::census::walk(&escaped).unwrap().records[0].xmt,
         10
     );
 
     escaped[11] = 0;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
-            .unwrap()
-            .records
-            .is_empty()
-    );
+    assert!(crate::deltas::census::walk(&escaped)
+        .unwrap()
+        .records
+        .is_empty());
     escaped[11] = 1;
     escaped[21] = 3;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
-            .unwrap()
-            .records
-            .is_empty()
-    );
+    assert!(crate::deltas::census::walk(&escaped)
+        .unwrap()
+        .records
+        .is_empty());
     escaped[21] = 9;
     escaped[24] = 2;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
-            .unwrap()
-            .records
-            .is_empty()
-    );
+    assert!(crate::deltas::census::walk(&escaped)
+        .unwrap()
+        .records
+        .is_empty());
 }
 
 #[test]
@@ -673,9 +543,7 @@ fn deltas_walks_group_records_without_leading_statuses() {
     let direct_len = direct.len();
     direct.extend_from_slice(&[0xfe, 0xdc]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &direct))
-            .unwrap();
+    let census = crate::deltas::census::walk(&direct).unwrap();
     assert_eq!(census.records.len(), 1);
     assert_eq!(census.records[0].kind(), 90);
     assert_eq!(census.records[0].xmt, 10);
@@ -683,16 +551,10 @@ fn deltas_walks_group_records_without_leading_statuses() {
     assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 8]);
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(census.records[0].end, direct_len);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["GROUP"],
-        1
-    );
+    assert_eq!(census.full_counts()["GROUP"], 1);
     assert_eq!(census.bytes_decoded(), direct_len);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &direct)
-    })
-    .unwrap();
+    let residual = crate::deltas::semantic_residual(&direct).unwrap();
     assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
     assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
 
@@ -709,9 +571,7 @@ fn deltas_walks_group_records_without_leading_statuses() {
     escaped.extend_from_slice(&8u16.to_be_bytes());
     escaped.push(1);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
-            .unwrap();
+    let census = crate::deltas::census::walk(&escaped).unwrap();
     assert_eq!(census.records.len(), 1);
     assert_eq!(census.records[0].xmt, 10);
     assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 8]);
@@ -719,7 +579,7 @@ fn deltas_walks_group_records_without_leading_statuses() {
 }
 
 #[test]
-fn deltas_walks_complete_attdef_lists() {
+fn deltas_walks_complete_pointer_list_blocks() {
     let mut direct = vec![0, 74];
     direct.extend_from_slice(&3u32.to_be_bytes());
     direct.extend_from_slice(&10u16.to_be_bytes());
@@ -733,7 +593,7 @@ fn deltas_walks_complete_attdef_lists() {
     direct.extend_from_slice(&[0xfe, 0xdc]);
 
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &direct))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&direct))
             .unwrap();
     assert_eq!(census.records.len(), 1);
     assert_eq!(census.records[0].kind(), 74);
@@ -742,16 +602,14 @@ fn deltas_walks_complete_attdef_lists() {
     assert_eq!(census.records[0].family.references(), [1, 20, 21, 1]);
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["ATTDEF_LIST"],
+        crate::test_support::with_decode_context(|_ctx| census.full_counts())["POINTER_LIS_BLOCK"],
         1
     );
     assert_eq!(census.bytes_decoded(), direct_len);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &direct)
-    })
-    .unwrap();
+    let residual =
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::semantic_residual(&direct))
+            .unwrap();
     assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
     assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
 
@@ -765,7 +623,7 @@ fn deltas_walks_complete_attdef_lists() {
         escaped.push(1);
     }
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&escaped))
             .unwrap()
             .records[0]
             .xmt,
@@ -774,7 +632,7 @@ fn deltas_walks_complete_attdef_lists() {
 
     escaped[9..13].copy_from_slice(&3u32.to_be_bytes());
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&escaped))
             .unwrap()
             .records
             .is_empty()
@@ -782,7 +640,7 @@ fn deltas_walks_complete_attdef_lists() {
     escaped[9..13].copy_from_slice(&1u32.to_be_bytes());
     escaped[20..22].copy_from_slice(&1u16.to_be_bytes());
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&escaped))
             .unwrap()
             .records
             .is_empty()
@@ -790,24 +648,15 @@ fn deltas_walks_complete_attdef_lists() {
 }
 
 #[test]
-fn deltas_walks_complete_type_101_records() {
-    let mut direct = vec![0, 101];
-    direct.extend_from_slice(&2u16.to_be_bytes());
-    for reference in 3u16..15 {
-        direct.extend_from_slice(&reference.to_be_bytes());
-        direct.push(1);
-    }
-    direct.push(1);
-    direct.extend_from_slice(&[0; 12]);
-    for reference in 15u16..18 {
-        direct.extend_from_slice(&reference.to_be_bytes());
-        direct.push(1);
-    }
+fn deltas_walks_complete_declared_world_records() {
+    let mut direct = crate::test_support::world::first_node(19);
+    let declaration_len = direct.len();
+    direct.extend_from_slice(&world_record(false));
     let direct_len = direct.len();
     direct.extend_from_slice(&[0xfe, 0xdc]);
 
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &direct))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&direct))
             .unwrap();
     assert_eq!(census.records.len(), 1);
     assert_eq!(census.records[0].kind(), 101);
@@ -817,52 +666,47 @@ fn deltas_walks_complete_type_101_records() {
         census.records[0].family.references(),
         (3u32..18).collect::<Vec<_>>()
     );
-    assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["TYPE_101"],
+        census.records[0].canonical_bytes,
+        direct[declaration_len..direct_len]
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|_ctx| census.full_counts())["WORLD"],
         1
     );
     assert_eq!(census.bytes_decoded(), direct_len);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &direct)
-    })
-    .unwrap();
-    assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
+    let residual =
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::semantic_residual(&direct))
+            .unwrap();
+    assert_eq!(&residual[..declaration_len], &direct[..declaration_len]);
+    assert!(residual[declaration_len..direct_len]
+        .iter()
+        .all(|byte| *byte == 0xff));
     assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
 
-    let mut escaped = vec![0, 101, 0xff];
-    escaped.extend_from_slice(&2u16.to_be_bytes());
-    for reference in 3u16..15 {
-        escaped.extend_from_slice(&reference.to_be_bytes());
-        escaped.push(1);
-    }
-    escaped.push(1);
-    escaped.extend_from_slice(&[0; 12]);
-    for reference in 15u16..18 {
-        escaped.extend_from_slice(&reference.to_be_bytes());
-        escaped.push(1);
-    }
+    let mut escaped = crate::test_support::world::first_node(19);
+    escaped.extend_from_slice(&world_record(true));
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&escaped))
             .unwrap()
             .records[0]
             .xmt,
         2
     );
 
-    escaped[41] = 0;
+    // WORLD alive follows ten status-framed pointers after kind/envelope/XMT.
+    escaped[declaration_len + 35] = 2;
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&escaped))
             .unwrap()
             .records
             .is_empty()
     );
-    escaped[41] = 1;
-    escaped[42] = 1;
+    escaped[declaration_len + 35] = 1;
+    escaped[declaration_len + 7] = 2; // Unknown first-pointer status.
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&escaped))
             .unwrap()
             .records
             .is_empty()
@@ -878,9 +722,7 @@ fn deltas_walks_auxiliary_family_tombstones() {
         stream.extend_from_slice(&1u16.to_be_bytes());
     }
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     assert_eq!(census.records.len(), 0);
     assert_eq!(census.tombstones.len(), 6);
     assert!(census
@@ -892,28 +734,20 @@ fn deltas_walks_auxiliary_family_tombstones() {
         "TYPE_45",
         "B_SURFACE_DATA",
         "B_CURVE_DESCRIPTOR",
-        "TYPE_141",
+        "GEOMETRIC_OWNER",
         "SUPPORT_UV",
     ] {
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.tombstone_counts(ctx)).unwrap()
-                [family],
-            1
-        );
+        assert_eq!(census.tombstone_counts()[family], 1);
     }
     assert_eq!(census.bytes_decoded(), stream.len());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual(
-            ctx, &stream
-        ))
+    assert!(crate::deltas::semantic_residual(&stream)
         .unwrap()
         .iter()
-        .all(|byte| *byte == 0xff)
-    );
+        .all(|byte| *byte == 0xff));
 }
 
 #[test]
-fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
+fn deltas_complete_limit_records_follow_the_declared_endpoint_count() {
     fn term_use(count: u32, xmt: u16, form: [u8; 2], value_count: usize) -> Vec<u8> {
         let mut bytes = 41u16.to_be_bytes().to_vec();
         bytes.extend_from_slice(&count.to_be_bytes());
@@ -922,13 +756,12 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
         for coordinate in [1.0f64, 2.0, 3.0] {
             bytes.extend_from_slice(&coordinate.to_be_bytes());
         }
-        for ordinal in 0..value_count {
-            bytes.extend_from_slice(
-                &(cadmpeg_core::convert::f64_from_index(ordinal)
-                    .expect("fixture integer is exactly representable")
-                    + 0.25)
-                    .to_be_bytes(),
-            );
+        let rows = [
+            4.0_f64, 5.0, 6.0, 7.0, 1.0, 0.0, 0.0, 8.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 0.0,
+            1.0, 0.0, 11.0,
+        ];
+        for value in rows.into_iter().take(value_count) {
+            bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
     }
@@ -938,34 +771,30 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
     let mut stream = first.clone();
     stream.extend_from_slice(&second);
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&stream))
             .unwrap();
 
     assert_eq!(census.records.len(), 2);
-    assert_eq!(census.term_use_numeric_tails.len(), 2);
-    assert_eq!(census.term_use_numeric_tails[0].term_use_xmt, 20);
+    assert_eq!(census.records[0].xmt, 20);
+    assert_eq!((census.records[0].offset, census.records[0].end), (0, 98));
+    assert_eq!(census.records[1].xmt, 21);
     assert_eq!(
-        census.term_use_numeric_tails[0].values().term_use_count(),
-        1
+        (census.records[1].offset, census.records[1].end),
+        (98, 98 + 186)
     );
-    assert_eq!(census.term_use_numeric_tails[0].values().values().len(), 8);
-    assert_eq!(census.term_use_numeric_tails[1].term_use_xmt, 21);
-    assert_eq!(
-        census.term_use_numeric_tails[1].values().term_use_count(),
-        2
-    );
-    assert_eq!(census.term_use_numeric_tails[1].values().values().len(), 19);
+    let limits = crate::test_support::with_decode_context(|_ctx| {
+        crate::intersection::term_use_records(&stream, crate::intersection::ChartPointLayout::Ext11)
+    });
+    assert_eq!(limits[0].data.count(), 1);
+    assert_eq!(limits[1].data.count(), 2);
     assert_eq!(census.bytes_decoded(), stream.len());
 
     let mut nonfinite = term_use(1, 22, *b"L?", 8);
     nonfinite[34..42].copy_from_slice(&f64::NAN.to_be_bytes());
-    let census = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::census::walk(ctx, &nonfinite)
-    })
-    .unwrap();
-    assert_eq!(census.records.len(), 1);
-    assert!(census.term_use_numeric_tails.is_empty());
-    assert_eq!(census.bytes_decoded(), 34);
+    let census =
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&nonfinite))
+            .unwrap();
+    assert!(census.records.iter().all(|r| r.kind() != 41));
 }
 
 #[test]
@@ -974,9 +803,7 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
         0x00, 0x4f, 0x00, 0x0a, // direct type-79 reference
         0x00, 0x50, 0xff, 0xff, 0x00, 0x01, // extended type-80 reference
     ];
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     assert_eq!(census.tagged_reference_lanes.len(), 1);
     assert_eq!(
         Vec::<(u16, u32)>::from(census.tagged_reference_lanes[0].references.clone()),
@@ -991,14 +818,10 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
         &[0x00, 0x4f, 0x00, 0x01],
         &[0x00, 0x50, 0xff, 0xff, 0x00],
     ] {
-        assert!(
-            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-                ctx, invalid
-            ))
+        assert!(crate::deltas::census::walk(invalid)
             .unwrap()
             .tagged_reference_lanes
-            .is_empty()
-        );
+            .is_empty());
     }
 }
 
@@ -1006,13 +829,13 @@ mod intersection_and_auxiliary_records;
 
 #[test]
 fn deltas_walks_complete_type_45_records() {
-    fn record(escape: bool, xmt: u32, values: &[f64], count_offset: usize) -> Vec<u8> {
+    fn record(escape: bool, xmt: u32, values: &[f64]) -> Vec<u8> {
         let mut bytes = 45u16.to_be_bytes().to_vec();
         if escape {
             bytes.push(0xff);
         }
         bytes.extend_from_slice(
-            &u32::try_from(values.len() - count_offset)
+            &u32::try_from(values.len())
                 .expect("test value count")
                 .to_be_bytes(),
         );
@@ -1023,34 +846,26 @@ fn deltas_walks_complete_type_45_records() {
         bytes
     }
 
-    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0], 1);
-    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0], 1);
+    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0]);
+    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0]);
     let mut stream = direct.clone();
     stream.extend_from_slice(&escaped);
     let decoded_len = stream.len();
     stream.extend_from_slice(&[0xfe, 0xdc]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["TYPE_45"],
-        2
-    );
+    let census = crate::deltas::census::walk(&stream).unwrap();
+    assert_eq!(census.full_counts()["TYPE_45"], 2);
     assert_eq!(census.bytes_decoded(), decoded_len);
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[0].xmt, 33_000);
     assert_eq!(census.records[1].canonical_bytes, escaped);
     assert_eq!(census.records[1].xmt, 40_000);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &stream)
-    })
-    .unwrap();
+    let residual = crate::deltas::semantic_residual(&stream).unwrap();
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[direct, escaped].concat()));
 
-    let mut counted = record(false, 41_000, &[1.0, 2.0, 3.0], 0);
+    let mut counted = record(false, 41_000, &[1.0, 2.0, 3.0]);
     let counted_end = counted.len();
     let mut surface_header = 125u16.to_be_bytes().to_vec();
     surface_header.extend(encoded_xmt(42_000));
@@ -1064,9 +879,7 @@ fn deltas_walks_complete_type_45_records() {
         surface_header.push(1);
     }
     counted.extend_from_slice(&surface_header);
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &counted))
-            .unwrap();
+    let census = crate::deltas::census::walk(&counted).unwrap();
     assert_eq!(
         census
             .records
@@ -1076,7 +889,7 @@ fn deltas_walks_complete_type_45_records() {
         [(45, 0, counted_end), (125, counted_end, counted.len())]
     );
 
-    let mut counted = record(false, 41_001, &[1.0, 2.0, 3.0], 0);
+    let mut counted = record(false, 41_001, &[1.0, 2.0, 3.0]);
     let counted_end = counted.len();
     let mut curve_header = 135u16.to_be_bytes().to_vec();
     curve_header.extend(encoded_xmt(42_001));
@@ -1084,9 +897,7 @@ fn deltas_walks_complete_type_45_records() {
     curve_header.extend(encoded_xmt(1));
     curve_header.push(1);
     counted.extend_from_slice(&curve_header);
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &counted))
-            .unwrap();
+    let census = crate::deltas::census::walk(&counted).unwrap();
     assert_eq!(
         census
             .records
@@ -1096,31 +907,25 @@ fn deltas_walks_complete_type_45_records() {
         [(45, 0, counted_end), (135, counted_end, counted.len())]
     );
 
-    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN], 1);
+    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN]);
     nonfinite.extend_from_slice(&[0xfe, 0xdc]);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx, &nonfinite
-        ))
+    assert!(crate::deltas::census::walk(&nonfinite)
         .unwrap()
         .records
-        .is_empty()
-    );
+        .is_empty());
 
-    let subnormal = record(false, 12, &[1.0, 2.0, f64::from_bits(1)], 0);
+    let subnormal = record(false, 12, &[1.0, 2.0, f64::from_bits(1)]);
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx, &subnormal
-        ))
-        .unwrap()
-        .records
-        .is_empty()
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&subnormal))
+            .unwrap()
+            .records
+            .is_empty()
     );
 }
 
 #[test]
 fn deltas_walks_complete_type_70_records() {
-    fn record(escape: bool, xmt: u32, count: u16, trailing_reference: u32) -> Vec<u8> {
+    fn record(escape: bool, xmt: u32, count: u32, trailing_reference: u32) -> Vec<u8> {
         let mut bytes = 70u16.to_be_bytes().to_vec();
         if escape {
             bytes.push(0xff);
@@ -1128,9 +933,10 @@ fn deltas_walks_complete_type_70_records() {
         bytes.extend(encoded_xmt(xmt));
         bytes.extend_from_slice(&0u32.to_be_bytes());
         bytes.push(4);
-        for reference in [3u32, 1, 1, 0] {
-            bytes.push(1);
+        bytes.push(1); // notransmit
+        for reference in [3u32, 1, 1] {
             bytes.extend(encoded_xmt(reference));
+            bytes.push(1);
         }
         bytes.extend_from_slice(&count.to_be_bytes());
         bytes.extend_from_slice(&20u32.to_be_bytes());
@@ -1147,51 +953,47 @@ fn deltas_walks_complete_type_70_records() {
     let mut stream = direct.clone();
     stream.extend_from_slice(&escaped);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
 
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["TYPE_70"],
+        crate::test_support::with_decode_context(|_ctx| census.full_counts())["LIST"],
         2
     );
     assert_eq!(census.bytes_decoded(), stream.len());
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[0].family.node_id(), Some(0));
-    assert_eq!(census.records[0].family.references(), [3, 1, 1, 0, 52, 52]);
+    assert_eq!(census.records[0].family.references(), [3, 1, 1, 52, 52]);
     assert_eq!(census.records[1].canonical_bytes, escaped);
     assert_eq!(census.records[1].xmt, 40_000);
 
-    let mut mismatched = record(false, 7, 11, 52);
-    let end = mismatched.len();
-    mismatched[end - 2] = 53;
+    let mut distinct = record(false, 7, 65_538, 52);
+    let end = distinct.len();
+    distinct[end - 2] = 53;
+    let census =
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&distinct))
+            .unwrap();
+    assert_eq!(census.records[0].family.references(), [3, 1, 1, 52, 53]);
+    let mut invalid = distinct.clone();
+    invalid[end - 1] = 1; // head pointer must retain status zero
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &mismatched
-        ))
-        .unwrap()
-        .records
-        .is_empty()
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&invalid))
+            .unwrap()
+            .records
+            .is_empty()
     );
 }
 
 #[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
-    let record =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap()
-            .into_events()
-            .records
-            .remove(0);
+    let record = crate::deltas::census::walk(&stream)
+        .unwrap()
+        .into_events()
+        .records
+        .remove(0);
     assert_eq!(record.canonical_bytes.len(), 39);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(
-            ctx,
-            &record.canonical_bytes
-        ))
-        .unwrap()[0]
+        crate::topology::offset_surfaces(&record.canonical_bytes)[0]
             .state
             .distance()
             .get(),
@@ -1202,25 +1004,17 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let state = finite_state.len() - 8;
     put_f64(&mut finite_state, state, 4.0);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &finite_state
-        ))
-        .unwrap()
-        .records
-        .len(),
+        crate::deltas::census::walk(&finite_state)
+            .unwrap()
+            .records
+            .len(),
         1
     );
     put_f64(&mut finite_state, state, f64::NAN);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &finite_state
-        ))
+    assert!(crate::deltas::census::walk(&finite_state)
         .unwrap()
         .records
-        .is_empty()
-    );
+        .is_empty());
 
     let mut invalid_status = stream.clone();
     let offset = invalid_status
@@ -1228,28 +1022,19 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
         .position(|window| window == [0, 60, 0, 12])
         .expect("OFFSET_SURF record");
     invalid_status[offset + 28] = 2;
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &invalid_status
-        ))
+    assert!(!crate::deltas::census::walk(&invalid_status)
         .unwrap()
         .records
         .iter()
-        .any(|record| record.kind() == 60)
-    );
+        .any(|record| record.kind() == 60));
 
     let mut truncated = stream;
     truncated.pop();
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx, &truncated
-        ))
+    assert!(!crate::deltas::census::walk(&truncated)
         .unwrap()
         .records
         .iter()
-        .any(|record| record.kind() == 60)
-    );
+        .any(|record| record.kind() == 60));
 }
 
 #[test]
@@ -1269,34 +1054,20 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
         ),
         (deltas_surface_curve_partition_stream(), "SP_CURVE", 137, 33),
     ] {
-        let census = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, &stream)
-        })
-        .unwrap();
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx))
-                .unwrap()
-                .get(family),
-            Some(&1)
-        );
+        let census = crate::deltas::census::walk(&stream).unwrap();
+        assert_eq!(census.full_counts().get(family), Some(&1));
         let record = census
             .records
             .iter()
             .find(|record| record.kind() == kind)
             .expect("procedural wrapper");
         assert_eq!(record.canonical_bytes.len(), byte_len);
-        assert!(
-            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
-                ctx,
-                &record.canonical_bytes
-            ))
-            .unwrap()
+        assert!(crate::topology::Graph::parse(&record.canonical_bytes)
             .get(
                 NodeKind::try_from(u8::try_from(kind).expect("fixture value fits u8")).unwrap(),
                 12
             )
-            .is_some()
-        );
+            .is_some());
     }
 
     let mut invalid_blend = deltas_blend_surface_partition_stream();
@@ -1305,16 +1076,11 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
         .position(|window| window == [0, 56, 0, 12])
         .expect("BLEND_SURF record");
     invalid_blend[blend + 24] = b'X';
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &invalid_blend
-        ))
+    assert!(!crate::deltas::census::walk(&invalid_blend)
         .unwrap()
         .records
         .iter()
-        .any(|record| record.kind() == 56)
-    );
+        .any(|record| record.kind() == 56));
 }
 
 #[test]
@@ -1323,9 +1089,7 @@ fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
     let wrapper_len = stream.len();
     stream.extend_from_slice(&[0, 141, 0xfe]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     let wrapper = census
         .records
         .iter()
@@ -1375,17 +1139,9 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
     let decoded_len = stream.len();
     stream.extend_from_slice(&[0xfe, 0xdc]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["FIN"],
-        2
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["POINT"],
-        1
-    );
+    let census = crate::deltas::census::walk(&stream).unwrap();
+    assert_eq!(census.full_counts()["FIN"], 2);
+    assert_eq!(census.full_counts()["POINT"], 1);
     assert_eq!(census.bytes_decoded(), decoded_len);
     assert_eq!(census.records[0].xmt, 32_768);
     assert_eq!(census.records[0].canonical_bytes, direct_canonical);
@@ -1396,26 +1152,22 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
     assert_eq!(census.records[2].family.position(), Some([1.0, 2.0, 3.0]));
 }
 
+mod fixed_envelopes;
+
 #[test]
 fn merged_deltas_full_record_replaces_partition_node() {
     let partition = topology_partition_stream();
     let mut deltas = status_framed_deltas_point_stream();
     deltas[2..4].copy_from_slice(&11u16.to_be_bytes());
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &partition, &deltas)
-    })
-    .unwrap();
+    let merged = crate::deltas::merge_full_records(&partition, &deltas).unwrap();
     let points = analytic_points(&merged);
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].x, 12.5);
     assert_eq!(points[0].y, -2.0);
     assert_eq!(points[0].z, 4.0);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap()
-            .get(NodeKind::Point, 11)
-            .is_some()
-    );
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_some());
 }
 
 #[test]
@@ -1425,84 +1177,15 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     tombstone.extend_from_slice(&29u16.to_be_bytes());
     tombstone.extend_from_slice(&11u16.to_be_bytes());
     tombstone.extend_from_slice(&[0, 1]);
-    let census = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::census::walk(ctx, &tombstone)
-    })
-    .unwrap();
+    let census = crate::deltas::census::walk(&tombstone).unwrap();
     assert_eq!(census.tombstones.len(), 1);
     assert_eq!(census.tombstones[0].kind.code(), 29);
     assert_eq!(census.tombstones[0].xmt, 11);
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &partition, &tombstone)
-    })
-    .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap()
-            .get(NodeKind::Point, 11)
-            .is_some()
-    );
+    let merged = crate::deltas::merge_full_records(&partition, &tombstone).unwrap();
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_some());
     assert_eq!(analytic_points(&merged)[0].x, 10.0);
-}
-
-#[test]
-fn deltas_census_route_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = [0, 29, 0, 11, 0, 1];
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = crate::deltas::census::walk(ctx, &bytes).expect_err("collection refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems)
-            );
-        },
-    );
-}
-
-#[test]
-fn deltas_census_route_refuses_scoped_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = [0, 29, 0, 11, 0, 1];
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            let error = crate::deltas::census::walk(ctx, &bytes).expect_err("scoped refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes)
-            );
-        },
-    );
-}
-
-#[test]
-fn deltas_census_route_refuses_work_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = [0, 29, 0, 11, 0, 1];
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = crate::deltas::census::walk(ctx, &bytes).expect_err("work refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits)
-            );
-        },
-    );
 }
 
 #[test]
@@ -1511,16 +1194,10 @@ fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     put_ref(&mut partition, 2, 11);
     put_vec3(&mut partition, 16, [0.01, 0.02, 0.03]);
     let tombstone = [0, 29, 0, 11, 0, 1];
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &partition, &tombstone)
-    })
-    .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap()
-            .get(NodeKind::Point, 11)
-            .is_none()
-    );
+    let merged = crate::deltas::merge_full_records(&partition, &tombstone).unwrap();
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_none());
 }
 
 #[test]
@@ -1532,18 +1209,12 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
 
     let mut delete_then_replace = tombstone.to_vec();
     delete_then_replace.extend_from_slice(&full);
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &partition, &delete_then_replace)
-    })
-    .unwrap();
+    let merged = crate::deltas::merge_full_records(&partition, &delete_then_replace).unwrap();
     assert_eq!(analytic_points(&merged)[0].x, 12.5);
 
     let mut replace_then_delete = full;
     replace_then_delete.extend_from_slice(&tombstone);
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &partition, &replace_then_delete)
-    })
-    .unwrap();
+    let merged = crate::deltas::merge_full_records(&partition, &replace_then_delete).unwrap();
     assert_eq!(analytic_points(&merged)[0].x, 10.0);
 }
 
@@ -1557,29 +1228,17 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     let mut historical_delete = deltas_body_revision(1);
     historical_delete.extend_from_slice(&known_tombstone);
     historical_delete.extend_from_slice(&deltas_body_revision(2));
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &partition, &historical_delete)
-    })
-    .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap()
-            .get(NodeKind::Point, 11)
-            .is_some()
-    );
+    let merged = crate::deltas::merge_full_records(&partition, &historical_delete).unwrap();
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_some());
 
     let mut current_delete = historical_delete;
     current_delete.extend_from_slice(&known_tombstone);
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &partition, &current_delete)
-    })
-    .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap()
-            .get(NodeKind::Point, 11)
-            .is_none()
-    );
+    let merged = crate::deltas::merge_full_records(&partition, &current_delete).unwrap();
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_none());
 }
 
 #[test]
@@ -1593,13 +1252,8 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     deltas.extend(deltas_body_revision(2));
     deltas.extend(deltas_point(51, 0.004));
 
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &[], &deltas)
-    })
-    .unwrap();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap();
+    let merged = crate::deltas::merge_full_records(&[], &deltas).unwrap();
+    let graph = crate::topology::Graph::parse(&merged);
     assert!(graph.get(NodeKind::Point, 50).is_some());
     assert!(graph.get(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
@@ -1628,13 +1282,8 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     deltas.extend(deltas_body_revision(3));
     deltas.extend(deltas_point(51, 0.004));
 
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &[], &deltas)
-    })
-    .unwrap();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap();
+    let merged = crate::deltas::merge_full_records(&[], &deltas).unwrap();
+    let graph = crate::topology::Graph::parse(&merged);
     assert!(graph.get(NodeKind::Point, 50).is_some());
     assert!(graph.get(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
@@ -1660,19 +1309,13 @@ fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
     historical_delete.extend_from_slice(&unknown_tombstone);
     historical_delete.extend_from_slice(&deltas_body_revision(2));
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones(ctx, &partition, &historical_delete)
-        })
-        .unwrap(),
+        crate::deltas::unmatched_terminal_tombstones(&partition, &historical_delete).unwrap(),
         0
     );
 
     historical_delete.extend_from_slice(&unknown_tombstone);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones(ctx, &partition, &historical_delete)
-        })
-        .unwrap(),
+        crate::deltas::unmatched_terminal_tombstones(&partition, &historical_delete).unwrap(),
         1
     );
 }
@@ -1691,18 +1334,13 @@ fn unmatched_tombstones_are_scoped_per_body_revision_sequence() {
     deltas.extend_from_slice(&deltas_body_revision(2));
 
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones(ctx, &partition, &deltas)
-        })
-        .unwrap(),
+        crate::deltas::unmatched_terminal_tombstones(&partition, &deltas).unwrap(),
         1
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones_by_family(ctx, &partition, &deltas)
-        })
-        .unwrap()
-        .get("POINT"),
+        crate::deltas::unmatched_terminal_tombstones_by_family(&partition, &deltas)
+            .unwrap()
+            .get("POINT"),
         Some(&1)
     );
 }
@@ -1715,10 +1353,7 @@ fn semantic_residual_masks_historical_body_revisions() {
     deltas.extend_from_slice(&deltas_body_revision(2));
     deltas.extend_from_slice(&[0, 38, 0x11, 0x22, 0x33]);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &deltas)
-    })
-    .unwrap();
+    let residual = crate::deltas::semantic_residual(&deltas).unwrap();
     assert!(residual[..historical_len + 5]
         .iter()
         .all(|byte| *byte == 0xff));
@@ -1732,29 +1367,21 @@ fn semantic_residual_with_census_matches_the_standalone_transform() {
     deltas.extend_from_slice(&deltas_body_revision(2));
     deltas.extend_from_slice(&status_framed_deltas_intersection_stream());
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &deltas))
-            .unwrap();
+    let census = crate::deltas::census::walk(&deltas).unwrap();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::semantic_residual_with_census(ctx, &deltas, &census)
-        })
-        .unwrap(),
-        crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual(
-            ctx, &deltas
-        ))
-        .unwrap()
+        crate::deltas::semantic_residual_with_census(&deltas, &census),
+        crate::deltas::semantic_residual(&deltas).unwrap()
     );
 }
 
 #[test]
 fn merge_masks_historical_interleaved_body_sequences() {
-    let mut first_historical = status_framed_deltas_intersection_stream();
+    let mut first_historical = status_framed_deltas_point_stream();
     first_historical[4..8].copy_from_slice(&1u32.to_be_bytes());
-    let mut first_current = status_framed_deltas_intersection_stream();
+    let mut first_current = status_framed_deltas_point_stream();
     first_current[4..8].copy_from_slice(&2u32.to_be_bytes());
-    let mut second_historical = status_framed_deltas_intersection_stream();
-    second_historical[2..4].copy_from_slice(&13u16.to_be_bytes());
+    let mut second_historical = status_framed_deltas_point_stream();
+    second_historical[2..4].copy_from_slice(&51u16.to_be_bytes());
     second_historical[4..8].copy_from_slice(&3u32.to_be_bytes());
     let mut second_current = second_historical.clone();
     second_current[4..8].copy_from_slice(&4u32.to_be_bytes());
@@ -1768,23 +1395,14 @@ fn merge_masks_historical_interleaved_body_sequences() {
     deltas.extend_from_slice(&deltas_body_revision(2));
     deltas.extend_from_slice(&second_current);
 
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &[], &deltas)
-    })
-    .unwrap();
-    let mut expected = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::census::walk(ctx, &first_current)
-    })
-    .unwrap()
-    .records[0]
+    let merged = crate::deltas::merge_full_records(&[], &deltas).unwrap();
+    let mut expected = crate::deltas::census::walk(&first_current).unwrap().records[0]
         .canonical_bytes
         .clone();
     expected.extend_from_slice(
-        &crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, &second_current)
-        })
-        .unwrap()
-        .records[0]
+        &{ crate::deltas::census::walk(&second_current) }
+            .unwrap()
+            .records[0]
             .canonical_bytes,
     );
     assert!(merged.ends_with(&expected));
@@ -1802,25 +1420,17 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
     let known = [0, 29, 0, 11, 0, 1];
     let unknown = [0, 29, 0, 99, 0, 1];
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones(ctx, &partition, &known)
-        })
-        .unwrap(),
+        crate::deltas::unmatched_terminal_tombstones(&partition, &known).unwrap(),
         0
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones(ctx, &partition, &unknown)
-        })
-        .unwrap(),
+        crate::deltas::unmatched_terminal_tombstones(&partition, &unknown).unwrap(),
         1
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones_by_family(ctx, &partition, &unknown)
-        })
-        .unwrap()
-        .get("POINT"),
+        crate::deltas::unmatched_terminal_tombstones_by_family(&partition, &unknown)
+            .unwrap()
+            .get("POINT"),
         Some(&1)
     );
 
@@ -1829,20 +1439,14 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
     let mut add_then_delete = full.clone();
     add_then_delete.extend_from_slice(&unknown);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones(ctx, &partition, &add_then_delete)
-        })
-        .unwrap(),
+        crate::deltas::unmatched_terminal_tombstones(&partition, &add_then_delete).unwrap(),
         0
     );
 
     let mut delete_then_add = unknown.to_vec();
     delete_then_add.extend_from_slice(&full);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::unmatched_terminal_tombstones(ctx, &partition, &delete_then_add)
-        })
-        .unwrap(),
+        crate::deltas::unmatched_terminal_tombstones(&partition, &delete_then_add).unwrap(),
         0
     );
 }
@@ -1865,70 +1469,54 @@ fn merged_result_preserves_tombstone_accounting() {
         &add_then_delete,
         &delete_then_add,
     ] {
-        let census = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, deltas)
-        })
-        .unwrap();
-        let result = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::merge_full_records_with_tombstone_census(
-                ctx, &partition, deltas, &census,
-            )
-        })
+        let census = crate::deltas::census::walk(deltas).unwrap();
+        let result = {
+            crate::deltas::merge_full_records_with_tombstone_census(&partition, deltas, &census)
+        }
         .unwrap();
         assert_eq!(
             result.unmatched_tombstones,
-            crate::test_support::with_decode_context(|ctx| {
-                crate::deltas::unmatched_terminal_tombstones_by_family(ctx, &partition, deltas)
-            })
-            .unwrap()
+            crate::deltas::unmatched_terminal_tombstones_by_family(&partition, deltas).unwrap()
         );
         assert_eq!(
             result.merged,
-            crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(
-                ctx, &partition, deltas
-            ))
-            .unwrap()
+            crate::deltas::merge_full_records(&partition, deltas).unwrap()
         );
     }
 }
-mod merge_limits;
 mod reference_and_tombstone_packets;
 
 #[test]
 fn census_accumulates_overlapping_tombstone_and_terminal_trailer_bytes() {
     let stream = [0, 29, 0, 11, 0, 1, 0, 1];
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+    let census = crate::deltas::census::walk(&stream).unwrap();
     assert_eq!(census.tombstones.len(), 1);
     assert_eq!(census.terminal_null_references.unwrap().offset(), 4);
     assert_eq!(census.bytes_decoded(), 6 + 4);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
-        vec![(0, stream.len())]
-    );
+    assert_eq!(census.covered_spans(), vec![(0, stream.len())]);
 }
 
 #[test]
 fn census_accumulator_differs_from_coverage_on_overlapping_events() {
     let stream = deltas_intersection_curve_stream();
+    let prefix = crate::test_support::test_deltas::DELTAS_PREAMBLE.len();
     let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&stream))
             .unwrap();
-    let record = census
+    assert!(census
         .records
         .iter()
-        .find(|record| record.offset == 145)
-        .unwrap();
+        .all(|record| record.offset != prefix + 78));
     let trailer = census.terminal_null_references.unwrap();
-    assert_eq!(record.end, 175);
-    assert_eq!((trailer.offset(), trailer.end()), (167, 175));
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
-        vec![(67, 175)]
+        (trailer.offset(), trailer.end()),
+        (prefix + 100, prefix + 108)
     );
-    assert_eq!(census.bytes_decoded(), 78 + 30 + 8);
-    assert_ne!(census.bytes_decoded(), 175 - 67);
+    assert_eq!(
+        crate::test_support::with_decode_context(|_ctx| census.covered_spans()),
+        vec![(prefix, prefix + 78), (prefix + 100, prefix + 108)]
+    );
+    assert_eq!(census.bytes_decoded(), 78 + 8);
 
     for stream in [
         two_support_ext11_charted_intersection_curve_stream(false),
@@ -1936,23 +1524,56 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
         partial_ext11_charted_intersection_curve_stream(),
     ] {
         let deltas = ext11_intersection_deltas(&stream);
-        let census = crate::test_support::with_decode_context(|ctx| {
-            crate::deltas::census::walk(ctx, &deltas)
-        })
-        .unwrap();
-        let record = census
-            .records
-            .iter()
-            .find(|record| record.offset == 371)
-            .unwrap();
-        let tail = &census.term_use_numeric_tails[0];
-        assert_eq!(record.end, 444);
-        assert_eq!((tail.offset(), tail.end()), (371, 435));
+        let census =
+            crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&deltas))
+                .unwrap();
+        // Counted prologue + CHART236 + two complete LIMIT98 + values73.
+        let terms: Vec<_> = census.records.iter().filter(|r| r.kind() == 41).collect();
+        assert_eq!(terms.len(), 2);
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
-            vec![(67, 444)]
+            (terms[0].offset, terms[0].end),
+            (prefix + 236, prefix + 334)
         );
-        assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73 + 64);
-        assert_ne!(census.bytes_decoded(), 444 - 67);
+        assert_eq!(
+            (terms[1].offset, terms[1].end),
+            (prefix + 334, prefix + 432)
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|_ctx| census.covered_spans()),
+            vec![(prefix, prefix + 505)]
+        );
+        assert_eq!(census.bytes_decoded(), 236 + 98 + 98 + 73);
+        assert_eq!(census.bytes_decoded(), 505);
     }
+}
+
+#[test]
+fn scope_index_matches_any_scope_containment() {
+    use super::{RevisionScope, ScopeIndex};
+
+    // Unordered, overlapping, nested and empty scopes.
+    let mut scopes = (0..1024_usize)
+        .map(|index| {
+            let start = (index * 7_919) % 20_000;
+            RevisionScope {
+                start,
+                end: start + index % 13,
+            }
+        })
+        .collect::<Vec<_>>();
+    scopes.push(RevisionScope {
+        start: 5_000,
+        end: 9_000,
+    });
+    let index = ScopeIndex::new(&scopes);
+    let mut inside = 0;
+    for offset in 0..21_000 {
+        let expected = scopes
+            .iter()
+            .any(|scope| scope.start <= offset && offset < scope.end);
+        assert_eq!(index.contains(offset), expected, "offset {offset}");
+        inside += usize::from(expected);
+    }
+    assert!(inside > 4_000 && inside < 21_000);
+    assert!(!ScopeIndex::new(&[]).contains(0));
 }

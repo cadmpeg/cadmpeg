@@ -20,12 +20,12 @@ use crate::test_support::test_a5a8::{
     a5_rational_surface_stream, a5_surface_extrapolated_short_tail, a5_surface_extrapolated_tail,
     a5_surface_short_tail, a5_surface_stream, a5_surface_stream_with_tail, a5_surface_tail,
     a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream, a8_catpart,
-    a8_elided_surface_stream, a8_freeform_curve_stream, a8_freeform_curve_stream_with_count,
-    a8_inline_tail_surface_stream, a8_pcurve_stream, a8_pcurve_stream_with_count,
-    a8_rational_surface_stream, a8_surface_stream, a8_surface_stream_with_u_count, a8_surface_tail,
+    a8_freeform_curve_stream, a8_freeform_curve_stream_with_count, a8_inline_tail_surface_stream,
+    a8_pcurve_stream, a8_pcurve_stream_with_count, a8_rational_surface_stream, a8_surface_stream,
+    a8_surface_stream_with_pcurve, a8_surface_stream_with_u_count, a8_surface_tail,
     inner_no_directory_a8_catpart,
 };
-use crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain;
+use crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain;
 
 #[test]
 fn surface_tail_scans_continuation_without_materializing_a_lane() {
@@ -50,40 +50,13 @@ use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-fn parsed_a5_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5FreeformCurve> {
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_freeform_curves(ctx, data).expect("service decode")
-    })
-}
-
-fn parsed_a8_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8FreeformCurve> {
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_freeform_curves(ctx, data).expect("service decode")
-    })
-}
-
-fn parsed_a8_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurve> {
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_pcurves(ctx, data).expect("service decode")
-    })
-}
-
-fn parsed_object_stream_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurve> {
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::object_stream_pcurves(ctx, data).expect("service decode")
-    })
-}
-
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
-    let surfaces = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &a8_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let surfaces = crate::families::a5a8::records::a8_surfaces(
+        &a8_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A8 surfaces");
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].object_id(), Some(0xdeca_fbad));
     let surface = &surfaces[0].geometry;
@@ -103,40 +76,31 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     bytes.extend_from_slice(&inner);
     let inner_end = bytes.len();
 
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
+    assert!(crate::test_support::with_service_context(|_ctx| {
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("service decode")
     })
     .is_empty());
-    let header = crate::test_support::with_service_context(|ctx| {
+    let header = crate::test_support::with_service_context(|_ctx| {
         crate::families::a5a8::records::a8_surface_header_from_object_frame(
-            ctx,
             &bytes,
             inner_start,
             inner_end,
             inner_object_id,
         )
         .expect("service decode")
-    })
-    .expect("selected nested surface header");
+    });
     assert_eq!(
         (
-            crate::test_support::with_service_context(|ctx| header.u_count(ctx))
+            crate::test_support::with_service_context(|_ctx| header.u_count())
+                .expect("pole count admission"),
+            crate::test_support::with_service_context(|_ctx| header.v_count())
                 .expect("pole count admission")
-                .expect("fixture U lattice has a valid pole count"),
-            crate::test_support::with_service_context(|ctx| header.v_count(ctx))
-                .expect("pole count admission")
-                .expect("fixture V lattice has a valid pole count")
         ),
         (3, 3)
     );
-    let surface = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            ctx,
+    let surface = crate::test_support::with_service_context(|_ctx| {
+        crate::families::a5a8::records::a8_surface_from_object_frame(
             &bytes,
             inner_start,
             inner_end,
@@ -148,9 +112,8 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     .expect("selected nested surface");
     let surface = surface.geometry;
     assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            ctx,
+    assert!(crate::test_support::with_service_context(|_ctx| {
+        crate::families::a5a8::records::a8_surface_from_object_frame(
             &bytes,
             inner_start,
             inner_end - 1,
@@ -164,14 +127,11 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
 
 #[test]
 fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
-    let surfaces = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &a8_surface_stream_with_u_count(20_001),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let surfaces = crate::families::a5a8::records::a8_surfaces(
+        &a8_surface_stream_with_u_count(20_001),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A8 surfaces");
     assert_eq!(surfaces.len(), 1);
     let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_count(), surface.v_count()), (20_002, 3));
@@ -185,14 +145,11 @@ fn a8_surface_parser_rejects_unframed_trailing_bytes() {
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a8_surfaces(
+        &bytes,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A8 surfaces")
     .is_empty());
 }
 
@@ -210,15 +167,9 @@ fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a8_surfaces(
-                ctx,
-                &bytes,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        })
-        .len(),
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A8 surfaces")
+            .len(),
         1
     );
 }
@@ -226,16 +177,11 @@ fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
 #[test]
 fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
     let bytes = a8_inline_tail_surface_stream();
-    let [surface] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one inline-tail surface");
+    let [surface] =
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A8 surfaces")
+            .try_into()
+            .expect("one inline-tail surface");
     let surface = surface.geometry;
     assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
 }
@@ -247,16 +193,11 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [surface] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one inline-weight-tail surface");
+    let [surface] =
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A8 surfaces")
+            .try_into()
+            .expect("one inline-weight-tail surface");
     let surface = surface.geometry;
     assert_eq!(
         surface.pole_grid().weights().map(|rows| rows.concat()),
@@ -297,58 +238,20 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
         &alternate_extrapolated,
     ] {
         let bytes = surface_with_tail(tail);
-        let [_surface] = crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a8_surfaces(
-                ctx,
-                &bytes,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        })
-        .try_into()
-        .expect("one inline-tail surface");
-        let [header] = crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-                .expect("frame scan admission")
-                .collect::<Result<Vec<_>, _>>()
-                .expect("service decode")
-        })
-        .try_into()
-        .expect("one inline-tail header");
-        assert_eq!(
-            header.pole_storage,
-            crate::families::a5a8::records::PoleStorage::Inline
-        );
-    }
-}
-
-#[test]
-fn a8_elided_surface_requires_the_fixed_zero_continuation() {
-    let mut bytes = a8_elided_surface_stream();
-    let tail_start = 59;
-    bytes[tail_start + 71..tail_start + 79].copy_from_slice(&le_f64(2.0));
-
-    let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    })
-    .try_into()
-    .expect("one parameter lattice");
-    assert_eq!(
-        header.pole_storage,
-        crate::families::a5a8::records::PoleStorage::Inline
-    );
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
+        let [_surface] = crate::families::a5a8::records::a8_surfaces(
             &bytes,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("service decode")
-    })
-    .is_empty());
+        .expect("decode the A8 surfaces")
+        .try_into()
+        .expect("one inline-tail surface");
+        let [header] = crate::test_support::with_service_context(|_ctx| {
+            crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
+        })
+        .try_into()
+        .expect("one inline-tail header");
+        assert_eq!(header.object_id, 0xdeca_fbad);
+    }
 }
 
 #[test]
@@ -356,14 +259,11 @@ fn a8_surface_parser_rejects_a_malformed_tail_after_inline_poles() {
     let mut bytes = a8_inline_tail_surface_stream();
     let tail_start = bytes.len() - 141;
     bytes[tail_start + 68] = 0;
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a8_surfaces(
+        &bytes,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A8 surfaces")
     .is_empty());
 }
 
@@ -373,26 +273,17 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
         let mut bytes = a8_surface_stream();
         bytes[1] = flag;
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a8_surfaces(
-                    ctx,
-                    &bytes,
-                    &mut crate::nurbs::LaneRefusals::new(),
-                )
-                .expect("service decode")
-            })
+            crate::families::a5a8::records::a8_surfaces(
+                &bytes,
+                &mut crate::nurbs::LaneRefusals::new()
+            )
+            .expect("decode the A8 surfaces")
             .len(),
             1,
             "flag {flag:#04x}"
         );
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-                    .expect("frame scan admission")
-                    .collect::<Result<Vec<_>, _>>()
-                    .expect("service decode")
-            })
-            .len(),
+            (crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()).len(),
             1,
             "flag {flag:#04x}"
         );
@@ -400,14 +291,11 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8_surface_stream();
     malformed[1] = 0x23;
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &malformed,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a8_surfaces(
+        &malformed,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A8 surfaces")
     .is_empty());
 }
 
@@ -422,25 +310,17 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
         let mut bytes = a8_surface_stream();
         bytes[start..start + 8].copy_from_slice(&le_f64(value));
         assert!(
-            crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a8_surfaces(
-                    ctx,
-                    &bytes,
-                    &mut crate::nurbs::LaneRefusals::new(),
-                )
-                .expect("service decode")
-            })
+            crate::families::a5a8::records::a8_surfaces(
+                &bytes,
+                &mut crate::nurbs::LaneRefusals::new()
+            )
+            .expect("decode the A8 surfaces")
             .is_empty(),
             "{label} must not produce a resolved surface"
         );
         assert!(
-            crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-                    .expect("frame scan admission")
-                    .collect::<Result<Vec<_>, _>>()
-                    .expect("service decode")
-            })
-            .is_empty(),
+            (crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>())
+                .is_empty(),
             "{label} must not produce a surface header"
         );
     }
@@ -450,398 +330,53 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
 fn a8_surface_header_survives_an_opaque_pole_representation() {
     let mut bytes = a8_surface_stream();
     bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a8_surfaces(
+        &bytes,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A8 surfaces")
     .is_empty());
-    let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    });
+    let headers =
+        { crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>() };
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].object_id, 0xdeca_fbad);
     assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
     assert_eq!(
         (
-            crate::test_support::with_service_context(|ctx| headers[0].u_count(ctx))
-                .expect("pole count admission")
+            headers[0]
+                .u_count()
                 .expect("fixture U lattice has a valid pole count"),
-            crate::test_support::with_service_context(|ctx| headers[0].v_count(ctx))
-                .expect("pole count admission")
+            headers[0]
+                .v_count()
                 .expect("fixture V lattice has a valid pole count")
         ),
         (3, 3)
     );
     assert_eq!(headers[0].u_knots.multiplicities(), [3, 3]);
     assert_eq!(headers[0].v_knots.multiplicities(), [3, 3]);
-    assert_eq!(
-        headers[0].pole_storage,
-        crate::families::a5a8::records::PoleStorage::Inline
-    );
-}
-
-#[test]
-fn copied_a8_surface_header_refuses_each_knot_lane_limit() {
-    let bytes = a8_surface_stream();
-    let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-    })
-    .expect("service budget")
-    .try_into()
-    .expect("one header");
-    for (limit, operation) in [
-        (1, "catia_a8_copied_distinct_knots"),
-        (2, "catia_a8_copied_multiplicities"),
-        (5, "catia_a8_copied_distinct_knots"),
-        (6, "catia_a8_copied_multiplicities"),
-    ] {
-        let limited =
-            crate::test_support::with_collection_limit(limit, |ctx| header.copy_charged(ctx));
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| header.copy_charged(ctx))
-            .expect("service budget"),
-        header
-    );
-}
-
-#[test]
-fn a8_surface_header_identifies_an_elided_pole_grid() {
-    let bytes = a8_elided_surface_stream();
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .is_empty());
-    let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    });
-    assert_eq!(headers.len(), 1);
-    assert_eq!(
-        headers[0].pole_storage,
-        crate::families::a5a8::records::PoleStorage::Elided
-    );
 }
 
 #[test]
 fn a8_surface_header_retains_an_inline_parameter_tail() {
-    let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &a8_inline_tail_surface_stream())
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
+    let headers = crate::test_support::with_service_context(|_ctx| {
+        crate::families::a5a8::records::a8_surface_headers(&a8_inline_tail_surface_stream())
+            .collect::<Vec<_>>()
     });
-    let [header] = headers.as_slice() else {
+    let [_header] = headers.as_slice() else {
         panic!("one inline-tail header");
     };
-    assert_eq!(
-        header.pole_storage,
-        crate::families::a5a8::records::PoleStorage::Inline
-    );
 }
 
 #[test]
-fn a8_surface_header_rejects_an_incomplete_elided_program() {
-    let mut bytes = a8_elided_surface_stream();
-    bytes[59 + 44] = 1;
-    let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    })
-    .try_into()
-    .expect("one surface header");
-    assert_eq!(
-        header.pole_storage,
-        crate::families::a5a8::records::PoleStorage::Inline
-    );
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .is_empty());
-}
-
-#[test]
-fn a8_elided_surface_requires_length_closed_nested_children() {
-    let mut bytes = a8_elided_surface_stream();
-    let payload_len = u32::from_le_bytes(bytes[3..7].try_into().unwrap());
-    let a8_end = 11 + usize::try_from(payload_len).unwrap();
-    let child = [0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0];
-    bytes.splice(a8_end..a8_end, child);
-    let new_payload_len = payload_len + u32::try_from(child.len()).unwrap();
-    bytes[3..7].copy_from_slice(&new_payload_len.to_le_bytes());
-
-    let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    })
-    .try_into()
-    .expect("one elided surface header");
-    assert_eq!(
-        header.pole_storage,
-        crate::families::a5a8::records::PoleStorage::Elided
-    );
-
-    bytes[a8_end + 3] = 250;
-    let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    })
-    .try_into()
-    .expect("one surface header");
-    assert_eq!(
-        header.pole_storage,
-        crate::families::a5a8::records::PoleStorage::Inline
-    );
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .is_empty());
-}
-
-#[test]
-fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
-    let bytes = a8_elided_surface_stream();
-
-    let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    })
-    .try_into()
-    .expect("one elided header");
-    let surface = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_from_external_grid(
-            ctx,
-            &bytes,
-            &header,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .expect("unique external pole allocation");
-    let surface = surface.geometry;
-    assert_eq!(surface.poles().len(), 9);
-    assert_eq!(
-        surface.poles().into_iter().nth(8).unwrap(),
-        Point3::new(8.0, 2.0, 2.0)
-    );
-
-    let [resolved] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one resolved surface");
-    assert_eq!(resolved.object_id(), Some(100));
-    let resolved = resolved.geometry;
-    assert_eq!(resolved.control_grid(), surface.control_grid());
-}
-
-#[test]
-fn a8_external_grid_range_refuses_collection_limit_before_retention() {
-    let bytes = a8_elided_surface_stream();
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::a5a8::records::a8_external_grid_ranges(ctx, &bytes)
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_a8_external_grid_ranges"));
-    let ranges = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_external_grid_ranges(ctx, &bytes)
-    })
-    .expect("service collection budget");
-    assert_eq!(ranges.len(), 1);
-    assert!(ranges[0].start < ranges[0].end);
-    assert!(ranges[0].end <= bytes.len());
-}
-
-#[test]
-fn a8_external_grid_poles_refuse_collection_limit_before_materialization() {
-    let bytes = a8_elided_surface_stream();
-    let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    })
-    .try_into()
-    .expect("one elided header");
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::a5a8::records::a8_surface_from_external_grid(
-            ctx,
-            &bytes,
-            &header,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_a8_external_poles"));
-    let surface = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_from_external_grid(
-            ctx,
-            &bytes,
-            &header,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service collection budget")
-    .expect("unique external pole allocation");
-    assert_eq!(surface.geometry.poles().len(), 9);
-}
-
-#[test]
-fn a8_inline_poles_refuse_collection_limit_before_materialization() {
-    let bytes = a8_surface_stream();
-    let limited = crate::test_support::with_collection_limit(8, |ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_a8_inline_poles"));
-    let surfaces = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service collection budget");
-    assert_eq!(surfaces.len(), 1);
-}
-
-#[test]
-fn a8_header_lanes_refuse_collection_limits_before_materialization() {
-    let bytes = a8_surface_stream();
-    let object_id = cadmpeg_core::decode::View::u32_le_at(&bytes, 7).expect("fixture object id");
-    for (limit, operation) in [
-        (0, "catia_a8_distinct_knots"),
-        (2, "catia_a8_multiplicities"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::a5a8::records::a8_surface_header_from_object_frame(
-                ctx,
-                &bytes,
-                0,
-                bytes.len(),
-                object_id,
-            )
-        });
-        assert!(matches!(limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == operation));
-    }
-    let header = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_header_from_object_frame(
-            ctx,
-            &bytes,
-            0,
-            bytes.len(),
-            object_id,
-        )
-    })
-    .expect("service collection budget")
-    .expect("complete surface header");
-    assert_eq!(header.object_id, object_id);
-}
-
-#[test]
-fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_grids() {
-    let first = a8_elided_surface_stream();
-    let mut second = a8_elided_surface_stream();
-    second[7..11].copy_from_slice(&101_u32.to_le_bytes());
-    let pcurve = second
-        .windows(3)
-        .position(|value| value == [0xb5, 0x03, 0x21])
-        .expect("second external pcurve");
-    second[pcurve + 10..pcurve + 12].copy_from_slice(&101_u16.to_le_bytes());
-
-    let mut bytes = first;
-    bytes.extend(second);
-    let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
-            .expect("frame scan admission")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("service decode")
-    });
-    assert_eq!(headers.len(), 2);
-    assert_eq!(
-        headers
-            .iter()
-            .map(|header| header.object_id)
-            .collect::<Vec<_>>(),
-        [100, 101]
-    );
-    for header in &headers {
-        let surface = crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a8_surface_from_external_grid(
-                ctx,
-                &bytes,
-                header,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        })
-        .expect("support reference selects one equal-sized grid");
-        assert_eq!(surface.object_id(), Some(header.object_id));
-    }
-}
-
-#[test]
-fn a8_elided_surface_accepts_all_child_frame_flags() {
+fn a8_inline_surface_accepts_all_peer_frame_flags() {
     for a8_flag in [0x03, 0x13, 0x83] {
         for child_flag in [0x03, 0x13, 0x83] {
-            let mut bytes = a8_elided_surface_stream();
+            let mut bytes = a8_surface_stream_with_pcurve();
             bytes[1] = a8_flag;
             let pcurve = bytes
                 .windows(3)
                 .position(|value| value == [0xb5, 0x03, 0x21])
-                .expect("external pcurve");
+                .expect("peer pcurve");
             bytes[pcurve + 1] = child_flag;
             let successor = bytes
                 .windows(3)
@@ -850,9 +385,8 @@ fn a8_elided_surface_accepts_all_child_frame_flags() {
             bytes[successor + 1] = child_flag;
 
             assert_eq!(
-                crate::test_support::with_service_context(|ctx| {
-                    crate::families::a5a8::records::resolved_a8_surfaces(
-                        ctx,
+                crate::test_support::with_service_context(|_ctx| {
+                    crate::families::a5a8::records::a8_surfaces(
                         &bytes,
                         &mut crate::nurbs::LaneRefusals::new(),
                     )
@@ -867,22 +401,14 @@ fn a8_elided_surface_accepts_all_child_frame_flags() {
 }
 
 #[test]
-fn a8_elided_surface_accepts_finite_large_external_poles() {
-    let mut bytes = a8_elided_surface_stream();
-    let frame = bytes
-        .windows(3)
-        .position(|value| value == [0xb5, 0x03, 0x21])
-        .expect("external pole allocation anchor");
-    let pole_start = frame + 8 + usize::from(bytes[frame + 3]);
+fn a8_inline_surface_accepts_finite_large_poles() {
+    let mut bytes = a8_surface_stream_with_pcurve();
+    let pole_start = 59;
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(2e12));
 
-    let [resolved] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
+    let [resolved] = crate::test_support::with_service_context(|_ctx| {
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("service decode")
     })
     .try_into()
     .expect("one resolved surface");
@@ -890,39 +416,16 @@ fn a8_elided_surface_accepts_finite_large_external_poles() {
     assert_eq!(surface.poles().into_iter().next().unwrap().x, 2e12);
 
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .is_empty());
-}
-
-#[test]
-fn a8_elided_surface_requires_a_length_closed_successor_frame() {
-    let mut bytes = a8_elided_surface_stream();
-    let successor = bytes
-        .windows(3)
-        .rposition(|value| value == [0xb5, 0x03, 0x5e])
-        .expect("successor frame");
-    bytes[successor + 3] = 3;
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::resolved_a8_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
+    assert!(crate::test_support::with_service_context(|_ctx| {
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("service decode")
     })
     .is_empty());
 }
 
 #[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
-    let pcurves = parsed_a8_pcurves(&a8_pcurve_stream());
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
         (pcurves[0].object_id, pcurves[0].support_id),
@@ -936,91 +439,57 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     assert_eq!(pcurves[0].mode, 0x01);
     let mut wrong_degree = a8_pcurve_stream();
     wrong_degree[15] = 17;
-    assert!(parsed_a8_pcurves(&wrong_degree).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_degree).is_empty());
 
     let mut repeated_knot = a8_pcurve_stream();
     repeated_knot[28..36].copy_from_slice(&le_f64(0.0));
-    assert!(parsed_a8_pcurves(&repeated_knot).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&repeated_knot).is_empty());
 
     let mut wrong_endpoint_multiplicity = a8_pcurve_stream();
     wrong_endpoint_multiplicity[36] = 21;
-    assert!(parsed_a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
 
     let mut trailing_byte = a8_pcurve_stream();
     trailing_byte.push(0);
     let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
     trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(parsed_a8_pcurves(&trailing_byte).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
+}
+
+#[test]
+fn a8_pcurve_jet_exposes_a_bspline() {
+    let [jet] = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream())
+        .try_into()
+        .expect("one A8 pcurve jet");
+    assert!(jet.bspline().is_some());
 }
 
 #[test]
 fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
-    let pcurves = parsed_a8_pcurves(&a8_pcurve_stream_with_count(8193));
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream_with_count(8193));
     assert_eq!(pcurves.len(), 1);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| pcurves[0].knots(ctx))
-            .expect("service resource budget")
-            .len(),
-        8193
-    );
+    assert_eq!(pcurves[0].knots().len(), 8193);
     assert_eq!(pcurves[0].points().len(), 8193);
-}
-
-#[test]
-fn object_stream_pcurve_sites_refuse_collection_limit_before_materialization() {
-    let bytes = a8_pcurve_stream();
-    let result = crate::test_support::with_collection_limit(1, |ctx| {
-        crate::families::a5a8::records::object_stream_pcurves(ctx, &bytes)
-    });
-    assert!(matches!(result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_object_stream_pcurve_sites"
-    ));
-    assert_eq!(parsed_object_stream_pcurves(&bytes).len(), 1);
-}
-
-#[test]
-fn a8_pcurve_collection_refuses_before_retention() {
-    let bytes = a8_pcurve_stream();
-    let result = crate::test_support::with_collection_limit(2, |ctx| {
-        crate::families::a5a8::records::a8_pcurves(ctx, &bytes)
-    });
-    assert!(matches!(result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_a8_pcurves"
-    ));
-    assert_eq!(parsed_a8_pcurves(&bytes).len(), 1);
-}
-
-#[test]
-fn object_stream_pcurve_collection_refuses_before_retention() {
-    let bytes = a8_pcurve_stream();
-    let result = crate::test_support::with_collection_limit(2, |ctx| {
-        crate::families::a5a8::records::object_stream_pcurves(ctx, &bytes)
-    });
-    assert!(matches!(result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_object_stream_pcurves"
-    ));
-    assert_eq!(parsed_object_stream_pcurves(&bytes).len(), 1);
 }
 
 #[test]
 fn a8_pcurve_parser_accepts_finite_large_jet_values() {
     let mut bytes = a8_pcurve_stream();
     bytes[40..48].copy_from_slice(&le_f64(2e12));
-    let [pcurve] = parsed_a8_pcurves(&bytes).try_into().expect("one pcurve");
+    let [pcurve] = crate::families::a5a8::records::a8_pcurves(&bytes)
+        .try_into()
+        .expect("one pcurve");
     assert_eq!(pcurve.points()[0][0], 2e12);
 
     bytes[40..48].copy_from_slice(&le_f64(f64::NAN));
-    assert!(parsed_a8_pcurves(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&bytes).is_empty());
 }
 
 #[test]
 fn a8_pcurve_parser_retains_mode_five_uv_jet() {
     let mut bytes = a8_pcurve_stream();
     bytes[39] = 0x05;
-    let pcurves = parsed_a8_pcurves(&bytes);
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&bytes);
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].mode, 0x05);
     assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
@@ -1034,7 +503,7 @@ fn b5_pcurve_parser_reads_degree5_uv_jet() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(payload);
 
-    let pcurves = parsed_object_stream_pcurves(&b5);
+    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
@@ -1060,7 +529,7 @@ fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
         ];
         stream.extend_from_slice(&0x5678u32.to_le_bytes());
         stream.extend_from_slice(payload);
-        let [pcurve] = parsed_object_stream_pcurves(&stream)
+        let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&stream)
             .try_into()
             .expect("one pcurve");
         assert_eq!(pcurve.object_id, 0x5678);
@@ -1068,7 +537,7 @@ fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8;
     malformed[1] = 0x23;
-    assert!(parsed_object_stream_pcurves(&malformed).is_empty());
+    assert!(crate::families::a5a8::records::object_stream_pcurves(&malformed).is_empty());
 }
 
 #[test]
@@ -1084,7 +553,7 @@ fn object_stream_pcurve_parser_walks_nested_b5_records_inside_a8() {
     let payload_len = u32::try_from(wrapper.len() - 11).unwrap();
     wrapper[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [pcurve] = parsed_object_stream_pcurves(&wrapper)
+    let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&wrapper)
         .try_into()
         .expect("one nested pcurve");
     assert_eq!(pcurve.object_id, 0x9abc);
@@ -1099,7 +568,7 @@ fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(&payload);
 
-    let pcurves = parsed_object_stream_pcurves(&b5);
+    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x0012_0034);
@@ -1163,14 +632,11 @@ fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
 
 #[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
-    let surfaces = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &a8_rational_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let surfaces = crate::families::a5a8::records::a8_surfaces(
+        &a8_rational_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A8 surfaces");
     assert_eq!(
         surfaces[0]
             .geometry
@@ -1185,16 +651,11 @@ fn a8_surface_parser_reads_rational_weight_grid() {
 fn surface_parsers_require_finite_nonzero_weights() {
     let mut a5 = a5_rational_surface_stream();
     a5[146..154].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one consolidated rational surface");
+    let [surface] =
+        crate::families::a5a8::records::a5_surfaces(&a5, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A5 surfaces")
+            .try_into()
+            .expect("one consolidated rational surface");
     let surface = surface.geometry;
     assert_eq!(
         surface
@@ -1207,28 +668,20 @@ fn surface_parsers_require_finite_nonzero_weights() {
         2e12
     );
     a5[146..154].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &a5,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
 
     let mut a8 = a8_rational_surface_stream();
     a8[275..283].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &a8,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one common-form rational surface");
+    let [surface] =
+        crate::families::a5a8::records::a8_surfaces(&a8, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A8 surfaces")
+            .try_into()
+            .expect("one common-form rational surface");
     let surface = surface.geometry;
     assert_eq!(
         surface
@@ -1241,27 +694,21 @@ fn surface_parsers_require_finite_nonzero_weights() {
         2e12
     );
     a8[275..283].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &a8,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a8_surfaces(
+        &a8,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A8 surfaces")
     .is_empty());
 }
 
 #[test]
 fn a5_surface_parser_reads_consolidated_nurbs() {
-    let surfaces = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let surfaces = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A5 surfaces");
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].identity, None);
     assert_eq!(surfaces[0].object_id(), None);
@@ -1296,16 +743,11 @@ fn a5_surface_parser_reads_multispan_cubic_nurbs() {
     let payload_len = u32::try_from(bytes.len() - 8).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [surface] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one multispan cubic surface");
+    let [surface] =
+        crate::families::a5a8::records::a5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A5 surfaces")
+            .try_into()
+            .expect("one multispan cubic surface");
     let surface = surface.geometry;
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
     assert_eq!((surface.u_count(), surface.v_count()), (5, 5));
@@ -1320,53 +762,37 @@ fn a5_surface_parser_reads_multispan_cubic_nurbs() {
 fn surface_parsers_accept_finite_large_control_points() {
     let mut a5 = a5_surface_stream();
     a5[47..55].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one consolidated surface");
+    let [surface] =
+        crate::families::a5a8::records::a5_surfaces(&a5, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A5 surfaces")
+            .try_into()
+            .expect("one consolidated surface");
     let surface = surface.geometry;
     assert_eq!(surface.poles().into_iter().next().unwrap().x, 2e12);
 
     let mut a8 = a8_surface_stream();
     a8[59..67].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &a8,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
-    .try_into()
-    .expect("one common-form surface");
+    let [surface] =
+        crate::families::a5a8::records::a8_surfaces(&a8, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A8 surfaces")
+            .try_into()
+            .expect("one common-form surface");
     let surface = surface.geometry;
     assert_eq!(surface.poles().into_iter().next().unwrap().x, 2e12);
 
     a5[47..55].copy_from_slice(&le_f64(f64::NAN));
     a8[59..67].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &a5,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surfaces(
-            ctx,
-            &a8,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a8_surfaces(
+        &a8,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A8 surfaces")
     .is_empty());
 }
 
@@ -1374,51 +800,39 @@ fn surface_parsers_accept_finite_large_control_points() {
 fn a5_surface_parser_rejects_nonfinite_and_repeated_distinct_knots() {
     let mut nonfinite_u = a5_surface_stream();
     nonfinite_u[11..19].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &nonfinite_u,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &nonfinite_u,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
 
     let mut repeated_u = a5_surface_stream();
     repeated_u[19..27].copy_from_slice(&le_f64(0.0));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &repeated_u,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &repeated_u,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
 
     let mut nonfinite_v = a5_surface_stream();
     nonfinite_v[30..38].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &nonfinite_v,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &nonfinite_v,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
 }
 
 #[test]
 fn consolidated_surface_parser_reads_width2_frame() {
-    let surfaces = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a6_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let surfaces = crate::families::a5a8::records::a5_surfaces(
+        &a6_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A5 surfaces");
     assert_eq!(surfaces.len(), 1);
     assert_eq!(
         (
@@ -1431,14 +845,11 @@ fn consolidated_surface_parser_reads_width2_frame() {
 
 #[test]
 fn a5_surface_parser_reads_rational_weight_program() {
-    let surfaces = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_rational_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let surfaces = crate::families::a5a8::records::a5_surfaces(
+        &a5_rational_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A5 surfaces");
     assert_eq!(
         surfaces[0]
             .geometry
@@ -1458,14 +869,11 @@ fn a5_surface_parser_rejects_zero_tail_codes_without_underflow() {
             .position(|window| window == [0x05, 0x05, 0x05, 0x05])
             .expect("surface tail");
         malformed[tail + index] = 0;
-        assert!(crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a5_surfaces(
-                ctx,
-                &malformed,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        })
+        assert!(crate::families::a5a8::records::a5_surfaces(
+            &malformed,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .expect("decode the A5 surfaces")
         .is_empty());
     }
 }
@@ -1475,14 +883,11 @@ fn a5_surface_parser_rejects_untagged_int_bytes_without_underflow() {
     let bytes = [
         0xa5, 0xa5, 0x03, 0x34, 0, 0, 0, 0, 0, 0, 0, 0xa5, 0xb3, 0xa5, 0xa5, 0xb3, 0xb3, 0xa5,
     ];
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &bytes,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
 }
 
@@ -1494,14 +899,11 @@ fn a5_surface_parser_accepts_each_structured_tail_variant() {
         a5_surface_extrapolated_short_tail(),
         a5_surface_extrapolated_tail(),
     ] {
-        let surfaces = crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a5_surfaces(
-                ctx,
-                &a5_surface_stream_with_tail(&tail),
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        });
+        let surfaces = crate::families::a5a8::records::a5_surfaces(
+            &a5_surface_stream_with_tail(&tail),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("decode the A5 surfaces");
         assert_eq!(surfaces.len(), 1, "tail length {}", tail.len());
     }
 }
@@ -1512,14 +914,11 @@ fn a5_surface_parser_rejects_unclosed_or_nonfinite_tail_data() {
     trailing.push(0);
     let payload_len = u32::try_from(trailing.len() - 8).unwrap();
     trailing[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &trailing,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &trailing,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
 
     let mut nonfinite = a5_surface_stream();
@@ -1528,14 +927,11 @@ fn a5_surface_parser_rejects_unclosed_or_nonfinite_tail_data() {
         .position(|window| window == [0x05, 0x05, 0x05, 0x05])
         .expect("surface tail");
     nonfinite[tail + 4..tail + 12].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &nonfinite,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &nonfinite,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("decode the A5 surfaces")
     .is_empty());
 }
 
@@ -1551,99 +947,17 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     bytes.extend([1.0, 0.8].into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 4, 4, bytes.len())
-                .expect("service decode")
-        })
-        .map(|weights| weights
-            .into_iter()
-            .map(cadmpeg_ir::scalar::NonZeroReal::get)
-            .collect::<Vec<_>>()),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
+            |weights| weights
+                .into_iter()
+                .map(cadmpeg_ir::scalar::NonZeroReal::get)
+                .collect::<Vec<_>>()
+        ),
         Some(vec![
             1.0, 0.8, 0.8, 1.0, 0.9, 0.65, 0.65, 0.9, 0.9, 0.65, 0.65, 0.9, 1.0, 0.8, 0.8, 1.0,
         ])
     );
     assert_eq!(at, bytes.len());
-}
-
-#[test]
-fn a5_distinct_knots_refuse_collection_limit_before_materialization() {
-    let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 0, "catia_a5_distinct_knots");
-}
-
-#[test]
-fn a5_multiplicities_refuse_collection_limit_before_materialization() {
-    let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 4, "catia_a5_knot_multiplicities");
-}
-
-#[test]
-fn a5_expanded_knots_refuse_collection_limit_before_materialization() {
-    let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 6, "catia_a5_expanded_knots");
-}
-
-#[test]
-fn a5_surface_poles_refuse_collection_limit_before_materialization() {
-    let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 16, "catia_a5_surface_poles");
-}
-
-#[test]
-fn a5_surface_rows_refuse_collection_limit_before_materialization() {
-    let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 20, "catia_a5_surface_pole_rows");
-}
-
-#[test]
-fn a5_mirrored_weights_refuse_collection_limit_before_materialization() {
-    let bytes = a5_rational_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 20, "catia_a5_mirrored_weights");
-}
-
-fn assert_a5_surface_collection_refusal(bytes: &[u8], first_cap: u64, operation: &str) {
-    let mut cap = first_cap;
-    for _ in 0..128 {
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            crate::families::a5a8::records::a5_surfaces(
-                ctx,
-                bytes,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation => {
-                return
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                let next = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("bounded test cap");
-                assert!(next > cap, "cap sweep did not progress at {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("surface boundary {operation} not reached at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("surface boundary {operation} not reached within 128 refusals");
-}
-
-#[test]
-fn a5_surface_record_scan_refuses_caller_collection_limit() {
-    let bytes = a5_surface_stream();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_record_source_ranges")
-    );
 }
 
 #[test]
@@ -1656,30 +970,15 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     bytes.extend(expected.into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 4, 4, bytes.len())
-                .expect("service decode")
-        })
-        .map(|weights| weights
-            .into_iter()
-            .map(cadmpeg_ir::scalar::NonZeroReal::get)
-            .collect::<Vec<_>>()),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
+            |weights| weights
+                .into_iter()
+                .map(cadmpeg_ir::scalar::NonZeroReal::get)
+                .collect::<Vec<_>>()
+        ),
         Some(expected.to_vec())
     );
     assert_eq!(at, bytes.len());
-}
-
-#[test]
-fn a5_explicit_weights_refuse_collection_limit_before_materialization() {
-    let mut bytes = vec![0x00];
-    bytes.extend([1.0, 2.0, 3.0, 4.0].into_iter().flat_map(le_f64));
-    let limited = crate::test_support::with_collection_limit(3, |ctx| {
-        let mut at = 0;
-        crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 2, 2, bytes.len())
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_a5_explicit_weights"));
 }
 
 #[test]
@@ -1688,37 +987,30 @@ fn a5_weight_program_does_not_cross_frame_boundary() {
     bytes.extend([1.0, 2.0, 3.0, 4.0].into_iter().flat_map(le_f64));
     bytes.extend([0u8; 8]);
     let mut at = 0;
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 2, 2, 1 + 3 * 8)
-            .expect("service decode")
-    })
-    .is_none());
+    assert!(crate::families::a5a8::records::a5_weights(&bytes, &mut at, 2, 2, 1 + 3 * 8).is_none());
 }
 
 #[test]
 fn a5_cubic_two_site_knots_are_clamped() {
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_knots(
-            ctx,
-            &[0.0, 4.0],
-            3
-        )
-        .expect("service decode")),
+        crate::families::a5a8::records::a5_knots(&[0.0, 4.0], 3),
         Some((vec![0.0, 0.0, 0.0, 0.0, 4.0, 4.0, 4.0, 4.0], 4))
     );
 }
 
 #[test]
 fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
-    for header_token in [5, 9, 13, 29, 17] {
+    let expected =
+        crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream()).remove(0);
+    for header_token in (1..=u8::MAX).step_by(4) {
         let mut bytes = a5_freeform_curve_stream();
         bytes[7] = header_token;
-        let curves = parsed_a5_freeform_curves(&bytes);
+        let curves = crate::families::a5a8::records::a5_freeform_curves(&bytes);
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[0].header_token, u32::from(header_token));
+        assert_eq!(curves[0].sites, expected.sites);
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| curves[0].knots(ctx))
-                .expect("service resource budget"),
+            crate::test_support::with_service_context(|_ctx| curves[0].knots()),
             vec![0.0, 1.0]
         );
         assert_eq!(curves[0].sites[1].site.radius(), 2.0);
@@ -1726,33 +1018,15 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
 
     let mut wrong_degree = a5_freeform_curve_stream();
     wrong_degree[9] = 17;
-    assert!(parsed_a5_freeform_curves(&wrong_degree).is_empty());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
 
-    let mut invalid_header_token = a5_freeform_curve_stream();
-    invalid_header_token[7] = 18;
-    assert!(parsed_a5_freeform_curves(&invalid_header_token).is_empty());
-}
-
-#[test]
-fn a5_freeform_sites_refuse_collection_limit_before_materialization() {
-    assert_a5_freeform_collection_refusal(1, "catia_a5_freeform_sites");
-}
-
-#[test]
-fn a5_freeform_curves_refuse_collection_limit_before_retention() {
-    assert_a5_freeform_collection_refusal(2, "catia_a5_freeform_curves");
-}
-
-fn assert_a5_freeform_collection_refusal(limit: u64, operation: &'static str) {
-    let bytes = a5_freeform_curve_stream();
-    let result = crate::test_support::with_collection_limit(limit, |ctx| {
-        crate::families::a5a8::records::a5_freeform_curves(ctx, &bytes)
-    });
-    assert!(matches!(result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == operation
-    ));
-    assert_eq!(parsed_a5_freeform_curves(&bytes).len(), 1);
+    for header_token in (0..=u8::MAX).filter(|token| token % 4 != 1) {
+        let mut invalid_header_token = a5_freeform_curve_stream();
+        invalid_header_token[7] = header_token;
+        assert!(
+            crate::families::a5a8::records::a5_freeform_curves(&invalid_header_token).is_empty()
+        );
+    }
 }
 
 #[test]
@@ -1764,7 +1038,7 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
     let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [curve] = parsed_a5_freeform_curves(&bytes)
+    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
         .try_into()
         .expect("one compact-marker rolling-ball jet");
     assert_eq!(curve.header_token, 17);
@@ -1772,57 +1046,149 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
 
     let mut invalid_marker = bytes;
     invalid_marker[12] = 0x12;
-    assert!(parsed_a5_freeform_curves(&invalid_marker).is_empty());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_marker).is_empty());
 }
 
 #[test]
-fn a5_curve_parser_accepts_frame_bounded_continuation() {
+fn a5_curve_parser_rejects_untyped_continuation() {
     let mut bytes = a5_freeform_curve_stream();
     bytes.extend(std::iter::repeat_n(0, 4097));
     let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [curve] = parsed_a5_freeform_curves(&bytes)
-        .try_into()
-        .expect("one rolling-ball jet");
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+}
+
+#[test]
+fn a5_rolling_ball_tails_close_all_three_productions() {
+    let original = a5_freeform_curve_stream();
+    let tail_start = original.len() - 79;
+    let mut no_map = original[tail_start..].to_vec();
+    no_map[..8].copy_from_slice(&le_f64(0.25));
+    no_map[8..16].copy_from_slice(&le_f64(0.75));
+    let mut repeated = no_map.clone();
+    repeated.extend_from_slice(&le_f64(2.0));
+    let mut mapped = no_map[..57].to_vec();
+    mapped.extend_from_slice(&[0x01, 0x01]);
+    for value in [0.0, 1.0, 1.0, 1.0, 0.0, 0.0] {
+        mapped.extend_from_slice(&le_f64(value));
+    }
+    mapped.extend_from_slice(&1u32.to_le_bytes());
+    mapped.extend_from_slice(&no_map[63..]);
+    mapped.extend_from_slice(&le_f64(2.0));
+    assert_eq!(mapped.len(), 135);
+    let mut mapped_zero_terminal = mapped.clone();
+    mapped_zero_terminal[107..111].copy_from_slice(&0u32.to_le_bytes());
+    let expected = crate::families::a5a8::records::a5_freeform_curves(&original).remove(0);
+    for tail in [no_map, repeated, mapped, mapped_zero_terminal] {
+        for width in 1..=3 {
+            for marker in [vec![0x0c], vec![0x08, 0x05]] {
+                let mut payload = original[8..11].to_vec();
+                payload.extend_from_slice(&marker);
+                payload.extend_from_slice(&original[12..tail_start]);
+                payload.extend_from_slice(&tail);
+                let mut bytes = vec![0xa4 + width, 0x03, 0x32];
+                bytes.extend_from_slice(
+                    &u32::try_from(payload.len())
+                        .expect("test length")
+                        .to_le_bytes(),
+                );
+                bytes.extend(std::iter::repeat_n(0x05, usize::from(width)));
+                bytes.extend_from_slice(&payload);
+                let [jet] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
+                    .try_into()
+                    .expect("complete rolling-ball tail");
+                assert_eq!(jet.sites, expected.sites);
+            }
+        }
+    }
+}
+
+#[test]
+fn a5_rolling_ball_tail_refuses_truncation_and_invalid_lanes() {
+    let original = a5_freeform_curve_stream();
+    let tail_start = original.len() - 79;
+    for length in 0..79 {
+        let mut bytes = original[..tail_start + length].to_vec();
+        let payload_len = u32::try_from(bytes.len() - 8).expect("test length");
+        bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+        assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+    }
+    for (offset, value) in [
+        (0, -1.0),
+        (8, 2.0),
+        (16, 2.0),
+        (24, 3.0),
+        (32, 0.0),
+        (41, 1.0),
+        (49, 1.0),
+        (63, 0.5),
+        (71, 0.5),
+    ] {
+        let mut bytes = original.clone();
+        bytes[tail_start + offset..tail_start + offset + 8].copy_from_slice(&le_f64(value));
+        assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+    }
+    for offset in [0, 8, 16, 24, 32, 41, 49, 63, 71] {
+        let mut bytes = original.clone();
+        bytes[tail_start + offset..tail_start + offset + 8].copy_from_slice(&le_f64(f64::NAN));
+        assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+    }
+    for offset in [40, 57, 58, 59, 60, 61, 62] {
+        let mut bytes = original.clone();
+        bytes[tail_start + offset] = 0x02;
+        assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+    }
+}
+
+#[test]
+fn a5_rolling_ball_scalar_tail_refuses_invalid_jet_and_terminal() {
+    let original = a5_freeform_curve_stream();
+    let tail_start = original.len() - 79;
+    let mut bytes = original[..tail_start + 57].to_vec();
+    bytes.extend_from_slice(&[0x01, 0x01]);
+    for value in [0.0, 1.0, 1.0, 1.0, 0.0, 0.0] {
+        bytes.extend_from_slice(&le_f64(value));
+    }
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&original[tail_start + 63..]);
+    bytes.extend_from_slice(&le_f64(2.0));
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test length");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| curve.knots(ctx))
-            .expect("service resource budget"),
-        [0.0, 1.0]
+        crate::families::a5a8::records::a5_freeform_curves(&bytes).len(),
+        1
     );
-    assert_eq!(curve.sites[1].site.radius(), 2.0);
+    for offset in (59..107).step_by(8).chain(std::iter::once(127)) {
+        let mut invalid = bytes.clone();
+        invalid[tail_start + offset..tail_start + offset + 8].copy_from_slice(&le_f64(f64::NAN));
+        assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid).is_empty());
+    }
+    bytes[tail_start + 107..tail_start + 111].copy_from_slice(&2u32.to_le_bytes());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
 }
 
 #[test]
 fn a5_curve_parser_accepts_frame_bounded_site_count() {
-    let curves = parsed_a5_freeform_curves(&a5_freeform_curve_stream_with_count(4097));
-    assert_eq!(curves.len(), 1);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| curves[0].knots(ctx))
-            .expect("service resource budget")
-            .len(),
-        4097
+    let curves = crate::families::a5a8::records::a5_freeform_curves(
+        &a5_freeform_curve_stream_with_count(4097),
     );
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].knots().len(), 4097);
     assert_eq!(curves[0].sites.len(), 4097);
 }
 
 #[test]
 fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input limit");
-    let [jet] = parsed_a5_freeform_curves(&a5_freeform_curve_stream())
+    let [jet] = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream())
         .try_into()
         .expect("one rolling-ball jet");
     for second_limit in [false, true] {
         let curve = crate::families::a5a8::records::rolling_ball_limit_curve(
-            &ctx,
             &jet,
             second_limit,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("service resource budget")
         .expect("exact limiting curve");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
         let expected = [jet.sites.first().unwrap(), jet.sites.last().unwrap()].map(|sample| {
@@ -1833,7 +1199,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
             };
             point.get()
         });
-        let knots = jet.knots(&ctx).expect("service resource budget");
+        let knots = jet.knots();
         assert_eq!(
             cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -1855,92 +1221,59 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
     }
 }
 
-#[test]
-fn a5_rolling_ball_limit_refuses_jet_and_pole_allocations() {
-    let [jet] = parsed_a5_freeform_curves(&a5_freeform_curve_stream())
-        .try_into()
-        .expect("one rolling-ball jet");
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::families::a5a8::records::rolling_ball_limit_curve(
-            ctx,
-            &jet,
-            false,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .is_some());
-    for (cap, operation) in [
-        (0, "catia A5 rolling ball positions"),
-        (2, "catia A5 rolling ball first jets"),
-        (4, "catia A5 rolling ball second jets"),
-        (6, "catia A5 rolling ball knots"),
-    ] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(cap, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
-    }
-}
-
-#[test]
-fn a8_pcurve_bspline_refuses_nested_jet_allocations() {
-    let [jet] = parsed_a8_pcurves(&a8_pcurve_stream())
-        .try_into()
-        .expect("one A8 pcurve jet");
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.bspline(ctx);
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .is_some());
-    for (cap, operation) in [
-        (0, "catia A8 pcurve jet knots"),
-        (2, "catia A8 pcurve jet points"),
-        (4, "catia A8 pcurve first jets"),
-        (6, "catia A8 pcurve second jets"),
-    ] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(cap, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
-    }
-}
-
 mod decode_transfer;
 
 mod curve_and_guide_records;
 
 #[test]
-fn a5_surface_strict_knot_refusal_stays_in_the_outer_result() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let bytes = a5_surface_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let record = records.first().unwrap();
-    let frame = crate::wire::records::ConsolidatedFrame {
-        pos: record.byte_offset(),
-        payload: record.payload().unwrap().start,
-        end: record.range().unwrap().end,
-        header_token: record.header_token(),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(original)) =
-        super::a5_surface(&ctx, &bytes, frame, &mut crate::nurbs::LaneRefusals::new())
-    else {
-        panic!("strict knot refusal must not disappear as a missing surface");
-    };
-    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-    // Distinct materialization admits work before the strict knot scan.
-    assert_eq!(original.operation, "catia_a5_distinct_materialization");
-    assert_eq!(original.used, 0);
-    // The fixture stores the two distinct u-knots 0 and 1.
-    assert_eq!(original.additional, 2);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+fn a8_surface_rejects_a_pole_grid_outside_its_declared_frame() {
+    let mut bytes = a8_surface_stream_with_pcurve();
+    let poles = bytes.drain(59..59 + 9 * 24).collect::<Vec<_>>();
+    let payload_len = 48 + 141;
+    bytes[3..7].copy_from_slice(&u32::try_from(payload_len).unwrap().to_le_bytes());
+    let pcurve_start = 11 + payload_len;
+    let pcurve_end = pcurve_start + 8 + usize::from(bytes[pcurve_start + 3]);
+    bytes.splice(pcurve_end..pcurve_end, poles);
+    assert!(crate::test_support::with_service_context(|_ctx| {
+        super::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("bounded malformed surface")
+    .is_empty());
+    assert_eq!(
+        super::a8_nested_b5_run_start(&bytes, 0, 11 + payload_len),
+        None
     );
 }
 
-mod work_admission;
+#[test]
+fn a8_surface_header_does_not_read_mode_outside_its_declared_frame() {
+    let mut bytes = a8_surface_stream();
+    bytes[3..7].copy_from_slice(&47_u32.to_le_bytes());
+    let headers = crate::test_support::with_service_context(|_ctx| {
+        super::a8_surface_headers(&bytes).collect::<Vec<_>>()
+    });
+    assert!(headers.is_empty());
+}
+
+#[test]
+fn a8_inline_pole_stream_decodes_one_surface() {
+    let bytes = a8_surface_stream();
+    let surfaces =
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("compute the A8 surfaces");
+    assert_eq!(surfaces.len(), 1);
+}
+
+#[test]
+fn a8_surface_header_reads_the_frame_object_id() {
+    let bytes = a8_surface_stream();
+    let object_id = cadmpeg_core::decode::View::u32_le_at(&bytes, 7).expect("fixture object id");
+    let header = crate::families::a5a8::records::a8_surface_header_from_object_frame(
+        &bytes,
+        0,
+        bytes.len(),
+        object_id,
+    )
+    .expect("complete surface header");
+    assert_eq!(header.object_id, object_id);
+}

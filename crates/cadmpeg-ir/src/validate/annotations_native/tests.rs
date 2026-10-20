@@ -22,22 +22,10 @@ fn model_entity_wins_when_native_id_collides() {
     );
     ir.native.0.insert("collision".into(), namespace);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str(), ())).unwrap();
+    let all_ids = super::BorrowedIdentities::build(|add| add(id.as_str(), ()));
     let mut builder = crate::AnnotationBuilder::new();
-    builder
-        .derived(
-            &cadmpeg_test_support::service_decode_context(),
-            &id,
-            "position",
-        )
-        .unwrap();
-    builder
-        .derived(
-            &cadmpeg_test_support::service_decode_context(),
-            &id,
-            "native_only",
-        )
-        .unwrap();
+    builder.derived(&id, "position").unwrap();
+    builder.derived(&id, "native_only").unwrap();
     let mut findings = Vec::new();
     check_annotations(
         &ctx,
@@ -60,31 +48,14 @@ fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut source_fidelity = crate::SourceFidelity::default();
     let mut annotations = crate::AnnotationBuilder::new();
-    let stream = crate::annotations::StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        crate::stream_name!("test:source"),
-        "fixture stream handle",
-    )
-    .unwrap();
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    annotations.note("missing", &stream, 0, None);
     annotations
-        .note(
-            &cadmpeg_test_support::service_decode_context(),
-            "missing",
-            &stream,
-            0,
-            None,
-        )
-        .unwrap();
-    annotations
-        .derived(
-            &cadmpeg_test_support::service_decode_context(),
-            ir.model.edges[0].id.as_str(),
-            "not_a_serialized_field",
-        )
+        .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")
         .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
     let findings = crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Annotations && finding.severity == crate::report::Severity::Error
@@ -105,11 +76,9 @@ fn native_topology_link_must_resolve() {
         )
         .expect("valid native identity")],
     );
-    ir.native
-        .finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.native.finalize();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::NativeLinks));
@@ -145,14 +114,14 @@ fn parameter_native_ref_must_resolve() {
         native_ref: Some("native:missing#0".into()),
     });
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
             finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.as_str())
         }));
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
@@ -176,7 +145,7 @@ fn unresolved_unknown_record_link_is_reported_once() {
     .expect("store unknown record");
 
     let findings = validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     let reported = findings
         .iter()
@@ -208,7 +177,7 @@ fn complete_document_native_link_validation_reports_malformed_shapes() {
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
         let findings = validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings;
         let found = findings
             .iter()
@@ -239,7 +208,7 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
         let findings = validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings;
         assert!(
             findings
@@ -252,7 +221,7 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
 }
 
 #[test]
-fn native_annotation_paths_borrow_payloads_without_projecting_unrelated_data() {
+fn native_annotation_paths_report_only_unresolvable_paths() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let id = "test:native:record#payload";
     let mut ir = crate::CadIr::empty();
@@ -273,7 +242,6 @@ fn native_annotation_paths_borrow_payloads_without_projecting_unrelated_data() {
         )
         .unwrap()],
     );
-    let preparation = cadmpeg_test_support::service_decode_context();
     let mut builder = crate::AnnotationBuilder::new();
     for path in [
         "id",
@@ -284,14 +252,13 @@ fn native_annotation_paths_borrow_payloads_without_projecting_unrelated_data() {
         "missing",
         "id.child",
     ] {
-        builder.derived(&preparation, id, path).unwrap();
+        builder.derived(id, path).unwrap();
     }
     let annotations = builder.build();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id, ())).unwrap();
+    let all_ids = super::BorrowedIdentities::build(|add| add(id, ()));
     let mut findings = Vec::new();
     check_annotations(
         &ctx,
@@ -310,34 +277,72 @@ fn native_annotation_paths_borrow_payloads_without_projecting_unrelated_data() {
 }
 
 #[test]
-fn annotated_model_entities_use_indexed_identity_lookups() {
+fn many_native_annotation_paths_parse_their_record_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    // Scanning the record per path would read 2^28 members.
+    const FIELDS: usize = 1 << 14;
+    let id = "test:native:record#wide";
+    let mut ir = crate::CadIr::empty();
+    ir.native.namespace_mut("test").arenas_mut().insert(
+        "records".into(),
+        vec![NativeRecord::new(
+            crate::ids::Identity::new(id).unwrap(),
+            (0..FIELDS)
+                .map(|index| (format!("field{index:05}"), Value::from(index)))
+                .collect(),
+        )
+        .unwrap()],
+    );
+    let mut builder = crate::AnnotationBuilder::new();
+    for index in 0..FIELDS {
+        builder.derived(id, &format!("field{index:05}")).unwrap();
+    }
+    builder.derived(id, "field99999").unwrap();
+    let annotations = builder.build();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let all_ids = super::BorrowedIdentities::build(|add| add(id, ()));
+    let mut findings = Vec::new();
+    check_annotations(
+        &ctx,
+        crate::native::view::NativeView::new(&ir, None),
+        &annotations,
+        &all_ids,
+        &mut findings,
+    )
+    .unwrap();
+    let messages: Vec<_> = findings
+        .iter()
+        .map(|finding| finding.message.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        ["exactness field path `field99999` does not resolve"]
+    );
+}
+
+#[test]
+fn annotations_on_many_model_points_resolve_without_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = crate::CadIr::empty();
     let prototype = unit_cube().unwrap().model.points.remove(0);
-    let preparation = cadmpeg_test_support::service_decode_context();
     let mut builder = crate::AnnotationBuilder::new();
     for ordinal in 0..2_000 {
         let mut point = prototype.clone();
         point.id = crate::ids::PointId::mint(format!("test:model:point#{ordinal}")).unwrap();
-        builder
-            .derived(&preparation, point.id.as_str(), "position.x")
-            .unwrap();
+        builder.derived(point.id.as_str(), "position.x").unwrap();
         ir.model.points.push(point);
     }
     let annotations = builder.build();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Admit indexed sorting and projection work while excluding repeated
-    // full-population identity scans for each annotation.
-    policy.limits.max_work_units = 20_000_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| {
+    let all_ids = super::BorrowedIdentities::build(|add| {
         for point in &ir.model.points {
-            add(point.id.as_str(), ())?;
+            add(point.id.as_str(), ());
         }
-        Ok(())
-    })
-    .unwrap();
+    });
     let mut findings = Vec::new();
     check_annotations(
         &ctx,

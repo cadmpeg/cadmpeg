@@ -4,7 +4,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::{
-    FeatureDraftConstructionBinary32Lane, FeatureDraftConstructionFixedLane,
+    FeatureDraftConstructionBinary32Lane, FeatureDraftConstructionBinary64Lane,
     FeatureDraftConstructionIdentityFrame, FeatureDraftConstructionIndexLane,
     FeatureDraftConstructionIndices, FeatureDraftConstructionTerminalLane,
 };
@@ -55,7 +55,7 @@ impl Serialize for FeatureDraftConstructionIndexLane {
     }
 }
 
-impl Serialize for FeatureDraftConstructionFixedLane {
+impl Serialize for FeatureDraftConstructionBinary64Lane {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut wire = serializer.serialize_map(None)?;
         wire.serialize_entry("id", &self.id)?;
@@ -64,17 +64,15 @@ impl Serialize for FeatureDraftConstructionFixedLane {
         wire.serialize_entry("ordinal", &self.ordinal)?;
         wire.serialize_entry(
             "values",
-            &IterWire(self.lane.iter().map(|(_, atom, _)| atom.scalar.value())),
-        )?;
-        wire.serialize_entry(
-            "markers",
-            &NativeBytes::iter_wire(self.lane.iter().map(|(_, atom, _)| atom.marker.byte())),
+            &IterWire(self.lane.iter().map(|(_, atom, _)| atom.value().get())),
         )?;
         wire.serialize_entry(
             "raw_values",
-            &IterWire(self.lane.iter().map(|(_, atom, _)| {
-                cadmpeg_ir::native::bytes::NativeBytes::from(atom.scalar.raw())
-            })),
+            &IterWire(
+                self.lane
+                    .iter()
+                    .map(|(_, atom, _)| cadmpeg_ir::native::bytes::NativeBytes::from(atom.raw())),
+            ),
         )?;
         wire.serialize_entry("payload_offset", &self.lane.offset())?;
         wire.serialize_entry(
@@ -179,12 +177,12 @@ impl Serialize for FeatureDraftConstructionTerminalLane {
 #[cfg(test)]
 mod tests {
     use super::super::{
-        FeatureDraftConstructionBinary32LaneWire, FeatureDraftConstructionFixedLaneWire,
+        FeatureDraftConstructionBinary32LaneWire, FeatureDraftConstructionBinary64LaneWire,
         FeatureDraftConstructionIdentityFrameWire, FeatureDraftConstructionIndexLaneWire,
         FeatureDraftConstructionTerminalLaneWire,
     };
     use super::{
-        FeatureDraftConstructionBinary32Lane, FeatureDraftConstructionFixedLane,
+        FeatureDraftConstructionBinary32Lane, FeatureDraftConstructionBinary64Lane,
         FeatureDraftConstructionIdentityFrame, FeatureDraftConstructionIndexLane,
         FeatureDraftConstructionTerminalLane,
     };
@@ -216,9 +214,9 @@ mod tests {
     );
     wire_test!(
         draft_fixed_borrowed_wire_matches_owned_bytes_and_retained_limit,
-        FeatureDraftConstructionFixedLane,
-        FeatureDraftConstructionFixedLaneWire,
-        r#"{"id":"nx:feature:draft-fixed#0","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#
+        FeatureDraftConstructionBinary64Lane,
+        FeatureDraftConstructionBinary64LaneWire,
+        r#"{"id":"nx:feature:draft-fixed#0","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[2.0,-32.0],"raw_values":["3000000000000000","b040000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#
     );
     wire_test!(
         draft_binary32_borrowed_wire_matches_owned_bytes_and_retained_limit,

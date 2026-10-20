@@ -3,7 +3,6 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
@@ -24,6 +23,7 @@ use super::native_bytes::{
 };
 use crate::writer::primitives::{native_bool, unique_knot_count};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use cadmpeg_asm::nurbs::support_chart::NativeChart;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
@@ -627,11 +627,7 @@ fn native_procedural_surface_definition(
                     for value in form.reference_endpoints {
                         native_optional_f64(bytes, value);
                     }
-                    if let Some(pcurve) = pcurve {
-                        native_nurbs_pcurve_block(bytes, pcurve)?;
-                    } else {
-                        native_ident(bytes, "nullbs")?;
-                    }
+                    native_optional_support_pcurve(bytes, &support.geometry, pcurve.as_ref())?;
                     native_f64(bytes, parameter.get());
                     native_revision_surface_tail(bytes, "taper surface", form, Some(solved_cache))?;
                     // Orthogonal sense is the record's own trailing logical, written
@@ -647,11 +643,7 @@ fn native_procedural_surface_definition(
                 native_ident(bytes, subtype)?;
                 native_embedded_surface(bytes, &support.geometry)?;
                 native_nurbs_curve(bytes, &reference)?;
-                if let Some(pcurve) = pcurve {
-                    native_nurbs_pcurve_block(bytes, pcurve)?;
-                } else {
-                    native_ident(bytes, "nullbs")?;
-                }
+                native_optional_support_pcurve(bytes, &support.geometry, pcurve.as_ref())?;
                 native_f64(bytes, parameter.get());
                 native_nurbs_surface(bytes, solved_cache)?;
                 if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
@@ -1369,7 +1361,7 @@ fn native_g2_side(
         native_pcurve_knot_domain(pcurve)?,
     )?;
     native_nurbs_curve(bytes, &curve)?;
-    native_optional_pcurve(bytes, side.pcurves[0].as_ref())?;
+    native_optional_support_pcurve(bytes, &surface.geometry, side.pcurves[0].as_ref())?;
     native_vector(
         bytes,
         [side.direction.x, side.direction.y, side.direction.z],
@@ -1589,10 +1581,11 @@ fn native_loft_section(
                         } else {
                             native_embedded_surface(bytes, &surface.geometry)?;
                         }
+                        native_optional_support_pcurve(bytes, &surface.geometry, pcurve.as_ref())?;
                     } else {
                         native_ident(bytes, "null_surface")?;
+                        native_optional_pcurve(bytes, pcurve.as_ref())?;
                     }
-                    native_optional_pcurve(bytes, pcurve.as_ref())?;
                     bytes.push(native_bool(*first_flag));
                 }
                 cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
@@ -1694,7 +1687,7 @@ fn native_compound_loft_scale(
                 ))
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
-        native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
+        native_optional_support_pcurve(bytes, &surface.geometry, member.data.pcurve.as_ref())?;
         bytes.push(native_bool(member.data.first_flag));
         native_loft_profile_tail(bytes, &member.data);
     }
@@ -2605,7 +2598,7 @@ fn native_skin_profile_data(
             CodecError::malformed(format_args!("skin references missing surface {surface_id}"))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
-    native_optional_pcurve(bytes, data.pcurve.as_ref())?;
+    native_optional_support_pcurve(bytes, &surface.geometry, data.pcurve.as_ref())?;
     bytes.push(native_bool(data.first_flag));
     native_loft_profile_tail(bytes, data);
     Ok(())
@@ -3469,15 +3462,24 @@ fn native_optional_pcurve(
     }
 }
 
+/// Write a nullable pcurve on `support` in the native chart of the support
+/// fields `native_embedded_surface` writes.
+fn native_optional_support_pcurve(
+    bytes: &mut Vec<u8>,
+    support: &SurfaceGeometry,
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<(), CodecError> {
+    if let Some(pcurve) = pcurve {
+        native_nurbs_pcurve_payload(bytes, &native_support_pcurve(support, pcurve)?)
+    } else {
+        native_ident(bytes, "nullbs")
+    }
+}
+
 fn native_radius_function_pcurve_block(
     bytes: &mut Vec<u8>,
     function: &PcurveGeometry,
 ) -> Result<(), CodecError> {
-    // Source-less geometry generation uses an independent writer policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let PcurveGeometry::Nurbs { nurbs } = function else {
         return Err(CodecError::NotImplemented(
             "variable-blend radius function must be a NURBS pcurve".into(),
@@ -3485,7 +3487,6 @@ fn native_radius_function_pcurve_block(
     };
     let native = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-            &writer_ctx,
             nurbs.degree(),
             nurbs.knots().clone(),
             nurbs
@@ -3495,7 +3496,7 @@ fn native_radius_function_pcurve_block(
                 .collect::<Vec<_>>(),
             nurbs.weights(),
             nurbs.periodic(),
-        )?
+        )
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?,
     };
     native_nurbs_pcurve_block(bytes, &native)
@@ -3731,7 +3732,7 @@ fn native_vertex_blend_boundary(
             } else {
                 native_embedded_surface(bytes, &surface.geometry)?;
             }
-            native_optional_pcurve(bytes, pcurve.as_ref())?;
+            native_optional_support_pcurve(bytes, &surface.geometry, pcurve.as_ref())?;
             bytes.push(native_bool(*sense));
             native_f64(bytes, fit_tolerance.get());
         }
@@ -3830,10 +3831,11 @@ fn native_revision_cl_scale(
                             ))
                         })?;
                     native_embedded_surface_with_bounds(bytes, &surface.geometry, support_bounds)?;
+                    native_optional_support_pcurve(bytes, &surface.geometry, pcurve.as_ref())?;
                 } else {
                     native_ident(bytes, "null_surface")?;
+                    native_optional_pcurve(bytes, pcurve.as_ref())?;
                 }
-                native_optional_pcurve(bytes, pcurve.as_ref())?;
                 bytes.push(native_bool(*first_flag));
             }
             cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
@@ -4133,6 +4135,7 @@ fn encode_native_variable_blend(
             native_f64(bytes, value);
         }
     }
+    native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
     if let Some(post_curve) = &construction.post_curve {
         let post_range = match construction.post_range {
             [Some(lower), Some(upper)] => Some([lower, upper]),
@@ -4143,7 +4146,6 @@ fn encode_native_variable_blend(
     } else {
         native_ident(bytes, "nullbs")?;
     }
-    native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
     bytes.push(0x10);
     Ok(())
 }
@@ -4164,7 +4166,7 @@ fn native_rolling_ball_side(
             VariableBlendSupportKind::ZeroCurve => "blend_support_zero_curve",
         },
     )?;
-    if let Some(support) = &side.surface {
+    let support_geometry = if let Some(support) = &side.surface {
         let id = &support.surface;
         let surface = target
             .model
@@ -4194,9 +4196,11 @@ fn native_rolling_ball_side(
                 }
             }
         }
+        Some(&surface.geometry)
     } else {
         native_ident(bytes, "null_surface")?;
-    }
+        None
+    };
     if let Some(support) = &side.curve {
         let id = &support.curve;
         let curve = target
@@ -4226,7 +4230,10 @@ fn native_rolling_ball_side(
     } else {
         native_ident(bytes, "null_curve")?;
     }
-    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    match support_geometry {
+        Some(geometry) => native_optional_support_pcurve(bytes, geometry, side.pcurve.as_ref())?,
+        None => native_optional_pcurve(bytes, side.pcurve.as_ref())?,
+    }
     native_point(
         bytes,
         [
@@ -4287,7 +4294,7 @@ fn native_rolling_ball_third_side(
         native_pcurve_knot_domain(pcurve)?,
     )?;
     native_nurbs_curve(bytes, &curve)?;
-    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_optional_support_pcurve(bytes, &surface.geometry, side.pcurve.as_ref())?;
     native_vector(
         bytes,
         [side.direction.x, side.direction.y, side.direction.z],
@@ -4570,9 +4577,6 @@ fn native_increasing_interval_curve(
     match geometry {
         SolvedCurveGeometry::Nurbs(curve) => Ok(curve.clone()),
         SolvedCurveGeometry::Line(line_curve) => {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let policy = cadmpeg_core::decode::DecodePolicy::default();
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             let point = |parameter: f64| {
@@ -4582,7 +4586,7 @@ fn native_increasing_interval_curve(
                     origin.z + parameter * direction.z,
                 )
             };
-            NurbsCurve::from_lanes(&ctx,
+            NurbsCurve::from_lanes(
                 1,
                 vec![
                     parameter_range[0],
@@ -4593,7 +4597,7 @@ fn native_increasing_interval_curve(
                 vec![point(parameter_range[0]), point(parameter_range[1])],
                 None,
                 false,
-            )?
+            )
             .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -4631,6 +4635,10 @@ fn native_increasing_interval_curve(
     }
 }
 
+/// Quarter-turn spans one generated conic NURBS may carry. Each span adds two
+/// control points, so this bounds the generated curve before it is built.
+const MAX_GENERATED_CONIC_SPANS: usize = 1 << 16;
+
 fn native_conic_interval_curve(
     center: Point3,
     axis: Vector3,
@@ -4662,22 +4670,14 @@ fn native_conic_interval_curve(
             "source-less F3D conic interval exceeds addressable NURBS cardinality".into(),
         )
     };
-    let spans = truncate_f64_to_usize(span_count).ok_or_else(too_large)?;
-    let doubled = spans.checked_mul(2).ok_or_else(too_large)?;
-    let pole_count = doubled.checked_add(1).ok_or_else(too_large)?;
-    let knot_count = doubled.checked_add(4).ok_or_else(too_large)?;
+    let spans = truncate_f64_to_usize(span_count)
+        .filter(|spans| *spans <= MAX_GENERATED_CONIC_SPANS)
+        .ok_or_else(too_large)?;
     let step = delta / f64_from_index(spans).ok_or_else(too_large)?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    ctx.charge_collection_items(
-        u64_from_index(pole_count),
-        "f3d generated conic control points",
-    )?;
-    let mut control_points =
-        ctx.vector_storage(pole_count, "f3d generated conic control points")?;
-    let mut weights = ctx.collection_vec(pole_count, "f3d generated conic weights")?;
-    let mut knots = ctx.collection_vec(knot_count, "f3d generated conic knots")?;
+
+    let mut control_points = Vec::new();
+    let mut weights = Vec::new();
+    let mut knots = Vec::new();
     let point = |angle: f64, scale: f64| {
         let major_scale = major_radius * angle.cos() * scale;
         let minor_scale = minor_radius * angle.sin() * scale;
@@ -4712,7 +4712,7 @@ fn native_conic_interval_curve(
             knots.extend([end, end, end]);
         }
     }
-    NurbsCurve::from_lanes(&ctx, 2, knots, control_points, Some(weights), false)?
+    NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false)
         .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 
@@ -4729,26 +4729,6 @@ mod native_interval_curve_tests {
     } else {
         4_294_967_295.0
     };
-
-    #[test]
-    fn generated_conic_interval_refuses_default_collection_limit() {
-        let circle = SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                5.0,
-            )
-            .unwrap(),
-        );
-        let error = native_interval_curve(&circle, [0.0, 1.0e9]).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d generated conic control points"));
-        let normal = native_interval_curve(&circle, [0.0, std::f64::consts::PI]).unwrap();
-        assert_eq!(normal.degree(), 2);
-        assert_eq!(normal.control_points().len(), 5);
-    }
 
     #[test]
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
@@ -4948,15 +4928,7 @@ mod native_interval_curve_tests {
                 assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
             } else {
                 let error = result.expect_err("unallocatable conic interval must be refused");
-                if let CodecError::ResourceLimit(limit) = &error {
-                    assert_eq!(limit.operation, "f3d generated conic control points");
-                    assert_eq!(
-                        limit.dimension,
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems
-                    );
-                } else {
-                    assert!(error.to_string().contains("conic"), "{error}");
-                }
+                assert!(error.to_string().contains("conic"), "{error}");
                 assert_eq!(output, [0x93, 0x2a]);
             }
         }
@@ -5999,63 +5971,42 @@ fn native_support_pcurve_for_range(
     pcurve: &PcurveGeometry,
     range: [f64; 2],
 ) -> Result<PcurveNurbs, CodecError> {
-    // Source-less geometry generation uses an independent writer policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let native = native_pcurve_geometry(pcurve, range)?;
-    let mut poles = native.pole_rows().to_raw();
-    match geometry {
+    // The chart of the native support fields `native_embedded_surface` writes:
+    // the neutral frame, forward senses, and `u_scale` equal to the radius.
+    let chart = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            poles.edit_points(|point| {
-                point.u /= LEN_TO_MM;
-                point.v /= -LEN_TO_MM;
-                Ok(())
-            })?;
+            Some(NativeChart::Plane { reverse_v: false })
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let radius = cylinder_surface.radius().get();
-            if radius <= f64::EPSILON {
-                return Err(CodecError::NotImplemented(
-                    "intcurve support has an invalid cone parameter scale".into(),
-                ));
-            }
-            poles.edit_points(|point| {
-                let neutral = *point;
-                point.u = neutral.v / radius;
-                point.v = neutral.u;
-                Ok(())
-            })?;
+            NativeChart::cone(1.0, cylinder_surface.radius().get() / LEN_TO_MM, false)
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let radius = cone_surface.radius().get();
-            let half_angle = cone_surface.half_angle().get();
-            let sine = half_angle.sin();
-            let cosine = half_angle.cos();
-            let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
-            let axial_scale = direction * radius * cosine;
-            if !axial_scale.is_finite() || axial_scale.abs() <= f64::EPSILON {
-                return Err(CodecError::NotImplemented(
-                    "intcurve support has an invalid cone axial parameter scale".into(),
-                ));
-            }
-            poles.edit_points(|point| {
-                let neutral = *point;
-                point.u = neutral.v / axial_scale;
-                point.v = neutral.u;
-                Ok(())
-            })?;
-        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => NativeChart::cone(
+            cone_surface.half_angle().get().cos(),
+            cone_surface.radius().get() / LEN_TO_MM,
+            false,
+        ),
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_),
+        ) => Some(NativeChart::LatitudeFirst { reverse_v: false }),
         _ => return Ok(native.into_owned()),
-    }
+    };
+    let chart = chart.ok_or_else(|| {
+        CodecError::NotImplemented(
+            "intcurve support has an invalid cone axial parameter scale".into(),
+        )
+    })?;
+    let mut poles = native.pole_rows().to_raw();
+    poles.edit_points(|point| {
+        *point = chart.native_point(*point);
+        Ok(())
+    })?;
     PcurveNurbs::new(
-        &writer_ctx,
         native.degree(),
         native.knots().to_vec(),
         poles,
         native.periodic(),
-    )?
+    )
     .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 
@@ -6122,39 +6073,73 @@ mod pcurve_chart_tests {
         }
     }
 
+    /// The native pcurve chart of each support `native_embedded_surface`
+    /// writes: plane lengths in centimetres, cone `(axial / (|cos| r),
+    /// azimuth)` about the written axis, and sphere and torus latitude first.
     #[test]
-    fn cone_writer_inverts_signed_axial_projection() {
+    fn writer_native_support_pcurves_follow_the_native_charts() {
+        use cadmpeg_ir::geometry::analytic::{
+            ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
+        };
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        let axis = Vector3::new(0.0, 0.0, 1.0);
+        let reference = Vector3::new(1.0, 0.0, 0.0);
+        let neutral = [Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)];
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                neutral.to_vec(),
+                None,
+                false,
+            )
+            .expect("valid test pcurve"),
+        };
+        let solved = |geometry| SurfaceGeometry::Solved(geometry);
+        let mut cases = vec![
+            (
+                solved(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(origin, axis, reference).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.u / 10.0, p.v / 10.0)),
+            ),
+            (
+                solved(SolvedSurfaceGeometry::Cylinder(
+                    CylinderSurface::try_new(origin, axis, reference, 12.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v / 12.0, p.u)),
+            ),
+            (
+                solved(SolvedSurfaceGeometry::Sphere(
+                    SphereSurface::try_new(origin, axis, reference, 12.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v, p.u)),
+            ),
+            (
+                solved(SolvedSurfaceGeometry::Torus(
+                    TorusSurface::try_new(origin, axis, reference, 12.0, 3.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v, p.u)),
+            ),
+        ];
         for half_angle in [0.5_f64, -0.5] {
-            let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    12.0,
-                    1.0,
-                    half_angle,
-                )
-                .unwrap(),
+            cases.push((
+                solved(SolvedSurfaceGeometry::Cone(
+                    ConeSurface::try_new(origin, axis, reference, 12.0, 1.0, half_angle).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v / (12.0 * half_angle.cos()), p.u)),
             ));
-            let pcurve = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
-                    None,
-                    false,
-                )
-                .expect("fixture pcurve construction admission")
-                .expect("valid test pcurve"),
-            };
-            let nurbs = native_support_pcurve(&support, &pcurve).expect("native cone chart");
-            let direction = if half_angle < 0.0 { -1.0 } else { 1.0 };
-            let axial_scale = direction * 12.0 * half_angle.cos();
-            assert_eq!(nurbs.control_points()[0].u, 15.0 / axial_scale);
-            assert_eq!(nurbs.control_points()[0].v, 1.25);
-            assert_eq!(nurbs.control_points()[1].u, -3.0 / axial_scale);
-            assert_eq!(nurbs.control_points()[1].v, 2.5);
+        }
+        for (support, expected) in cases {
+            let nurbs = native_support_pcurve(&support, &pcurve).expect("native support chart");
+            for (point, expected) in nurbs.control_points().into_iter().zip(expected) {
+                let point = point.get();
+                assert!(
+                    (point.u - expected.u).abs() <= f64::EPSILON * 16.0
+                        && (point.v - expected.v).abs() <= f64::EPSILON * 16.0,
+                    "{support:?}: {point:?} != {expected:?}"
+                );
+            }
         }
     }
 }
@@ -6899,11 +6884,6 @@ fn native_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
 ) -> Result<Cow<'_, PcurveNurbs>, CodecError> {
-    // Source-less geometry generation uses an independent writer policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
@@ -6914,7 +6894,6 @@ fn native_pcurve_geometry(
                 ));
             }
             PcurveNurbs::from_lanes(
-                &writer_ctx,
                 1,
                 vec![range[0], range[0], range[1], range[1]],
                 vec![
@@ -6929,7 +6908,7 @@ fn native_pcurve_geometry(
                 ],
                 None,
                 false,
-            )?
+            )
             .map(Cow::Owned)
             .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }
@@ -7104,16 +7083,7 @@ mod revision_surface_tail_tests {
         )
         .expect("valid single-record byte fixture");
         let mut cur = cadmpeg_asm::nurbs::toks::Cur::at(&toks, 0);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
-        let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&ctx, &mut cur)
-            .transpose()
-            .expect("resource allocation")
+        let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cur)
             .expect("decoded parameterized tail");
         assert_eq!(cur.pos(), toks.len());
         let cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Parameterized(actual) =

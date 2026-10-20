@@ -1,40 +1,95 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Resource policy for geometry evaluation.
+//! Recursion depth and local work slices for geometry evaluation.
 
 use std::cell::Cell;
 
 use cadmpeg_core::decode::{
-    u64_from_index, work_units, DecodeContext, DepthGuard, ResourceDimension, ResourceFailure,
-    ResourceLimit, WorkBudget,
+    u64_from_index, DecodeContext, DepthGuard, ResourceDimension, ResourceFailure, ResourceLimit,
+    WorkBudget,
 };
 
 use super::EvaluationFailure;
 
 const INDEPENDENT_EVALUATION_DEPTH: usize = 256;
 
-/// Evaluation uses the caller's decode session or standard-library storage.
+/// Local work cap for one model evaluation that runs without a caller's slice.
+///
+/// Model carriers may share a support below two readers, and the cycle check
+/// covers only the active path, so a carrier chain stated by a few records
+/// can request work exponential in its nesting depth.
+const MAX_MODEL_EVALUATION_WORK: usize = 1 << 24;
+
+/// Local work cap for the model evaluations of one validation pass.
+///
+/// Each evaluation of the pass runs under a slice of at most
+/// [`MAX_MODEL_EVALUATION_WORK`] drawn from this allowance, so many readers of
+/// one costly carrier do not multiply the per-evaluation cap.
+const MAX_MODEL_PASS_EVALUATION_WORK: usize = 1 << 30;
+
+/// Why an evaluation work charge was not admitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvaluationRefusal {
+    /// The evaluation's local work slice ran out. The decode session continues.
+    WorkExhausted,
+    /// The decode session refused. The session keeps this refusal.
+    ResourceLimit(ResourceLimit),
+}
+
+impl From<ResourceLimit> for EvaluationRefusal {
+    fn from(limit: ResourceLimit) -> Self {
+        Self::ResourceLimit(limit)
+    }
+}
+
+impl EvaluationRefusal {
+    /// No value for an exhausted work slice; the session refusal otherwise.
+    pub(super) fn absent<T>(self) -> Result<Option<T>, ResourceLimit> {
+        match self {
+            Self::WorkExhausted => Ok(None),
+            Self::ResourceLimit(limit) => Err(limit),
+        }
+    }
+}
+
+#[cfg(test)]
+impl EvaluationRefusal {
+    /// The session refusal of an evaluation that runs without a work slice.
+    pub(super) fn into_limit(self) -> ResourceLimit {
+        match self {
+            Self::ResourceLimit(limit) => limit,
+            Self::WorkExhausted => panic!("an evaluation without a work slice exhausted one"),
+        }
+    }
+}
+
+/// Evaluation nests under the caller's decode session or an independent depth limit.
 #[derive(Clone, Copy)]
 pub enum EvaluationAdmission<'ctx, 'arena> {
-    /// Charge storage, work and nesting to this live decode context.
+    /// Count nesting against this live decode context.
     Decode(&'ctx DecodeContext<'arena>),
-    /// Use fallible standard-library storage and an independent depth limit of 256.
+    /// Use an independent depth limit of 256 and, for a model evaluation, a
+    /// fresh work slice.
     Standard,
     /// Evaluate within a work slice established by `within_work_slice`.
     WorkSlice(EvaluationWorkSlice<'ctx, 'arena>),
 }
 
-/// A work slice bound to its allocation and recursion policy.
+/// A local work slice bound to its recursion policy.
 #[derive(Clone, Copy)]
 pub struct EvaluationWorkSlice<'ctx, 'arena> {
     policy: WorkSlicePolicy<'ctx, 'arena>,
 }
 
+/// A session slice counts each evaluation step; an independent slice counts
+/// the stored representation's evaluation cost. A standalone slice counts
+/// each step with no decode session behind it.
 #[derive(Clone, Copy)]
 enum WorkSlicePolicy<'ctx, 'arena> {
-    Independent(&'ctx WorkBudget<'ctx>),
+    Independent(&'ctx WorkBudget),
+    Standalone(&'ctx WorkBudget),
     Session {
         context: &'ctx DecodeContext<'arena>,
-        work: &'ctx WorkBudget<'ctx>,
+        work: &'ctx WorkBudget,
     },
 }
 
@@ -45,7 +100,9 @@ impl<'ctx, 'arena> From<&'ctx DecodeContext<'arena>> for EvaluationAdmission<'ct
 }
 
 impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
-    /// Model carriers share the caller's depth, cycle path and scratch policy.
+    /// Model carriers share the caller's depth, cycle path and work slice.
+    /// An admission without a slice evaluates under a fresh slice of
+    /// [`MAX_MODEL_EVALUATION_WORK`].
     pub(super) fn within_model<T, R>(
         self,
         run: impl for<'frame> FnOnce(
@@ -54,104 +111,99 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     ) -> Result<T, EvaluationFailure<R>> {
         let evaluate = |admission: EvaluationAdmission<'_, '_>| {
             let scratch = super::decode::Scratch::new(admission);
-            scratch
-                .unless_refused()
-                .map_err(EvaluationFailure::ResourceLimit)?;
+            scratch.unless_refused()?;
             let result = run(admission);
             let result = match admission.work_slice() {
-                Some(_) => super::ModelEvaluationDepthGuard::finish_budgeted(admission, result),
+                Some(_) => super::ModelEvaluationDepthGuard::finish_sliced(admission, result),
                 None => result,
             };
             scratch.settle(result)
         };
-        if let Self::Decode(context) = self {
-            let work = context.work_budget(u64_from_index(usize::MAX));
-            self.within_work_slice(&work, evaluate)
-        } else {
-            evaluate(self)
+        let work = WorkBudget::new(MAX_MODEL_EVALUATION_WORK);
+        match self {
+            Self::Decode(_) => self.within_work_slice(&work, evaluate),
+            Self::Standard => evaluate(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
+                policy: WorkSlicePolicy::Standalone(&work),
+            })),
+            Self::WorkSlice(_) => evaluate(self),
         }
     }
 
-    pub(super) fn work_slice(self) -> Option<&'ctx WorkBudget<'ctx>> {
+    /// An independent slice counts no evaluation steps, so a cycle ends its
+    /// walk by exhausting it.
+    pub(super) fn independent_work_slice(self) -> Option<&'ctx WorkBudget> {
         match self {
             Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Independent(work) | WorkSlicePolicy::Session { work, .. },
+                policy: WorkSlicePolicy::Independent(work),
+            }) => Some(work),
+            _ => None,
+        }
+    }
+
+    pub(super) fn work_slice(self) -> Option<&'ctx WorkBudget> {
+        match self {
+            Self::WorkSlice(EvaluationWorkSlice {
+                policy:
+                    WorkSlicePolicy::Independent(work)
+                    | WorkSlicePolicy::Standalone(work)
+                    | WorkSlicePolicy::Session { work, .. },
             }) => Some(work),
             Self::Decode(_) | Self::Standard => None,
         }
     }
 
     /// Each model carrier consumes one work step before reading its payload.
+    /// An exhausted slice is [`EvaluationFailure::WorkExhausted`] unless the
+    /// session refused behind it.
     pub(super) fn model_step<R>(self) -> Result<(), EvaluationFailure<R>> {
         match self.work_slice() {
-            Some(work) => {
-                let remaining = u64_from_index(work.remaining());
-                if work.charge() {
-                    return Ok(());
-                }
-                if let Some(context) = self.context() {
-                    context
-                        .charge_work_limit(0, "model evaluation work slice")
-                        .map_err(EvaluationFailure::ResourceLimit)?;
-                    drop(context.refuse_codec_limit("model evaluation work slice", remaining, 1));
-                    context
-                        .charge_work_limit(0, "model evaluation work slice")
-                        .map_err(EvaluationFailure::ResourceLimit)?;
-                }
-                Err(EvaluationFailure::NoValue)
-            }
-            None => self
-                .work(1, "model evaluation work step")
-                .map_err(EvaluationFailure::ResourceLimit),
+            Some(work) if !work.charge() => Err(self.exhausted().into()),
+            _ => Ok(()),
         }
     }
 
-    /// Run one evaluation under a bounded slice. Session work is charged by
-    /// the child as it occurs; consumption transfers to the parent once.
-    /// Independent slices charge the stored representation's work cost.
+    /// Run one evaluation under a bounded slice of `parent`. The child's
+    /// consumption transfers to the parent once.
+    ///
+    /// A slice that runs out leaves the parent exhausted and the decode
+    /// session unrefused; the evaluation reports
+    /// [`EvaluationFailure::WorkExhausted`]. A session refusal before or
+    /// after the evaluation is its result.
     pub fn within_work_slice<T, R>(
         self,
-        parent: &WorkBudget<'_>,
+        parent: &WorkBudget,
         run: impl for<'slice> FnOnce(
             EvaluationAdmission<'slice, 'slice>,
         ) -> Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
-        let _boundary = parent
-            .reserve_scratch(0, "geometry work slice boundary")
-            .map_err(EvaluationFailure::ResourceLimit)?;
         match self.context() {
             Some(context) => {
-                context
-                    .charge_work_limit(0, "geometry work slice boundary")
-                    .map_err(EvaluationFailure::ResourceLimit)?;
-                let child = context.work_budget(u64_from_index(parent.remaining()));
+                session_refusal(context)?;
+                let child = WorkBudget::new(parent.remaining());
                 let result = run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
                     policy: WorkSlicePolicy::Session {
                         context,
                         work: &child,
                     },
                 }));
-                let remaining = u64_from_index(parent.remaining());
-                if parent.consume_child(&child).is_err() {
-                    drop(context.refuse_codec_limit(
-                        "geometry work slice transfer",
-                        remaining,
-                        u64_from_index(work_units(child.consumed())),
-                    ));
+                // A transfer that does not fit exhausts the parent; a child
+                // that ran out leaves the parent exhausted as well.
+                if parent.consume_child(&child).is_ok() && child.exhausted() {
+                    parent.exhaust();
                 }
-                context
-                    .charge_work_limit(0, "geometry work slice boundary")
-                    .map_err(EvaluationFailure::ResourceLimit)?;
+                session_refusal(context)?;
                 result
             }
             None => {
-                let result = run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
-                    policy: WorkSlicePolicy::Independent(parent),
-                }));
-                let _boundary = parent
-                    .reserve_scratch(0, "geometry work slice boundary")
-                    .map_err(EvaluationFailure::ResourceLimit)?;
-                result
+                let policy = match self {
+                    Self::WorkSlice(EvaluationWorkSlice {
+                        policy: WorkSlicePolicy::Standalone(_),
+                    }) => WorkSlicePolicy::Standalone(parent),
+                    _ => WorkSlicePolicy::Independent(parent),
+                };
+                run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
+                    policy,
+                }))
             }
         }
     }
@@ -164,7 +216,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                 policy: WorkSlicePolicy::Session { context, .. },
             }) => Some(context),
             Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Independent(_),
+                policy: WorkSlicePolicy::Independent(_) | WorkSlicePolicy::Standalone(_),
             }) => None,
         }
     }
@@ -179,35 +231,46 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             }) => cost
                 .is_some_and(|cost| work.charge_by(cost))
                 .then_some(())
-                .ok_or(EvaluationFailure::NoValue),
+                .ok_or(EvaluationFailure::WorkExhausted),
             _ => Ok(()),
         }
     }
 
-    pub(super) fn work(self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
+    /// Count evaluation steps against a session or standalone slice. A slice
+    /// that cannot cover them is [`EvaluationRefusal::WorkExhausted`] unless
+    /// the session refused behind it; the session stays unrefused.
+    pub(super) fn work(self, count: usize) -> Result<(), EvaluationRefusal> {
         match self {
-            Self::Decode(context) => context.charge_work_limit(count, operation),
-            Self::Standard => Ok(()),
             Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Independent(_),
-            }) => Ok(()),
-            Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Session { context, work },
-            }) => {
-                context.charge_work_limit(0, operation)?;
-                let remaining = u64_from_index(work.remaining());
-                if !usize::try_from(count).is_ok_and(|count| work.charge_by(count)) {
-                    context.charge_work_limit(0, operation)?;
-                    drop(context.refuse_codec_limit(
-                        "geometry evaluation work slice",
-                        remaining,
-                        count,
-                    ));
-                    return context.charge_work_limit(0, operation);
-                }
-                Ok(())
-            }
+                policy: WorkSlicePolicy::Session { work, .. } | WorkSlicePolicy::Standalone(work),
+            }) if !work.charge_by(count) => Err(self.exhausted()),
+            _ => Ok(()),
         }
+    }
+
+    /// The refusal this admission already holds: the session's refusal, or
+    /// an exhausted session slice.
+    pub(super) fn refusal(self) -> Option<EvaluationRefusal> {
+        let refusal = self
+            .context()
+            .and_then(DecodeContext::resource_refusal)
+            .map(EvaluationRefusal::ResourceLimit);
+        match self {
+            Self::WorkSlice(EvaluationWorkSlice {
+                policy: WorkSlicePolicy::Session { work, .. } | WorkSlicePolicy::Standalone(work),
+            }) if work.exhausted() => refusal.or(Some(EvaluationRefusal::WorkExhausted)),
+            _ => refusal,
+        }
+    }
+
+    /// An exhausted slice, or the session refusal behind it.
+    fn exhausted(self) -> EvaluationRefusal {
+        self.context()
+            .and_then(DecodeContext::resource_refusal)
+            .map_or(
+                EvaluationRefusal::WorkExhausted,
+                EvaluationRefusal::ResourceLimit,
+            )
     }
 
     pub(super) fn enter<'scratch>(
@@ -239,36 +302,113 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     }
 }
 
+fn session_refusal<R>(context: &DecodeContext<'_>) -> Result<(), EvaluationFailure<R>> {
+    context
+        .resource_refusal()
+        .map_or(Ok(()), |limit| Err(EvaluationFailure::ResourceLimit(limit)))
+}
+
+/// The model evaluation work of one validation pass.
+///
+/// An evaluation that runs out of its slice reports
+/// [`EvaluationFailure::WorkExhausted`]; the pass and the decode session go
+/// on, and the pass counts it against the cap that ran out.
+pub(crate) struct ModelEvaluationPass {
+    allowance: WorkBudget,
+    capped: Cell<usize>,
+    starved: Cell<usize>,
+}
+
+impl ModelEvaluationPass {
+    pub(crate) fn new() -> Self {
+        Self::with_allowance(MAX_MODEL_PASS_EVALUATION_WORK)
+    }
+
+    fn with_allowance(allowance: usize) -> Self {
+        Self {
+            allowance: WorkBudget::new(allowance),
+            capped: Cell::new(0),
+            starved: Cell::new(0),
+        }
+    }
+
+    /// Run one model evaluation under a slice of the pass allowance.
+    pub(crate) fn evaluate<T, R>(
+        &self,
+        admission: EvaluationAdmission<'_, '_>,
+        run: impl for<'slice> FnOnce(
+            EvaluationAdmission<'slice, 'slice>,
+        ) -> Result<T, EvaluationFailure<R>>,
+    ) -> Result<T, EvaluationFailure<R>> {
+        let slice = self.allowance.child_slice(MAX_MODEL_EVALUATION_WORK);
+        let full = slice.remaining() == MAX_MODEL_EVALUATION_WORK;
+        let result = admission.within_work_slice(&slice, run);
+        let ran_out = slice.exhausted();
+        // The slice is no larger than the allowance's remainder, so the
+        // transfer fits; an allowance it empties refuses the next slice.
+        let transferred = self.allowance.consume_child(&slice).is_ok();
+        if ran_out || !transferred {
+            let count = if full { &self.capped } else { &self.starved };
+            count.set(count.get() + 1);
+        }
+        result
+    }
+
+    /// One warning per cap that skipped an evaluation of this pass.
+    pub(crate) fn report(&self, findings: &mut Vec<crate::report::check::Finding>) {
+        for (count, cap, limit) in [
+            (
+                self.capped.get(),
+                "MAX_MODEL_EVALUATION_WORK",
+                MAX_MODEL_EVALUATION_WORK,
+            ),
+            (
+                self.starved.get(),
+                "MAX_MODEL_PASS_EVALUATION_WORK",
+                MAX_MODEL_PASS_EVALUATION_WORK,
+            ),
+        ] {
+            if count > 0 {
+                findings.push(crate::report::check::Finding {
+                    check: crate::report::check::Check::GeometricConsistency,
+                    severity: crate::report::Severity::Warning,
+                    message: format!(
+                        "{count} model carrier evaluations reached the local work cap {cap} \
+                         ({limit} steps); their geometric consistency checks were skipped"
+                    ),
+                    entity: None,
+                    related: Vec::new(),
+                });
+            }
+        }
+    }
+}
+
 impl crate::ids::comparison::sealed::TextWork for EvaluationAdmission<'_, '_> {}
 
 impl crate::ids::comparison::TextWork for EvaluationAdmission<'_, '_> {
-    type Error = ResourceLimit;
-    fn comparison_work(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
-        self.work(count, operation)
+    type Error = EvaluationRefusal;
+    fn comparison_work(
+        &self,
+        count: u64,
+        _operation: &'static str,
+    ) -> Result<(), EvaluationRefusal> {
+        usize::try_from(count).map_or(Err(EvaluationRefusal::WorkExhausted), |count| {
+            self.work(count)
+        })
     }
 }
 
 impl crate::index::sealed::IndexQuery for EvaluationAdmission<'_, '_> {}
 
 impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
-    type Error = ResourceLimit;
-    type Output<T> = Result<T, ResourceLimit>;
-    fn finish<T>(&self, result: Result<T, ResourceLimit>) -> Self::Output<T> {
+    type Error = EvaluationRefusal;
+    type Output<T> = Result<T, EvaluationRefusal>;
+    fn finish<T>(&self, result: Result<T, EvaluationRefusal>) -> Self::Output<T> {
         result
     }
-    fn lazy(&self) -> bool {
-        self.context().is_none()
-    }
-    fn work(&self, count: usize, operation: &'static str) -> Result<(), ResourceLimit> {
-        EvaluationAdmission::work(*self, u64_from_index(count), operation)
-    }
-    fn equal(
-        &self,
-        first: &str,
-        second: &str,
-        operation: &'static str,
-    ) -> Result<bool, ResourceLimit> {
-        crate::ids::comparison::equal(self, first, second, operation)
+    fn work(&self, count: usize, _operation: &'static str) -> Result<(), EvaluationRefusal> {
+        EvaluationAdmission::work(*self, count)
     }
 }
 
@@ -295,157 +435,48 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     #[test]
-    fn model_text_comparison_consumes_its_local_slice_and_global_work_once() {
-        for allowance in 0..=6 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 6;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
+    fn model_text_comparison_exhausts_only_its_local_slice() {
+        // equal("alpha", "alpha") takes one length step and five byte steps.
+        for allowance in 0..=6_usize {
             let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let parent = ctx.work_budget(allowance);
+            let parent = WorkBudget::new(allowance);
             let result: Result<bool, EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
                 .within_work_slice(&parent, |admission| {
-                    crate::index::IndexQuery::equal(
+                    crate::ids::comparison::equal(
                         &admission,
                         "alpha",
                         "alpha",
                         "model text comparison",
                     )
-                    .map_err(EvaluationFailure::ResourceLimit)
+                    .map_err(EvaluationFailure::from)
                 });
-            assert_eq!(parent.consumed(), usize::try_from(allowance).unwrap());
+            assert_eq!(parent.consumed(), allowance);
             if allowance < 6 {
-                let EvaluationFailure::ResourceLimit(original) = result.unwrap_err() else {
-                    panic!("text comparison must preserve its local refusal");
-                };
-                assert_eq!(
-                    original.dimension,
-                    ResourceDimension::Codec("geometry evaluation work slice")
-                );
-                assert_eq!(
-                    (original.limit, original.used, original.additional),
-                    (0, 0, 1)
-                );
-                assert_eq!(
-                    crate::ids::comparison::equal(&ctx, "", "", "repeated text comparison"),
-                    Err(original)
-                );
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-                );
+                // The exhausted slice is local: the session keeps running.
+                assert_eq!(result, Err(EvaluationFailure::WorkExhausted));
+                assert!(parent.exhausted());
+                assert_eq!(ctx.resource_refusal(), None);
             } else {
                 assert_eq!(result, Ok(true));
-                let original = ctx
-                    .charge_work_limit(1, "next model text comparison")
-                    .unwrap_err();
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(
-                    (original.limit, original.used, original.additional),
-                    (6, 6, 1)
-                );
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-                );
             }
+            assert!(ctx.finish_session().is_ok());
         }
-        let standard = EvaluationAdmission::Standard;
         assert_eq!(
-            crate::ids::comparison::compare(&standard, "é", "ê", "standard text comparison")
-                .unwrap(),
+            crate::ids::comparison::compare(
+                &EvaluationAdmission::Standard,
+                "é",
+                "ê",
+                "standard text comparison"
+            )
+            .unwrap(),
             std::cmp::Ordering::Less
         );
-        assert!(crate::ids::comparison::equal(
-            &crate::index::StandardIndex,
-            "alpha",
-            "alpha",
-            "standard text equality"
-        )
-        .unwrap());
     }
 
     #[test]
-    fn model_lookup_work_refusal_reaches_curve_and_surface_evaluation() {
-        use crate::geometry::{
-            Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-            SurfaceGeometry,
-        };
-        let mut ir = crate::CadIr::empty();
-        let curve = crate::ids::CurveId::mint("test:model:curve#unknown").unwrap();
-        let surface = crate::ids::SurfaceId::mint("test:model:surface#unknown").unwrap();
-        ir.model.curves.push(Curve {
-            parameter_range: None,
-            id: curve.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
-        });
-        ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
-        let index = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
-        assert!(index
-            .curves(curve.as_str(), crate::index::StandardIndex)
-            .is_some());
-        assert!(index
-            .surfaces(surface.as_str(), crate::index::StandardIndex)
-            .is_some());
-        let frame_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Option<crate::eval::ModelEvaluationIdentity>,
-        >());
-        for surface_route in [false, true] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = frame_work.checked_add(1).unwrap();
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let evaluate = || {
-                if surface_route {
-                    crate::eval::model_surface_point_by_id(
-                        EvaluationAdmission::Decode(&ctx),
-                        &index,
-                        &surface,
-                        0.5,
-                        0.5,
-                    )
-                } else {
-                    crate::eval::model_curve_point_by_id(
-                        EvaluationAdmission::Decode(&ctx),
-                        &index,
-                        &curve,
-                        0.5,
-                    )
-                }
-            };
-            let EvaluationFailure::ResourceLimit(first) = evaluate().unwrap_err() else {
-                panic!("lookup work refusal is an evaluation resource error");
-            };
-            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-            // Curve lookup precedes its model step; surface lookup follows it.
-            let expected_used = frame_work.checked_add(u64::from(surface_route)).unwrap();
-            let query = if surface_route {
-                surface.as_str()
-            } else {
-                curve.as_str()
-            };
-            assert_eq!(
-                (first.limit, first.used, first.additional),
-                (
-                    policy.limits.max_work_units,
-                    expected_used,
-                    cadmpeg_core::decode::u64_from_index(query.len())
-                )
-            );
-            assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-            );
-        }
-    }
-
-    #[test]
-    fn model_entries_use_the_live_resource_policy() {
+    fn model_entries_return_the_session_depth_refusal() {
         use crate::geometry::{
             Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
             SurfaceGeometry,
@@ -478,189 +509,53 @@ mod tests {
             )),
             source_object: None,
         });
-        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
-        for trigger in 0..5 {
-            for route in 0..4 {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_materialized_bytes = 4096;
-                let dimension = match trigger {
-                    0 => {
-                        policy.limits.max_materialized_bytes = 0;
-                        ResourceDimension::MaterializedBytes
-                    }
-                    1 => {
-                        policy.limits.max_collection_items = 0;
-                        ResourceDimension::CollectionItems
-                    }
-                    2 => {
-                        policy.limits.max_work_units = 0;
-                        ResourceDimension::WorkUnits
-                    }
-                    3 => {
-                        policy.limits.max_recursion_depth = 0;
-                        ResourceDimension::RecursionDepth
-                    }
-                    _ => {
-                        policy.limits.max_retained_bytes = 0;
-                        ResourceDimension::RetainedBytes
-                    }
-                };
-                let arena = DecodeArena::new();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let evaluate = || match route {
-                    0 => crate::eval::model_curve_point_by_id(
-                        EvaluationAdmission::Decode(&ctx),
-                        &index,
-                        &curve,
-                        0.5,
-                    ),
-                    1 => crate::eval::model_surface_point_by_id(
-                        EvaluationAdmission::Decode(&ctx),
-                        &index,
-                        &surface,
-                        0.5,
-                        0.5,
-                    ),
-                    2 => crate::eval::model_surface_partials_by_id(
-                        EvaluationAdmission::Decode(&ctx),
-                        &index,
-                        &surface,
-                        0.5,
-                        0.5,
-                    )
-                    .map(|partials| partials.point),
-                    _ => crate::eval::model_surface_point(
-                        EvaluationAdmission::Decode(&ctx),
-                        &ir,
-                        &ir.model.surfaces[0].geometry,
-                        0.5,
-                        0.5,
-                    ),
-                };
-                let result = evaluate();
-                if trigger == 4 {
-                    assert!(result.is_ok());
-                    let storage = ctx
-                        .reserve_scoped_limit(
-                            policy.limits.max_materialized_bytes,
-                            "test released model path",
-                        )
-                        .unwrap();
-                    drop(storage);
-                    assert!(ctx.finish_session().is_ok());
-                } else {
-                    let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
-                        panic!("a model admission refusal stays a resource error");
-                    };
-                    assert_eq!(first.dimension, dimension);
-                    assert_eq!((first.limit, first.used), (0, 0));
-                    assert!(first.additional > 0);
-                    assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
-                    assert!(
-                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn model_child_nurbs_scratch_keeps_the_live_materialization_refusal() {
-        use crate::geometry::nurbs::NurbsCurve;
-        use crate::geometry::{
-            Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
-            SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-        };
-        use crate::math::{Point3, Vector3};
-        let mut ir = crate::CadIr::empty();
-        let curve = crate::ids::CurveId::mint("test:model:curve#directrix").unwrap();
-        let surface = crate::ids::SurfaceId::mint("test:model:surface#sweep").unwrap();
-        ir.model.curves.push(Curve {
-            parameter_range: None,
-            id: curve.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    16,
-                    [vec![0.0; 17], vec![1.0; 17]].concat(),
-                    (0..=16)
-                        .map(|x| Point3::new(f64::from(x) / 16.0, 0.0, 0.0))
-                        .collect(),
-                    None,
-                    false,
-                )
-                .unwrap()
-                .unwrap(),
-            )),
-            source_object: None,
-        });
-        ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
-        ir.model
-            .add_procedural_surface(
-                &crate::document::admission::StandardAdmission,
-                &surface,
-                ProceduralSurface::new(
-                    crate::ids::ProceduralSurfaceId::mint("test:model:procedural#sweep").unwrap(),
-                    ProceduralSurfaceDefinition::LinearSweep(
-                        crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
-                            curve,
-                            Vector3::new(0.0, 0.0, 1.0),
-                        )
-                        .unwrap(),
-                    ),
-                    None,
+        let index = crate::index::ModelIndex::build(&ir);
+        for route in 0..4 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let evaluate = || match route {
+                0 => crate::eval::model_curve_point_by_id(
+                    EvaluationAdmission::Decode(&ctx),
+                    &index,
+                    &curve,
+                    0.5,
                 ),
-            )
-            .unwrap()
-            .unwrap();
-        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
-        assert_eq!(
-            crate::eval::model_surface_point_by_id(
-                EvaluationAdmission::Standard,
-                &index,
-                &surface,
-                0.25,
-                2.0
-            )
-            .unwrap()
-            .get(),
-            Point3::new(0.25, 0.0, 2.0)
-        );
-        let frame_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Option<super::super::ModelEvaluationIdentity>,
-        >());
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 3 * frame_bytes;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let evaluate = || {
-            crate::eval::model_surface_point_by_id(
-                EvaluationAdmission::Decode(&ctx),
-                &index,
-                &surface,
-                0.25,
-                2.0,
-            )
-        };
-        let EvaluationFailure::ResourceLimit(first) = evaluate().unwrap_err() else {
-            panic!("child NURBS scratch must use the model session");
-        };
-        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(first.limit, 3 * frame_bytes);
-        assert_eq!(first.used, 3 * frame_bytes);
-        // The seventeen-value heap basis must be admitted before allocation.
-        assert_eq!(
-            first.additional,
-            cadmpeg_core::decode::u64_from_index(17 * std::mem::size_of::<f64>())
-        );
-        assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-        );
+                1 => crate::eval::model_surface_point_by_id(
+                    EvaluationAdmission::Decode(&ctx),
+                    &index,
+                    &surface,
+                    0.5,
+                    0.5,
+                ),
+                2 => crate::eval::model_surface_partials_by_id(
+                    EvaluationAdmission::Decode(&ctx),
+                    &index,
+                    &surface,
+                    0.5,
+                    0.5,
+                )
+                .map(|partials| partials.point),
+                _ => crate::eval::model_surface_point(
+                    EvaluationAdmission::Decode(&ctx),
+                    &ir,
+                    &ir.model.surfaces[0].geometry,
+                    0.5,
+                    0.5,
+                ),
+            };
+            let EvaluationFailure::ResourceLimit(first) = evaluate().unwrap_err() else {
+                panic!("a model depth refusal stays a resource error");
+            };
+            assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
+            assert_eq!((first.limit, first.used), (0, 0));
+            assert!(first.additional > 0);
+            assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+            );
+        }
     }
 
     #[test]
@@ -678,7 +573,6 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                &crate::document::admission::StandardAdmission,
                 &id,
                 ProceduralCurve::new(
                     crate::ids::ProceduralCurveId::mint("test:model:procedural#cycle").unwrap(),
@@ -688,13 +582,12 @@ mod tests {
                     },
                 ),
             )
-            .unwrap()
             .unwrap();
-        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+        let index = crate::index::ModelIndex::build(&ir);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let parent = ctx.work_budget(100_000);
+        let parent = WorkBudget::new(100_000);
         assert_eq!(
             EvaluationAdmission::Decode(&ctx).within_work_slice(&parent, |admission| {
                 crate::eval::model_curve_point_by_id(admission, &index, &id, 0.5)
@@ -704,75 +597,243 @@ mod tests {
         assert!(ctx.finish_session().is_ok());
     }
 
-    #[test]
-    fn work_slice_transfers_actual_session_work_once() {
-        for attached in [false, true] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 2;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let parent = if attached {
-                ctx.work_budget(10)
-            } else {
-                WorkBudget::new(10)
-            };
-            let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
-                .within_work_slice(&parent, |admission| {
-                    admission
-                        .work(2, "test numerical work")
-                        .map_err(EvaluationFailure::ResourceLimit)
+    /// A line, then `levels` tolerant intersections. Each intersection reads
+    /// two axis revolutions of the curve below, so a point of the top curve
+    /// reads the bottom line `2^levels` times.
+    fn doubling_model(levels: usize) -> (crate::CadIr, crate::ids::CurveId) {
+        use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
+        use crate::geometry::surface_payloads::AxisRevolutionSurfaceConstruction;
+        use crate::geometry::{
+            Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+            ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+            SurfaceGeometry, TolerantIntersectionConstruction,
+            TolerantIntersectionParameterization,
+        };
+        use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+        use crate::math::{Point2, Point3, Vector3};
+
+        let line = |id: &CurveId| Curve {
+            parameter_range: None,
+            id: id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        };
+        let pcurve = PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        );
+        let mut ir = crate::CadIr::empty();
+        let mut below = CurveId::mint("test:model:curve#0").unwrap();
+        ir.model.curves.push(line(&below));
+        for level in 1..=levels {
+            let supports = [0, 1]
+                .map(|side| SurfaceId::mint(format!("test:model:surface#{level}-{side}")).unwrap());
+            for (side, support) in supports.iter().enumerate() {
+                ir.model.surfaces.push(Surface {
+                    id: support.clone(),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                        crate::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    )),
+                    source_object: None,
                 });
-            assert_eq!(result, Ok(()));
-            assert_eq!(parent.consumed(), 2);
-            let first = ctx
-                .charge_work_limit(1, "test next numerical work")
-                .unwrap_err();
-            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-            assert_eq!((first.limit, first.used, first.additional), (2, 2, 1));
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-            );
+                ir.model
+                    .add_procedural_surface(
+                        support,
+                        ProceduralSurface::new(
+                            ProceduralSurfaceId::mint(format!(
+                                "test:model:procedural#surface-{level}-{side}"
+                            ))
+                            .unwrap(),
+                            ProceduralSurfaceDefinition::AxisRevolution(
+                                AxisRevolutionSurfaceConstruction::try_new(
+                                    below.clone(),
+                                    Point3::new(0.0, 0.0, 0.0),
+                                    Vector3::new(0.0, 0.0, 1.0),
+                                )
+                                .unwrap(),
+                            ),
+                            None,
+                        ),
+                    )
+                    .unwrap();
+            }
+            let curve = CurveId::mint(format!("test:model:curve#{level}")).unwrap();
+            ir.model.curves.push(line(&curve));
+            ir.model
+                .add_procedural_curve(
+                    &curve,
+                    ProceduralCurve::new(
+                        ProceduralCurveId::mint(format!("test:model:procedural#curve-{level}"))
+                            .unwrap(),
+                        ProceduralCurveDefinition::TolerantIntersection {
+                            construction: TolerantIntersectionConstruction::try_new(
+                                supports,
+                                [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                                1.0e-9,
+                            )
+                            .unwrap(),
+                            parameterization: Some(
+                                TolerantIntersectionParameterization::try_new(
+                                    [pcurve.clone(), pcurve.clone()],
+                                    [-1.0, 1.0],
+                                )
+                                .unwrap(),
+                            ),
+                            cache: None,
+                        },
+                    ),
+                )
+                .unwrap();
+            below = curve;
         }
+        (ir, below)
     }
 
     #[test]
-    fn work_slice_preserves_global_and_local_refusals() {
-        for local in [false, true] {
-            let mut policy = DecodePolicy::service();
-            if !local {
-                policy.limits.max_work_units = 0;
-            }
+    fn decode_model_evaluation_has_a_local_work_cap() {
+        let evaluate = |levels| {
+            let (ir, curve) = doubling_model(levels);
+            let index = crate::index::ModelIndex::build(&ir);
             let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let parent = ctx.work_budget(if local { 0 } else { 10 });
-            let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
-                .within_work_slice(&parent, |admission| {
-                    admission
-                        .work(1, "test numerical work")
-                        .map_err(EvaluationFailure::ResourceLimit)
-                });
-            let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
-                panic!("a work refusal is a resource error");
-            };
-            let dimension = if local {
-                ResourceDimension::Codec("geometry evaluation work slice")
-            } else {
-                ResourceDimension::WorkUnits
-            };
-            assert_eq!(first.dimension, dimension);
-            assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-            let called = std::cell::Cell::new(false);
-            let repeated: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
-                .within_work_slice(&parent, |_| {
-                    called.set(true);
-                    Err(EvaluationFailure::NoValue)
-                });
-            assert_eq!(repeated, Err(EvaluationFailure::ResourceLimit(first)));
-            assert!(!called.get());
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+            let result = crate::eval::model_curve_point_by_id(
+                EvaluationAdmission::Decode(&ctx),
+                &index,
+                &curve,
+                0.5,
+            );
+            // Exhausting the cap skips the evaluation; the session continues.
+            assert_eq!(ctx.resource_refusal(), None);
+            assert!(ctx.finish_session().is_ok());
+            result
+        };
+        assert!(evaluate(2).is_ok());
+        assert_eq!(evaluate(18), Err(EvaluationFailure::WorkExhausted));
+    }
+
+    #[test]
+    fn standard_model_evaluation_has_a_local_work_cap() {
+        let evaluate = |levels| {
+            let (ir, curve) = doubling_model(levels);
+            let index = crate::index::ModelIndex::build(&ir);
+            crate::eval::model_curve_point_by_id(EvaluationAdmission::Standard, &index, &curve, 0.5)
+        };
+        assert!(evaluate(2).is_ok());
+        assert_eq!(evaluate(18), Err(EvaluationFailure::WorkExhausted));
+    }
+
+    #[test]
+    fn validation_pass_evaluations_share_one_allowance() {
+        const EVALUATIONS: usize = 1 << 12;
+        let (ir, curve) = doubling_model(18);
+        let index = crate::index::ModelIndex::build(&ir);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let evaluate = |pass: &super::ModelEvaluationPass, index, curve| {
+            pass.evaluate(EvaluationAdmission::Decode(&ctx), |admission| {
+                crate::eval::model_curve_point_by_id(admission, index, curve, 0.5)
+            })
+        };
+        // One evaluation uses up a full slice, the next a slice of one step;
+        // the rest find the allowance empty and stop at their first step.
+        let pass = super::ModelEvaluationPass::with_allowance(super::MAX_MODEL_EVALUATION_WORK + 1);
+        for _ in 0..EVALUATIONS {
+            assert_eq!(
+                evaluate(&pass, &index, &curve),
+                Err(EvaluationFailure::WorkExhausted)
             );
         }
+        assert_eq!(pass.allowance.remaining(), 0);
+        let (cheap_ir, cheap_curve) = doubling_model(2);
+        let cheap_index = crate::index::ModelIndex::build(&cheap_ir);
+        assert_eq!(
+            evaluate(&pass, &cheap_index, &cheap_curve),
+            Err(EvaluationFailure::WorkExhausted)
+        );
+        let mut findings = Vec::new();
+        pass.report(&mut findings);
+        let messages: Vec<_> = findings
+            .iter()
+            .map(|finding| (finding.severity, finding.message.as_str()))
+            .collect();
+        assert_eq!(
+            messages,
+            [
+                (
+                    crate::report::Severity::Warning,
+                    "1 model carrier evaluations reached the local work cap \
+                     MAX_MODEL_EVALUATION_WORK (16777216 steps); their geometric consistency \
+                     checks were skipped"
+                ),
+                (
+                    crate::report::Severity::Warning,
+                    "4096 model carrier evaluations reached the local work cap \
+                     MAX_MODEL_PASS_EVALUATION_WORK (1073741824 steps); their geometric \
+                     consistency checks were skipped"
+                ),
+            ]
+        );
+        // A fresh pass evaluates the cheap carrier and reports nothing.
+        let fresh = super::ModelEvaluationPass::new();
+        assert!(evaluate(&fresh, &cheap_index, &cheap_curve).is_ok());
+        let mut findings = Vec::new();
+        fresh.report(&mut findings);
+        assert!(findings.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
+    fn validation_reports_a_capped_endpoint_evaluation_as_skipped() {
+        let (ir, _) = doubling_model(16);
+        let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
+        assert!(report.findings.iter().any(|finding| {
+            finding.severity == crate::report::Severity::Warning
+                && finding.message.contains("MAX_MODEL_EVALUATION_WORK")
+        }));
+        // The capped top intersection is skipped, not reported as a carrier
+        // that does not evaluate.
+        assert!(!report.findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some("test:model:procedural#curve-16")
+                && finding.message.contains("does not evaluate")
+        }));
+    }
+
+    #[test]
+    fn exhausted_work_slice_leaves_the_session_unrefused() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parent = WorkBudget::new(0);
+        let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |admission| {
+                admission.work(1).map_err(EvaluationFailure::from)
+            });
+        assert_eq!(result, Err(EvaluationFailure::WorkExhausted));
+        assert!(parent.exhausted());
+        assert_eq!(ctx.resource_refusal(), None);
+        // The next evaluation runs; its own slice is the exhausted remainder.
+        let called = std::cell::Cell::new(false);
+        let repeated: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |admission| {
+                called.set(true);
+                admission.work(1).map_err(EvaluationFailure::from)
+            });
+        assert!(called.get());
+        assert_eq!(repeated, Err(EvaluationFailure::WorkExhausted));
+        assert!(ctx.finish_session().is_ok());
     }
 
     #[test]
@@ -782,7 +843,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let outer = ctx.enter_nested_limit("test outer evaluation").unwrap();
-        let parent = ctx.work_budget(10);
+        let parent = WorkBudget::new(10);
         let depth = std::cell::Cell::new(0);
         let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
             .within_work_slice(&parent, |admission| {
@@ -800,160 +861,5 @@ mod tests {
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
         );
-    }
-
-    #[test]
-    fn session_work_slice_admits_stored_derivative_storage_and_work() {
-        use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
-        use crate::math::{Point3, Vector3};
-        let fixture = cadmpeg_test_support::service_decode_context();
-        let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            crate::geometry::nurbs::NurbsCurve::from_lanes(
-                &fixture,
-                2,
-                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.5, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                ],
-                None,
-                false,
-            )
-            .unwrap()
-            .unwrap(),
-        ));
-        for trigger in 0..5 {
-            let mut policy = DecodePolicy::service();
-            let dimension = match trigger {
-                0 => {
-                    policy.limits.max_materialized_bytes = 0;
-                    ResourceDimension::MaterializedBytes
-                }
-                1 => {
-                    policy.limits.max_collection_items = 0;
-                    ResourceDimension::CollectionItems
-                }
-                2 => {
-                    policy.limits.max_work_units = 0;
-                    ResourceDimension::WorkUnits
-                }
-                3 => {
-                    policy.limits.max_recursion_depth = 0;
-                    ResourceDimension::RecursionDepth
-                }
-                _ => {
-                    policy.limits.max_retained_bytes = 0;
-                    policy.limits.max_materialized_bytes = 4096;
-                    ResourceDimension::RetainedBytes
-                }
-            };
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let parent = ctx.work_budget(100_000);
-            let result = EvaluationAdmission::Decode(&ctx)
-                .within_work_slice(&parent, |admission| {
-                    crate::eval::decode::curve_tangent(admission, &curve, 0.5)
-                });
-            if trigger == 4 {
-                assert_eq!(result.unwrap().get(), Vector3::new(1.0, 0.0, 0.0));
-                assert!(parent.consumed() > 0);
-                let storage = ctx
-                    .reserve_scoped_limit(
-                        policy.limits.max_materialized_bytes,
-                        "test released derivative storage",
-                    )
-                    .unwrap();
-                drop(storage);
-                assert!(ctx.finish_session().is_ok());
-            } else {
-                let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
-                    panic!("a stored derivative preserves admission refusal");
-                };
-                assert_eq!(first.dimension, dimension);
-                assert_eq!((first.limit, first.used), (0, 0));
-                assert!(first.additional > 0);
-                assert_eq!(
-                    EvaluationAdmission::Decode(&ctx).within_work_slice(&parent, |admission| {
-                        crate::eval::decode::curve_tangent(admission, &curve, f64::NAN)
-                    }),
-                    Err(EvaluationFailure::ResourceLimit(first))
-                );
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn placed_evaluator_steps_refuse_before_nested_work() {
-        use crate::geometry::{
-            CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-        };
-        use crate::math::{Point3, Vector3};
-        let transform = crate::transform::Transform::affine([
-            [2.0, 0.0, 0.0, 0.0],
-            [0.0, 2.0, 0.0, 0.0],
-            [0.0, 0.0, 2.0, 0.0],
-        ])
-        .unwrap();
-        let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
-            crate::geometry::PlacedCurve::try_new(
-                Box::new(SolvedCurveGeometry::Line(
-                    crate::geometry::analytic::LineCurve::try_new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .unwrap(),
-                )),
-                transform,
-            )
-            .unwrap(),
-        ));
-        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
-            crate::geometry::PlacedSurface::try_new(
-                Box::new(SolvedSurfaceGeometry::Plane(
-                    crate::geometry::analytic::PlaneSurface::try_new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .unwrap(),
-                )),
-                transform,
-            )
-            .unwrap(),
-        ));
-        for trigger in 0..4 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let parent = ctx.work_budget(100);
-            let result =
-                EvaluationAdmission::Decode(&ctx).within_work_slice(&parent, |admission| {
-                    match trigger {
-                        0 => crate::eval::decode::curve_point(admission, &curve, 0.5)
-                            .map(|_| ())
-                            .map_err(|failure| failure.map(|_| ())),
-                        1 => crate::eval::decode::curve_tangent(admission, &curve, 0.5).map(|_| ()),
-                        2 => {
-                            crate::eval::curve_second_derivative(admission, &curve, 0.5).map(|_| ())
-                        }
-                        _ => crate::eval::decode::surface_point(admission, &surface, 0.5, 0.5)
-                            .map(|_| ())
-                            .map_err(|failure| failure.map(|_| ())),
-                    }
-                });
-            let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
-                panic!("a placed step must retain its work refusal");
-            };
-            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-            assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-            );
-        }
     }
 }

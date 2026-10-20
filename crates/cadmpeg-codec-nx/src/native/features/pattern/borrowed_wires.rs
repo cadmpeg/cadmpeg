@@ -4,7 +4,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::{
-    FeatureIdenticalInstanceOutputLane, FeaturePatternConstructionFixedLane,
+    FeatureIdenticalInstanceOutputLane, FeaturePatternConstructionBinary64Lane,
     FeaturePatternCountedReferenceLane,
 };
 use crate::iter_wire::IterWire;
@@ -57,7 +57,7 @@ impl Serialize for FeaturePatternCountedReferenceLane {
     }
 }
 
-impl Serialize for FeaturePatternConstructionFixedLane {
+impl Serialize for FeaturePatternConstructionBinary64Lane {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut wire = serializer.serialize_map(None)?;
         wire.serialize_entry("id", &self.id)?;
@@ -66,17 +66,15 @@ impl Serialize for FeaturePatternConstructionFixedLane {
         wire.serialize_entry("ordinal", &self.ordinal)?;
         wire.serialize_entry(
             "values",
-            &IterWire(self.lane.iter().map(|(_, atom, _)| atom.scalar.value())),
-        )?;
-        wire.serialize_entry(
-            "markers",
-            &NativeBytes::iter_wire(self.lane.iter().map(|(_, atom, _)| atom.marker.byte())),
+            &IterWire(self.lane.iter().map(|(_, atom, _)| atom.value().get())),
         )?;
         wire.serialize_entry(
             "raw_values",
-            &IterWire(self.lane.iter().map(|(_, atom, _)| {
-                cadmpeg_ir::native::bytes::NativeBytes::from(atom.scalar.raw())
-            })),
+            &IterWire(
+                self.lane
+                    .iter()
+                    .map(|(_, atom, _)| cadmpeg_ir::native::bytes::NativeBytes::from(atom.raw())),
+            ),
         )?;
         wire.serialize_entry("payload_offset", &self.lane.offset())?;
         wire.serialize_entry(
@@ -160,10 +158,10 @@ mod tests {
     #[test]
     fn pattern_fixed_borrowed_bytes_and_limit() {
         bytes_and_limit::<
-            FeaturePatternConstructionFixedLane,
-            super::super::FeaturePatternConstructionFixedLaneWire,
+            FeaturePatternConstructionBinary64Lane,
+            super::super::FeaturePatternConstructionBinary64LaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
+            r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[2.0,-32.0],"raw_values":["3000000000000000","b040000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
         );
     }
 

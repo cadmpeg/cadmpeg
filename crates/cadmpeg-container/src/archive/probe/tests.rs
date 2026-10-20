@@ -23,7 +23,9 @@ fn a_zip64_record_must_fit_its_fixed_fields_before_the_locator() {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-        let found = super::find_zip64(&ctx, &mut Cursor::new(bytes), 0, size + 12, 0)
+        let end = cadmpeg_core::decode::u64_from_index(size + 12);
+        let found = super::Zip64Records::new(std::collections::HashSet::from([end]))
+            .find(&ctx, &mut Cursor::new(bytes), end, 0)
             .expect("boundary probe");
         assert_eq!(found, (size == 44).then_some(0));
         ctx.finish_session().expect("session");
@@ -86,11 +88,9 @@ fn zip64_end_record_with_maximum_comment_keeps_the_directory_namespace() {
         bytes.resize(bytes.len() + usize::from(u16::MAX), b'c');
         bytes[0] ^= 1;
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 256 * 1024;
-        policy.limits.max_collection_items = 32;
+        let policy = DecodePolicy::service();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+        let image = read(&ctx, &mut Cursor::new(&bytes))
             .expect("probe")
             .expect("namespace image");
         assert!(ArchiveSnapshot::contains_matching_name(
@@ -99,7 +99,6 @@ fn zip64_end_record_with_maximum_comment_keeps_the_directory_namespace() {
             |name| name == "Document.xml"
         )
         .expect("admitted namespace"));
-        drop((image, storage));
         let snapshot = ArchiveSnapshot::new(&ctx, root).expect("native ZIP64 namespace");
         assert!(snapshot.entry("Document.xml").is_some());
         ctx.finish_session().expect("session");
@@ -107,7 +106,7 @@ fn zip64_end_record_with_maximum_comment_keeps_the_directory_namespace() {
 }
 
 #[test]
-fn an_end_signature_inside_an_opaque_comment_does_not_reserve_payload_workspace() {
+fn an_end_signature_inside_an_opaque_comment_does_not_select_payload_bytes() {
     use cadmpeg_test_support::bytes::put_u32;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     writer
@@ -128,10 +127,9 @@ fn an_end_signature_inside_an_opaque_comment_does_not_reserve_payload_workspace(
         .expect("opaque comment");
     let bytes = writer.finish().expect("archive").into_inner();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 256 * 1024;
+    let policy = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-    let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+    let image = read(&ctx, &mut Cursor::new(&bytes))
         .expect("probe")
         .expect("namespace image");
     assert!(image.len() < 1024);
@@ -141,7 +139,6 @@ fn an_end_signature_inside_an_opaque_comment_does_not_reserve_payload_workspace(
         |name| name == "Document.xml"
     )
     .expect("namespace"));
-    drop((image, storage));
     let snapshot = ArchiveSnapshot::new(&ctx, root)
         .expect("opaque footer signatures do not change native namespace selection");
     assert!(snapshot.entry("Document.xml").is_some());
@@ -154,7 +151,7 @@ fn an_end_signature_inside_an_opaque_comment_does_not_reserve_payload_workspace(
         2 * 1024 * 1024
     );
     let spans = snapshot
-        .physical_ledger(&ctx)
+        .physical_ledger()
         .expect("original source partition");
     assert_eq!(
         spans.last().expect("end record").end,
@@ -200,10 +197,9 @@ fn a_false_comment_directory_is_framed_before_its_declared_bytes_are_acquired() 
             u32::try_from(payload_start).expect("offset"),
         );
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 256 * 1024;
+        let policy = DecodePolicy::service();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+        let image = read(&ctx, &mut Cursor::new(&bytes))
             .expect("invalid comment declaration is skipped before allocation")
             .expect("directory");
         assert!(image.len() < 1024);
@@ -213,7 +209,6 @@ fn a_false_comment_directory_is_framed_before_its_declared_bytes_are_acquired() 
             |name| name == "Document.xml"
         )
         .expect("namespace"));
-        drop((image, storage));
         assert!(ArchiveSnapshot::new(&ctx, root)
             .expect("original archive")
             .entry("Document.xml")
@@ -244,7 +239,7 @@ fn signed_directory_detection_handles_included_and_excluded_signature_sizes() {
             let arena = DecodeArena::new();
             let policy = DecodePolicy::service();
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-            let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+            let image = read(&ctx, &mut Cursor::new(&bytes))
                 .expect("probe")
                 .expect("signed directory");
             assert!(ArchiveSnapshot::contains_matching_name(
@@ -253,7 +248,6 @@ fn signed_directory_detection_handles_included_and_excluded_signature_sizes() {
                 |name| name == "Document.xml"
             )
             .expect("namespace"));
-            drop((image, storage));
             ctx.finish_session().expect("session");
         }
     }
@@ -284,9 +278,7 @@ fn an_embedded_member_directory_does_not_acquire_the_outer_payload_as_index_meta
         .expect("required payload");
     let bytes = writer.finish().expect("archive").into_inner();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 256 * 1024;
-    policy.limits.max_collection_items = 32;
+    let policy = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
     let snapshot =
         ArchiveSnapshot::new(&ctx, root).expect("only outer directory metadata is acquired");
@@ -320,5 +312,72 @@ fn conflicting_terminal_namespaces_are_a_required_declaration_failure() {
     assert!(
         matches!(ArchiveSnapshot::new(&ctx, root), Err(cadmpeg_core::CodecError::Malformed(message)) if message.contains("ambiguous terminal"))
     );
+    ctx.finish_session().expect("session");
+}
+
+/// A 1 MiB prefix followed by `count` nested end records, each `stride`
+/// bytes after the previous and each with a comment reaching end of file.
+/// `write` fills the bytes before and including each end record.
+fn nested_end_records(count: usize, stride: usize, write: impl Fn(&mut [u8], usize)) -> Vec<u8> {
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
+    let prefix = 1 << 20;
+    let mut bytes = vec![0; prefix + count * stride];
+    for index in 0..count {
+        let end = prefix + index * stride + stride - end_record::LEN;
+        put_u32(&mut bytes, end, 0x0605_4b50);
+        put_u16(&mut bytes, end + end_record::ENTRIES, 1);
+        let comment = bytes.len() - end - end_record::LEN;
+        put_u16(
+            &mut bytes,
+            end + end_record::COMMENT_LENGTH,
+            u16::try_from(comment).expect("comment length"),
+        );
+        write(&mut bytes, end);
+    }
+    bytes
+}
+
+fn admission_error(bytes: &[u8]) -> String {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("context");
+    let Err(cadmpeg_core::CodecError::Malformed(message)) =
+        super::super::preflight_central_directory(&ctx, bytes)
+    else {
+        panic!("expected a malformed archive");
+    };
+    ctx.finish_session().expect("session");
+    message
+}
+
+#[test]
+fn nested_end_records_search_for_central_headers_once() {
+    use cadmpeg_test_support::bytes::put_u32;
+    // Searching the input once per end record would read 2^31 bytes.
+    let bytes = nested_end_records(1 << 11, end_record::LEN, |bytes, end| {
+        put_u32(
+            bytes,
+            end + end_record::DIRECTORY_SIZE,
+            u32::try_from(end).expect("directory size"),
+        );
+    });
+    assert_eq!(admission_error(&bytes), "ZIP central header is absent");
+}
+
+#[test]
+fn nested_zip64_locators_search_for_end_records_once() {
+    use cadmpeg_test_support::bytes::put_u32;
+    // Searching the input once per locator would read 2^30 bytes.
+    let stride = zip64_locator::LEN + end_record::LEN;
+    let bytes = nested_end_records(1 << 10, stride, |bytes, end| {
+        put_u32(bytes, end - zip64_locator::LEN, 0x0706_4b50);
+    });
+    assert_eq!(admission_error(&bytes), "ZIP64 end record is absent");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
+    assert!(read(&ctx, &mut Cursor::new(bytes))
+        .expect("probe")
+        .is_none());
     ctx.finish_session().expect("session");
 }

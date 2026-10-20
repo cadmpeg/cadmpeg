@@ -4,7 +4,6 @@
 use super::state_index::{OperationStateIndex, StateIndexToken};
 use super::state_link::StateLinkCode;
 use super::state_message::{OperationStateMessage, StateMessage};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +46,7 @@ impl<S: crate::immutable_text::ImmutableText, B: AsRef<[u8]>> StateStatus<S, B> 
 }
 
 impl StateStatus<&str, &[u8]> {
-    pub(crate) fn into_owned(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<StateStatus<String, Vec<u8>>, CodecError> {
+    pub(crate) fn into_owned(self) -> Result<StateStatus<String, Vec<u8>>, CodecError> {
         let payload = match self.payload {
             StateStatusPayload::Plain => StateStatusPayload::Plain,
             StateStatusPayload::Linked {
@@ -61,11 +57,9 @@ impl StateStatus<&str, &[u8]> {
                 object_index,
             },
             StateStatusPayload::Diagnostic(message) => {
-                StateStatusPayload::Diagnostic(message.into_owned(ctx)?)
+                StateStatusPayload::Diagnostic(message.into_owned()?)
             }
-            StateStatusPayload::Opaque { raw } => StateStatusPayload::Opaque {
-                raw: ctx.copy_retained(raw, "NX state status opaque payload")?,
-            },
+            StateStatusPayload::Opaque { raw } => StateStatusPayload::Opaque { raw: raw.to_vec() },
         };
         Ok(StateStatus {
             status_code: self.status_code,

@@ -52,6 +52,90 @@ record states which lane it is in.
 | `134` | B_CURVE | 23 B | logical fixed record length | §4.1 |
 | `137` | SP_CURVE | variable | 33 bytes plus escape and large-index shifts | §4.1 |
 
+## `parasolid_transmit_prefix`
+
+Spec §6.3 · layout: byte offsets · size: 6 B
+
+The counted description starts immediately after this fixed prefix. Its byte length excludes the prefix and the following counted schema.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/parasolid.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `signature` | `bytes[2]` | big | spec | The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. · value `[80, 83]` |
+| 2 | 4 | `description_length` | `u32` | big | spec | The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. |
+
+## `pmark_scalar_tail`
+
+Spec §4.2 · layout: byte offsets · size: 21 B
+
+Relative to the endpoint of the five variable-width XMT indices, excluding the type tag and first-use schema information.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `n_new_nodes` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 4 | 4 | `n_del_nodes` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 8 | 4 | `n_copy_mod_nodes` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 12 | 4 | `delta_key` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 16 | 1 | `delta_is_forward` | `u8` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 17 | 4 | `identifier` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+
+## `studio_post_branch_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 22 B
+
+Relative to the byte immediately after the admitted eight-byte Studio branch terminator. Eight variable-width canonical object-index references follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/studio_references.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `discriminator` | `bytes[22]` | big | spec | Its fixed prefix is `00 00 00 00 00 00 00 00 00 01 04 02 01 01 01 05 01 01 01 01 01 09` (22 bytes) · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 2, 1, 1, 1, 5, 1, 1, 1, 1, 1, 9]` |
+
+## `studio_post_branch_suffix`
+
+Spec §7.1 · layout: byte offsets · size: 36 B
+
+Relative to the byte immediately after the eighth canonical post-branch object-index reference. The suffix ends at the trailing envelope prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/studio_references.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 36 | `discriminator` | `bytes[36]` | big | spec | the fixed suffix `01 05 ff ff ff ff 15 01 10 04 04 02 02 a0 5a 50 08 08 02 02 01 01 01 01 02 02 01 05 2f a4 7a e1 47 ae 14 7b` (36 bytes) · value `[1, 5, 255, 255, 255, 255, 21, 1, 16, 4, 4, 2, 2, 160, 90, 80, 8, 8, 2, 2, 1, 1, 1, 1, 2, 2, 1, 5, 47, 164, 122, 225, 71, 174, 20, 123]` |
+
+## `construction_binary64_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 18 B
+
+One or more eight-byte shifted binary64 atoms and a zero terminator follow. Physical block boundaries do not delimit an atom.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 18 | `discriminator` | `bytes[18]` | big | spec | A lane is `25 25 41 00 04 01 07 01 c0 45 10 00 80 86 02 00 01 00, atom+, 00` · value `[37, 37, 65, 0, 4, 1, 7, 1, 192, 69, 16, 0, 128, 134, 2, 0, 1, 0]` |
+
+## `assembly_placement_prefix`
+
+Spec §2.3 · layout: byte offsets · size: 6 B
+
+Twelve variable-width matrix atoms follow this fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/native/assembly_placement.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `magic` | `bytes[6]` | big | spec | `ff 00 45 01 04 01`. Twelve scalar atoms follow in row-major order as a · value `[255, 0, 69, 1, 4, 1]` |
+
 ## `splmsstr_header`
 
 Spec §2 · layout: byte offsets · size: 31 B
@@ -123,6 +207,64 @@ Row ordinal 1 has `type_code = 1`, `subtype_code = 1`, and a `value` equal to th
 | 0 | 4 | `type_code` | `u32` | little | spec | type_code:u32 subtype_code:u32 value:u32 |
 | 4 | 4 | `subtype_code` | `u32` | little | spec | type_code:u32 subtype_code:u32 value:u32 |
 | 8 | 4 | `value` | `u32` | little | spec | type_code:u32 subtype_code:u32 value:u32 |
+
+## `segment_stream_wrapper`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+
+## `segment_stream_wrapper_a0`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `duplicate_byte_len` | `u32` | little | spec | `duplicate_byte_len:u32 LE` at `+8` |
+| 12 | 4 | `zero` | `u32` | little | spec | `zero:u32 LE` at `+12` · value `0` |
+
+## `segment_stream_wrapper_c0_33`
+
+Spec §2 · layout: byte offsets · size: 33 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `header_code` | `u32` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `37` |
+| 12 | 2 | `version` | `u16` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `4` |
+| 14 | 4 | `zero` | `u32` | little | spec | with `zero:u32 LE` at `+14` equal to zero · value `0` |
+| 18 | 15 | `opaque` | `bytes[15]` | n/a | spec | bytes `+18..+32` opaque |
+
+## `segment_stream_wrapper_c0_45`
+
+Spec §2 · layout: byte offsets · size: 45 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `header_code` | `u32` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `45` |
+| 12 | 2 | `version` | `u16` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `5` |
+| 14 | 4 | `duplicate_byte_len` | `u32` | little | spec | `duplicate_byte_len:u32 LE` at `+14` equal to `compressed_byte_len` |
+| 18 | 27 | `opaque` | `bytes[27]` | n/a | spec | bytes `+18..+44` opaque |
 
 ## `fastload_structure_envelope`
 
@@ -649,6 +791,28 @@ Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
 
+## `nurbs_control_array_count_prefix`
+
+Spec §4.2 · layout: byte offsets · size: 6 B
+
+Relative to the type tag without the optional ff envelope. The variable-width XMT identity follows this prefix at offset 6.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `type_tag` | `u16` | big | spec | `002d [ff], count:u32 BE, xmt, value[count]:f64 BE` · value `45` |
+| 2 | 4 | `count` | `u32` | big | spec | Without the optional envelope, the count starts at offset 2 and the XMT |
+
+## `nurbs_knot_array_count_prefix`
+
+Spec §9.3 · layout: byte offsets · size: 6 B
+
+The type is 127 or 128. Offsets exclude the optional envelope; an envelope shifts the count and following XMT by one byte. The variable-width XMT follows the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `type_tag` | `u16` | big | spec | `00 7f [ff], count:u32 BE, xmt, value[count]:u16 BE` |
+| 2 | 4 | `count` | `u32` | big | spec | Without the optional envelope, the count starts at offset 2 and the XMT at offset 6 for types 127 and 128. |
+
 ## `nurbs_curve_descriptor_prefix`
 
 Spec §6.2 · layout: byte offsets · size: 21 B
@@ -671,11 +835,120 @@ Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
 
+## `fset_parameter_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 21 B
+
+The counted, empty, or two-group construction field follows this fixed parameter prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/fset_indices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `class_index` | `u8` | little | spec | `class_index:u8, 00 00 01, zero[17]` |
+| 1 | 3 | `fixed_prefix` | `bytes[3]` | little | spec | `class_index:u8, 00 00 01, zero[17]` · value `[0, 0, 1]` |
+| 4 | 17 | `zeros` | `bytes[17]` | little | spec | `class_index:u8, 00 00 01, zero[17]` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `named_construction_target_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 5 B
+
+A canonical variable-width feature-object reference follows this fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/named_target.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `magic` | `bytes[5]` | big | spec | `e0 3c 01 16 a1` · value `[224, 60, 1, 22, 161]` |
+
+## `named_construction_name_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 5 B
+
+Offsets are relative to the first byte after the variable-width reference. The name length, printable bytes, and terminator follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/named_target.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `magic` | `bytes[5]` | big | spec | a7 01 66 32 03 · value `[167, 1, 102, 50, 3]` |
+
+## `rmfastload_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 35 B
+
+Entry-relative. The platform bytes begin after the length word. Their length and the following filename length determine the nine-word header start.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/rmfastload.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `signature` | `bytes[8]` | — | spec | envelope is `ff ff ff ff 00 00 00 00 payload_len:u32 BE` · value `[255, 255, 255, 255, 0, 0, 0, 0]` |
+| 8 | 4 | `payload_len` | `u32` | big | spec | `payload_len + 12` equal to the directory-entry size |
+| 12 | 4 | `marker` | `bytes[4]` | — | spec | Bytes `+12..+16` are · value `[79, 77, 1, 1]` |
+| 31 | 4 | `platform_length` | `u32` | little | spec | At `+31`, a `u32 LE` |
+
+Unstated regions:
+
+- `16..31` (15 B): Opaque prefix bytes.
+
+## `rmfastload_header`
+
+Spec §7.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the first byte after both length-prefixed strings.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/rmfastload.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `physical_span_count` | `u32` | little | spec | h[0] = physical_span_count |
+| 4 | 4 | `opaque_word` | `u32` | little | spec | h[1] = opaque word |
+| 8 | 4 | `reserved_word` | `u32` | little | spec | h[2] = 0 · value `0` |
+| 12 | 4 | `class_count` | `u32` | little | spec | h[3] = ordered class-registry count |
+| 16 | 4 | `terminal_row_count` | `u32` | little | spec | h[4] = terminal triple-row count |
+| 20 | 12 | `reserved_words` | `bytes[12]` | little | spec | h[5] = h[6] = h[7] = 0 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 32 | 4 | `terminal_offset` | `u32` | little | spec | h[8] = entry-relative terminal table offset |
+
+## `extract_face_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 31 B
+
+Relative to the start of the EXTRACT_FACE payload. Two variable-width counted relation lanes and the terminal/text suffix follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/extract_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `parameter_class_index` | `u8` | big | spec | The nonzero parameter class index is one-based in the owning OM section |
+| 1 | 4 | `discriminator` | `bytes[4]` | big | spec | marker at offset 1, the four tagged words at offsets 5 through 24, and the · value `[0, 0, 1, 0]` |
+| 5 | 20 | `tagged_words` | `bytes[20]` | big | spec | marker at offset 1, the four tagged words at offsets 5 through 24, and the |
+| 25 | 6 | `reserved` | `bytes[6]` | big | spec | six zero bytes at offset 25. Each lane is `01, count:u8, triple[count - 1]` · value `[0, 0, 0, 0, 0, 0]` |
+
+## `symbolic_thread_reference_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 2 B
+
+Immediately after the two equal coordinate tuples. Three canonical variable-width payload references and an optional ff follow; the complete Cut/CUT text frame bounds the witness.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/symbolic_thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `reference_frame` | `bytes[2]` | big | spec | three-coordinate tuples followed by the fixed two-byte prefix `01 03` · value `[1, 3]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | OM record grammars (§7.1) | §3.3 | About sixty fixed-literal token grammars with sequential field positions but no stated absolute offsets. They are slot layouts over a variable-width compact-index lane, so no byte arithmetic closes. |
-| `b5`-style deltas record grammars (§4.2, §9.2-§9.4) | §4.2 | Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. The spec states field order and inline schema-header byte strings, not offsets. |
+| `b5`-style deltas record grammars (§4.2, §9.2-§9.4) | §4.2 | Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. Effective schema programs determine field order and variable extents, so these productions have no fixed byte offsets. |
 | Int32 Compressed Data Packet Mk. 2 (§2.3) | §2.3 | A most-significant-bit-first bit stream with `u6` and `u3` sub-fields; there are no byte offsets to state. |
 | B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |

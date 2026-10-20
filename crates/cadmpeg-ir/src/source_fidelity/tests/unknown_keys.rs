@@ -100,7 +100,7 @@ fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
                 "extra": [{"dialect": "acis:asm-binaryfile-4", "instance": "body", "admission": "admitted"}]
             }
         });
-        classified["report"]["transfer"] = json!({"transfer": "container_only"});
+        classified["report"]["transfer"] = json!({"transfer": "container"});
         fixtures.push(classified);
     }
     let mut visited = BTreeSet::new();

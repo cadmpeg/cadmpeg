@@ -16,7 +16,7 @@ use crate::history::parameters::{
     expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
     parse_native_parameter_literal, project_parameters,
 };
-use crate::history::project::neutral_feature_id_charged;
+use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 pub(crate) fn prepare_parameters_for_write(
@@ -139,24 +139,16 @@ fn sync_neutral_parameters(
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .map(|feature| {
-                Ok((
-                    neutral_feature_id_charged(&ctx, &feature.id)?,
-                    feature.name.clone(),
-                ))
-            })
+            .map(|feature| Ok((neutral_feature_id(&feature.id)?, feature.name.clone())))
             .collect::<Result<HashMap<_, _>, CodecError>>()?;
         rewrite_renamed_parameter_references(
-            &ctx,
             &mut parameters,
             &original,
             &original_feature_names,
             &feature_names,
-        )?;
+        );
     }
-    if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)?
-        > 0
-    {
+    if parameters_with_incoherent_dependencies(&parameters, &feature_names, &global_owners) > 0 {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));
@@ -221,7 +213,8 @@ fn sync_neutral_parameters(
             "SLDPRT parameters require feature records".into(),
         ));
     };
-    for (feature_id, feature) in features {
+    for feature in &ir.model.features {
+        let feature_id = &feature.id;
         let record = native
             .feature_histories
             .iter_mut()
@@ -337,12 +330,11 @@ fn sync_neutral_parameters(
 }
 
 fn rewrite_renamed_parameter_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut [DesignParameter],
     original: &[DesignParameter],
     original_feature_names: &HashMap<FeatureId, String>,
     feature_names: &HashMap<FeatureId, String>,
-) -> Result<(), CodecError> {
+) {
     let original = original
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -416,22 +408,17 @@ fn rewrite_renamed_parameter_references(
         if aliases.is_empty() {
             continue;
         }
-        if let Some(rewritten) = rewrite_parameter_expression(ctx, &parameter.expression, &aliases)?
-        {
+        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
             parameter.expression = rewritten;
         }
     }
-    Ok(())
 }
 
 pub(in crate::history) fn rewrite_parameter_expression(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     expression: &str,
     aliases: &HashMap<String, String>,
-) -> Result<Option<String>, CodecError> {
-    let Some(tokens) = expression_identifier_tokens(ctx, expression)? else {
-        return Ok(None);
-    };
+) -> Option<String> {
+    let tokens = expression_identifier_tokens(expression)?;
     let mut rewritten = String::with_capacity(expression.len());
     let mut tail = expression;
     let mut replaced = false;
@@ -457,10 +444,10 @@ pub(in crate::history) fn rewrite_parameter_expression(
         replaced = true;
     }
     if !replaced {
-        return Ok(None);
+        return None;
     }
     rewritten.push_str(tail);
-    Ok(Some(rewritten))
+    Some(rewritten)
 }
 
 pub(in crate::history) fn unquoted_expression_identifier(value: &str) -> bool {

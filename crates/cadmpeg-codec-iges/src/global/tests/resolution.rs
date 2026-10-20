@@ -18,7 +18,7 @@ fn global_defaults_apply_only_to_omitted_fields() {
     let global =
         b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,,,2HIN,1,1.0,15H20260714.000000,0,1,1Ha,1Ho,,0,0H,0H;";
     let bytes = fixed_ascii_with_global(global);
-    let scan = crate::test_support::scan(&bytes).unwrap();
+    let scan = crate::card::scan(&bytes).unwrap();
     let (parsed, losses) = crate::test_support::parse_global(&scan).unwrap();
     let context = parsed.length_context().unwrap();
 
@@ -192,7 +192,7 @@ fn global_timestamps_and_scalar_ranges_follow_the_specification() {
 fn malformed_global_integer_does_not_select_its_default() {
     let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2.,2HMM,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;";
     let (parsed, losses) = crate::test_support::parse_global(
-        &crate::test_support::scan(&fixed_ascii_with_global(global)).unwrap(),
+        &crate::card::scan(&fixed_ascii_with_global(global)).unwrap(),
     )
     .unwrap();
 
@@ -218,7 +218,7 @@ fn absent_or_nonpositive_significance_fields_substitute_seventeen_digits() {
         ),
     ] {
         let (parsed, losses) =
-            crate::test_support::parse_global(&crate::test_support::scan(&fixed_ascii_with_global(global)).unwrap())
+            crate::test_support::parse_global(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
                 .unwrap();
 
         let precision = parsed.real_precision();
@@ -282,7 +282,10 @@ fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
     );
 
     let strict = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap();
     assert_eq!(
         report_code_count(strict.report(), IgesLossCode::LineWeightScaleUnavailable),
@@ -316,7 +319,10 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
         );
 
         let error = IgesCodec
-            .decode(&mut Cursor::new(bytes), &strict_options(false))
+            .decode(
+                &mut Cursor::new(bytes),
+                &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+            )
             .unwrap_err();
         match error {
             cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
@@ -368,7 +374,10 @@ fn a_malformed_generation_date_decodes_in_salvage_and_strict_modes() {
     );
 
     let strict = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap();
     assert_eq!(
         report_code_count(strict.report(), IgesLossCode::GlobalMetadataFieldUnusable),

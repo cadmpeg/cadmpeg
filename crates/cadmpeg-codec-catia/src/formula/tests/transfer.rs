@@ -63,7 +63,7 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -303,7 +303,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -577,7 +577,7 @@ fn decode_transfers_typed_integer_to_angle_formula() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -692,7 +692,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -766,7 +766,7 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert_eq!(input.properties["catia_binding"], "#1_ /2");
         assert!(
             cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     }
@@ -805,7 +805,7 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
     assert_eq!(output.properties["value_type"], "String");
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -922,7 +922,7 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1013,90 +1013,6 @@ fn formula_parameter_entity_limit_refuses_before_model_extend() {
 }
 
 #[test]
-fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
-    let bytes = standard_catpart_with_typed_formula_inputs(
-        4,
-        false,
-        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
-        "LENGTH",
-        Some(33.0),
-        "#1_-2mm",
-    );
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut ir = CadIr::empty();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::formula::transfer_parameters(
-            ctx,
-            &mut ir,
-            &native,
-            &mut cadmpeg_ir::Annotations::default(),
-            &crate::decode::ModelingGraphScope::Unresolved,
-        )
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_formula_entity_index")
-    );
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        crate::formula::transfer_parameters(
-            ctx,
-            &mut ir,
-            &native,
-            &mut cadmpeg_ir::Annotations::default(),
-            &crate::decode::ModelingGraphScope::Unresolved,
-        )
-    })
-    .expect("service profile admits formula scan");
-    assert!(admitted.consumed_object_records.is_empty());
-    assert!(ir.model.parameters.is_empty());
-}
-
-#[test]
-fn formula_finalization_refuses_each_collection_boundary() {
-    let bytes = standard_catpart_with_typed_formula_inputs(
-        4,
-        false,
-        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
-        "LENGTH",
-        Some(33.0),
-        "#1_-2mm",
-    );
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..=512 {
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            crate::formula::transfer_parameters(
-                ctx,
-                &mut CadIr::empty(),
-                &native,
-                &mut cadmpeg_ir::Annotations::default(),
-                &crate::decode::ModelingGraphScope::Unscoped,
-            )
-        });
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(_) => {}
-            Err(error) => panic!("unexpected formula transfer error: {error}"),
-        }
-    }
-    for operation in [
-        "catia_formula_derivable_parameters",
-        "catia_formula_consumed_entities",
-        "catia_formula_ordered_parameters",
-        "collect source exactness entities",
-        "collect source exactness fields",
-        "catia_formula_neutral_parameters",
-    ] {
-        assert!(
-            refused.contains(operation),
-            "no low-limit refusal at {operation}"
-        );
-    }
-}
-
-#[test]
 fn formula_candidate_entity_limit_refuses_before_first_candidate() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
@@ -1164,113 +1080,6 @@ fn formula_definition_chain_limit_refuses_before_candidate_creation() {
     assert_eq!(limit.used, 0);
     assert_eq!(limit.operation, "admit CATIA formula candidate");
     assert!(ir.model.parameters.is_empty());
-}
-
-#[test]
-fn definition_chain_history_id_refuses_retained_limit() {
-    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
-        "Boolean",
-        &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
-    );
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let entity = native
-        .entity_records
-        .iter()
-        .find(|entity| entity.definition_chain_value().is_some())
-        .expect("definition chain entity");
-    let chain = entity.definition_chain_value().expect("typed chain");
-    let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_neutral_history_source")
-    );
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
-    })
-    .expect("service profile admits definition candidate");
-    assert!(admitted.is_some());
-}
-
-#[test]
-fn typed_parameter_history_id_refuses_retained_limit() {
-    let bytes = standard_catpart_with_typed_formula_inputs(
-        4,
-        false,
-        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
-        "LENGTH",
-        Some(33.0),
-        "#1_-2mm",
-    );
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let entity = native
-        .entity_records
-        .iter()
-        .find(|entity| entity.parameter_value().is_some())
-        .expect("typed parameter entity");
-    let value = entity.parameter_value().expect("typed parameter");
-    let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_neutral_history_source")
-    );
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
-    })
-    .expect("service profile admits typed candidate");
-    assert!(admitted.is_some());
-}
-
-#[test]
-fn typed_parameter_name_and_native_ref_refuse_retained_limits() {
-    let bytes = standard_catpart_with_typed_formula_inputs(
-        4,
-        false,
-        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
-        "LENGTH",
-        Some(33.0),
-        "#1_-2mm",
-    );
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let entity = native
-        .entity_records
-        .iter()
-        .find(|entity| entity.parameter_value().is_some())
-        .expect("typed parameter entity");
-    let value = entity.parameter_value().expect("typed parameter");
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
-    })
-    .expect("service profile admits typed candidate")
-    .expect("typed candidate");
-    let before_name = entity.id.len() + admitted.parameter.id.as_str().len();
-    for (cap, operation) in [
-        (
-            cadmpeg_core::decode::u64_from_index(before_name),
-            "catia_formula_typed_parameter_name",
-        ),
-        (
-            cadmpeg_core::decode::u64_from_index(before_name + value.name.value.len()),
-            "catia_formula_typed_parameter_native_ref",
-        ),
-    ] {
-        let refused = crate::test_support::with_retained_limit(cap, |ctx| {
-            super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == operation),
-            "missing refusal at {operation}"
-        );
-    }
-    assert_eq!(admitted.parameter.name, value.name.value);
-    assert_eq!(
-        admitted.parameter.native_ref.as_deref(),
-        Some(entity.id.as_str())
-    );
 }
 
 #[test]
@@ -1417,7 +1226,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1472,7 +1281,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1501,7 +1310,7 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1525,7 +1334,7 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
     assert!(input.dependencies.is_empty());
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1565,7 +1374,7 @@ fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
     assert_eq!(boundary.ir().model.parameters.len(), 2);
 
     let expression = format!("{}#1_ /2", "+".repeat(129));
-    let error = CatiaCodec
+    let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_relation(
                 4,
@@ -1578,11 +1387,13 @@ fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
             )),
             &DecodeOptions::default(),
         )
-        .expect_err("formula local depth must refuse decode");
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_formula_expression_local_depth"
-            && limit.limit == 128 && limit.additional == 1));
+        .expect("decode depth-limited formula");
+
+    let [input] = decoded.ir().model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Thickness");
+    assert!(input.dependencies.is_empty());
 }
 
 #[test]
@@ -1623,4 +1434,179 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
         ),
         1
     );
+}
+
+#[test]
+fn unresolved_graph_scope_transfers_no_formula_parameters() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty();
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unresolved,
+        )
+    })
+    .expect("transfer parameters");
+    assert!(admitted.consumed_object_records.is_empty());
+    assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
+fn boolean_definition_chain_yields_a_parameter_candidate() {
+    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+        "Boolean",
+        &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.definition_chain_value().is_some())
+        .expect("definition chain entity");
+    let chain = entity.definition_chain_value().expect("typed chain");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
+    })
+    .expect("compute the definition chain parameter candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
+fn typed_length_parameter_yields_a_parameter_candidate() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.parameter_value().is_some())
+        .expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    })
+    .expect("compute the typed entity parameter candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
+fn typed_parameter_candidate_carries_source_name_and_entity_ref() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.parameter_value().is_some())
+        .expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    })
+    .expect("compute the typed entity parameter candidate")
+    .expect("typed candidate");
+
+    assert_eq!(admitted.parameter.name, value.name.value);
+    assert_eq!(
+        admitted.parameter.native_ref.as_deref(),
+        Some(entity.id.as_str())
+    );
+}
+
+#[test]
+fn formula_output_expression_charges_its_retained_text() {
+    let expression = "#1_-2mm";
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        expression,
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let transfer = |limit: u64| {
+        let mut ir = CadIr::empty();
+        let transferred = crate::test_support::with_retained_limit(limit, |ctx| {
+            crate::formula::transfer_parameters(
+                ctx,
+                &mut ir,
+                &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        })
+        .map(|_| ());
+        (transferred, ir)
+    };
+    let length = u64::try_from(expression.len()).unwrap();
+
+    let (fits, ir) = transfer(length);
+    fits.expect("the output expression fits its retained text");
+    assert!(ir
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.expression == expression));
+    let (refused, _) = transfer(length - 1);
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = refused else {
+        panic!("the output expression exceeds the retained limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert_eq!(limit.operation, "retain CATIA formula output expression");
+}
+
+#[test]
+fn expression_parses_are_shared_by_equal_selections() {
+    let calls = std::cell::Cell::new(0usize);
+    let parse = || {
+        calls.set(calls.get() + 1);
+        Ok(crate::formula::ExpressionParse {
+            type_checked: None,
+            evaluated: None,
+        })
+    };
+    let first = [1_u32, 2];
+    let equal = [1_u32, 2];
+    let other = [3_u32];
+    let mut parses = crate::formula::ExpressionParses::<[u32]>::new();
+    for selection in [&first[..], &equal[..], &first[..]] {
+        parses
+            .get_or_parse("expression", selection, parse)
+            .expect("parse the shared expression");
+    }
+    assert_eq!(calls.get(), 1);
+    parses
+        .get_or_parse("expression", &other, parse)
+        .expect("parse another selection");
+    parses
+        .get_or_parse("other-expression", &first, parse)
+        .expect("parse another expression");
+    assert_eq!(calls.get(), 3);
 }

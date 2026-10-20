@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
@@ -812,9 +813,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
 }
 
 #[test]
-fn edge_flange_native_height_target_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn edge_flange_unresolved_to_object_keeps_native_target() {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
@@ -824,54 +823,51 @@ fn edge_flange_native_height_target_id_refuses_retained_limit() {
     })
     .unwrap()
     .expect("unresolved to-object EdgeFlange");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-        height:
-            SheetMetalFlangeHeight::ToObject {
-                target: SheetMetalFlangeHeightTarget::Native(native),
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
+            height: SheetMetalFlangeHeight::ToObject {
+                target: SheetMetalFlangeHeightTarget::Native(_),
                 ..
             },
-        ..
-    }) = definition
-    else {
-        panic!("native to-object target");
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(native.len() - 1).unwrap();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = edge_flange_to_object_fixture(&ctx, false, false);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref failure))
-        if failure.operation == "f3d EdgeFlange native height target id"
-            && failure.dimension == ResourceDimension::RetainedBytes),
-        "expected native height target refusal, got {result:?}"
-    );
+            ..
+        })
+    ));
 }
 
 #[test]
-fn edge_flange_two_sided_edge_width_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn edge_flange_two_sided_projects() {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
+        SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+    };
+    use cadmpeg_ir::scalar::PositiveLength;
 
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(
-            decode_ctx, true, true
-        ))
-        .unwrap()
-        .is_some()
+    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        edge_flange_to_object_fixture(decode_ctx, true, true)
+    })
+    .unwrap()
+    .expect("two-sided EdgeFlange definition");
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
+        height, width, ..
+    }) = definition
+    else {
+        panic!("expected a sheet-metal edge flange");
+    };
+    // Design lengths are centimetres; the fixture widths are 3.0 and 1.5.
+    assert_eq!(
+        width,
+        SheetMetalFlangeWidth::TwoSidesPerEdge {
+            widths: SheetMetalFlangeEdgeWidths::new(vec![SheetMetalFlangeTwoSidedWidth {
+                first: PositiveLength::new(30.0).unwrap(),
+                second: PositiveLength::new(15.0).unwrap(),
+            }])
+            .unwrap(),
+        }
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = edge_flange_to_object_fixture(&ctx, true, true);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref failure))
-        if failure.operation == "f3d EdgeFlange two-sided edge width"
-            && failure.dimension == ResourceDimension::CollectionItems),
-        "expected two-sided edge width refusal, got {result:?}"
+    assert_eq!(
+        height,
+        SheetMetalFlangeHeight::Distance(PositiveLength::new(25.0).unwrap())
     );
 }
 
@@ -967,17 +963,13 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         scope
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
-        cadmpeg_ir::features::NonEmptyMembers::try_from(
-            crate::test_support::with_decode_context(|decode_ctx| {
-                crate::design::feature_project::surface_patch_boundary_continuities(
-                    decode_ctx, scope,
-                )
-            })
-            .unwrap(),
-        )
+        cadmpeg_ir::features::NonEmptyMembers::try_from(crate::test_support::with_decode_context(
+            |_decode_ctx| crate::design::feature_project::surface_patch_boundary_conditions(scope),
+        ))
         .ok()
         .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
         .and_then(|continuity| continuity.uniform())
+        .map(cadmpeg_ir::features::FilledSurfaceBoundaryCondition::continuity)
     };
 
     for (code, expected) in [
@@ -999,11 +991,15 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         boundary(DesignPatchContinuity::Connected),
     ]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &mixed)
-        })
-        .unwrap(),
-        vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
+        crate::test_support::with_decode_context(|_decode_ctx| {
+            crate::design::feature_project::surface_patch_boundary_conditions(&mixed)
+        }),
+        vec![
+            cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Tangent {
+                weight: cadmpeg_ir::scalar::PositiveReal::new(0.5),
+            },
+            cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+        ]
     );
     assert!(uniform_continuity(&mixed).is_none());
     assert!(uniform_continuity(&scope_with(Vec::new())).is_none());
@@ -1013,18 +1009,112 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         ))]))
         .is_none()
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::surface_patch_boundary_continuities(
-            decode_ctx,
-            &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))]),
-        )
+    assert!(crate::test_support::with_decode_context(|_decode_ctx| {
+        crate::design::feature_project::surface_patch_boundary_conditions(&scope_with(vec![
+            boundary(DesignPatchContinuity::Unknown(9)),
+        ]))
     })
-    .unwrap()
     .is_empty());
 }
 
 #[test]
-fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoints() {
+fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
+    use crate::records::feature::{
+        scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut},
+        surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
+    };
+    use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
+    use cadmpeg_ir::scalar::PositiveReal;
+
+    let mut scope =
+        DesignParameterScope::empty("f3d:test:scope#1", DesignFeatureKind::SurfacePatch, 1);
+    let raw = [
+        (DesignPatchContinuity::Connected, -0.0),
+        (DesignPatchContinuity::Tangent, -1.0),
+        (DesignPatchContinuity::Tangent, 0.15),
+        (DesignPatchContinuity::Curvature, 0.423_464_161_563_635_5),
+        (DesignPatchContinuity::Curvature, 0.5),
+    ];
+    if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+        *boundaries = raw
+            .into_iter()
+            .map(|(continuity, scale)| DesignSurfacePatchBoundary {
+                scope_reference_ordinal: 0,
+                record_index: 0,
+                is_seed_selection: false,
+                continuity,
+                flip: 2,
+                scale: crate::test_support::real(scale),
+                model_reference: 0,
+            })
+            .collect();
+    }
+    let source = serde_json::to_value(&scope).unwrap();
+    let conditions = crate::test_support::with_decode_context(|_ctx| {
+        crate::design::feature_project::surface_patch_boundary_conditions(&scope)
+    });
+    assert_eq!(
+        conditions,
+        vec![
+            FilledSurfaceBoundaryCondition::Contact {},
+            FilledSurfaceBoundaryCondition::Tangent {
+                weight: PositiveReal::new(0.5)
+            },
+            FilledSurfaceBoundaryCondition::Tangent {
+                weight: PositiveReal::new(0.15)
+            },
+            FilledSurfaceBoundaryCondition::Curvature {
+                weight: PositiveReal::new(0.423_464_161_563_635_5)
+            },
+            FilledSurfaceBoundaryCondition::Curvature {
+                weight: PositiveReal::new(0.5)
+            },
+        ]
+    );
+    assert_eq!(serde_json::to_value(&scope).unwrap(), source);
+    for (boundary, (_, scale)) in scope.surface_patch_boundaries().iter().zip(raw) {
+        assert_eq!(boundary.scale.get().to_bits(), scale.to_bits());
+    }
+}
+
+#[test]
+fn surface_patch_abstains_on_unsupported_active_weights() {
+    use crate::records::feature::{
+        scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut},
+        surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
+    };
+    for continuity in [
+        DesignPatchContinuity::Tangent,
+        DesignPatchContinuity::Curvature,
+    ] {
+        for scale in [0.0, -0.0, -0.5, -2.0] {
+            let mut scope =
+                DesignParameterScope::empty("f3d:test:scope#1", DesignFeatureKind::SurfacePatch, 1);
+            if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+                *boundaries = vec![DesignSurfacePatchBoundary {
+                    scope_reference_ordinal: 0,
+                    record_index: 0,
+                    is_seed_selection: false,
+                    continuity,
+                    flip: 2,
+                    scale: crate::test_support::real(scale),
+                    model_reference: 0,
+                }];
+            }
+            assert!(crate::test_support::with_decode_context(|_ctx| {
+                crate::design::feature_project::surface_patch_boundary_conditions(&scope)
+            })
+            .is_empty());
+            assert_eq!(
+                scope.surface_patch_boundaries()[0].scale.get().to_bits(),
+                scale.to_bits()
+            );
+        }
+    }
+}
+
+#[test]
+fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     use crate::records::{
         feature::{
             scope::DesignParameterScope,
@@ -1035,9 +1125,8 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
             construction::DesignConstructionOperandGroupFrame,
         },
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceContinuity};
+
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
@@ -1143,28 +1232,12 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
+                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
                 ][..],
             )
     ));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = crate::design::feature_project::project_surface_patch(
-        &ctx,
-        &scope,
-        &shifted_groups,
-        &[],
-        &[],
-    )
-    .expect_err("ten occupancy slots exceed the remaining collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "f3d surface-patch reference occupancy"));
 
     scope
         .try_edit(|draft| {
@@ -1194,9 +1267,9 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
+                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
                 ][..],
             )
     ));
@@ -1322,6 +1395,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         .unwrap()
     };
     let operation = |parameter_owners| DesignHemOperation {
+        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        flipped: false,
         edge_wrapper_record_index: 708,
         edge_group_record_index: 710_u32.try_into().unwrap(),
         aggregate_group_record_index: 717_u32.try_into().unwrap(),
@@ -1373,6 +1448,28 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             parameter(906, "HemLength", "mm", 10.0),
         ],
     );
+    let mut flipped_operation = operation(DesignHemParameterOwners::GapLength {
+        gap_owner_record_index: 901,
+        length_owner_record_index: 904,
+    });
+    flipped_operation.flipped = true;
+    let reversed = project(
+        900,
+        flipped_operation,
+        vec![owner(900, 901, 903), owner(900, 904, 906)],
+        vec![
+            parameter(903, "HemGap", "mm", 0.02),
+            parameter(906, "HemLength", "mm", 10.0),
+        ],
+    );
+    assert!(matches!(
+        reversed,
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
+            direction: SheetMetalHemDirection::Reverse,
+            bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+            ..
+        })
+    ));
     let rolled = project(
         910,
         operation(DesignHemParameterOwners::RadiusAngle {
@@ -1420,7 +1517,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
         }
     );
-    assert_eq!(direction, SheetMetalHemDirection::Unresolved);
+    assert_eq!(direction, SheetMetalHemDirection::Forward);
     assert_eq!(
         bend_radius,
         cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()
@@ -1448,44 +1545,5 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
         }
-    );
-}
-
-#[test]
-fn surface_patch_continuities_refuse_collection_limit() {
-    use crate::records::feature::scope::DesignParameterScope;
-    use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let mut scope = DesignParameterScope::empty(
-        "f3d:test:scope#1",
-        crate::records::feature::scope::DesignFeatureKind::SurfacePatch,
-        1,
-    );
-    if let crate::records::feature::scope::DesignScopePayloadMut::SurfacePatch(slot) =
-        scope.payload_mut()
-    {
-        *slot = vec![
-            DesignSurfacePatchBoundary {
-                scope_reference_ordinal: 0,
-                record_index: 0,
-                is_seed_selection: false,
-                continuity: DesignPatchContinuity::Connected,
-                flip: 2,
-                scale: crate::test_support::real(-1.0),
-                model_reference: 0,
-            };
-            2
-        ];
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(crate::design::feature_project::surface_patch_boundary_continuities(&ctx, &scope),
-        Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d surface-patch continuity")
     );
 }

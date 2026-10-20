@@ -333,6 +333,27 @@ pub(crate) enum StepLossCode {
     EdgeStartVertexMissing,
     /// An edge was omitted because its end vertex is missing.
     EdgeEndVertexMissing,
+    /// An anchor or REFERENCE expansion passed its value-node limit; the
+    /// binding or instance remains source-only.
+    ParseExpansionBounded,
+    /// Product occurrence expansion stopped at its occurrence limit.
+    OccurrenceExpansionOutputTruncated,
+    /// Product occurrence expansion stopped a branch at its path-depth limit.
+    OccurrenceExpansionDepthTruncated,
+    /// A non-manifold edge of a closed shell was written as one edge per
+    /// forward and reversed use pair.
+    NonManifoldEdgeSplit,
+    /// An edge vertex lies off its own carrier by more than the document
+    /// tolerance, and the edge's parameter range was derived anyway.
+    ///
+    /// The conic inversion takes the parameter from the IN-PLANE components of
+    /// the vertex alone, so the axial and radial offsets cannot change the
+    /// answer: the parameter is exact for any vertex off the axis. Refusing it
+    /// on the total 3D distance rejects a correct parameter for a defect no
+    /// parameter can repair, and costs the whole body downstream. The offset is
+    /// reported here instead, with its measured value, because the cost is
+    /// continuous and a threshold cannot express it.
+    EdgeVertexOffCarrier,
 }
 
 impl StepLossCode {
@@ -491,6 +512,11 @@ impl StepLossCode {
         Self::EdgeRecordMissing,
         Self::EdgeStartVertexMissing,
         Self::EdgeEndVertexMissing,
+        Self::ParseExpansionBounded,
+        Self::OccurrenceExpansionOutputTruncated,
+        Self::OccurrenceExpansionDepthTruncated,
+        Self::NonManifoldEdgeSplit,
+        Self::EdgeVertexOffCarrier,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -669,6 +695,11 @@ impl StepLossCode {
             Self::EdgeRecordMissing => "topology.edge-record-missing",
             Self::EdgeStartVertexMissing => "topology.edge-start-vertex-missing",
             Self::EdgeEndVertexMissing => "topology.edge-end-vertex-missing",
+            Self::ParseExpansionBounded => "parse.expansion-bounded",
+            Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
+            Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
+            Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
+            Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
         }
     }
 
@@ -724,7 +755,8 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
-            | Self::SourceNativeRecordOmitted => Severity::Info,
+            | Self::SourceNativeRecordOmitted
+            | Self::NonManifoldEdgeSplit => Severity::Info,
             _ => Severity::Warning,
         }
     }
@@ -740,11 +772,14 @@ impl StepLossCode {
             | Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
-            | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
+            | Self::PcurveGlobalFidelityUnproved
+            | Self::OccurrenceExpansionOutputTruncated
+            | Self::OccurrenceExpansionDepthTruncated => LossTaxonomy::DecodeDiagnostic,
             Self::ParseDraftGrammar => LossTaxonomy::SourceDialectUnverified,
             Self::OpaqueRecordPreserved
             | Self::DrawingRecordTooFewParameters
-            | Self::DrawingOrderUnstatable => LossTaxonomy::RecordNotTyped,
+            | Self::DrawingOrderUnstatable
+            | Self::ParseExpansionBounded => LossTaxonomy::RecordNotTyped,
             Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
@@ -830,7 +865,8 @@ impl StepLossCode {
             | Self::LoopNoContinuousOrdering
             | Self::EdgeRecordMissing
             | Self::EdgeStartVertexMissing
-            | Self::EdgeEndVertexMissing => LossTaxonomy::TopologyNotTransferred,
+            | Self::EdgeEndVertexMissing
+            | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -848,9 +884,9 @@ impl StepLossCode {
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata => LossTaxonomy::PcurveOmitted,
-            Self::FaceMultipleOuterBounds | Self::ShellDisconnectedFaces => {
-                LossTaxonomy::SourceTopologyInvalid
-            }
+            Self::FaceMultipleOuterBounds
+            | Self::ShellDisconnectedFaces
+            | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
@@ -1071,6 +1107,11 @@ mod tests {
                 "topology.edge-record-missing",
                 "topology.edge-start-vertex-missing",
                 "topology.edge-end-vertex-missing",
+                "parse.expansion-bounded",
+                "occurrence.expansion-output-truncated",
+                "occurrence.expansion-depth-truncated",
+                "topology.non-manifold-edge-split",
+                "geometry.edge-vertex-off-carrier",
             ]
         );
     }

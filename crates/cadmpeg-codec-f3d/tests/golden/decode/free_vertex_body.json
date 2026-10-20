@@ -1,6 +1,7 @@
 {
   "ir": {
     "ir_version": "6",
+    "decode_depth": "full",
     "source": {
       "identity": {
         "classification": "classified",
@@ -135,6 +136,7 @@
         "asm_bulletin_boards": [],
         "asm_delta_states": [],
         "asm_entity_changes": [],
+        "asm_face_boundaries": [],
         "asm_histories": [],
         "asm_history_records": [],
         "body_native_keys": [
@@ -178,6 +180,7 @@
         "design_face_source_groups": [],
         "design_feature_timelines": [],
         "design_fillet_radius_groups": [],
+        "design_intent_failures": [],
         "design_loft_legacy_body_carriers": [],
         "design_material_assignments": [],
         "design_mesh_features": [],
@@ -186,6 +189,7 @@
         "design_parameter_scopes": [],
         "design_parameters": [],
         "design_record_headers": [],
+        "design_sheet_metal_settings": [],
         "design_sketch_placements": [],
         "design_surface_trim_operations": [],
         "design_types": [],

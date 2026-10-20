@@ -97,7 +97,7 @@ fuzz_target!(|data: &[u8]| {
         .expect("writer output must decode");
     assert!(
         cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
     let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
@@ -143,7 +143,7 @@ fuzz_target!(|data: &[u8]| {
             .expect("edited writer output must decode");
         assert!(
             cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     }

@@ -20,9 +20,6 @@
 //! `split_schema_identifier` serves the admission here, the DATA section and
 //! `FILE_POPULATION` schema-name match, and the AP242 edition report.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
 /// One `FILE_SCHEMA` identifier that the header admits.
 ///
 /// The header classifies each identifier once and keeps the result. The
@@ -94,37 +91,24 @@ impl AdmittedSchemaIdentifier {
 
     /// Numeric object-identifier components, with registered root names mapped
     /// to their assigned number.
-    pub(super) fn numeric_object_identifier(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<Vec<u64>>, CodecError> {
+    pub(super) fn numeric_object_identifier(&self) -> Option<std::vec::Vec<u64>> {
         let Some((_, Some(object_identifier))) = split_schema_identifier(self.text()) else {
-            return Ok(None);
+            return None;
         };
         let mut components = object_identifier.split_whitespace();
-        let Some(root) = components.next().and_then(schema_oid_root_number) else {
-            return Ok(None);
-        };
+        let root = components.next().and_then(schema_oid_root_number)?;
         let mut numbers = Vec::new();
-        ctx.push_vec(
-            &mut numbers,
-            u64::from(root),
-            "step_schema_object_identifier_components",
-        )?;
+        numbers.push(u64::from(root));
         for component in components {
             let ComponentForm::Number(number) = schema_oid_component_form(component) else {
-                return Ok(None);
+                return None;
             };
             let Ok(number) = number.parse() else {
-                return Ok(None);
+                return None;
             };
-            ctx.push_vec(
-                &mut numbers,
-                number,
-                "step_schema_object_identifier_components",
-            )?;
+            numbers.push(number);
         }
-        Ok((numbers.len() >= 2).then_some(numbers))
+        (numbers.len() >= 2).then_some(numbers)
     }
 }
 

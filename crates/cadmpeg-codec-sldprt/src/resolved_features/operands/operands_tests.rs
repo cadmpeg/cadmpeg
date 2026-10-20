@@ -312,13 +312,11 @@ fn roster_point_operand_uses_coordinate_point_order() {
         Some("second")
     );
     assert!(resolve_operand_marker_excluding(
-        &cadmpeg_test_support::service_decode_context(),
         &markers.iter().collect::<Vec<_>>(),
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
         0,
-        |id| id == "first",
+        |id| id == "first"
     )
-    .unwrap()
     .is_none());
     assert!(resolve_operand_marker(
         markers.iter(),
@@ -507,12 +505,7 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
             entity_ref: None,
         },
     ];
-    let resolved = resolve_scalar_operand_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &markers,
-        &operands,
-    )
-    .unwrap();
+    let resolved = resolve_scalar_operand_markers(&markers, &operands);
     assert_eq!(
         resolved[0].map(crate::records::SketchInputEntity::id),
         Some("first")
@@ -532,12 +525,7 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
             entity_ref: None,
         },
     ];
-    let resolved = resolve_scalar_operand_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &markers,
-        &duplicate,
-    )
-    .unwrap();
+    let resolved = resolve_scalar_operand_markers(&markers, &duplicate);
     assert_eq!(
         resolved[0].map(crate::records::SketchInputEntity::id),
         Some("first")
@@ -718,13 +706,11 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
     .is_none());
     assert_eq!(
         resolve_operand_marker_excluding(
-            &cadmpeg_test_support::service_decode_context(),
             &markers.iter().collect::<Vec<_>>(),
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             10,
-            |id| id == "curve-7",
+            |id| id == "curve-7"
         )
-        .unwrap()
         .map(crate::records::SketchInputEntity::id),
         Some("curve-5")
     );
@@ -755,13 +741,11 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
     let markers = [point("first", 0), point("second", 1)];
     assert_eq!(
         resolve_operand_marker_excluding(
-            &cadmpeg_test_support::service_decode_context(),
             &markers.iter().collect::<Vec<_>>(),
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
             3,
-            |id| id == "first",
+            |id| id == "first"
         )
-        .unwrap()
         .map(crate::records::SketchInputEntity::id),
         Some("second")
     );

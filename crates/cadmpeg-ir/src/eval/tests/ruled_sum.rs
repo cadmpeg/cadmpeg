@@ -34,14 +34,12 @@ fn direct_surface_fixture(
             id: CurveId::mint("test:model:entity#first").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 crate::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 2.0, 3.0), Point3::new(3.0, 2.0, 3.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -51,14 +49,12 @@ fn direct_surface_fixture(
             id: CurveId::mint("test:model:entity#second").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 crate::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(5.0, 10.0, 13.0), Point3::new(5.0, 13.0, 13.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -91,7 +87,7 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
         },
         "ruled",
     );
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -143,7 +139,7 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
         ),
         "sum",
     );
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -179,7 +175,7 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
         },
         "ruled",
     );
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let reached =
         |point: Result<crate::features::FinitePoint3, crate::eval::EvaluationFailure<Point3>>| {
             matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
@@ -229,18 +225,16 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
     ]) {
         curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             crate::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 poles.to_vec(),
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
     }
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,

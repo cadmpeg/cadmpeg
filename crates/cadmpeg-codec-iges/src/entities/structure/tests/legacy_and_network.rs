@@ -35,10 +35,13 @@ fn decode_resolves_legacy_text_node_font_pointer() {
         .unwrap();
     let text = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
-        .find(|value| value.fields()["kind"] == "legacy_text_node")
+        .find(|value| value.fields().unwrap()["kind"] == "legacy_text_node")
         .unwrap();
-    assert_eq!(text.fields()["font_characteristic"], -1);
-    assert_eq!(text.fields()["font_definition"], "iges:entity:directory#1");
+    assert_eq!(text.fields().unwrap()["font_characteristic"], -1);
+    assert_eq!(
+        text.fields().unwrap()["font_definition"],
+        "iges:entity:directory#1"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -56,29 +59,44 @@ fn decode_preserves_recalculable_dimension_geometry_points() {
         .unwrap();
     let associativity = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
-        .find(|value| value.fields()["kind"] == "recalculable_dimension")
+        .find(|value| value.fields().unwrap()["kind"] == "recalculable_dimension")
         .unwrap();
     assert_eq!(
-        associativity.fields()["dimension"],
+        associativity.fields().unwrap()["dimension"],
         "iges:entity:directory#11"
     );
-    assert_eq!(associativity.fields()["orientation_flag"], 4);
-    assert_eq!(associativity.fields()["declared_geometry_count"], 2);
+    assert_eq!(associativity.fields().unwrap()["orientation_flag"], 4);
     assert_eq!(
-        associativity.fields()["geometry"].as_array().unwrap().len(),
+        associativity.fields().unwrap()["declared_geometry_count"],
         2
     );
     assert_eq!(
-        associativity.fields()["geometry"][0]["geometry"],
+        associativity.fields().unwrap()["geometry"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"][0]["geometry"],
         "iges:entity:directory#7"
     );
-    assert_eq!(associativity.fields()["geometry"][0]["location_flag"], 0);
     assert_eq!(
-        associativity.fields()["geometry"][1]["geometry"],
+        associativity.fields().unwrap()["geometry"][0]["location_flag"],
+        0
+    );
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"][1]["geometry"],
         "iges:entity:directory#9"
     );
-    assert_eq!(associativity.fields()["geometry"][1]["location_flag"], 1);
-    assert_eq!(associativity.fields()["geometry"][1]["point"][0], 4.0);
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"][1]["location_flag"],
+        1
+    );
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"][1]["point"][0],
+        4.0
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -113,24 +131,32 @@ fn decode_types_fundamental_units_and_property_owner() {
         )
         .unwrap();
     let units = &result.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
-    assert_eq!(units.fields()["units"].as_array().unwrap().len(), 3);
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&units.fields()["units"][0]["unit_type"])[0]),
+        units.fields().unwrap()["units"].as_array().unwrap().len(),
+        3
+    );
+    assert_eq!(
+        u64::from(
+            crate::test_support::native_bytes(&units.fields().unwrap()["units"][0]["unit_type"])[0]
+        ),
         76
     );
     assert_eq!(
-        crate::test_support::native_bytes(&units.fields()["units"][0]["unit_value"]),
+        crate::test_support::native_bytes(&units.fields().unwrap()["units"][0]["unit_value"]),
         [75, 78]
     );
-    assert_eq!(units.fields()["units"][0]["scale_factor"], 1852.0);
+    assert_eq!(units.fields().unwrap()["units"][0]["scale_factor"], 1852.0);
     assert_eq!(
-        units.fields()["units"][2]["scale_factor"],
+        units.fields().unwrap()["units"][2]["scale_factor"],
         0.017_453_292_519_943_295
     );
-    assert_eq!(units.fields()["owners"][0], "iges:entity:directory#1");
+    assert_eq!(
+        units.fields().unwrap()["owners"][0],
+        "iges:entity:directory#1"
+    );
     let owner = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
     assert_eq!(
-        owner.fields()["property_links"][0],
+        owner.fields().unwrap()["property_links"][0],
         "iges:entity:directory#3"
     );
     assert!(
@@ -181,14 +207,14 @@ fn type316_scale_is_scoped_to_the_property_owner() {
     let native = result.ir().native.namespace("iges").unwrap();
     let units = &native.arenas()["units_data"][0];
     assert_eq!(
-        units.fields()["owners"],
+        units.fields().unwrap()["owners"],
         serde_json::json!(["iges:entity:directory#1"])
     );
     let unowned = native.arenas()["entities"]
         .iter()
-        .find(|entity| entity.fields()["directory_sequence"] == 5)
+        .find(|entity| entity.fields().unwrap()["directory_sequence"] == 5)
         .unwrap();
-    assert!(unowned.fields()["property_links"]
+    assert!(unowned.fields().unwrap()["property_links"]
         .as_array()
         .unwrap()
         .is_empty());
@@ -204,7 +230,7 @@ fn decode_preserves_ordered_solid_assembly_member_placements() {
         .unwrap();
     let assemblies = &result.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"];
     assert_eq!(assemblies.len(), 1);
-    let assembly_fields = assemblies[0].fields();
+    let assembly_fields = assemblies[0].fields().unwrap();
     let items = assembly_fields["items"].as_array().unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(items[0]["item"], "iges:entity:directory#1");
@@ -278,8 +304,11 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .iter()
         .find(|definition| definition.id() == "iges:product:subfigure-definition#D7")
         .unwrap();
-    assert_eq!(parent.fields()["depth"], 1);
-    assert_eq!(parent.fields()["members"][0], "iges:entity:directory#5");
+    assert_eq!(parent.fields().unwrap()["depth"], 1);
+    assert_eq!(
+        parent.fields().unwrap()["members"][0],
+        "iges:entity:directory#5"
+    );
     let instances = &native.arenas()["subfigure_instances"];
     assert_eq!(instances.len(), 2);
     let child = instances
@@ -287,40 +316,43 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .find(|instance| instance.id() == "iges:product:subfigure-instance#D5")
         .unwrap();
     assert_eq!(
-        child.fields()["definition"],
+        child.fields().unwrap()["definition"],
         "iges:product:subfigure-definition#D3"
     );
-    assert_eq!(child.fields()["translation"][0], 1.0);
-    assert_eq!(child.fields()["scale"], 0.5);
+    assert_eq!(child.fields().unwrap()["translation"][0], 1.0);
+    assert_eq!(child.fields().unwrap()["scale"], 0.5);
     let occurrences = &native.arenas()["product_occurrences"];
     assert_eq!(occurrences.len(), 3);
     let nested = occurrences
         .iter()
         .find(|occurrence| occurrence.id() == "iges:product:occurrence#9/5")
         .unwrap();
-    assert_eq!(nested.fields()["root"], false);
+    assert_eq!(nested.fields().unwrap()["root"], false);
     assert_eq!(
-        nested.fields()["instance_path"][0],
+        nested.fields().unwrap()["instance_path"][0],
         "iges:entity:directory#9"
     );
     assert_eq!(
-        nested.fields()["instance_path"][1],
+        nested.fields().unwrap()["instance_path"][1],
         "iges:entity:directory#5"
     );
-    assert_eq!(nested.fields()["world_transform"][0][0], 1.0);
-    assert_eq!(nested.fields()["world_transform"][0][3], 12.0);
-    assert_eq!(nested.fields()["world_transform"][1][3], 24.0);
-    assert_eq!(nested.fields()["world_transform"][2][3], 36.0);
+    assert_eq!(nested.fields().unwrap()["world_transform"][0][0], 1.0);
+    assert_eq!(nested.fields().unwrap()["world_transform"][0][3], 12.0);
+    assert_eq!(nested.fields().unwrap()["world_transform"][1][3], 24.0);
+    assert_eq!(nested.fields().unwrap()["world_transform"][2][3], 36.0);
     let leaf = occurrences
         .iter()
         .find(|occurrence| occurrence.id() == "iges:product:occurrence#9/5/D1")
         .unwrap();
-    assert_eq!(leaf.fields()["root"], false);
-    assert_eq!(leaf.fields()["member"], "iges:entity:directory#1");
-    assert_eq!(leaf.fields()["neutral_links"][0], "iges:model:curve#D1");
+    assert_eq!(leaf.fields().unwrap()["root"], false);
+    assert_eq!(leaf.fields().unwrap()["member"], "iges:entity:directory#1");
     assert_eq!(
-        leaf.fields()["world_transform"],
-        nested.fields()["world_transform"]
+        leaf.fields().unwrap()["neutral_links"][0],
+        "iges:model:curve#D1"
+    );
+    assert_eq!(
+        leaf.fields().unwrap()["world_transform"],
+        nested.fields().unwrap()["world_transform"]
     );
     assert!(
         result.report().losses.is_empty(),
@@ -352,25 +384,25 @@ fn v5_applies_definition_transformations_to_subfigure_occurrences() {
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(native.arenas()[definition_arena].len(), 1);
         assert_eq!(
-            native.arenas()[definition_arena][0].fields()["transformation"],
+            native.arenas()[definition_arena][0].fields().unwrap()["transformation"],
             "iges:native:transformation#D1"
         );
         let root = native.arenas()["product_occurrences"]
             .iter()
             .find(|occurrence| occurrence.id() == "iges:product:occurrence#7")
             .unwrap();
-        assert_eq!(root.fields()["root"], true);
-        assert_eq!(root.fields()["world_transform"][0][3], 10.0);
-        assert_eq!(root.fields()["world_transform"][1][3], 20.0);
-        assert_eq!(root.fields()["world_transform"][2][3], 30.0);
+        assert_eq!(root.fields().unwrap()["root"], true);
+        assert_eq!(root.fields().unwrap()["world_transform"][0][3], 10.0);
+        assert_eq!(root.fields().unwrap()["world_transform"][1][3], 20.0);
+        assert_eq!(root.fields().unwrap()["world_transform"][2][3], 30.0);
         let leaf = native.arenas()["product_occurrences"]
             .iter()
             .find(|occurrence| occurrence.id() == "iges:product:occurrence#7/D3")
             .unwrap();
-        assert_eq!(leaf.fields()["root"], false);
-        assert_eq!(leaf.fields()["world_transform"][0][3], 10.0);
-        assert_eq!(leaf.fields()["world_transform"][1][3], 20.0);
-        assert_eq!(leaf.fields()["world_transform"][2][3], 30.0);
+        assert_eq!(leaf.fields().unwrap()["root"], false);
+        assert_eq!(leaf.fields().unwrap()["world_transform"][0][3], 10.0);
+        assert_eq!(leaf.fields().unwrap()["world_transform"][1][3], 20.0);
+        assert_eq!(leaf.fields().unwrap()["world_transform"][2][3], 30.0);
         assert!(
             !result
                 .report()
@@ -405,7 +437,7 @@ fn v5_preserves_label_display_links_on_subfigure_definitions() {
             .unwrap();
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(
-            native.arenas()[definition_arena][0].fields()["label_display"],
+            native.arenas()[definition_arena][0].fields().unwrap()["label_display"],
             "iges:structure:associativity#D9"
         );
         assert!(
@@ -492,7 +524,7 @@ fn v4_preserves_label_display_links_on_subfigure_definitions() {
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(native.arenas()[definition_arena].len(), 1);
         assert!(
-            native.arenas()[definition_arena][0].fields()["label_display"]
+            native.arenas()[definition_arena][0].fields().unwrap()["label_display"]
                 == "iges:structure:associativity#D9",
             "{:#?}",
             result.report().losses
@@ -537,17 +569,17 @@ fn v4_applies_definition_transformations_to_subfigure_occurrences() {
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(native.arenas()[definition_arena].len(), 1);
         assert_eq!(
-            native.arenas()[definition_arena][0].fields()["transformation"],
+            native.arenas()[definition_arena][0].fields().unwrap()["transformation"],
             "iges:native:transformation#D1"
         );
         let root = native.arenas()["product_occurrences"]
             .iter()
             .find(|occurrence| occurrence.id() == "iges:product:occurrence#7")
             .unwrap();
-        assert_eq!(root.fields()["root"], true);
-        assert_eq!(root.fields()["world_transform"][0][3], 10.0);
-        assert_eq!(root.fields()["world_transform"][1][3], 20.0);
-        assert_eq!(root.fields()["world_transform"][2][3], 30.0);
+        assert_eq!(root.fields().unwrap()["root"], true);
+        assert_eq!(root.fields().unwrap()["world_transform"][0][3], 10.0);
+        assert_eq!(root.fields().unwrap()["world_transform"][1][3], 20.0);
+        assert_eq!(root.fields().unwrap()["world_transform"][2][3], 30.0);
         assert!(
             !result
                 .report()
@@ -573,8 +605,11 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
     assert_eq!(native.arenas()["subfigure_instances"].len(), 1);
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["issues"][0], "malformed_placement");
+    assert_eq!(expansion.fields().unwrap()["truncated"], true);
+    assert_eq!(
+        expansion.fields().unwrap()["issues"][0],
+        "malformed_placement"
+    );
     let loss = result
         .report()
         .losses
@@ -590,65 +625,109 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
 }
 
 #[test]
-fn decode_refuses_product_occurrence_output_exhaustion() {
+fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
     for mode in [
         cadmpeg_core::decode::DecodeMode::Strict,
         cadmpeg_core::decode::DecodeMode::Salvage,
     ] {
         let mut options = DecodeOptions::default();
         options.policy.mode = mode;
-        let error = crate::reader::decode_with_test_occurrence_limits(
+        let result = crate::reader::decode_with_test_occurrence_limits(
             &occurrence_limit_file(),
             options,
             100,
             crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
         )
-        .unwrap_err();
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_output")
-                    && limit.limit == 100
-                    && limit.used == 100
-                    && limit.additional == 1
-        ));
+        .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+
+        assert_eq!(native.arenas()["product_occurrences"].len(), 100);
+        let expansion = &native.arenas()["product_occurrence_expansion"][0];
+        assert_eq!(expansion.fields().unwrap()["output_limit"], 100);
+        assert_eq!(expansion.fields().unwrap()["depth_limit"], 64);
+        assert_eq!(expansion.fields().unwrap()["emitted"], 100);
+        assert_eq!(expansion.fields().unwrap()["truncated"], true);
+        assert_eq!(expansion.fields().unwrap()["issues"][0], "output_limit");
+        let loss = result
+            .report()
+            .losses
+            .iter()
+            .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionOutputTruncated.kind())
+            .unwrap();
+        assert_eq!(
+            loss.message,
+            "IGES product occurrence expansion reached its configured output limit"
+        );
+        assert_eq!(
+            loss.provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("directory_entry:D203")
+        );
     }
 }
 
 #[test]
-fn decode_refuses_product_occurrence_member_output_exhaustion() {
-    let error = crate::reader::decode_with_test_occurrence_limits(
+fn decode_bounds_product_occurrence_member_output_with_a_named_loss() {
+    let result = crate::reader::decode_with_test_occurrence_limits(
         &nested_subfigure_file(),
         DecodeOptions::default(),
         1,
         crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
     )
-    .unwrap_err();
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_output")
-                && limit.limit == 1 && limit.additional == 1));
+    .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas()["product_occurrences"].len(), 1);
+    let expansion = &native.arenas()["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields().unwrap()["emitted"], 1);
+    assert_eq!(expansion.fields().unwrap()["issues"][0], "output_limit");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::OccurrenceExpansionOutputTruncated.kind()));
 }
 
 #[test]
-fn decode_refuses_product_occurrence_depth_exhaustion() {
+fn decode_reports_product_occurrence_depth_truncation() {
     for mode in [
         cadmpeg_core::decode::DecodeMode::Strict,
         cadmpeg_core::decode::DecodeMode::Salvage,
     ] {
         let mut options = DecodeOptions::default();
         options.policy.mode = mode;
-        let error = IgesCodec
+        let result = IgesCodec
             .decode(&mut Cursor::new(occurrence_depth_limit_file()), &options)
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_depth")
-                    && limit.limit == 64
-                    && limit.used == 64
-                    && limit.additional == 1
-        ));
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+
+        assert_eq!(native.arenas()["product_occurrences"].len(), 64);
+        let expansion = &native.arenas()["product_occurrence_expansion"][0];
+        assert_eq!(
+            expansion.fields().unwrap()["output_limit"],
+            crate::native::MAX_PRODUCT_OCCURRENCES
+        );
+        assert_eq!(expansion.fields().unwrap()["depth_limit"], 64);
+        assert_eq!(expansion.fields().unwrap()["emitted"], 64);
+        assert_eq!(expansion.fields().unwrap()["truncated"], true);
+        assert_eq!(expansion.fields().unwrap()["issues"][0], "depth_limit");
+        let loss = result
+            .report()
+            .losses
+            .iter()
+            .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionDepthTruncated.kind())
+            .unwrap();
+        assert_eq!(
+            loss.message,
+            "IGES product occurrence expansion reached its configured nesting-depth limit"
+        );
+        assert_eq!(
+            loss.provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("directory_entry:D259")
+        );
     }
 }
 
@@ -682,8 +761,11 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
     assert_eq!(native.arenas()["subfigure_instances"].len(), 1);
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
+    assert_eq!(expansion.fields().unwrap()["truncated"], true);
+    assert_eq!(
+        expansion.fields().unwrap()["issues"][0],
+        "malformed_definition"
+    );
     let losses = result
         .report()
         .losses
@@ -705,12 +787,16 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#7")
         .unwrap();
-    assert_eq!(dangling.fields()["references"][0]["resolution"], "dangling");
+    assert_eq!(
+        dangling.fields().unwrap()["references"][0]["resolution"],
+        "dangling"
+    );
     assert!(native.arenas()["subfigure_definitions"]
         .iter()
         .find(|definition| definition.id() == "iges:product:subfigure-definition#D7")
         .unwrap()
-        .fields()["members"][0]
+        .fields()
+        .unwrap()["members"][0]
         .is_null());
 }
 
@@ -728,8 +814,11 @@ fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
     assert_eq!(native.arenas()["network_instances"].len(), 1);
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
+    assert_eq!(expansion.fields().unwrap()["truncated"], true);
+    assert_eq!(
+        expansion.fields().unwrap()["issues"][0],
+        "malformed_definition"
+    );
     let loss = result
         .report()
         .losses
@@ -742,7 +831,7 @@ fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
             .and_then(|provenance| provenance.tag.as_deref()),
         Some("directory_entry:D1")
     );
-    assert!(native.arenas()["network_definitions"][0].fields()["members"][0].is_null());
+    assert!(native.arenas()["network_definitions"][0].fields().unwrap()["members"][0].is_null());
 }
 
 #[test]
@@ -778,10 +867,10 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
     assert_eq!(native.arenas()["network_instances"].len(), 1);
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["emitted"], 0);
-    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields().unwrap()["emitted"], 0);
+    assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
-        expansion.fields()["issues"],
+        expansion.fields().unwrap()["issues"],
         serde_json::json!(["malformed_placement"])
     );
     assert_eq!(
@@ -806,10 +895,10 @@ fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
     let native = rejected.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["emitted"], 0);
-    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields().unwrap()["emitted"], 0);
+    assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
-        expansion.fields()["issues"],
+        expansion.fields().unwrap()["issues"],
         serde_json::json!(["malformed_placement"])
     );
 
@@ -828,7 +917,7 @@ fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
         .decode(
             &mut Cursor::new(rejected_containing_subfigure_file()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -856,10 +945,10 @@ fn decode_does_not_promote_network_instance_in_rejected_definition() {
     let native = rejected.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["emitted"], 0);
-    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields().unwrap()["emitted"], 0);
+    assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
-        expansion.fields()["issues"],
+        expansion.fields().unwrap()["issues"],
         serde_json::json!(["malformed_placement"])
     );
 
@@ -878,7 +967,7 @@ fn decode_does_not_promote_network_instance_in_rejected_definition() {
         .decode(
             &mut Cursor::new(rejected_containing_network_file()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -901,7 +990,7 @@ fn container_only_preserves_raw_occurrence_expansion_without_structure_admission
         .decode(
             &mut Cursor::new(invalid_top_level_occurrence_structure_file()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -911,9 +1000,12 @@ fn container_only_preserves_raw_occurrence_expansion_without_structure_admission
     assert!(!result.report().geometry_transferred());
     assert_eq!(native.arenas()["product_occurrences"].len(), 3);
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["emitted"], 3);
-    assert_eq!(expansion.fields()["truncated"], false);
-    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert_eq!(expansion.fields().unwrap()["emitted"], 3);
+    assert_eq!(expansion.fields().unwrap()["truncated"], false);
+    assert!(expansion.fields().unwrap()["issues"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(!result
         .report()
         .losses
@@ -932,10 +1024,13 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     let native = result.ir().native.namespace("iges").unwrap();
     let definition = &native.arenas()["network_definitions"][0];
     assert_eq!(definition.id(), "iges:product:network-definition#D1");
-    assert_eq!(definition.fields()["type_flag"], 1);
-    assert_eq!(definition.fields()["declared_connect_point_count"], 2);
+    assert_eq!(definition.fields().unwrap()["type_flag"], 1);
     assert_eq!(
-        definition.fields()["connect_points"]
+        definition.fields().unwrap()["declared_connect_point_count"],
+        2
+    );
+    assert_eq!(
+        definition.fields().unwrap()["connect_points"]
             .as_array()
             .unwrap()
             .len(),
@@ -943,19 +1038,19 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     );
     let instance = &native.arenas()["network_instances"][0];
     assert_eq!(
-        instance.fields()["definition"],
+        instance.fields().unwrap()["definition"],
         "iges:product:network-definition#D1"
     );
-    assert_eq!(instance.fields()["translation"][2], 3.0);
-    assert_eq!(instance.fields()["scale"][0], 2.0);
-    assert!(instance.fields()["scale"][1].is_null());
-    assert!(instance.fields()["scale"][2].is_null());
-    assert!(instance.fields()["type_flag"].is_null());
+    assert_eq!(instance.fields().unwrap()["translation"][2], 3.0);
+    assert_eq!(instance.fields().unwrap()["scale"][0], 2.0);
+    assert!(instance.fields().unwrap()["scale"][1].is_null());
+    assert!(instance.fields().unwrap()["scale"][2].is_null());
+    assert!(instance.fields().unwrap()["type_flag"].is_null());
     let occurrence = &native.arenas()["product_occurrences"][0];
-    assert_eq!(occurrence.fields()["world_transform"][0][0], 2.0);
-    assert_eq!(occurrence.fields()["world_transform"][1][1], 2.0);
-    assert_eq!(occurrence.fields()["world_transform"][2][2], 2.0);
-    assert_eq!(occurrence.fields()["world_transform"][0][3], 1.0);
+    assert_eq!(occurrence.fields().unwrap()["world_transform"][0][0], 2.0);
+    assert_eq!(occurrence.fields().unwrap()["world_transform"][1][1], 2.0);
+    assert_eq!(occurrence.fields().unwrap()["world_transform"][2][2], 2.0);
+    assert_eq!(occurrence.fields().unwrap()["world_transform"][0][3], 1.0);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1179,18 +1274,30 @@ fn decode_preserves_owned_network_connect_points() {
     let native = result.ir().native.namespace("iges").unwrap();
     let points = &native.arenas()["connect_points"];
     assert_eq!(points.len(), 2);
-    assert_eq!(points[0].fields()["type_flag"], 101);
+    assert_eq!(points[0].fields().unwrap()["type_flag"], 101);
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&points[0].fields()["function_identifier"])[0]),
+        u64::from(
+            crate::test_support::native_bytes(&points[0].fields().unwrap()["function_identifier"])
+                [0]
+        ),
         80
     );
     assert_eq!(
-        u64::from(crate::test_support::native_bytes(&points[0].fields()["function_identifier"])[1]),
+        u64::from(
+            crate::test_support::native_bytes(&points[0].fields().unwrap()["function_identifier"])
+                [1]
+        ),
         49
     );
-    assert_eq!(points[0].fields()["owner"], "iges:entity:directory#3");
-    assert_eq!(points[1].fields()["position"][2], 3.0);
-    assert_eq!(points[1].fields()["owner"], "iges:entity:directory#7");
+    assert_eq!(
+        points[0].fields().unwrap()["owner"],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(points[1].fields().unwrap()["position"][2], 3.0);
+    assert_eq!(
+        points[1].fields().unwrap()["owner"],
+        "iges:entity:directory#7"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1271,7 +1378,9 @@ fn decode_reports_occurrence_issue_for_rejected_subfigure_definition() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["product_occurrences"].is_empty());
     assert_eq!(
-        native.arenas()["product_occurrence_expansion"][0].fields()["issues"],
+        native.arenas()["product_occurrence_expansion"][0]
+            .fields()
+            .unwrap()["issues"],
         serde_json::json!(["malformed_placement"])
     );
 }
@@ -1300,7 +1409,9 @@ fn invalid_network_metadata_does_not_hide_a_rejected_definition() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["product_occurrences"].is_empty());
     assert_eq!(
-        native.arenas()["product_occurrence_expansion"][0].fields()["issues"],
+        native.arenas()["product_occurrence_expansion"][0]
+            .fields()
+            .unwrap()["issues"],
         serde_json::json!(["malformed_placement"])
     );
 }

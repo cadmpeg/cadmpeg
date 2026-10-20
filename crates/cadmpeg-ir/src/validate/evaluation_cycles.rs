@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard};
+use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
@@ -16,111 +16,91 @@ use crate::report::{
     Severity,
 };
 
-fn curve_dependencies<'a>(
-    ctx: &DecodeContext<'_>,
-    definition: &'a ProceduralCurveDefinition,
-) -> Result<Vec<&'a str>, CodecError> {
-    Ok(match definition {
-        ProceduralCurveDefinition::Replica { source, .. } => {
-            ctx.collect_vec([source.as_str()], "cycle dependencies")?
-        }
+fn curve_dependencies(definition: &ProceduralCurveDefinition) -> Vec<&str> {
+    match definition {
+        ProceduralCurveDefinition::Replica { source, .. } => vec![source.as_str()],
         ProceduralCurveDefinition::Subset(payload) => {
-            ctx.collect_vec([payload.source().as_str()], "cycle dependencies")?
+            vec![payload.source().as_str()]
         }
         ProceduralCurveDefinition::TolerantIntersection {
             construction,
             parameterization: Some(_),
             ..
-        } => ctx.collect_vec(
-            construction
-                .supports()
-                .iter()
-                .map(crate::ids::SurfaceId::as_str),
-            "cycle dependencies",
-        )?,
+        } => construction
+            .supports()
+            .iter()
+            .map(crate::ids::SurfaceId::as_str)
+            .collect::<Vec<_>>(),
         _ => Vec::new(),
-    })
+    }
 }
 
-fn surface_dependencies<'a>(
-    ctx: &DecodeContext<'_>,
-    definition: &'a ProceduralSurfaceDefinition,
-) -> Result<Vec<&'a str>, CodecError> {
-    Ok(match definition {
+fn surface_dependencies(definition: &ProceduralSurfaceDefinition) -> Vec<&str> {
+    match definition {
         ProceduralSurfaceDefinition::AxisRevolution(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            vec![payload.directrix().as_str()]
         }
         ProceduralSurfaceDefinition::Extrusion(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            vec![payload.directrix().as_str()]
         }
         ProceduralSurfaceDefinition::LinearSweep(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            vec![payload.directrix().as_str()]
         }
         ProceduralSurfaceDefinition::Revolution(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            vec![payload.directrix().as_str()]
         }
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
-            ctx.collect_vec([first.as_str(), second.as_str()], "cycle dependencies")?
+            vec![first.as_str(), second.as_str()]
         }
-        ProceduralSurfaceDefinition::Sum(payload) => ctx.collect_vec(
-            [payload.first().as_str(), payload.second().as_str()],
-            "cycle dependencies",
-        )?,
-        ProceduralSurfaceDefinition::Sweep(payload) if payload.native().is_some() => ctx
-            .collect_vec(
-                [payload.profile().as_str(), payload.spine().as_str()],
-                "cycle dependencies",
-            )?,
+        ProceduralSurfaceDefinition::Sum(payload) => {
+            vec![payload.first().as_str(), payload.second().as_str()]
+        }
+        ProceduralSurfaceDefinition::Sweep(payload) if payload.native().is_some() => {
+            vec![payload.profile().as_str(), payload.spine().as_str()]
+        }
         ProceduralSurfaceDefinition::Blend(payload) => {
             if let Some(native) = payload.native() {
-                ctx.charge_work(u64_from_index(native.sides.len()), "cycle dependency scan")?;
-                ctx.collect_vec(
-                    native
-                        .sides
-                        .iter()
-                        .filter_map(|side| {
-                            side.surface
-                                .as_ref()
-                                .map(|support| support.surface.as_str())
-                        })
-                        .chain(std::iter::once(native.slice.as_str())),
-                    "cycle dependencies",
-                )?
+                native
+                    .sides
+                    .iter()
+                    .filter_map(|side| {
+                        side.surface
+                            .as_ref()
+                            .map(|support| support.surface.as_str())
+                    })
+                    .chain(std::iter::once(native.slice.as_str()))
+                    .collect::<Vec<_>>()
             } else {
                 Vec::new()
             }
         }
-        ProceduralSurfaceDefinition::VariableBlend(payload) => {
-            ctx.charge_work(
-                u64_from_index(payload.construction().sides.len()),
-                "cycle dependency scan",
-            )?;
-            ctx.collect_vec(
-                payload.construction().sides.iter().filter_map(|side| {
-                    side.surface
-                        .as_ref()
-                        .map(|support| support.surface.as_str())
-                }),
-                "cycle dependencies",
-            )?
-        }
+        ProceduralSurfaceDefinition::VariableBlend(payload) => payload
+            .construction()
+            .sides
+            .iter()
+            .filter_map(|side| {
+                side.surface
+                    .as_ref()
+                    .map(|support| support.surface.as_str())
+            })
+            .collect::<Vec<_>>(),
         ProceduralSurfaceDefinition::CurveBounded { support, .. } => {
-            ctx.collect_vec([support.as_str()], "cycle dependencies")?
+            vec![support.as_str()]
         }
         ProceduralSurfaceDefinition::Replica { source, .. } => {
-            ctx.collect_vec([source.as_str()], "cycle dependencies")?
+            vec![source.as_str()]
         }
         ProceduralSurfaceDefinition::Subset(payload) => {
-            ctx.collect_vec([payload.support().as_str()], "cycle dependencies")?
+            vec![payload.support().as_str()]
         }
         ProceduralSurfaceDefinition::ParallelOffset(payload) => {
-            ctx.collect_vec([payload.support().as_str()], "cycle dependencies")?
+            vec![payload.support().as_str()]
         }
         ProceduralSurfaceDefinition::Offset(payload) => {
-            ctx.collect_vec([payload.support().as_str()], "cycle dependencies")?
+            vec![payload.support().as_str()]
         }
         _ => Vec::new(),
-    })
+    }
 }
 
 struct Frame<'a, 'session> {
@@ -157,99 +137,68 @@ struct Node<'ir> {
 
 /// Only carrier-to-construction associations are needed by the cycle graph.
 trait CarrierConstructions<'ir> {
-    fn curve(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralCurve>, CodecError>;
-    fn surface(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralSurface>, CodecError>;
+    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve>;
+    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface>;
 }
 
 impl<'ir> CarrierConstructions<'ir> for ModelIndex<'ir> {
-    fn curve(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralCurve>, CodecError> {
-        Ok(self
-            .procedural_curves_for_curve(id, ctx)?
-            .and_then(|rows| rows.first().copied()))
+    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve> {
+        self.procedural_curves_for_curve(id, crate::index::StandardIndex)
+            .and_then(|rows| rows.first().copied())
     }
-    fn surface(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralSurface>, CodecError> {
-        Ok(self.procedural_surface_for_surface(id, ctx)?)
+    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
+        self.procedural_surface_for_surface(id, crate::index::StandardIndex)
     }
 }
 
-struct CycleIndex<'ctx, 'ir> {
-    curves: BorrowedIdentities<'ctx, 'ir, &'ir ProceduralCurve>,
-    surfaces: BorrowedIdentities<'ctx, 'ir, &'ir ProceduralSurface>,
+struct CycleIndex<'ir> {
+    curves: BorrowedIdentities<'ir, &'ir ProceduralCurve>,
+    surfaces: BorrowedIdentities<'ir, &'ir ProceduralSurface>,
 }
 
-impl<'ctx, 'ir> CycleIndex<'ctx, 'ir> {
-    fn build(ctx: &'ctx DecodeContext<'_>, ir: &'ir CadIr) -> Result<Self, CodecError> {
+impl<'ir> CycleIndex<'ir> {
+    fn build(ir: &'ir CadIr) -> Self {
         // The general index selects the first construction with an exact ID.
         // BorrowedIdentities selects the last insertion, so reverse these rows.
-        let curves_by_id = BorrowedIdentities::build(ctx, |add| {
+        let curves_by_id = BorrowedIdentities::build(|add| {
             for row in ir.model.procedural_curves.iter().rev() {
-                add(row.id.as_str(), row)?;
+                add(row.id.as_str(), row);
             }
-            Ok(())
-        })?;
-        let curves = BorrowedIdentities::<&ProceduralCurve>::build(ctx, |add| {
+        });
+        let curves = BorrowedIdentities::<&ProceduralCurve>::build(|add| {
             for carrier in ir.model.curves.iter().rev() {
-                ctx.charge_work(1, "cycle curve association scan")?;
                 if let Some(construction) = carrier.geometry.procedural_construction() {
-                    if let Some(row) = curves_by_id.get(ctx, construction.as_str())? {
-                        add(carrier.id.as_str(), row)?;
+                    if let Some(row) = curves_by_id.get(construction.as_str()) {
+                        add(carrier.id.as_str(), row);
                     }
                 }
             }
-            Ok(())
-        })?;
+        });
         drop(curves_by_id);
-        let surfaces_by_id = BorrowedIdentities::build(ctx, |add| {
+        let surfaces_by_id = BorrowedIdentities::build(|add| {
             for row in ir.model.procedural_surfaces.iter().rev() {
-                add(row.id.as_str(), row)?;
+                add(row.id.as_str(), row);
             }
-            Ok(())
-        })?;
-        let surfaces = BorrowedIdentities::<&ProceduralSurface>::build(ctx, |add| {
+        });
+        let surfaces = BorrowedIdentities::<&ProceduralSurface>::build(|add| {
             for carrier in &ir.model.surfaces {
-                ctx.charge_work(1, "cycle surface association scan")?;
                 if let Some(construction) = carrier.geometry.procedural_construction() {
-                    if let Some(row) = surfaces_by_id.get(ctx, construction.as_str())? {
-                        add(carrier.id.as_str(), row)?;
+                    if let Some(row) = surfaces_by_id.get(construction.as_str()) {
+                        add(carrier.id.as_str(), row);
                     }
                 }
             }
-            Ok(())
-        })?;
-        Ok(Self { curves, surfaces })
+        });
+        Self { curves, surfaces }
     }
 }
 
-impl<'ir> CarrierConstructions<'ir> for CycleIndex<'_, 'ir> {
-    fn curve(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralCurve>, CodecError> {
-        Ok(self.curves.get(ctx, id)?.copied())
+impl<'ir> CarrierConstructions<'ir> for CycleIndex<'ir> {
+    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve> {
+        self.curves.get(id).copied()
     }
-    fn surface(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralSurface>, CodecError> {
-        Ok(self.surfaces.get(ctx, id)?.copied())
+    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
+        self.surfaces.get(id).copied()
     }
 }
 
@@ -260,49 +209,41 @@ fn walk_cycles<'ir>(
     index: &impl CarrierConstructions<'ir>,
     mut emit: impl FnMut(Finding) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
-    let mut graph_storage = ctx.reserve_scoped(0, "cycle dependency graph")?;
-    let mut graph = graph_storage.with_storage(|| {
-        BorrowedIdentities::build(ctx, |add| {
-            for curve in &ir.model.curves {
-                ctx.charge_work(1, "cycle carrier scan")?;
-                if let Some(procedural) = index.curve(ctx, curve.id.as_str())? {
-                    let dependencies = curve_dependencies(ctx, procedural.definition())?;
-                    if !dependencies.is_empty() {
-                        add(
-                            curve.id.as_str(),
-                            Node {
-                                dependencies,
-                                visit: Visit::Unseen,
-                            },
-                        )?;
-                    }
+    let mut graph = BorrowedIdentities::build(|add| {
+        for curve in &ir.model.curves {
+            if let Some(procedural) = index.curve(curve.id.as_str()) {
+                let dependencies = curve_dependencies(procedural.definition());
+                if !dependencies.is_empty() {
+                    add(
+                        curve.id.as_str(),
+                        Node {
+                            dependencies,
+                            visit: Visit::Unseen,
+                        },
+                    );
                 }
             }
-            for surface in &ir.model.surfaces {
-                ctx.charge_work(1, "cycle carrier scan")?;
-                if let Some(procedural) = index.surface(ctx, surface.id.as_str())? {
-                    let dependencies = surface_dependencies(ctx, procedural.definition())?;
-                    if !dependencies.is_empty() {
-                        add(
-                            surface.id.as_str(),
-                            Node {
-                                dependencies,
-                                visit: Visit::Unseen,
-                            },
-                        )?;
-                    }
+        }
+        for surface in &ir.model.surfaces {
+            if let Some(procedural) = index.surface(surface.id.as_str()) {
+                let dependencies = surface_dependencies(procedural.definition());
+                if !dependencies.is_empty() {
+                    add(
+                        surface.id.as_str(),
+                        Node {
+                            dependencies,
+                            visit: Visit::Unseen,
+                        },
+                    );
                 }
             }
-            Ok(())
-        })
-    })?;
-    let mut starts = graph_storage
-        .with_storage(|| ctx.collect_vec(graph.identities(), "cycle start identities"))?;
-    ctx.stable_sort_by(&mut starts, Ord::cmp, |id| id.len(), "cycle start order")?;
+        }
+    });
+    let mut starts = graph.identities().collect::<Vec<_>>();
+    starts.sort_by(Ord::cmp);
     let mut stack = Vec::new();
     for start in starts {
-        ctx.charge_work(1, "cycle start scan")?;
-        let Some(node) = graph.get_mut(ctx, start)? else {
+        let Some(node) = graph.get_mut(start) else {
             continue;
         };
         if matches!(node.visit, Visit::Complete) {
@@ -310,53 +251,48 @@ fn walk_cycles<'ir>(
         }
         node.visit = Visit::Active(0);
         let depth = ctx.enter_nested("cycle traversal depth")?;
-        graph_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut stack,
-                Frame {
-                    node: start,
-                    next_child: 0,
-                    _depth: depth,
-                },
-                "cycle traversal stack",
-            )
-        })?;
+        stack.push(Frame {
+            node: start,
+            next_child: 0,
+            _depth: depth,
+        });
         while let Some(frame) = stack.last_mut() {
-            ctx.charge_work(1, "cycle traversal")?;
             let child = graph
-                .get(ctx, frame.node)?
+                .get(frame.node)
                 .and_then(|node| node.dependencies.get(frame.next_child))
                 .copied();
             let Some(child) = child else {
                 if let Some(finished) = stack.pop() {
-                    if let Some(node) = graph.get_mut(ctx, finished.node)? {
+                    if let Some(node) = graph.get_mut(finished.node) {
                         node.visit = Visit::Complete;
                     }
                 }
                 continue;
             };
             frame.next_child += 1;
-            let Some(node) = graph.get_mut(ctx, child)? else {
+            let Some(node) = graph.get_mut(child) else {
                 continue;
             };
             match node.visit {
                 Visit::Complete => {}
                 Visit::Active(start_index) => {
-                    ctx.charge_work(u64_from_index(stack.len() - start_index), "cycle path walk")?;
                     let finding = Finding {
+                        related: stack[start_index..]
+                            .iter()
+                            .map(|frame| frame.node)
+                            .filter(|id| *id != child)
+                            .map(str::to_owned)
+                            .collect(),
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
-                        message: ctx.format_retained(
-                            format_args!(
-                                "malformed curve/surface reference cycle: {}",
-                                CyclePath {
-                                    stack: &stack[start_index..],
-                                    child
-                                }
-                            ),
-                            "cycle finding message",
-                        )?,
-                        entity: Some(ctx.copy_retained_text(child, "cycle finding identity")?),
+                        message: format!(
+                            "malformed curve/surface reference cycle: {}",
+                            CyclePath {
+                                stack: &stack[start_index..],
+                                child
+                            }
+                        ),
+                        entity: Some(child.to_owned()),
                     };
                     if !emit(finding)? {
                         return Ok(());
@@ -365,17 +301,11 @@ fn walk_cycles<'ir>(
                 Visit::Unseen => {
                     node.visit = Visit::Active(stack.len());
                     let depth = ctx.enter_nested("cycle traversal depth")?;
-                    graph_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut stack,
-                            Frame {
-                                node: child,
-                                next_child: 0,
-                                _depth: depth,
-                            },
-                            "cycle traversal stack",
-                        )
-                    })?;
+                    stack.push(Frame {
+                        node: child,
+                        next_child: 0,
+                        _depth: depth,
+                    });
                 }
             }
         }
@@ -384,14 +314,14 @@ fn walk_cycles<'ir>(
 }
 
 /// Report cycles in the dependencies an evaluator can follow from a carrier.
-pub(super) fn check_evaluation_cycles(
+pub(super) fn check_evaluation_cycles<'ir>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    index: &ModelIndex<'_>,
+    ir: &'ir CadIr,
+    index: &ModelIndex<'ir>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     walk_cycles(ctx, ir, index, |finding| {
-        ctx.push_vec(findings, finding, "cycle findings")?;
+        findings.push(finding);
         Ok(true)
     })
 }
@@ -402,9 +332,9 @@ pub(crate) fn admit_evaluation_cycles(
     ir: &CadIr,
 ) -> Result<(), CodecError> {
     if ir.model.procedural_curves.is_empty() && ir.model.procedural_surfaces.is_empty() {
-        return ctx.charge_work(0, "cycle admission");
+        return Ok(());
     }
-    let index = CycleIndex::build(ctx, ir)?;
+    let index = CycleIndex::build(ir);
     walk_cycles(ctx, ir, &index, |finding| {
         Err(CodecError::Malformed(finding.message))
     })

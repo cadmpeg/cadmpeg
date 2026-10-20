@@ -1,6 +1,7 @@
 {
   "ir": {
     "ir_version": "6",
+    "decode_depth": "full",
     "source": {
       "identity": {
         "classification": "classified",
@@ -282,7 +283,6 @@
             "records": [],
             "state_flag": 0,
             "state_id": 2,
-            "topology_cache": "released",
             "version_flag": 1
           },
           {
@@ -296,7 +296,6 @@
             "records": [],
             "state_flag": 0,
             "state_id": 3,
-            "topology_cache": "released",
             "version_flag": 1
           }
         ],
@@ -317,13 +316,15 @@
             "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000"
           }
         ],
+        "asm_face_boundaries": [],
         "asm_histories": [
           {
             "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
             "byte_offset": 1628,
             "history_entry_count": 99,
             "states": [],
-            "stream_size": 2
+            "stream_size": 2,
+            "topology_scope": "retained"
           }
         ],
         "asm_history_records": [
@@ -382,6 +383,7 @@
         "design_face_source_groups": [],
         "design_feature_timelines": [],
         "design_fillet_radius_groups": [],
+        "design_intent_failures": [],
         "design_loft_legacy_body_carriers": [],
         "design_material_assignments": [],
         "design_mesh_features": [],
@@ -390,6 +392,7 @@
         "design_parameter_scopes": [],
         "design_parameters": [],
         "design_record_headers": [],
+        "design_sheet_metal_settings": [],
         "design_sketch_placements": [],
         "design_surface_trim_operations": [],
         "design_types": [],

@@ -30,7 +30,7 @@ members = [
 exclude = ["crates/cadmpeg-fuzz"]
 
 [workspace.package]
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/cadmpeg/cadmpeg"
@@ -38,25 +38,25 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
-cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.1" }
-cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.1" }
-cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.1" }
-cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.1" }
-cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.1" }
-cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.6.1", default-features = false }
+cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.2" }
+cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.2" }
+cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.2" }
+cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.2" }
+cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.2" }
+cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.6.2", default-features = false }
 cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
-cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.1" }
-cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.1" }
-cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.1" }
-cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.1" }
-cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.1" }
-cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.6.1" }
-cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.6.1" }
-cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.6.1" }
-cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.6.1" }
-cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.1" }
-cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.1" }
-cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.1" }
+cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.2" }
+cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.2" }
+cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.2" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.2" }
+cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.2" }
+cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.6.2" }
+cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.6.2" }
+cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.6.2" }
+cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.6.2" }
+cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.2" }
+cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.2" }
+cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.2" }
 
 # 1.0.229 is the floor, not a preference: serde_derive gained the
 # collected_deny_unknown_fields epilogue there, which is what makes
@@ -64,7 +64,9 @@ cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.1" }
 # types in cadmpeg-ir and cadmpeg-core depend on that refusal, and an
 # older 1.x makes every one of them an inert deny with no compile error.
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
+# `unbounded_depth` adds `disable_recursion_limit`, used only to read back
+# native record text whose nesting cadmpeg-ir bounded when it wrote it.
+serde_json = { version = "1", features = ["float_roundtrip", "raw_value", "unbounded_depth"] }
 serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"
@@ -74,10 +76,31 @@ memchr = "2"
 base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
-zip = { version = "8", default-features = false, features = ["deflate-flate2", "zstd"] }
+# `zip`'s "zstd" feature is `dep:zstd`, a libzstd binding built from C (zstd-sys -> cc), so it
+# is off and Zstandard entries are decoded by the pure-Rust `ruzstd` in `cadmpeg-core`'s
+# `decode/zstd.rs`, reached through `cadmpeg-container`'s snapshot. Without the feature `zip`
+# parses method 93 as `CompressionMethod::Unsupported(93)` and `ZipArchive::by_index` refuses to
+# build a reader for it; the snapshot reads the central record itself and uses `zip` only to
+# index names, so it is unaffected.
+#
+# A crate that reads members through `zip` itself must therefore not hand it a method-93
+# member: it reads the member as stored, through `by_index_raw`, and expands it with
+# `cadmpeg_container::compression::expand_zstd_member_owned`. Those call sites are:
+#
+#   crates/cadmpeg-protein/src/lib.rs                   `schemas`
+#   crates/cadmpeg-codec-f3d/src/materials.rs           `patch_protein_appearances`
+#   crates/cadmpeg-codec-f3d/src/writer/patch/mod.rs    the F3D re-write loop
+#
+# `zip` cannot WRITE method 93 either, so the two F3D re-write loops copy an unedited
+# Zstandard member as stored and write an edited one as Deflate, with a note
+# (`cadmpeg-codec-f3d`'s `zip_write`).
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 lzma-rs = "0.3"
 flate2 = "1"
-zstd = "0.14"
+# Pure-Rust Zstandard decoder, in place of the `zstd` (libzstd via zstd-sys) binding. Its one
+# user is `cadmpeg-core`; what `ruzstd` leaves unchecked that libzstd checks is listed at the top
+# of `crates/cadmpeg-core/src/decode/zstd.rs`.
+ruzstd = { version = "0.9.1", default-features = false, features = ["std", "hash"] }
 crc32fast = "1"
 roxmltree = "0.21"
 hdf5-reader = { version = "0.9.1", default-features = false }

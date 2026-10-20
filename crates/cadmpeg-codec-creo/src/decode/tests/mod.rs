@@ -10,7 +10,6 @@ use crate::decode::sketch::radii::{
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::decode::sweep::nurbs::extruded_geometry_surface;
 use crate::decode::sweep::surfaces::placed_section_geometry_curve;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{SketchConstraint, SketchGeometry, SketchId};
 use std::collections::BTreeMap;
@@ -34,13 +33,6 @@ mod section_solver_constraints_require_complete_unique_semantics;
 mod sketch_curve;
 mod transfer_coverage;
 mod zero_orientation;
-
-fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
-        .expect("test decode context");
-    run(&ctx)
-}
 
 pub(super) fn synchronize_skamp_count(
     definition: &mut crate::feature::definitions::FeatureDefinition,
@@ -150,15 +142,7 @@ fn section_axis_line_carrier(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let variable_points = crate::decode::with_test_decode_ctx(|ctx| {
-        definition
-            .variables
-            .as_ref()?
-            .reconciled_points(ctx)
-            .map(|result| (result.points, result.ambiguous))
-            .ok()
-            .map(|points| points.0)
-    })?;
+    let variable_points = definition.variables.as_ref()?.reconciled_points().points;
     section_axis_line_carrier_with_points(&variable_points, segment)
 }
 
@@ -169,35 +153,20 @@ fn section_segment_intersection_carrier(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let missing_line = crate::decode::with_test_decode_ctx(|ctx| {
-        saved_section_missing_line_geometry(ctx, definition)
-    })
-    .expect("test missing-line geometry admitted");
+    let missing_line = saved_section_missing_line_geometry(definition);
     let variable_points = definition
         .variables
         .as_ref()
-        .map(|variables| {
-            crate::decode::with_test_decode_ctx(|ctx| {
-                variables
-                    .reconciled_points(ctx)
-                    .map(|result| (result.points, result.ambiguous))
-                    .expect("test point reconciliation")
-                    .0
-            })
-        })
+        .map(|variables| variables.reconciled_points().points)
         .unwrap_or_default();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        section_segment_intersection_carrier_with_missing_line(
-            ctx,
-            definition,
-            radii,
-            points,
-            segment,
-            missing_line.as_ref(),
-            &variable_points,
-        )
-    })
-    .expect("test section carrier")
+    section_segment_intersection_carrier_with_missing_line(
+        definition,
+        radii,
+        points,
+        segment,
+        missing_line.as_ref(),
+        &variable_points,
+    )
 }
 
 #[cfg(test)]
@@ -223,7 +192,7 @@ fn section_skamp_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         section_skamp_constraints_for_geometry(ctx, definition, sketch, None)
     })
     .expect("test section solve")

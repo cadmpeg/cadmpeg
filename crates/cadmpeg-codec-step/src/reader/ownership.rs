@@ -12,7 +12,6 @@ pub(super) fn mark_supports(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "STEP source construction roles")?;
     let mut supports = BTreeSet::new();
     let mut roots = BTreeSet::new();
     for record in exchange.records().values() {
@@ -21,17 +20,14 @@ pub(super) fn mark_supports(
             .iter()
             .any(|partial| partial.name == "DEFINITIONAL_REPRESENTATION");
         for partial in &record.partials {
-            ctx.charge_work(1, "STEP source construction partial")?;
             if construction(&partial.name) || (definition && partial.name == "REPRESENTATION") {
                 for value in &partial.parameters {
-                    storage.with_storage(|| collect_references(value, &mut supports, ctx))?;
+                    collect_references(value, &mut supports, ctx)?;
                 }
             } else if independent_items(&partial.name) {
                 for items in partial.parameters.iter().filter_map(ValueExt::list) {
                     for id in items.iter().filter_map(ValueExt::reference) {
-                        storage.with_storage(|| {
-                            ctx.insert_btree_set(&mut roots, id, "STEP independent source geometry")
-                        })?;
+                        roots.insert(id);
                     }
                 }
             }
@@ -60,7 +56,6 @@ pub(super) fn mark_supports(
             )
         }))
     {
-        ctx.charge_work(1, "STEP source support association")?;
         let Some(id) = identity.filter(|id| supports.contains(id)) else {
             continue;
         };
@@ -70,10 +65,8 @@ pub(super) fn mark_supports(
             SourceGeometryRole::Support
         };
         if source.is_none() {
-            let object_id = cadmpeg_core::text::NonBlankString::new(
-                ctx.format_retained(format_args!("#{id}"), "STEP source support identity")?,
-            )
-            .ok_or_else(|| CodecError::malformed("STEP source support identity is blank"))?;
+            let object_id = cadmpeg_core::text::NonBlankString::new(format!("#{id}"))
+                .ok_or_else(|| CodecError::malformed("STEP source support identity is blank"))?;
             *source = Some(SourceObjectAssociation {
                 format: CodecFormat::Step,
                 geometry_role: Some(role),

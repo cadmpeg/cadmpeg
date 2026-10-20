@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum, curve, helix, and wrap projection.
 
-use super::copy_projected_feature_id;
 use crate::records::Feature;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
         CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
@@ -20,23 +17,6 @@ use crate::history::literals::{
     parse_positive_length_mm, parse_valid_direction, parse_vector3, valid_direction,
     valid_plane_frame,
 };
-
-fn copy_reference_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "retain SLDPRT datum and curve reference",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_work(copy_work, "retain SLDPRT datum and curve reference")?;
-    ctx.format_retained(
-        format_args!("{text}"),
-        "retain SLDPRT datum and curve reference",
-    )
-}
 
 pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
@@ -54,17 +34,13 @@ pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition
 }
 
 pub(in crate::history) fn project_offset_plane(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(distance) = feature
+) -> Option<FeatureDefinition> {
+    let distance = feature
         .parameters
         .get("D1")
-        .and_then(|value| parse_dimension_length_mm(value))
-    else {
-        return Ok(None);
-    };
+        .and_then(|value| parse_dimension_length_mm(value))?;
     let resolved_frame = || {
         cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
             parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
@@ -83,23 +59,24 @@ pub(in crate::history) fn project_offset_plane(
         .and_then(|source| by_source.get(source.as_str()))
     {
         Some(DatumPlaneReference::Feature {
-            feature: copy_projected_feature_id(ctx, reference)?,
+            feature: reference.clone(),
         })
     } else if let Some(frame) = resolved_frame() {
         Some(DatumPlaneReference::ResolvedPlane { frame })
-    } else if let Some(native) = feature.properties.get("ReferenceFaceNative") {
-        Some(DatumPlaneReference::Face {
-            face: FaceSelection::Native(copy_reference_text(ctx, native)?),
-        })
     } else {
-        None
+        feature
+            .properties
+            .get("ReferenceFaceNative")
+            .map(|native| DatumPlaneReference::Face {
+                face: FaceSelection::Native(native.to_owned()),
+            })
     };
-    Ok(Some(FeatureDefinition::Operation(
+    Some(FeatureDefinition::Operation(
         FeatureOperation::DatumOffsetPlane {
             reference,
             distance,
         },
-    )))
+    ))
 }
 
 pub(super) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
@@ -139,11 +116,8 @@ pub(super) fn project_datum_coordinate_system(feature: &Feature) -> Option<Featu
     ))
 }
 
-pub(super) fn project_equation_curve(
-    ctx: &DecodeContext<'_>,
-    feature: &Feature,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((parameter, x_expression, y_expression, z_expression, start, end)) = (|| {
+pub(super) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinition> {
+    let (parameter, x_expression, y_expression, z_expression, start, end) = (|| {
         Some((
             feature.properties.get("Parameter")?.trim(),
             feature.properties.get("XEquation")?.trim(),
@@ -157,26 +131,23 @@ pub(super) fn project_equation_curve(
                 .ok()?,
             feature.properties.get("End")?.trim().parse::<f64>().ok()?,
         ))
-    })() else {
-        return Ok(None);
-    };
-    Ok(cadmpeg_ir::features::FeatureEquationCurve::new(
-        copy_reference_text(ctx, parameter)?,
-        copy_reference_text(ctx, x_expression)?,
-        copy_reference_text(ctx, y_expression)?,
-        copy_reference_text(ctx, z_expression)?,
+    })()?;
+    cadmpeg_ir::features::FeatureEquationCurve::new(
+        parameter.to_owned(),
+        x_expression.to_owned(),
+        y_expression.to_owned(),
+        z_expression.to_owned(),
         start,
         end,
     )
-    .map(|curve| FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve })))
+    .map(|curve| FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve }))
 }
 
 pub(super) fn project_projected_curve(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((source, target_faces, direction, bidirectional)) = (|| {
+) -> Option<FeatureDefinition> {
+    let (source, target_faces, direction, bidirectional) = (|| {
         let source = feature.properties.get("Source")?;
         let source = native_by_source
             .get(source.as_str())
@@ -196,52 +167,42 @@ pub(super) fn project_projected_curve(
                 .and_then(|value| parse_bool(value))
                 .unwrap_or(false),
         ))
-    })() else {
-        return Ok(None);
-    };
-    Ok(Some(FeatureDefinition::Operation(
+    })()?;
+    Some(FeatureDefinition::Operation(
         FeatureOperation::ProjectedCurve {
-            source: PathRef::Native(copy_reference_text(ctx, source)?),
-            target_faces: FaceSelection::Native(copy_reference_text(ctx, target_faces)?),
+            source: PathRef::Native(source.to_owned()),
+            target_faces: FaceSelection::Native(target_faces.to_owned()),
             direction,
             bidirectional: Some(bidirectional),
         },
-    )))
+    ))
 }
 
 pub(super) fn project_composite_curve(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(segment_text) = feature.properties.get("Segments") else {
-        return Ok(None);
-    };
+) -> Option<FeatureDefinition> {
+    let segment_text = feature.properties.get("Segments")?;
     let mut segments = Vec::new();
     for source in segment_text
         .split(';')
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        ctx.charge_work(1, "project SLDPRT composite curve segments")?;
         let source = native_by_source.get(source).copied().unwrap_or(source);
-        let segment = PathRef::Native(copy_reference_text(ctx, source)?);
-        ctx.reserve_vec(&mut segments, 1, "project SLDPRT composite curve segments")?;
+        let segment = PathRef::Native(source.to_owned());
         segments.push(segment);
     }
     if segments.is_empty() {
-        return Ok(None);
+        return None;
     }
-    let Some(closed) = feature
+    let closed = feature
         .properties
         .get("Closed")
-        .map_or(Some(false), |value| parse_bool(value))
-    else {
-        return Ok(None);
-    };
-    Ok(segments.try_into().ok().map(|segments| {
+        .map_or(Some(false), |value| parse_bool(value))?;
+    segments.try_into().ok().map(|segments| {
         FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed })
-    }))
+    })
 }
 
 pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
@@ -280,11 +241,8 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     }))
 }
 
-pub(super) fn project_native_axis_helix(
-    ctx: &DecodeContext<'_>,
-    feature: &Feature,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((axial_rise, pitch, revolutions, start_angle, clockwise)) = (|| {
+pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
+    let (axial_rise, pitch, revolutions, start_angle, clockwise) = (|| {
         let axial_rise = parse_dimension_length_mm(feature.parameters.get("D3")?)?;
         let pitch = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
         let revolutions = feature
@@ -301,12 +259,9 @@ pub(super) fn project_native_axis_helix(
             .and_then(|value| parse_bool(value))
             .unwrap_or(false);
         Some((axial_rise, pitch, revolutions, start_angle, clockwise))
-    })() else {
-        return Ok(None);
-    };
-    let axis_native_ref =
-        cadmpeg_core::text::NonBlankString::new(copy_reference_text(ctx, &feature.id)?);
-    Ok(axis_native_ref.map(|axis_native_ref| {
+    })()?;
+    let axis_native_ref = cadmpeg_core::text::NonBlankString::new(feature.id.clone());
+    axis_native_ref.map(|axis_native_ref| {
         FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
             axis_native_ref,
             axial_rise,
@@ -315,15 +270,14 @@ pub(super) fn project_native_axis_helix(
             start_angle,
             clockwise,
         })
-    }))
+    })
 }
 
 pub(super) fn project_wrap(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((profile, face, mode)) = (|| {
+) -> Option<FeatureDefinition> {
+    let (profile, face, mode) = (|| {
         let profile = feature.properties.get("Profile")?;
         let profile = native_by_source
             .get(profile.as_str())
@@ -345,14 +299,12 @@ pub(super) fn project_wrap(
             return None;
         };
         Some((profile, face, mode))
-    })() else {
-        return Ok(None);
-    };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Wrap {
-        profile: PlanarProfileRef::Native(copy_reference_text(ctx, profile)?),
-        face: FaceSelection::Native(copy_reference_text(ctx, face)?),
+    })()?;
+    Some(FeatureDefinition::Operation(FeatureOperation::Wrap {
+        profile: PlanarProfileRef::Native(profile.to_owned()),
+        face: FaceSelection::Native(face.to_owned()),
         mode,
-    })))
+    }))
 }
 
 #[cfg(test)]
@@ -402,16 +354,11 @@ mod tests {
         parameter(&mut feature, "D7", "0rad");
 
         assert!(matches!(
-            project_native_axis_helix(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
+            project_native_axis_helix(&feature),
             Some(FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { revolutions, .. }))
                 if revolutions.get() == 2.5
         ));
         parameter(&mut feature, "D5", "0");
-        assert!(project_native_axis_helix(
-            &cadmpeg_test_support::service_decode_context(),
-            &feature
-        )
-        .unwrap()
-        .is_none());
+        assert!(project_native_axis_helix(&feature).is_none());
     }
 }

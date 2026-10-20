@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -28,16 +29,26 @@ pub struct DecodeReport {
 }
 
 /// Mutually exclusive source-transfer states for a decode report.
+///
+/// The backend reports the state it delivered; the sealed decode wrapper
+/// records its [`depth`](Self::depth) on the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "transfer", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum DecodeTransfer {
-    /// The request stopped after container inspection and transferred no
+    /// The decoder stopped after container inspection and transferred no
     /// semantic geometry.
+    #[serde(rename = "container")]
     ContainerOnly {},
-    /// The request ran the full decoder, with the recorded B-rep geometry
-    /// outcome.
+    /// The decoder transferred the model and left every design arena empty,
+    /// with the recorded B-rep geometry outcome.
+    Geometry {
+        /// Whether B-rep geometry was transferred into the IR.
+        geometry_transferred: bool,
+    },
+    /// The decoder transferred the model and its design, with the recorded
+    /// B-rep geometry outcome.
     Full {
         /// Whether B-rep geometry was transferred into the IR.
         geometry_transferred: bool,
@@ -53,17 +64,30 @@ impl DecodeTransfer {
         }
     }
 
-    /// Constructs the transfer state from the sealed wrapper's request scope
-    /// and the backend's geometry outcome.
-    const fn stamp_request_scope(container_only: bool, transfer: Self) -> Self {
-        if container_only {
-            Self::ContainerOnly {}
-        } else {
-            Self::full(transfer.geometry_transferred())
+    /// Constructs the state for a decode that delivered `depth`, with its
+    /// geometry outcome. A container decode carries no geometry outcome.
+    #[must_use]
+    pub const fn at(depth: DecodeDepth, geometry_transferred: bool) -> Self {
+        match depth {
+            DecodeDepth::Container => Self::ContainerOnly {},
+            DecodeDepth::Geometry => Self::Geometry {
+                geometry_transferred,
+            },
+            DecodeDepth::Full => Self::full(geometry_transferred),
         }
     }
 
-    /// Returns whether the request stopped at the container layer.
+    /// The depth this state delivered.
+    #[must_use]
+    pub const fn depth(self) -> DecodeDepth {
+        match self {
+            Self::ContainerOnly {} => DecodeDepth::Container,
+            Self::Geometry { .. } => DecodeDepth::Geometry,
+            Self::Full { .. } => DecodeDepth::Full,
+        }
+    }
+
+    /// Returns whether the decode stopped at the container layer.
     #[must_use]
     pub const fn container_only(self) -> bool {
         matches!(self, Self::ContainerOnly {})
@@ -74,7 +98,9 @@ impl DecodeTransfer {
     pub const fn geometry_transferred(self) -> bool {
         matches!(
             self,
-            Self::Full {
+            Self::Geometry {
+                geometry_transferred: true
+            } | Self::Full {
                 geometry_transferred: true
             }
         )
@@ -338,112 +364,37 @@ pub struct Coverage {
 }
 
 impl Coverage {
-    /// Records a static key after admitting its new map node and retained name.
-    pub fn record(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        key: CoverageKey,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(key.0) {
-            *value = count;
-            return Ok(());
-        }
-        let name = ctx.copy_retained_text(key.0, "decode coverage names")?;
-        self.insert_name(ctx, name, count)
+    /// Records a static key.
+    pub fn record(&mut self, key: CoverageKey, count: usize) {
+        self.entries.insert(key.0.to_owned(), count);
     }
 
-    /// Records a decimal-indexed key after admitting its temporary and retained name.
-    pub fn record_indexed(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        key: IndexedCoverageKey,
-        index: u32,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
-            format_args!("{}{index}{}", key.prefix, key.suffix),
-            "decode indexed coverage name",
-        )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
-            *value = count;
-            return Ok(());
-        }
-        bytes.commit()?;
-        self.insert_name(ctx, name, count)
+    /// Records a decimal-indexed key.
+    pub fn record_indexed(&mut self, key: IndexedCoverageKey, index: u32, count: usize) {
+        self.entries
+            .insert(format!("{}{index}{}", key.prefix, key.suffix), count);
     }
 
-    /// Records a hexadecimal-byte key after admitting its temporary and retained name.
-    pub fn record_hex_byte(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        key: HexByteCoverageKey,
-        value: u8,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
-            format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
-            "decode hexadecimal coverage name",
-        )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(existing) = self.entries.get_mut(&name) {
-            *existing = count;
-            return Ok(());
-        }
-        bytes.commit()?;
-        self.insert_name(ctx, name, count)
+    /// Records a hexadecimal-byte key.
+    pub fn record_hex_byte(&mut self, key: HexByteCoverageKey, value: u8, count: usize) {
+        self.entries
+            .insert(format!("{}{:02x}{}", key.prefix, value, key.suffix), count);
     }
 
     /// Records an already-copied declared key without allocating another key.
-    ///
-    /// The caller can reserve and charge the copy before calling this method.
     pub fn record_owned(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: CoverageKey,
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name.len()),
-            "decode coverage name admission",
-        )?;
         if name != key.0 {
             return Err(cadmpeg_core::CodecError::malformed(
                 "coverage name does not match its declared key",
             ));
         }
-        self.insert_name(ctx, name, count)
-    }
-
-    fn insert_name(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        name: String,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
-            *value = count;
-            return Ok(());
-        }
-        ctx.charge_work(1, "decode coverage nodes")?;
-        ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
+        self.entries.insert(name, count);
         Ok(())
-    }
-
-    /// Build a coverage map through the charged insertion operation.
-    pub fn from_iter_for_decode(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        entries: impl IntoIterator<Item = (CoverageKey, usize)>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut coverage = Self::default();
-        for (key, count) in entries {
-            coverage.record(ctx, key, count)?;
-        }
-        Ok(coverage)
     }
 
     /// Returns all recorded counts by their wire names.
@@ -494,11 +445,10 @@ impl DecodeReport {
     pub(crate) fn from_body(
         classification: FormatIdentity<DialectLayers>,
         body: crate::codec::DecodeBody,
-        container_only: bool,
     ) -> Self {
         Self {
             classification,
-            transfer: DecodeTransfer::stamp_request_scope(container_only, body.transfer),
+            transfer: body.transfer,
             coverage: body.coverage,
             losses: body.losses,
             notes: body.notes,
@@ -564,6 +514,12 @@ impl DecodeReport {
     #[must_use]
     pub const fn container_only(&self) -> bool {
         self.transfer.container_only()
+    }
+
+    /// The depth the decode delivered.
+    #[must_use]
+    pub const fn depth(&self) -> DecodeDepth {
+        self.transfer.depth()
     }
 
     /// Returns whether B-rep geometry was transferred into the IR.

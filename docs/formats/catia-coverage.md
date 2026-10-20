@@ -35,11 +35,18 @@ current levels require those matrices and representative fixtures.
 
 ## Implemented slices above the score
 
+- Consolidated support tags remain separate from carrier offsets, record order,
+  and header tokens. The existing circle resolver requires a unique identity
+  and a compatible constant-V arc chart; a conflicting identity does not fall
+  back to another geometric candidate. Duplicate-identity and conflicting-chart
+  regressions exercise that rule. Complete identity-free carriers retain their
+  geometry without receiving a persistent support tag.
+
 - Outer-body FINJPL inventory and E5 candidate selection use the header-defined
   `[directory_length,directory_offset)` range. The trailing stream directory
   cannot contribute FINJPL segments, E5 census markers, E5 candidates,
   previews, version metadata, or external references.
-- Stream-directory inspection retains every extent's raw flags word in logical
+- Stream-directory inspection retains every extent's raw trailing word in logical
   extent order.
 - Admitted outer `Data` declarations bind canonical or leading-underscore
   UUID-named streams to their concrete and base model-container classes and
@@ -317,36 +324,21 @@ current levels require those matrices and representative fixtures.
   resolution state, and resolved target identity/class when available.
   Constraint type, coordinates, parameters, driving or active state, and solver
   semantics remain unresolved; this slice does not raise the CATIA score.
-- A transferred typed parameter receives a feature owner only when its exact
-  entity record selects an object record whose design-object owner chain
-  reaches a transferred feature through a complete acyclic prefix. The nearest
-  transferred feature owns the parameter; an outer feature later in the chain
-  does not make that ownership ambiguous. A missing object or cycle before the
-  first feature leaves the parameter at document scope.
-- Exact feature-owned parameters receive feature-local ordinals in serialized
-  object-record order, with the entity-record position as a deterministic
-  tie-breaker. This records parameter order and ownership only; it does not
-  assign a parameter to an operation role such as profile, direction, extent,
-  or output.
-- Typed unresolved operation definitions expose the admitted CATIA operation
-  family without asserting unresolved operands: `Prism_EndLimit_Length`,
-  `Prism_ThickThin1`, and `Prism_ThickThin2` are unresolved extrusions,
-  `Revol_ThickThin1` is an
-  unresolved revolution, `Sweep_ThickThin1` is a sweep with unresolved section,
-  path, and result mode, `EdgeFillet` is an unresolved fillet, and
-  `CircPattern_RadialNumber` is an unresolved circular pattern. Exact
-  definition-bound values remain in `Feature.source_properties` under stable
-  `catia_definition_` keys. Feature-owned parameter expressions remain model
-  parameters and are copied under `catia_parameter_<neutral-name>` source
-  properties. These values record generic feature inputs only; they do not
-  assign operation roles, pattern seeds, an axis, an angle, or an instance
-  count.
-- Exact source-schema `Range` fields whose entity record is linked through a
-  listed field object on a complete operation owner chain are copied to
-  `Feature.source_properties` under `catia_range_<ordinal>_*`. The projection
-  retains selectors, prefix, nullable slots, nominal framing, and incidence
-  counts. It does not assign an extent, parameter, PMI, sketch, or other
-  operation role; semantic ownership remains unresolved under DI-18.
+- Typed scalar parameters remain document-scoped with contiguous source-order
+  ordinals and unique neutral names. Changed names retain the original spelling
+  in `properties["source_name"]`. Their native fields, paired entities,
+  definition selectors, and values retain source identities. Structural
+  ancestry does not assign a feature parameter owner or collection position.
+- Native camera programs and their associated catalogs remain retained native
+  records. Camera names and view/capture field-class labels do not create design
+  configurations, annotation ownership, capture membership, active TPS-view
+  state, or geometric targets. These relations require independent native
+  incidences. Range-only size dimensions retain their source values and remain
+  targetless until a target relation is established.
+- Operation-like schema labels retain native design-object identity, fields,
+  definition-bound values, range intervals, and relations. Structural ownership
+  and class identity do not establish an operation instance or a neutral
+  operation family. Parameters receive no feature owner from these labels.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
@@ -367,15 +359,6 @@ current levels require those matrices and representative fixtures.
   with source order, identity, and structural parent linkage. The transfer does
   not assign support, angle, signed offset, normal, in-plane frame, or
   construction dependencies; this slice does not raise the CATIA score.
-- Exact separator-form owner declarations for the admitted operation classes
-  `EdgeFillet`, `Prism_EndLimit_Length`, `Prism_ThickThin1`,
-  `Prism_ThickThin2`, `Revol_ThickThin1`, `Sweep_ThickThin1`, and
-  `CircPattern_RadialNumber` transfer family-specific unresolved feature nodes
-  with source order, identity, and structural parent linkage. Their operands,
-  profiles, directions, axes, extents, outputs, edge groups, radii, pattern
-  seeds, pattern axis, pattern angle, pattern count, operation-specific
-  dependency roles, and regeneration semantics remain unresolved; this slice
-  does not raise the CATIA score.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
@@ -417,28 +400,51 @@ current levels require those matrices and representative fixtures.
   nonzero component of the `u_axis` to be positive. A missing or ambiguous
   normal, non-finite endpoint, non-orthonormal fit, or residual above the
   tolerance leaves the plane carrier unresolved.
+- Rooted E5 loop traversal uses the complete loop relation and the face-aligned
+  root sign at roster position plus one. Every member must yield the same
+  nonzero loop-local sign. The admitted root endpoints are `H=+1, S=−1`;
+  other endpoint signs abstain. Shared-edge parity checks the resulting
+  traversal; a missing body root or conflicting relation abstains.
+- Analytic E5 face orientation composes the face and root relations. Plane
+  faces use the signed area of their oriented line/circle boundaries in the
+  fitted chart. Outer and inner loops must give the same face sense; an
+  unsupported boundary carrier, zero area, or disagreement abstains.
+- E5 edges require five object references followed by exactly one allocation
+  terminal. The admitted terminal values are `01`, `02`, `21`, `22`, `25`,
+  `29`, and `2a`; value and addressing form remain separate from endpoint
+  direction. The five object references also admit the shifted-u16 `30`
+  form. Unsupported terminals or incomplete references reject the topology
+  graph. Original bytes remain in native records.
+- E5 jet and NURBS bounds resolve their one-based distinct span code and
+  local scalar to the native knot parameter before selecting occurrence
+  direction. NURBS knot repetitions do not count as extra arcs; a nonzero
+  first knot remains part of the conversion even for code one. Arc scans
+  charge the work budget.
+  Unknown arc numbers, missing representations, repeated entries, and
+  out-of-span values leave the binding unresolved. Paired analytic line/plane-jet supports use
+  the line's full affine UV map and owning carrier chart for the physical
+  circle branch; negative slopes and nonzero offsets remain intact.
 - E5 curve-support sides admit direct p-curves and finite acyclic chains of
   intersection-support wrappers. Missing sides and wrapper cycles reject the
   graph. When a wrapper side does not resolve directly, the two radial loop
   occurrences supply the ordered support sides only after endpoint and
   parameter-range agreement.
-- Zero-entity face-local support occurrences with complete lifted endpoint
-  tapes form radial endpoint-pair candidates when two occurrences have one
-  reciprocal unordered model-space endpoint match and the surrounding
-  face-incidence partition is unambiguous. Repeated endpoint pairs additionally
-  require one reciprocal bounded-curve midpoint match. This relation does not
-  assert curve coincidence: distinct curved supports may share the retained
-  witnesses. Candidate endpoint
-  coordinates form geometric endpoint-locus candidates only when each tolerance
-  component is a complete pairwise clique; ambiguous tolerance chains remain
-  unresolved.
-- Complete consolidated cone-face chart records retain their reference-and-
-  control program, angular scale, and cone half-angle before the program's
-  higher-level roles resolve. Consolidated parameter-space points retain all
-  four stored prefix selectors with their UV, station-plus-UV, or five-scalar
-  payload. A cone-face chart binds its immediately following complete
-  parameter-space point run in serialized order; a mixed class-`0x18` run
-  remains unbound atomically.
+- Zero-entity physical edges, oriented uses, and vertices bind through the
+  complete source allocation graph. Endpoint coordinates validate the bound
+  vertex owners: every contributing coordinate must agree pairwise within
+  `2e-3` mm. Geometric proximity does not establish source identity.
+- Compact and object-id class-`3b` records retain typed two-support chamfer
+  references, result kind, contact order, support halfspaces, and either two
+  setbacks or a setback and acute angle. The exact referenced result carrier
+  supplies geometry. Compact contact ownership requires the adjacent result
+  kind and two parallel ordered bounds; a further pair must close their
+  rectangle. Unrelated following records remain independent.
+  Consolidated parameter-space points retain source-local compact operands
+  with exact inline or one- through four-byte integer encodings and ordered
+  scalar payloads. Controls enforce scalar count, negative centered-domain
+  start, and explicit unit direction. Owner charts require complete
+  constant-axis tuples or the implicit-line half-span, midpoint, and boundary
+  relation.
 - A consolidated revolution whose profile interval selects exactly one
   consolidated circle transfers a placed analytic directrix and neutral
   surface-of-revolution construction. A profile circle offset from the
@@ -543,9 +549,12 @@ current levels require those matrices and representative fixtures.
   orthonormal frame, and zero tail; malformed frame, tail, or range/domain
   relations reject the complete record.
   Consolidated and object-stream cones retain their active azimuth interval,
-  centered full-turn domain, slant interval, and fixed chart-tail scalars.
-  Object-stream cones additionally require the complete lead and signed
-  orthonormal frame; neutral pcurve transfer preserves its handedness.
+  centered full-turn domain and slant interval. Consolidated cones require
+  their fixed chart-tail scalars. Object-stream cones require the complete
+  lead, signed orthonormal frame and unit parameter coefficient. Their finite
+  V shift maps the external chart to local generator length. Neutral geometry
+  includes the reference radius and radial-plane generator angle; pcurve and
+  isoparametric circle transfer preserve the stored frame handedness.
   Malformed frame or chart relations reject the complete record.
   A consolidated sphere retains active azimuth and latitude intervals and
   validates its repeated radius and redundant centered-domain origin exactly.
@@ -587,31 +596,26 @@ current levels require those matrices and representative fixtures.
   `03` or `05` terminal control. Decode coverage counts the two controls
   independently.
   Complete `62xx` loop rosters bind to those terminals and retain alternating
-  logical-member and typed-reference lanes, loop class, and absolute member
+  logical-member and backward edge-distance lanes, loop class, and absolute member
   senses. Decode coverage counts each admitted loop class and forward/reversed
   member senses independently. Each loop member binds to the unique face-local support occurrence
   whose slot equals the loop terminal minus that member; the complete
   face-local binding is atomic and retained as support-record ordinals. A loop
   retains its complete sense-oriented model endpoint tape when every support
   lifts directly or exactly one missing pair is bounded by lifted neighbors
-  and every cyclic join closes within the format tolerance. Matching occurrence
-  endpoint pairs establish face-incidence components when each occurrence has
-  one reciprocal endpoint match. Ambiguous endpoint groups require one
-  reciprocal bounded-curve midpoint match. Matching groups partition by those
-  components, and every two-occurrence partition retains one radial
-  endpoint-pair candidate. The midpoint disambiguates repeated endpoint pairs;
-  the candidate does not establish curve coincidence or a physical edge. Every
-  in-range odd-lane typed reference retains its selected global record identity
-  atomically for the loop. When every bound support occurrence belongs to one
-  radial pair and every pair endpoint belongs to one complete endpoint clique,
-  the decoder atomically lowers the closed relation set into one connected
-  neutral body, region, shell, face, loop, coedge, edge, vertex, point, and
-  pcurve graph. Edge orientation is solved from the bounded model-carrier
-  endpoints; each alternate face occurrence keeps its oriented use curve and
-  coedge sense. A complete terminal ownership root supplies the body and shell
-  identities. Without that root, the graph uses deterministic derived body,
-  region, and shell identities. Allocation namespaces and native physical-edge
-  identity remain native records. Any incomplete, ambiguous, or inadmissible
+  and every cyclic join closes within the format tolerance. Each odd lane selects a
+  physical-edge record by backward distance from the loop ordinal. The complete
+  allocation graph joins that edge to its `2569` header, ordered `0638` uses,
+  face-local supports, `05xx` incidences, and persistent `5d06` vertex owners.
+  Native allocation edges retain all six record classes through exact identities.
+  Coverage counts complete allocation edges and bound loop-to-edge distances.
+  The decoder atomically lowers a complete graph whose endpoint contributions
+  agree into neutral faces, loops, coedges, edges, vertices, points, and pcurves.
+  Physical edges, side-use coedges, and vertices use their source record ordinals.
+  Geometry validates the bindings and supplies derived carriers and coordinates.
+  Each alternate face occurrence keeps its oriented use curve and coedge sense.
+  A complete terminal ownership root supplies body and shell identities. Without
+  that root, the graph uses deterministic derived body, region, and shell identities. Any incomplete, ambiguous, or inadmissible
   relation candidate retains the atomic wire fallback. A direct carrier that
   cannot be evaluated or oriented remains a reachable unknown carrier; the
   topology candidate commits only when the complete graph remains admissible.
@@ -694,7 +698,10 @@ current levels require those matrices and representative fixtures.
   pcurves require the complete finite arc-length circle grammar. Both transfer
   over their stored parameter intervals.
   Object-stream `b5 03 21` pcurves require the exact single-segment clamped
-  Bézier grammar, complete finite suffix, and positive scalar domain.
+  Bézier grammar, complete finite suffix, and positive scalar domain. The suffix
+  span equals the serialized knot difference exactly. Transfer subtracts the
+  native knot origin and checks incidence stations in the zero-based domain;
+  a nonzero origin does not change the locus or the occurrence interval.
   Object-stream `a8 03 21` pcurves require the complete degree-5 UV
   position/first-derivative/second-derivative jet, multiplicity grammar, and
   finite tail. Each knot span transfers as an exact quintic Bézier segment.
@@ -719,15 +726,22 @@ current levels require those matrices and representative fixtures.
   reparameterization. Controls `05 15` and `05 19` select and reorigin the
   terminal span of a direct class-`20` pcurve having exactly five and six
   spans respectively. Controls `01 09` and `01 15` use the class-`14` result
-  interval as V bounds only when at least one class-`30` kind-`21` construction
-  names the carrier and every such construction matches the source directrix
-  identity, source extrusion, signed distance, plane-normal direction, and both
-  result-chart bound pairs. The class-`14` source and result intervals define an
-  affine parameter map. The neutral surface offset retains the defining source
-  extrusion directly. Face-local class-`30`
+  interval as V bounds only after bit-exact two-origin limit checks, strict
+  flanking-knot checks, and the inclusive two- or five-knot count. At least one
+  class-`30` kind-`21` construction must name the carrier, and every such
+  construction must match the source directrix identity, source extrusion,
+  signed distance, plane-normal direction, and both result-chart bound pairs.
+  The class-`14` source and result intervals define an affine parameter map.
+  The neutral surface offset retains the defining source extrusion directly.
+  Face-local class-`30`
   analytic offsets also resolve from length-closed surface frames when their
-  result carrier, source carrier, kind code, and signed distance equation agree,
-  without requiring the surrounding topology run to close.
+  result and source carriers have the same family, kind code, and distance
+  magnitude required for planes, cylinders, spheres, and tori,
+  without requiring the surrounding topology run to close. Cone kind `11`
+  requires matching oriented frames and a signed native-normal distance, with
+  the generator translation matching the source/result V-shift difference.
+  Its explicit result cone supplies the neutral geometry and translated chart;
+  the complete native offset construction remains retained.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.
@@ -767,3 +781,685 @@ current levels require those matrices and representative fixtures.
 The current public score is L1. Capabilities above L1, including
 standard-nested geometry, are extras until every cumulative gate through
 the target level passes for every admitted layout.
+
+Storage-property members in bounded type-`0x8e` FINJPL segments are retained in
+`storage_property_members`, separately from `alias_rows`. The native records
+preserve direct or nullable state, complete four-byte allocation slots, framed
+numbered labels, raw tags, unassigned bytes, and containing segment identities.
+Their labels and slot low bytes do not assign history records or face ordinals.
+
+Strict childless inline records retain self, anchor-field, and optional
+value-field incidences in `inline_fields`. Each incidence carries its exact
+body offset and same-graph entity resolution. The complete wide schema chain
+joins the associated catalog entries for `Projected3DGeometrySet`,
+`CATEarlySpecBrpLocation`, and `data`. Compact schema tokens remain unnamed.
+Opaque childless bodies retain their complete bytes without these roles.
+
+Zero-entity face terminals assign positive (`05`) or negative (`03`)
+face-to-surface orientation. Complete loop binding requires the matching outer
+class (`41` or `c1`); contradictory orientation retains the native face without
+binding its loop roster.
+
+E5 NURBS current-limit programs admit the identity parameterization with disabled extrapolation. AA pcurves use the two tail-defined arc-local limits, including an inset lower limit. E7 surfaces require a current rectangle equal to the complete knot domain. Nonidentity parameterizations, active extrapolation, malformed limits and unadmitted surface subdomains retain native bytes and abstain from this geometry route.
+
+E5 curve supports retain complete mode-0, affine mode-3 and sampled mode-5 programs in `e5_curve_supports`, indexed by physical source offset and persistent record identity. The graph and Native arena share one parser. Unknown modes and malformed tails remain in the original bounded source payload. Accuracy, fit tolerance, fixed limits, active limits and both sampled lanes remain distinct. The reference facet supplies an exact lifted curve or its parametric surface-curve construction. A two-surface neutral context requires normalized line pcurves with independently affine lifts to the same ordered locus; endpoint agreement and sampled correspondence sites do not establish that map. The source co-facet and complete correspondence remain in Native data.
+
+Indexed visualization coordinates bind width-three trim endpoints to counted coordinate rows by exact binary32 coordinate equality. Multiple trim handles can bind one logical vertex. Complete admission requires every coordinate row to be selected; coordinate rank does not bind endpoints.
+
+FBB/E5 route precedence follows complete standard and two-table FBB-only walks before the positive-vertex partial-spine fallback. Vertexless spines remain unresolved even with coherent E5 elsewhere. Subordinate width-one/D(1) table pairs and width-two kind-2-only populations retain their nested source bytes; E5 topology comes from the independently bounded E5 graph. Geometry, topology and Native support inventories share the E5 frame-span reader. At an exact frame end, complete interstitial `13`/`83` payloads remain outside geometry inventory and route-witness searches.
+
+Object-stream B5/A8 loops admit the complete 62-byte numeric terminal with six distinct canonical compact controls, four finite binary64 fields and six finite binary32 fields. Terminal admission exhausts the owning frame and keeps member identities, counts and signed occurrence controls independent. Compact construction-domain owners, A9 loops, E5 loops and FBB trim cycles use their own bounded productions.
+
+Object-loop member triples retain the edge occurrence sign, the composite pcurve-to-edge-curve parameter orientation and the pcurve occurrence sign separately. Class-`06` stations retain both the local parameter and compact arc number. Endpoint station selection accepts equal repetitions and rejects conflicting arc numbers even when the local scalars match.
+
+Numeric object-loop terminals retain patch-aware U/V rectangle corners and paired Cartesian bounds. Admission requires nondecreasing patch identifiers, nondecreasing local scalars within one patch, a terminal compact zero, and finite ordered Cartesian low/high pairs. Local resets across patch boundaries remain admitted; stored boxes are retained without regeneration.
+
+A8 freeform surfaces consume their pole and weight grids inside the declared logical frame after descriptor reconstruction. Nonphysical extent order preserves the complete neutral model. Unframed pcurve gaps do not supply pole grids or bridge object-stream namespaces. The fixed terminal-span tail retains local intervals and identity affine pairs independently of the full knot domain.
+
+Vertex-incidence links accept exactly terminal `00` or `04` after one complete object reference and retain the terminal separately from the resolved roster. The two controls use the same incidence resolution. Strict frame closure rejects missing and extra terminal bytes. Class-`5d` dispatch uses the complete payload signature.
+
+## Float-packed native identity fixtures
+
+The frozen plane and cone fixtures contain 18 and 23 complete B5 frames,
+respectively, inside nested containers with a one-byte `SurfacicReps` and no
+FBB spine. Their vertex rosters contain one vertex-local incidence each;
+every adjoining curve station agrees at the vertex. The plane main stream
+has 762 bytes and its container has 1,026 bytes. The cone main stream has
+1,026 bytes and its container has 1,290 bytes.
+
+End-to-end tests require one body, region, shell, face, loop and surface;
+three plane or four cone edges, coedges, vertices and pcurves; complete typed
+edge, vertex, roster and parameter-incidence coverage; and zero unresolved
+faces or loops. The cone uses a nonzero reference radius and a generator
+angle different from π/4. Point coordinates, neutral validation, and every
+geometry annotation, including procedural curves and surfaces, are checked.
+The sole decode loss is the `topology.b5-gauge-substituted` warning.
+
+The smaller nine-frame coordinate-backed triangle remains a routing fixture.
+Its empty edge payloads do not exercise native edge or vertex identity grammar.
+Successful fallback transfer does not establish incidence-roster coincidence.
+
+## Native object-loop boundary roles
+
+B5 face transfer uses the second loop control to select the unique outer loop
+and each inner loop. Classification applies to analytic, freeform and opaque
+carriers and does not require planar pcurves or a containment calculation.
+Absent or multiple outer selections leave the loop roles unspecified.
+The first loop control retains face-to-carrier orientation independently;
+shell orientation and neutral chart conversion remain separate relations.
+
+The frozen plane-with-hole graph has 34 frames and two three-edge loops.
+Its face lists the inner loop first, and its boundaries are degree-one NURBS
+pcurves. Transfer selects loop 400 as outer and loop 401 as inner from their
+location controls. All six vertex loci and every source annotation are checked.
+The plane and cone identity fixtures also check the middle occurrence sign
+against their common curve/pcurve stations; each direction product is `+1`.
+
+## Complete object-stream body populations
+
+B5 face-body transfer requires the complete selected source population.
+It retains an incomplete graph as native data and publishes no partial face
+body. The neutral body-kind gauge uses complete physical-edge incidence: closed
+components give solid, open components give sheet, and mixed or non-manifold
+incidence gives general. This gauge does not establish the source cell and
+domain dimensions. Ownership counts and terminal controls do not assign body
+kind. Complete closed-loop wire recovery remains a separate transfer.
+
+The completeness regression starts with two faces sharing all three edges.
+It removes one face's pcurve binding and marks the source graph incomplete.
+Transfer declines without mutating the neutral document; dropping that face
+would produce a sheet from a topology-closed population.
+
+## Single-carrier object-stream faces
+
+A counted face has one carrier and any number of owned loops. Transfer rejects
+an extra surface alias in a loop slot. Carrier construction dependencies remain
+separate from face ownership.
+
+The 79-file byte check resolves all 32,870 later reference slots of 30,056
+complete counted face records as loops repeating the face carrier. Arduino's
+unique 54-loop face matches the sibling STEP file's unique 54-bound face by
+plane origin and axes; both faces have one carrier.
+
+## A5 rolling-ball header values
+
+The parser retains every canonical width-1 header value and applies one
+degree-5 jet grammar. The regression covers all 64 canonical values with
+unchanged site data and rejects all 192 noncanonical bytes.
+
+An independent byte check joins all 183 typed A5 jets in clothes-basket,
+spray-bottle, NIST CTC-02, and NIST CTC-05 to unique native frames. Every knot
+and all 30 value and derivative channels per site match exactly. The nine
+header bytes are `05`, `09`, `0d`, `19`, `1d`, `25`, `2d`, `35`, and `3d`.
+Source-extent reconstruction closes the spray-bottle frame at offset 809,757.
+All sites satisfy equal ball radii and the opening-angle equation within
+`1e-9`; the largest relative radius residual is `1.40e-12`, and the largest
+angle residual is `7.72e-12` radians.
+
+## A5 rolling-ball tail admission
+
+Admission requires a complete tail after the three geometric jet blocks.
+The parser checks exact branch lengths, finite lanes, current and maximal
+limit containment, both reference-scalar copies, controls, and map terminals
+before it retains site data. Arbitrary frame-bounded continuation bytes no
+longer qualify as a complete rolling-ball carrier.
+
+The byte check resolves 183 source tails: 170 absent scalar jets and 13 explicit
+scalar jets. All 5,265 quintic samples stay inside their endpoint value range
+and retain the stored decreasing direction. Source parameter domains and six
+records with exact source knots support the parameter interpretation. All four
+NIST maps fit all four candidate source-curve domains, so no target is assigned
+from that relation. Raw tail controls retain their source polarity.
+
+The frozen `standard_a5_rolling_ball` input lacks a tail and remains a rejection
+witness. `standard_a5_rolling_ball_complete_tail` adds the complete 79-byte
+production. CATIA has 23 frozen inputs and 69 golden files. The golden-file floor is 69.
+
+## Consolidated edge header integers
+
+The existing parser checks canonical compact header widths before it reads the
+five-reference edge payload. The header-value regression covers width
+transitions and the native values 2,232 and 62,701, with every other node field
+unchanged.
+
+Independent byte joins verify 32,712 typed edge frames in 33 of the 77
+CLI-checked CATParts. Their 53 logical sources use 105 header values from 1
+through 62,701, with widths 1/2/3 in 32,606/84/22 records. All five reference
+forms and the complete terminal match the typed native data. The first
+31,420-record population has repeated header values in every source and
+decreasing values in physical-offset order in 29 sources. The eyebolt and
+spring four-edge cycles both use `[2,1,1,1]`, with degree two at every endpoint.
+
+## Gap-search temporary storage
+
+Saved placement copies belong to one recursive gap-search step. The solver
+admits them against the live temporary-byte budget and releases that admission
+after restoring the placement sequence. The regression checks temporary-byte
+refusal, exact assignment equality, and 32 repeated searches under one limit.
+
+This correction lets nist_ftc_10_asme1_ct5315_rb decode under its unchanged
+2,207,176,216-byte retained ceiling. Its previous attempt exhausted that
+ceiling; 396,932,880 bytes of cumulative charges were saved-placement copies.
+The corrected model has 310 faces, 923 edges, and 3,599 native entity records.
+The CLI check reports zero errors and zero warnings. Its 1,292 consolidated
+edges complete the header census above. This is a structural validation result;
+the decode's fidelity report retains its declared losses.
+
+## Four-reference consolidated edge frames
+
+An independent scan of all 79 CATParts finds 131 complete four-reference
+class-`5e` frames: 90 in bike-handle and 41 in snap-ring. Every frame has one
+descriptor owner and closes inside its reconstructed logical source. Exactly
+130 frames are immediately followed by another complete width-coded frame.
+Terminals `01/02/21/25` occur `32/3/93/3` times. All four reference lanes use
+the one-byte backward-distance or owned-child forms. These are source-byte
+grammar checks; the four operand roles remain unassigned, and the existing
+five-reference parser abstains on this production.
+
+## Object-stream edge terminals
+
+The existing B5 parser accepts all eight observed terminal forms and requires
+payload exhaustion. Its regression checks that changing only the terminal
+preserves the edge identity, curve reference, ordered vertices, and ordered
+parameter incidences.
+
+An independent complete-payload screen over all 79 CATParts finds 130,884 B5
+edge layouts. The counts for `01/02/21/22/25/26/29/2a` are
+`4,921/455/114,559/7,454/998/1/1,465/1,031`. This is a structural byte census,
+not a count of transferred neutral edges. All 30 groups with identical ordered
+reference tuples and different terminals use `21` and `29`. Each frame in
+those groups, and the single `26` frame at physical offset 840,956 in
+ssd-crucial-mx500-carter-inf, has unique descriptor ownership and exact logical
+source closure. The rare frame selects edge object 4427636 and references
+`(4427641,4427634,4427627,4427642,4427643)`.
+Face 4427632 names loop 4427633, whose first edge is this `26` edge. The
+loop's four signed edge occurrences close through exact vertex identities;
+the other terminals are `21`, `22`, and `21`.
+
+These checks establish the wire grammar and retained identity separation.
+They do not establish the terminal's meaning or a rule for choosing a new
+terminal from geometry.
+
+Class-`0x18` control verification covers 4,507 parameter-space records in 31
+files: 3,634 low-control scalar lanes and 102 explicit unit directions.
+All records were joined to exact native frame bytes. The 45 owner charts in
+14 files satisfy the complete side controls and scalar relations, including
+50 implicit-axis side records. Regression tests reject contradictory controls,
+non-unit explicit directions, and each incorrect implicit-line scalar.
+
+Class-`0x23` affine-map verification covers 454 eight-scalar definitions in 21
+files. All definition frames match their native bytes. Every stored interval is
+increasing, both tolerance words agree and are positive, scale is positive, and
+both endpoint residuals satisfy the stored tolerance. The maximum ratio of
+residual to tolerance is 0.7071067811865475. The 166 complete analytic-circle
+runs in 10 files close in one logical source and have exact target-circle range
+agreement. Ninety source descriptors repeat the symmetric map interval,
+including 12 explicit unit directions. The 108 reversed-slot definitions are
+identity maps; reversed non-identity direction remains open.
+
+One identical map payload accompanies two center pairs separated by 44.45 mm.
+Both center pairs and radii match the sibling FTC-08 STEP geometry within
+`1e-8` mm. Multiple STEP Z placements share each pair and radius; this comparison
+checks the pair and radius. Circle geometry and placement remain supplied by
+the bound carrier.
+
+Class-`0x24` verification covers all 79 physical CATIA files. The independent
+descriptor-scoped byte inventory contains 7,141 complete scalar relations in
+31 files. All 13 selector forms consume the complete finite scalar lane and
+satisfy the interval, map, site, and accuracy rules. There are 3,751 explicit
+accuracy closures, 3,390 elided closures, eight negative signed accuracies,
+4,028 positive affine scales, 48 negative affine scales, and no zero affine
+scales. The maximum identity endpoint difference is
+`1.5273690223693848e-7`; the maximum affine residual is
+`1.862645149230957e-9`.
+
+Every scalar frame was also decoded through the production codec in a
+constructed standard CATIA container. All 7,141 native payloads and typed
+relations match the independent byte parse exactly, including signed zero.
+The neutral geometry arenas remain empty. The new
+`consolidated_domain_relations` arena retains the complete frame, bounded
+source index, logical source offset, and typed source relation, sites, and
+accuracy closure. Unresolved operands do not create geometry.
+
+All 5,276 compact definitions owned by native edge nodes in 33 files match
+independent four-frame source proofs. Their use vectors and senses agree with
+the compact operand. The 4,901 following definitions use node selectors
+`(1,2)`; the 375 preceding definitions use `(2,1)`. Regression tests cover
+both native round trips and reject contradictory operands and senses.
+
+The scalar golden fixture covers negative affine scale and signed repeated
+accuracy, plus selector `0001` with both target sites and an elided
+negative-zero accuracy. The 23 earlier frozen fixture inputs are unchanged;
+their decode snapshots only add the empty domain-relation arena.
+
+Fresh whole-file decoding and checking covers 35 files with 4,362 scalar
+relations and all 5,276 owned compact definitions. Their complete decoded
+documents match the earlier models outside the intended native parameter
+projections and the new arena. Apartman reaches the existing 512-step ordered
+face-constraint limit; its 2,779 scalar frames are covered by the separate
+frame-grammar verification above.
+
+
+Class-`0x25` verification scans all 79 physical CATIA files through
+`cadmpeg inspect`. It finds 6,091 distinct length-closed B2/B3/B4 flag-`03`
+candidates: 6,077 complete two-operand scalar maps in 29 files and 14 candidates
+outside that grammar. The complete maps comprise 4,604 affine relations,
+27 target-only relations, and 1,446 sampled relations. All nine selectors
+consume their complete frames and satisfy the numeric invariants.
+
+Among sampled maps, 1,409 source arrays increase and 37 decrease. All samples
+remain within their named intervals. Sample extrema differ from the interval
+bounds bit-for-bit in 276 records; seven differences exceed the stored
+accuracy. The arrays therefore retain their pairing and do not supply interval
+endpoints. Two spray-bottle affine maps retain fit tolerance `0.001` separately
+from signed accuracies `1.584409889836592e-8` and `1.1371036519709368e-8`.
+
+Every complete map was also decoded through the production codec in a
+constructed standard CATIA container. All 6,077 native payloads and typed maps
+match the independent byte parse exactly. Checking the resulting document
+reports zero errors and warnings; its neutral geometry arenas remain empty.
+The domain-relation arena retains allocation addressing forms, sample block
+order, source positions, signed accuracy, fit tolerance, and target sites.
+Operand binding and the separate multi-operand productions remain open.
+
+Fresh whole-file comparison covers all 79 CATIA files: 78 decode and pass
+neutral and CATIA native validation, retaining 6,015 complete class-25 maps.
+Class-24 data and source positions remain exact. The complete documents match
+before and after except for the independently verified class-25 native
+projections and domain-relation identities. No whole-file edge definition or
+class-25 descriptor binds these maps. Arduino validation requires a verification
+budget of one trillion work units and 256 million collection items; the default
+CLI work ceiling is exceeded. Apartman reaches the same existing 512-operation
+face-constraint refusal in both versions. Its 62 complete maps are verified in
+the separate frame-grammar container above.
+
+The parameter-map golden fixture covers paired arrays, decreasing source
+orientation, interior target sites, a distinct fit tolerance, and elided
+accuracy. All 72 earlier golden files, including their frozen inputs, remain
+byte-identical. Regression tests cover every bounded sample count from 2
+through 12 and reject a count exceeding the B-family payload capacity,
+contradictory map data, nonmonotone arrays, wrong frame flags, and A8 frames.
+
+
+A8 class-`0x25` verification scans all 79 physical CATIA files through
+`cadmpeg inspect`. Of 1,733 signatures, 1,728 complete `82` sampled maps occur
+in nine files. Four length-closed oil-tank records begin `84`; an Apartman
+signature declares a frame extending beyond the file. The complete maps have
+12 through 232 pairs: 1,026 co-curve arrays decrease and 702 increase. All
+reference arrays increase. Thirty-seven maps have zero fit tolerance, and 66
+have active reference intervals strictly inside their leading domains.
+Sample extrema differ bit-for-bit from domain endpoints in 1,360 maps; nine
+endpoint differences exceed fit tolerance plus roundoff. Interval endpoints
+therefore remain distinct from sample extrema.
+
+All 1,728 maps and their 3,445 distinct file-local operand identities have
+unique physical frames in their descriptor sources. Twenty wrapper operands dereference once
+and close in the same source. The first operand is a wrapper in 19 maps and
+the second in one; direct operands include lines, circles, sphere pcurves, and
+UV jets. Operand-role verification fully parses lines and wrappers; other
+families are identified by their complete frame class and support prefix.
+
+Every complete map also passes the production codec in a constructed standard
+container. Its payload, object identity, paired arrays, domains, fit tolerance,
+and active interval match the independent byte parse exactly. The resulting
+document passes checking with no errors or warnings and has no neutral
+geometry. The native `sampled_parameter_maps` arena retains exact source
+positions and payloads. Its wire loader rejects data contradicting the payload.
+The golden fixture adds zero fit, a 232-pair positional count, a proper active
+subrange, and the Arduino witness. Earlier decode snapshots change only by
+adding the empty arena; all earlier fixture bytes remain exact.
+
+Arduino object 756464 at byte offset 19,668,336 pairs direct line pcurve 756466
+with wrapper 756467 and its quadratic pcurve 756468. The two cylinder supports
+have identical geometry and distinct angular chart domains. All 17 parameter
+pairs lift to the same model-space points; the maximum separation is
+`6.280369834735101e-16` mm, below the binary64 roundoff bound
+`4.97379900441478e-14` mm. These supports do not establish a unique intersection
+construction. An admitted extrusion uses the first representation's exact
+lift over the active reference range. Both operands must resolve before this
+admission. Offset sources use that active range, including a strict subrange
+of the underlying pcurve domain. Between-sample interpolation remains open.
+
+
+Six sampled-map extrusion directrices in `v6-engine-air.CATPart` and five in
+`v6-engine-filter-assembly.CATPart` use parameterized first-pcurve lifts. Each
+lift passes 33 independent tensor-basis evaluations over its active reference
+interval, for 363 evaluations. The maximum model-space separation is
+`6.112319729142702e-14` mm. Surface isocurves map their knots to
+the pcurve parameter, including decreasing surface-coordinate maps. Cylinder
+lifts preserve the pcurve's origin and scale. The admission path supports plane
+lifts, affine NURBS isocurves, and constant-angular cylinder pcurves; other
+charts remain unadmitted. Sampled maps do not inherit class-24 jet-origin or
+four-span chart translations.
+
+The eleven old intersection procedures are removed. Their first support
+carriers retain exact geometry. Second-operand planes 323806 in the air file
+and 356098 in the filter assembly have no remaining model use and are omitted;
+later surface identities and their references change accordingly. Independent
+comparison verifies all other model arenas and all retained source arenas
+exactly.
+
+Whole-file verification covers all 79 CATPart files and checks 78 decoded
+models. Their 1,728 sampled maps match independently inspected payloads,
+typed values, object identities, and physical and logical source positions.
+Only the two files above change model geometry. `apartman.CATPart` retains
+the baseline refusal at the 512-face ordered-constraint work limit; its 62
+complete maps are verified separately in the bounded production fixture.
+
+Standard-decoder midpoint arithmetic retains finite results for finite
+endpoints whose sum overflows. Behavioral regressions bind a quintic limit
+curve on positive and negative domains of magnitude `1e308` and retain both
+antipodal circle seams at an origin coordinate of `1e308` mm.
+
+The CTC05 standard spline row at physical offset 1,316,188 closes in nine
+bytes before the next row. Its associated native run closes in 742 bytes:
+two class-20 UV pcurves, one class-25 affine parameter map, two class-06
+incidences, and one class-5e edge. The map's nine binary64 values exhaust its
+payload and contain no Cartesian pole or knot lane. Edge 174 retains unknown
+curve 343064 with source identity `cgm-edge-support:083306`. The checked model contains 403 standard curves, and Native retains 68
+consolidated pcurves.
+
+| Standard curve kind | Records |
+| --- | ---: |
+| Line | 181 |
+| Circle | 188 |
+| Ellipse | 8 |
+| NURBS | 8 |
+| Unknown | 18 |
+
+The sibling STEP file supplies one endpoint match among 514 edges at a
+`2e-3` mm gate, with maximum endpoint residual `6.105607469691817e-6` mm.
+Its cubic eight-pole curve is an export oracle. None of its eight binary64
+XYZ triples occurs in the CATPart. Only its first and last binary32 triples
+occur, once each, both inside `05 08 01` vertex rows. Searches for nine known
+class-16 signatures across all 79 CATPart files find 17 raw hits in four
+files and none in CTC05. Those raw counts bound known signatures; the closed
+standard row and native frames establish the absence of an inline cache.
+
+The CTC05 cylinder at physical offset 606,682 closes in 103 bytes, including
+its five-byte frame header, with no persistent identity lane. Independent
+parsing verifies the complete pcurve jets at offsets 608,198 and 609,351.
+Their support tags 126 and 113 differ, but their five paired sites agree
+within `5.707901599824335e-11` mm through opposite cylinder charts. The
+tag-113 endpoints select exactly one of 403 native edges at a `2e-3` mm gate:
+edge 174, with residual `6.105067919430197e-6` mm. The tag-125 pcurve at offset
+645,000 and unique circle ID 125 at offset 515,727 share one descriptor
+extent; their U ranges differ and their endpoint V difference is
+`9.769569662968705`. Numeric uniqueness fails the circle-chart invariants.
+
+An independent sweep reconstructs logical descriptor sources in all 79
+CATPart files, suppresses nested markers, and deduplicates physical starts.
+Its width-1/2/3 class-20 frame candidates contain 5,906 valid compact operand
+fronts; five additional fronts fail compact decoding. These counts classify
+framing and operand fronts, rather than semantically admitted pcurves.
+None of the 5,906 operands equals a candidate identity-free carrier offset.
+Header-token comparison also fails as a general selector:
+
+| Candidate header representation | Absent | Unique numeric match | Multiple numeric matches |
+| --- | ---: | ---: | ---: |
+| Packed native token bytes | 5,743 | 62 | 101 |
+| Decoded compact token | 5,440 | 221 | 245 |
+
+The sweep retains 623 numeric pcurve/circle collisions. It finds 379 operand
+values in multiple documents, with one value used in nine files. No matching
+scalar assigns a persistent tag to an identity-free carrier.
+
+The CAA geometry-object documentation defines persistent tags within explicit
+or implicit geometry factories, and the creation example reads a pcurve's
+underlying surface tag with `GetSurface()->GetPersistentTag()`.
+[Geometry objects](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/GeoObjects.htm)
+and [geometry creation](https://www.maruf.ca/files/caadoc/CAAGobUseCases/CAAGobCreation.htm)
+establish the API namespace. The serialized factory relation remains in SN-12.
+
+Independent logical-stream reconstruction covers all 79 CATPart files and
+validates the complete standard population relation:
+
+| Raw population result | Count |
+| --- | ---: |
+| Primary nested directories | 76 |
+| Maximal FBB runs | 83 |
+| Complete trim/edge/vertex FBB layouts | 77 |
+| Surface-record candidates | 29,651 |
+| Source-closed surface/support populations | 75 |
+| Admitted positional pairs | 75 in 71 files |
+| Paired bounds-containment failures | 0 |
+| Unmatched complete FBB layouts | 2 |
+| Unmatched surface/support populations | 0 |
+
+The unmatched layouts belong to `steering-wheel-connector.CATPart` and
+`steering-wheel.CATPart`. Each has 50 faces, 128 edges, and 80 vertices.
+Their complete logical streams contain two and eleven isolated surface-record
+candidates, respectively, with no source-closed surface/support population.
+The connector and wheel share identical 400-byte FBB face rows and a
+1,203-byte vertex table. Their trim chains differ in 22 bytes and edge tables
+in nine bytes. The connector's maximal E5 walk has 1,137 frames; the wheel
+has two maximal walks of 1,217 frames. The E5 route supplies their geometry.
+
+Fresh native and sibling STEP decodes of the connector, middle horn, outer
+ring, complete wheel, and lower Carter produce ten checked documents. Unique
+body matches have bijective vertex matches, identical physical-edge endpoint
+multisets, and identical per-face loop endpoint multisets at a `0.002` mm
+coordinate gate. The four steering specimens contain eight bodies, 226 faces,
+232 loops, 1,128 coedges, 564 edges, and 352 vertices, with maximum vertex
+residual `7.75264730289162e-6` mm. Their curve and surface family counts agree.
+
+The lower Carter's three standard populations have face/edge/vertex counts
+`245/601/350`, `9/18/12`, and `9/18/12`. The latter two share identical FBB
+face-row bytes and lie on opposite sides of Y=0. Source-order pairing has no
+bounds-containment failures; swapping those two populations causes two.
+Each population selects one sibling STEP body with matching topology. This
+comparison permits exporter refitting and surface deduplication; it checks
+coordinates and incidence independently of carrier-family counts.
+
+An independent 79-file source sweep verifies 27,231 analytic-record
+parameter-length words and 40,085 rows in complete surface-owned support
+tables. The analytic word is big-endian at record offset `+3`; the support
+word is big-endian at row offset `+4`. The analytic length includes the
+two-byte parameter prefix and excludes the kind byte. The first three
+trimmed-face bounds values are the AABB center, including the point used by
+the admitted cylinder and torus branch rules.
+
+A broader center-azimuth rule conflicts with 75 cone and 38 sphere face
+witnesses on already checked, branch-bearing standard circles. Those counts
+compare against emitted intervals. Independent raw STEP verification proves
+four cone conflicts in `collet.CATPart`: the selected arc midpoint agrees
+within `4.506e-7` mm, and the center-selected complement misses by 11.5 mm.
+The broader rule remains outside decoder admission; additional source-bound
+branch relations remain in SN-15.
+
+Independent framing and allocation walks cover all 79 CATPart files and
+verify the fixed-nine owner census:
+
+| Reference encoding | Fixed-nine packets |
+| --- | ---: |
+| All-compact | 749 |
+| Tagged alternating | 112 |
+| Width-coded alternating | 107 |
+| Total | 968 |
+
+The 78 checked documents retain 951 of these packets, with bit-exact binary64
+rectangles and binary32 boxes. `apartman.CATPart` adds 17 all-compact packets
+verified directly from source. All 45 owner charts have complete seven-frame
+logical adjacency and four side relations equal to the stored rectangle:
+13 rolling-ball charts, one cylinder chart, and 31 torus charts. Among the
+906 decoded packets without charts, 577 resolve backward references; their
+1,521 targets comprise 327 vertex and 1,194 edge allocations, with no surface
+target. The inline rectangle remains retained without a carrier binding.
+
+An independent A5 knot, pole, weight, and complete-tail parser evaluates
+uncharted tagged and width-coded rectangles. Domain comparisons allow
+`0.002` parameter units and Cartesian comparisons allow `0.002` mm;
+evaluation uses the rectangle's intersection with the candidate domain.
+
+| Candidate result | Tagged owners | Width-coded owners |
+| --- | ---: | ---: |
+| Owners tested | 112 | 77 |
+| No domain candidate | 0 | 20 |
+| No four-corner candidate | 0 | 62 |
+| No 25-by-25 grid candidate | 0 | 63 |
+| One grid candidate | 72 | 12 |
+| Multiple grid candidates | 40 | 2 |
+
+The spring owner at offset 40,482 stores its complete 62-byte tail inline.
+Carriers at offsets 50,739 and 52,715 pass the corner-box check. A 101-by-101
+interior grid has zero coordinate violations on the first and 13,284 on the
+second. The second carrier's U domain falls short of the rectangle by
+`0.0010119222600337707` parameter units; this comparison clips that narrow
+excess and still rejects its interior. Corner containment supplies a candidate
+filter, rather than a carrier identity or a full-image proof.
+
+All 31 explicitly bound torus rectangles pass independent 513-by-513 grids,
+covering 8,158,239 sites. Minimum lower-side and upper-side Cartesian slack
+are both `0.0999755859375` mm. The CTC05 chart at owner offset 603,047 has
+two matching torus loci in the checked sibling STEP document, with opposite
+reference directions. The stored envelope is conservative and does not select
+one surface identity; its observed padding is not a required format constant.
+
+The [CGM surface documentation](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/Surfaces.htm)
+separates surface-relative limits from Cartesian bounding boxes, and the
+[foreign-surface contract](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/Attribute.htm)
+defines boxes for limited parts of surfaces. That API distinction supports
+the Cartesian envelope interpretation; it does not identify a serialized
+carrier or prove which API method produced the cache.
+
+Independent source parsing verifies 765 ordinary fixed-owner/node joins in
+the 78 checked documents. Every node is immediately followed by its owner,
+every target's checked successor equals the ninth owner identity, and every
+terminal satisfies the admitted grammar. None of those targets or successors
+equals a standard carrier tag. Only 93 targets fall within the file's
+standard face-ordinal range; 97 target instances repeat. The 18 files with
+both standard faces and fixed owners have unequal population counts.
+The checked documents contain 12,897 faces in the standard namespaces across
+68 files; this count includes every emitted standard population.
+
+The spring and eyebolt four-edge preludes reproduce their local simple
+cycles and ninth-identity-plus-ten relations. Their eight curve references
+have no numeric match among standard edge-support tags. Two other owner/tag
+equalities occur in eyebolt owner 67,398: slots zero and four equal carrier
+tags 1,389 and 1,393, whose cylinder geometries are identical. Those equalities
+do not select an owner face ordinal.
+
+A separate 79-file byte sweep finds 14 complete eight-reference class-37
+constructions: ten in spray bottle and four in NIST CTC02. Nine have controls
+`11 09 03 03`, and five have `11 09 05 05`. Each has eight references, eight
+zero bytes, terminal `01 05`, and a backward-distance-one first reference.
+Logical-source reconstruction verifies a preceding rolling-ball carrier for
+all 14, including a carrier split across physical extents. Their 99 stored
+sites satisfy the two-radius and rolling-angle relations independently.
+The ten all-width tails have the observed pcurve-pair difference two and
+three-reference pattern `[base+3,base,base+2]`; the four backward-addressed
+tails remain in their own addressing form. One construction closes the
+current fixed-owner chart relation. The other complete payloads do not imply
+fixed-nine recognition or a new neutral construction.
+
+Fresh sibling STEP documents for spring and eyebolt pass model checks.
+Independent vertex, edge-endpoint, and face-loop multiset comparisons match
+their native topology at `0.002` mm. Spring has 84 faces, 166 edges,
+332 coedges, and 84 vertices; eyebolt has 134 faces, 268 edges, 536 coedges,
+and 136 vertices. Joint weighted face-adjacency refinement gives 134 unique
+eyebolt face matches and 42 two-face spring classes. Exact adjacency
+isomorphisms verify both graphs; the spring mapping remains non-unique.
+
+The [CGM generic-fillet description](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/Surfaces.htm)
+defines center and two limiting loci. It does not define the bridge's wire
+order. The hand bridge's last three references lack retained alias targets,
+so their proposed locus labels remain unassigned under SN-18.
+
+Independent class-`18` verification uses logical descriptor framing,
+compact operands, finite lanes, and complete control closure:
+
+| Population | Count | Scope |
+| --- | ---: | --- |
+| CATPart inputs | 79 | Both corpus roots |
+| Files with candidates | 34 | Header token 5, finite compatible lane |
+| Admitted records | 26,398 | Complete control closure |
+| Inline operands | 15,097 | One-byte `4n+1` |
+| u8 operands | 3,408 | `04` and one integer byte |
+| u16 operands | 6,237 | `08` and two integer bytes |
+| u24 operands | 1,656 | `0c` and three integer bytes |
+| u32 operands | 0 | Established grammar; synthetic regression |
+| Other-control abstentions | 112 | Finite length-compatible candidates |
+| Distinct operand values | 4,855 | Range 1 through 1,727,824 |
+| Previous native records | 4,507 | The 78-model baseline, operands 1 through 4 |
+
+No admitted centered start is nonnegative. The maximum explicit direction
+norm error is `4.440892098500626e-16`, dimensionless. The raw sweep contains
+21,891 records beyond the decoded baseline, including `apartman.CATPart`.
+
+| Four-operand run relation | Runs | Scope |
+| --- | ---: | --- |
+| Complete contiguous runs | 477 | The 78-model baseline |
+| Admitted owner charts | 45 | Carrier/bridge/rectangle context |
+| Opposing-side order | 429 | Operand pairs `(1,2)` and `(3,4)` |
+| Consecutive-edge order | 48 | The other runs |
+| Closed consecutive runs | 47 | Endpoint closure |
+| Open consecutive chains | 1 | HTC run at physical offset 806574 |
+
+Endpoint closure alone does not establish owner-chart side order. The FTC
+map at 1559012, HTC map at 811022, and basket map at 191651 independently
+consume source/target operands `(3,2)`, `(5,4)`, and `(30,29)` from adjacent
+class-`18` records.
+
+The complete constructed container passes native validation for all 26,398
+admitted records, with exact values, scalar bits, encoding forms, and offsets;
+all 112 other-control rows remain excluded. Fresh original decodes and checks
+verify 20,259 records in the 33 decodable positive files. Their complete
+neutral models remain exact. Existing construction references preserve their
+source offsets when the enlarged point arena renumbers IDs. The other 45
+inputs have no candidates. `apartman.CATPart` reaches its existing 512-unit
+ordered-face constraint refusal; its 6,139 source records are verified in the
+constructed container. The local verification harness uses a 128-million
+collection-item ceiling for the FTC10 native serialization.
+
+The public CGM articles [How to Associate Topology with Geometry](https://library.plmcoach.com/caadoc/online/CAACgmModel/CAACgmTaTobTopoCreate.htm)
+and [Using the CGM Data Checker](https://www.maruf.ca/files/caadoc/CAACgmTechArticles/CAACgmDataChecker.htm)
+describe multiple curve representations per edge and parameter mappings
+between their domains. These object roles support the representation context;
+they do not assign serialized class numbers or join bare operand values.
+
+Counted class-`0x60` records retain their complete source frame and every
+allocation-reference value and form. Consolidated cylinders share one parser,
+native arena, and support-binding representation. Their compact header operands
+are retained without assigning ownership from an adjacent reference list.
+
+Counted class-`0x61` rosters retain complete frames, logical source coordinates,
+reference addressing forms, roster controls, optional zero prefixes, and
+occurrence-aligned member bits. Wire loading checks these fields against the
+retained bytes. Final topology requires independently resolved member identities.
+
+Class-`0x62` owners and associated class-`0x5f` occurrences retain complete
+frames and logical source coordinates. Counted references retain their
+addressing forms. Incidence requires same-source logical adjacency and the
+checked successor relation; fixed-nine raw weak values keep their dialect.
+Local domains require independent member and location evidence for final topology.
+
+The class-`5b` interval prefix and class-`5c` parallel reference/item production
+retain their complete controls and suffixes in native frames. The three
+closed binary32 intervals admit degenerate bounds. Four-byte item order
+follows allocation-reference occurrence order; other widths remain retained.
+Short five- and six-byte nine-reference tails remain counted-owner payloads.
+Neither control production assigns a standard support identity or a face sense.
+
+Independent verification covers all 79 native inputs, 5,214 copied control
+frames, and 19,277 copied owner frames with full composed model checking.
+The broader source graph census and the typed fixed-nine cycle population use
+different admission rules. The proposed universal face-node identity-offset
+rule has three source counterexamples and is not an integration invariant.
+
+Consolidated class-`27` plane carriers decode the five `ec/e4/c4/dc/d4`
+layouts as a finite XY point, stored or implicit horizontal U direction,
+global-Z V direction, and increasing U/V bounds. Native records preserve
+layout and bounds; unknown selectors retain their scalar lanes. Neutral
+support binding requires an independent unique endpoint-lift witness.
+Consolidated revolution profiles require one exact interval match. Their
+nonzero reference value remains distinct from circle and revolution object identities.
+
+OS-11 independently verifies all three contextual offset charts against their
+source knots, exact auxiliary limits, and class-`30` construction fields across
+79 inputs. OS-12 resolves all 677 fillet constructions in 18 inputs and verifies
+all result selectors, control domains, analytic radii, and sphere closures.
+Independent support lifts verify 783 contact lanes at 2,349 points and 348
+contact-bound orders; the maximum center residual is 5.97e−12 mm. The 571
+remaining lanes use generic results or unsupported analytic support forms and
+remain geometric abstentions. Fillet transfer uses the explicit exact carrier;
+construction controls remain retained in native records.

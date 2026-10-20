@@ -82,49 +82,41 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
         half_edge(31, crate::topology::Side::One, 0),
     ];
     scan.topology.vertices = vec![
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(
-                ctx,
-                1,
-                vec![
-                    HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::Zero,
-                    },
-                    HalfEdgeId {
-                        curve_id: 20,
-                        side: crate::topology::Side::Zero,
-                    },
-                    HalfEdgeId {
-                        curve_id: 30,
-                        side: crate::topology::Side::Zero,
-                    },
-                    HalfEdgeId {
-                        curve_id: 31,
-                        side: crate::topology::Side::Zero,
-                    },
-                ],
-            )
-        })
-        .expect("vertex admission")
+        crate::topology::TopologicalVertex::new_for_test(
+            1,
+            vec![
+                HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::Zero,
+                },
+                HalfEdgeId {
+                    curve_id: 20,
+                    side: crate::topology::Side::Zero,
+                },
+                HalfEdgeId {
+                    curve_id: 30,
+                    side: crate::topology::Side::Zero,
+                },
+                HalfEdgeId {
+                    curve_id: 31,
+                    side: crate::topology::Side::Zero,
+                },
+            ],
+        )
         .expect("valid vertex fixture"),
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(
-                ctx,
-                2,
-                vec![
-                    HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::One,
-                    },
-                    HalfEdgeId {
-                        curve_id: 20,
-                        side: crate::topology::Side::One,
-                    },
-                ],
-            )
-        })
-        .expect("vertex admission")
+        crate::topology::TopologicalVertex::new_for_test(
+            2,
+            vec![
+                HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::One,
+                },
+                HalfEdgeId {
+                    curve_id: 20,
+                    side: crate::topology::Side::One,
+                },
+            ],
+        )
         .expect("valid vertex fixture"),
     ];
     scan.topology.half_edge_vertex_incidence = vec![
@@ -196,14 +188,12 @@ fn source_ir() -> CadIr {
         id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(2.0, y, 0.0), Point3::new(2.0, y, 5.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid intersection witness curve"),
         )),
         source_object: None,
@@ -219,7 +209,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
     ]);
 
     let mut with_witness = source_ir();
-    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+    let transferred = crate::decode::with_service_context(|ctx| {
         transfer_carrier_intersection_curves(
             ctx,
             &scan,
@@ -253,7 +243,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
 
     let mut without_witness = source_ir();
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_carrier_intersection_curves(
+        crate::decode::with_service_context(|ctx| transfer_carrier_intersection_curves(
             ctx,
             &scan,
             &mut without_witness,

@@ -47,10 +47,8 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_native_constraints(ctx, &definition, &sketch, &BTreeSet::new())
-    })
-    .expect("section_equation_native_constraints admitted");
+    let constraints = section_equation_native_constraints(&definition, &sketch, &BTreeSet::new())
+        .expect("section_equation_native_constraints admitted");
     assert_eq!(constraints.len(), 1);
     let (constraint, offset) = &constraints[0];
     assert_eq!(*offset, 28);
@@ -90,14 +88,9 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     );
     assert_eq!(operands[2].object_index, Some(3));
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| section_equation_native_constraints(
-            ctx,
-            &definition,
-            &sketch,
-            &BTreeSet::from([28]),
-        ))
-        .expect("section_equation_native_constraints admitted")
-        .is_empty()
+        (section_equation_native_constraints(&definition, &sketch, &BTreeSet::from([28])))
+            .expect("section_equation_native_constraints admitted")
+            .is_empty()
     );
 
     let mut disabled = definition;
@@ -135,10 +128,9 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_native_constraints(ctx, &disabled, &sketch, &BTreeSet::new())
-    })
-    .expect("section_equation_native_constraints admitted");
+    let disabled_constraints =
+        section_equation_native_constraints(&disabled, &sketch, &BTreeSet::new())
+            .expect("section_equation_native_constraints admitted");
     assert_eq!(disabled_constraints[0].0.active, Some(false));
     let SketchConstraintDefinitionInput::Native { native_state, .. } =
         disabled_constraints[0].0.definition.kind()
@@ -223,10 +215,8 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_same_coordinate_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_same_coordinate_constraints admitted");
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch)
+        .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
     assert_eq!(
@@ -247,7 +237,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         }
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_coordinates(ctx, &definition)
         })
         .expect("test section solve")
@@ -258,20 +248,15 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
 
     definition.variables.as_mut().expect("variables").rows[3].value =
         crate::feature::definitions::ScalarLane::Value(0.25);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_same_coordinate_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_same_coordinate_constraints admitted")
-    .is_empty());
+    assert!(
+        section_equation_same_coordinate_constraints(&definition, &sketch)
+            .expect("section_equation_same_coordinate_constraints admitted")
+            .is_empty()
+    );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_equation_native_constraints(
-            ctx,
-            &definition,
-            &sketch,
-            &BTreeSet::new()
-        ))
-        .expect("section_equation_native_constraints admitted")
-        .len(),
+        (section_equation_native_constraints(&definition, &sketch, &BTreeSet::new()))
+            .expect("section_equation_native_constraints admitted")
+            .len(),
         1
     );
 
@@ -279,20 +264,20 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         crate::feature::definitions::ScalarLane::Value(0.0);
     definition.variables.as_mut().expect("variables").rows[2].value =
         crate::feature::definitions::ScalarLane::Undefined;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_same_coordinate_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_same_coordinate_constraints admitted")
-    .is_empty());
+    assert!(
+        section_equation_same_coordinate_constraints(&definition, &sketch)
+            .expect("section_equation_same_coordinate_constraints admitted")
+            .is_empty()
+    );
     definition.variables.as_mut().expect("variables").rows[2].value =
         crate::feature::definitions::ScalarLane::Value(1.0);
     definition.variables.as_mut().expect("variables").rows[1].value =
         crate::feature::definitions::ScalarLane::Value(0.0);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_same_coordinate_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_same_coordinate_constraints admitted")
-    .is_empty());
+    assert!(
+        section_equation_same_coordinate_constraints(&definition, &sketch)
+            .expect("section_equation_same_coordinate_constraints admitted")
+            .is_empty()
+    );
 
     let rows = &mut definition.variables.as_mut().expect("variables").rows;
     rows[0].variable_type = crate::feature::definitions::VariableType::V;
@@ -301,10 +286,8 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     rows[2].variable_type = crate::feature::definitions::VariableType::V;
     rows[4].variable_type = crate::feature::definitions::VariableType::U;
     rows[5].variable_type = crate::feature::definitions::VariableType::U;
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_same_coordinate_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_same_coordinate_constraints admitted");
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch)
+        .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
         *(constraints[0].0.definition).kind(),
@@ -324,7 +307,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         }
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_coordinates(ctx, &definition)
         })
         .expect("test section solve")
@@ -409,10 +392,8 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_radius_dimension_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_radius_dimension_constraints admitted");
+    let constraints = section_equation_radius_dimension_constraints(&definition, &sketch)
+        .expect("section_equation_radius_dimension_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
     assert_eq!(
@@ -465,10 +446,8 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_radius_dimension_constraints(ctx, &disabled, &sketch)
-    })
-    .expect("section_equation_radius_dimension_constraints admitted");
+    let disabled_constraints = section_equation_radius_dimension_constraints(&disabled, &sketch)
+        .expect("section_equation_radius_dimension_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }
@@ -547,7 +526,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let constraints = crate::decode::with_service_context(|ctx| {
         section_equation_polar_distance_constraints(ctx, &definition, &sketch)
     })
     .expect("test section solve");
@@ -586,7 +565,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         .rows
         .push(variable(6, 11, Some(std::f64::consts::FRAC_PI_2)));
     variables.rows.push(variable(5, 0, Some(0.0)));
-    let propagated_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let propagated_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_polar_distance_constraints(ctx, &propagated_polar, &sketch)
     })
     .expect("test section solve");
@@ -614,7 +593,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         .expect("variables")
         .rows[5]
         .value = crate::feature::definitions::ScalarLane::Value(0.0);
-    assert!(crate::decode::with_test_decode_ctx(
+    assert!(crate::decode::with_service_context(
         |ctx| section_equation_polar_distance_constraints(
             ctx,
             &conflicting_equality_polar,
@@ -659,7 +638,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let disabled_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_polar_distance_constraints(ctx, &disabled, &sketch)
     })
     .expect("test section solve");
@@ -740,7 +719,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let constraints = crate::decode::with_service_context(|ctx| {
         section_equation_function_six_distance_constraints(ctx, &definition, &sketch)
     })
     .expect("test section solve");
@@ -777,7 +756,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
     }
     variables.rows[4].value = crate::feature::definitions::ScalarLane::Undefined;
     variables.rows.push(variable(3, 21, Some(5.0)));
-    let propagated_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let propagated_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_function_six_distance_constraints(ctx, &propagated_distance, &sketch)
     })
     .expect("test section solve");
@@ -789,7 +768,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         .expect("variables")
         .rows[4]
         .value = crate::feature::definitions::ScalarLane::Value(4.0);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         section_equation_function_six_distance_constraints(
             ctx,
             &conflicting_equality_distance,
@@ -834,7 +813,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let disabled_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_function_six_distance_constraints(ctx, &disabled, &sketch)
     })
     .expect("test section solve");
@@ -913,7 +892,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         saved_section: None,
         offset: 0,
     };
-    let midpoint_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let midpoint_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_function_forty_two_midpoint_coordinate_constraints(
             ctx,
             &function_forty_two,
@@ -951,7 +930,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     variables.rows[2].value = crate::feature::definitions::ScalarLane::Undefined;
     variables.rows.push(variable(6, 21, Some(2.0)));
     variables.rows.push(variable(5, 0, Some(0.0)));
-    let propagated_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let propagated_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_function_forty_two_midpoint_coordinate_constraints(
             ctx,
             &propagated_midpoint,
@@ -982,7 +961,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .expect("variables");
     variables.rows[2].value = crate::feature::definitions::ScalarLane::Value(2.0);
     variables.rows[3].value = crate::feature::definitions::ScalarLane::Value(3.0);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         section_equation_function_forty_two_midpoint_coordinate_constraints(
             ctx,
             &conflicting_equality_midpoint,
@@ -998,7 +977,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .expect("variables")
         .rows[2]
         .value = crate::feature::definitions::ScalarLane::Value(3.0);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         section_equation_function_forty_two_midpoint_coordinate_constraints(
             ctx,
             &conflicting_midpoint,
@@ -1049,7 +1028,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         saved_section: None,
         offset: 0,
     };
-    let point_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let point_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_function_thirty_one_point_coordinate_constraints(
             ctx,
             &function_thirty_one,
@@ -1085,7 +1064,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     variables.rows[2].value = crate::feature::definitions::ScalarLane::Undefined;
     variables.rows.push(variable(6, 22, Some(2.0)));
     variables.rows.push(variable(5, 0, Some(0.0)));
-    let propagated_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let propagated_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_function_thirty_one_point_coordinate_constraints(
             ctx,
             &propagated_point,
@@ -1114,7 +1093,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .expect("variables");
     variables.rows[2].value = crate::feature::definitions::ScalarLane::Value(2.0);
     variables.rows[4].value = crate::feature::definitions::ScalarLane::Value(3.0);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         section_equation_function_thirty_one_point_coordinate_constraints(
             ctx,
             &conflicting_equality_point,
@@ -1130,7 +1109,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .expect("variables")
         .rows[0]
         .value = crate::feature::definitions::ScalarLane::Value(3.0);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         section_equation_function_thirty_one_point_coordinate_constraints(
             ctx,
             &conflicting_point,
@@ -1217,10 +1196,8 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_equal_distance_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_equal_distance_constraints admitted");
+    let constraints = section_equation_equal_distance_constraints(&definition, &sketch)
+        .expect("section_equation_equal_distance_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
         constraints[0].0.id.as_str(),
@@ -1288,10 +1265,8 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_equal_distance_constraints(ctx, &disabled, &sketch)
-    })
-    .expect("section_equation_equal_distance_constraints admitted");
+    let disabled_constraints = section_equation_equal_distance_constraints(&disabled, &sketch)
+        .expect("section_equation_equal_distance_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }
@@ -1382,10 +1357,8 @@ fn equation_function_thirty_five_emits_point_on_line() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_point_on_line_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_point_on_line_constraints admitted");
+    let constraints = section_equation_point_on_line_constraints(&definition, &sketch)
+        .expect("section_equation_point_on_line_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
         constraints[0].0.id.as_str(),
@@ -1426,10 +1399,9 @@ fn equation_function_thirty_five_emits_point_on_line() {
             offset: 10,
         }];
     });
-    let reference_line_constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_point_on_line_constraints(ctx, &reference_line_definition, &sketch)
-    })
-    .expect("section_equation_point_on_line_constraints admitted");
+    let reference_line_constraints =
+        section_equation_point_on_line_constraints(&reference_line_definition, &sketch)
+            .expect("section_equation_point_on_line_constraints admitted");
     assert_eq!(reference_line_constraints.len(), 1);
     assert_eq!(
         reference_line_constraints[0].0.definition,
@@ -1471,10 +1443,8 @@ fn equation_function_thirty_five_emits_point_on_line() {
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_point_on_line_constraints(ctx, &disabled, &sketch)
-    })
-    .expect("section_equation_point_on_line_constraints admitted");
+    let disabled_constraints = section_equation_point_on_line_constraints(&disabled, &sketch)
+        .expect("section_equation_point_on_line_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }
@@ -1565,10 +1535,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_unsigned_distance_constraints(ctx, &definition, &sketch)
-    })
-    .expect("section_equation_unsigned_distance_constraints admitted");
+    let constraints = section_equation_unsigned_distance_constraints(&definition, &sketch)
+        .expect("section_equation_unsigned_distance_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
         constraints[0].0.id.as_str(),
@@ -1596,10 +1564,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     variables.rows[0].variable_type = crate::feature::definitions::VariableType::V;
     variables.rows[1].variable_type = crate::feature::definitions::VariableType::V;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_equation_unsigned_distance_constraints(
-            ctx, &vertical, &sketch
-        ))
-        .expect("section_equation_unsigned_distance_constraints admitted")[0]
+        (section_equation_unsigned_distance_constraints(&vertical, &sketch))
+            .expect("section_equation_unsigned_distance_constraints admitted")[0]
             .0
             .definition
             .kind(),
@@ -1641,10 +1607,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
-        section_equation_unsigned_distance_constraints(ctx, &disabled, &sketch)
-    })
-    .expect("section_equation_unsigned_distance_constraints admitted");
+    let disabled_constraints = section_equation_unsigned_distance_constraints(&disabled, &sketch)
+        .expect("section_equation_unsigned_distance_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }
@@ -1740,7 +1704,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
         };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let horizontal = crate::decode::with_test_decode_ctx(|ctx| {
+    let horizontal = crate::decode::with_service_context(|ctx| {
         section_equation_axis_distance_constraints(ctx, &definition([10.0, 0.0], 10.0), &sketch)
     })
     .expect("test section solve");
@@ -1762,7 +1726,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
         }
     );
 
-    let vertical = crate::decode::with_test_decode_ctx(|ctx| {
+    let vertical = crate::decode::with_service_context(|ctx| {
         section_equation_axis_distance_constraints(ctx, &definition([0.0, 10.0], 10.0), &sketch)
     })
     .expect("test section solve");
@@ -1778,7 +1742,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
     distance.value = ScalarLane::DimensionDriven;
     distance.guess = ScalarLane::DimensionDriven;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_equation_axis_distance_constraints(
+        crate::decode::with_service_context(|ctx| section_equation_axis_distance_constraints(
             ctx, &missing, &sketch
         ))
         .expect("test section solve")
@@ -1787,7 +1751,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
     );
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| section_equation_axis_distance_constraints(
+        crate::decode::with_service_context(|ctx| section_equation_axis_distance_constraints(
             ctx,
             &definition([10.0, 0.0], 9.0),
             &sketch,
@@ -1831,7 +1795,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
         }),
         offset: 899,
     });
-    let disabled_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let disabled_constraints = crate::decode::with_service_context(|ctx| {
         section_equation_axis_distance_constraints(ctx, &disabled, &sketch)
     })
     .expect("test section solve");

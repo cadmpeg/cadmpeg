@@ -1,6 +1,7 @@
 {
   "decode": {
     "ir": {
+      "decode_depth": "full",
       "ir_version": "6",
       "model": {
         "appearance_bindings": [],
@@ -132,12 +133,9 @@
           "class_definitions": [
             {
               "id": "nx:om-entry-0:class#325",
-              "layout_prefix": "8121",
-              "layout_terminal": 6,
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
               "registry_suffix": "81210123456789abcdef06",
-              "schema_fingerprint": "0123456789abcdef",
               "section_offset": 382,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 401,
@@ -154,12 +152,9 @@
             },
             {
               "id": "nx:om-entry-0:class#55",
-              "layout_prefix": "8121",
-              "layout_terminal": 6,
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
               "registry_suffix": "81210123456789abcdef06",
-              "schema_fingerprint": "0123456789abcdef",
               "section_offset": 112,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 131,

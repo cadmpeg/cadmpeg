@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::parse::Value;
 use crate::reader::geometry::{
-    curve_endpoint_seed, decode_pcurve_geometry, directrix_geometry_parameter_scale,
-    edge_parameter_range, nurbs_surface_parameter_domain, pcurve_trim_parameter, si_prefix,
+    conic_irreducible_offset, curve_endpoint_seed, decode_pcurve_geometry,
+    directrix_geometry_parameter_scale, edge_parameter_range, infer_edge_parameter_ranges,
+    nurbs_surface_parameter_domain, pcurve_trim_parameter, si_prefix,
     surface_parameter_scales_for_step, surface_periodic_domains, trimmed_curve_parameter_range,
     trimmed_pcurve_parameterization, unit_scale_mm, unit_scale_radians,
 };
@@ -23,10 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_ENDPOINT_WITNESS: f64 = 1.0e-6;
 
-fn source_curve_refusal(
-    collection_limit: u64,
-    depth_limit: Option<u64>,
-) -> cadmpeg_core::CodecError {
+fn source_curve_refusal(depth_limit: u64) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();#2=TRIMMED_CURVE('',#1,(),(),.T.,.PARAMETER.);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -40,10 +38,7 @@ fn source_curve_refusal(
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    if let Some(limit) = depth_limit {
-        policy.limits.max_recursion_depth = limit;
-    }
+    policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
@@ -51,35 +46,11 @@ fn source_curve_refusal(
 }
 
 #[test]
-fn source_curve_parameter_active_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    assert!(matches!(
-        source_curve_refusal(1, None),
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_source_curve_parameter_active"
-    ));
-}
-
-#[test]
-fn source_curve_parameter_scales_refuse_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    assert!(matches!(
-        source_curve_refusal(0, None),
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_source_curve_parameter_scales"
-    ));
-}
-
-#[test]
 fn source_curve_parameter_walk_refuses_depth_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(
-        source_curve_refusal(2, Some(0)),
+        source_curve_refusal(0),
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_source_curve_parameter_walk"
@@ -128,42 +99,12 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
     ir
 }
 
-fn assert_parameter_inference_refusal(
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &str,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
-        let mut ir = parameter_inference_ir(true);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = limit;
-            }
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = limit;
-            }
-            other => panic!("unexpected inference dimension: {other:?}"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
-        super::super::infer_edge_parameter_ranges(&mut ir, &ctx)
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(refusal)
-        if refusal.dimension == dimension && refusal.operation == operation));
-}
-
 #[test]
-fn parameter_inference_without_edges_needs_no_collection_storage() {
+fn parameter_inference_without_edges_keeps_the_model() {
     let mut ir = parameter_inference_ir(false);
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        for _ in 0..1000 {
-            super::super::infer_edge_parameter_ranges(&mut ir, ctx)
-                .expect("no edge interval needs inference");
-        }
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        super::super::infer_edge_parameter_ranges(&mut ir, ctx, &mut Vec::new())
+            .expect("no edge interval needs inference");
         assert_eq!(ir.model.points.len(), 2);
         assert_eq!(ir.model.vertices.len(), 2);
     });
@@ -173,7 +114,8 @@ fn parameter_inference_without_edges_needs_no_collection_storage() {
 fn streamed_parameter_inference_finds_the_stored_line_endpoints() {
     let mut ir = parameter_inference_ir(true);
     crate::test_support::with_service_context(b"", |_, ctx| {
-        super::super::infer_edge_parameter_ranges(&mut ir, ctx).expect("line interval");
+        super::super::infer_edge_parameter_ranges(&mut ir, ctx, &mut Vec::new())
+            .expect("line interval");
     });
     assert_eq!(
         ir.model.edges[0].param_range().expect("inferred interval"),
@@ -182,25 +124,8 @@ fn streamed_parameter_inference_finds_the_stored_line_endpoints() {
 }
 
 #[test]
-fn parameter_inference_range_refuses_collection_limit() {
-    assert_parameter_inference_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "step_parameter_inference_ranges",
-    );
-}
-
-#[test]
-fn parameter_inference_edge_curve_refuses_retained_limit() {
-    assert_parameter_inference_refusal(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "step_parameter_inference_edge_curve",
-    );
-}
-
-#[test]
 fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], true),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
         NurbsSurfaceLanes::new(
@@ -213,7 +138,6 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("periodic NURBS surface");
     assert_eq!(
         nurbs_surface_parameter_domain(1, surface.u_knots(), surface.u_count()),
@@ -229,14 +153,12 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
 fn periodic_curve_trim_shifts_a_wide_finite_seam_endpoint() {
     let max = f64::MAX;
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-max, -max, max, max],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         true,
     )
-    .expect("fixture constructor admission")
     .expect("wide periodic curve");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
     assert_eq!(
@@ -249,14 +171,12 @@ fn periodic_curve_trim_shifts_a_wide_finite_seam_endpoint() {
 fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
     let max = f64::MAX;
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-max, -max, max, max],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         true,
     )
-    .expect("fixture constructor admission")
     .expect("wide periodic curve");
     let start = FiniteReal::new(max * 0.5).expect("finite start");
     let end = FiniteReal::new(-max).expect("finite end");
@@ -270,7 +190,6 @@ fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
 fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
     let max = f64::MAX;
     let nurbs = PcurveNurbs::new(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-max, -max, max, max],
         PcurveNurbsPoles::Polynomial {
@@ -278,7 +197,6 @@ fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
         },
         true,
     )
-    .expect("fixture pcurve construction admission")
     .expect("wide periodic pcurve");
     let geometry = PcurveGeometry::Nurbs { nurbs };
     assert_eq!(
@@ -355,7 +273,6 @@ fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overf
 #[test]
 fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     let nurbs = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -370,7 +287,6 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let start_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
@@ -393,7 +309,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         start_seed,
     )
-    .expect("resource allocation did not fail")
+    .expect("find the NURBS curve parameter near the point")
     .expect("start witness")
     .get();
     let start_seed_end = nurbs_curve_parameter_near_point(
@@ -403,7 +319,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         start,
     )
-    .expect("resource allocation did not fail")
+    .expect("find the NURBS curve parameter near the point")
     .expect("unanchored end witness")
     .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
@@ -415,7 +331,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         end_seed,
     )
-    .expect("resource allocation did not fail")
+    .expect("find the NURBS curve parameter near the point")
     .expect("end witness")
     .get();
 
@@ -569,7 +485,6 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
     ]);
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &sweep,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -585,7 +500,6 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ),
     );
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &revolution,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
@@ -668,9 +582,7 @@ fn directrix_parameter_units_follow_step_curve_equations() {
                     .expect("nonempty polyline fixture"),
             },
             0.0,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polyline construction admission")
         .unwrap(),
     ));
 
@@ -746,7 +658,6 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -806,7 +717,6 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
@@ -1074,10 +984,9 @@ ENDSEC;END-ISO-10303-21;",
         },
         &mut losses,
         &mut active,
-        0,
         &ctx
     )
-    .expect("no resource refusal")
+    .expect("decode pcurve geometry")
     .is_none());
     assert!(active.is_empty());
     assert!(decode_pcurve_geometry(
@@ -1092,10 +1001,9 @@ ENDSEC;END-ISO-10303-21;",
         },
         &mut losses,
         &mut active,
-        0,
         &ctx
     )
-    .expect("no resource refusal")
+    .expect("decode pcurve geometry")
     .is_none());
     assert!(active.is_empty());
 }
@@ -1141,7 +1049,6 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
     use cadmpeg_ir::math::Point3;
     for d in [1e-12, 1.0, 1e12] {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-0.25 * d, 0., 0.25 * d, 0.5 * d, 0.75 * d, d, 1.25 * d],
             vec![
@@ -1154,7 +1061,6 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
             None,
             true,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let [start, end] =
             [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));
@@ -1164,4 +1070,277 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
         assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
     }
+}
+
+/// The offset a circle's parameter cannot remove is the AXIAL and RADIAL part.
+///
+/// The vertex sits exactly on the circle in plan -- its in-plane offset from the
+/// center is a 3-4-5 triangle scaled to the radius -- and 2.5e-3 BELOW the
+/// circle's plane, 250x a declared accuracy of 1e-5.
+#[test]
+fn conic_irreducible_offset_is_the_component_no_parameter_can_remove() {
+    let circle = solved_circle(
+        Point3::new(5.0, 0.0, -2.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(-1.0, 0.0, 0.0),
+        1.5,
+    );
+    let vertex = Point3::new(4.1, -1.2, -2.0025);
+    let offset = conic_irreducible_offset(&circle, vertex, 1.0e-5).expect("a vertex off the axis");
+    assert!(
+        (offset - 2.5e-3).abs() < 1.0e-12,
+        "offset {offset:e} is not the axial gap"
+    );
+    // The point of the repair: the same vertex ON the plane is admitted by the
+    // document tolerance alone, so the offset is the whole of what was rejected.
+    let on_plane = Point3::new(4.1, -1.2, -2.0);
+    let flat = conic_irreducible_offset(&circle, on_plane, 1.0e-5).expect("a vertex off the axis");
+    assert!(
+        flat < 1.0e-12,
+        "an on-plane vertex has no irreducible offset: {flat:e}"
+    );
+}
+
+fn solved_circle(
+    center: Point3,
+    axis: Vector3,
+    ref_direction: Vector3,
+    radius: f64,
+) -> SolvedCurveGeometry {
+    SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, axis, ref_direction, radius)
+            .expect("orthonormal frame, finite center, positive radius"),
+    )
+}
+
+/// On the axis there is no angle to derive, so the admission is NOT widened.
+///
+/// `atan2(0, 0)` returns a defined value that means nothing, and that is the one conic
+/// case the document tolerance was right to refuse. It stays refused.
+#[test]
+fn conic_irreducible_offset_declines_on_the_axis_where_no_angle_exists() {
+    let circle = solved_circle(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        2.0,
+    );
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(0.0, 0.0, 0.0), 1.0e-5),
+        None
+    );
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(0.0, 0.0, 7.5), 1.0e-5),
+        None
+    );
+    // A rounding error off the axis is still on it: the angle is noise.
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(1.0e-9, 0.0, 7.5), 1.0e-5),
+        None
+    );
+    // A degenerate carrier cannot be built at all, so no radius guard is needed here.
+    assert!(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        0.0,
+    )
+    .is_err());
+}
+
+/// A vertex a rounding error off the axis is refused, not given a noise angle.
+///
+/// Its in-plane projection is nonzero, so `atan2` returns a definite angle --
+/// here 3*pi/4 -- that rounding alone chose. Within the document tolerance of
+/// the axis there is no angle to derive, and the admission stays narrow.
+#[test]
+fn conic_irreducible_offset_declines_a_rounding_error_off_the_axis() {
+    let circle = solved_circle(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.5,
+    );
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(-1.0e-13, 1.0e-13, 0.0), 1.0e-5),
+        None
+    );
+}
+
+/// Every other carrier keeps the document tolerance, which bounds the blast radius.
+///
+/// A line's parameter is a signed distance and its perpendicular offset is irreducible
+/// too, but a line with no range falls back to its vertices exactly, so nothing is lost
+/// by leaving it alone -- and a NURBS inversion is iterative, where the distance check
+/// is the only guard against converging on the wrong branch.
+#[test]
+fn conic_irreducible_offset_declines_for_every_non_circular_carrier() {
+    use cadmpeg_ir::geometry::analytic::{EllipseCurve, LineCurve};
+    let line = SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+            .expect("finite line"),
+    );
+    assert_eq!(
+        conic_irreducible_offset(&line, Point3::new(1.0, 0.5, 0.0), 1.0e-5),
+        None
+    );
+    let ellipse = SolvedCurveGeometry::Ellipse(
+        EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+        )
+        .expect("ordered radii on an orthonormal frame"),
+    );
+    assert_eq!(
+        conic_irreducible_offset(&ellipse, Point3::new(2.0, 0.0, 0.1), 1.0e-5),
+        None
+    );
+}
+
+/// Build one circular edge whose END vertex sits `axial` off the carrier's plane.
+///
+/// A 1.5 mm arc in a document declaring 1e-5 accuracy, with a vertex the exporter
+/// placed off the plane. Refusing the edge's range loses the whole body.
+fn off_carrier_edge_ir(axial: f64) -> CadIr {
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
+    let mut ir = CadIr::empty();
+    ir.tolerances.linear =
+        cadmpeg_ir::scalar::PositiveLength::new(1.0e-5).expect("positive tolerance");
+    ir.model.curves.push(Curve {
+        parameter_range: None,
+        id: CurveId::mint("step:test:curve#c0").expect("identity grammar"),
+        geometry: CurveGeometry::Solved(solved_circle(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.5,
+        )),
+        source_object: None,
+    });
+    for (id, position) in [
+        ("p0", Point3::new(1.5, 0.0, 0.0)),
+        ("p1", Point3::new(0.0, 1.5, axial)),
+    ] {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("step:test:point#{id}")).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
+            None,
+        ));
+    }
+    for (v, p) in [("v0", "p0"), ("v1", "p1")] {
+        ir.model.vertices.push(Vertex {
+            id: VertexId::mint(format!("step:test:vertex#{v}")).expect("identity grammar"),
+            point: PointId::mint(format!("step:test:point#{p}")).expect("identity grammar"),
+            tolerance: None,
+        });
+    }
+    ir.model.edges.push(Edge {
+        id: EdgeId::mint("step:test:edge#e0").expect("identity grammar"),
+        carrier: EdgeCarrier::unbounded(Some(
+            CurveId::mint("step:test:curve#c0").expect("identity grammar"),
+        )),
+        start: VertexId::mint("step:test:vertex#v0").expect("identity grammar"),
+        end: VertexId::mint("step:test:vertex#v1").expect("identity grammar"),
+        tolerance: None,
+    });
+    ir
+}
+
+/// The repair: the range is derived and the offset is
+/// REPORTED, where before both the range and the report were absent.
+#[test]
+fn infer_edge_parameter_ranges_admits_an_off_carrier_vertex_and_reports_it() {
+    // 250x the document's stated accuracy.
+    let mut ir = off_carrier_edge_ir(2.5e-3);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+
+    let range = ir.model.edges[0]
+        .param_range()
+        .expect("the arc's parameter range is derived from the carrier's closed form");
+    assert!(
+        (range[0]).abs() < 1.0e-12,
+        "start vertex sits at angle 0: {range:?}"
+    );
+    assert!(
+        (range[1] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-9,
+        "the quarter arc is recovered: {range:?}"
+    );
+
+    assert_eq!(losses.len(), 1, "one edge, one report");
+    assert_eq!(
+        losses[0].code,
+        crate::loss::StepLossCode::EdgeVertexOffCarrier.kind()
+    );
+    assert!(
+        losses[0].message.contains("2.500000e-3"),
+        "the MEASURED offset travels with the report: {}",
+        losses[0].message
+    );
+}
+
+/// The admitted edge carries the bound it was admitted at as its tolerance, so
+/// a consumer holding edges to their tolerance does not refuse the body for an
+/// offset the decoder measured and reported.
+#[test]
+fn infer_edge_parameter_ranges_gives_an_off_carrier_edge_its_admission_bound() {
+    let mut ir = off_carrier_edge_ir(2.5e-3);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+
+    let carried = ir.model.edges[0]
+        .tolerance
+        .expect("an off-carrier edge carries a tolerance")
+        .get();
+    // The document accuracy plus the measured offset: the bound the inversion used.
+    assert!(
+        (carried - (1.0e-5 + 2.5e-3)).abs() < 1.0e-12,
+        "the admission bound is the tolerance: {carried:e}"
+    );
+    assert!(
+        losses[0].message.contains("as its tolerance"),
+        "the report says the edge carries it: {}",
+        losses[0].message
+    );
+}
+
+/// A tolerance the source stated is never tightened by the admission bound.
+#[test]
+fn infer_edge_parameter_ranges_keeps_a_wider_stated_tolerance() {
+    let mut ir = off_carrier_edge_ir(2.5e-3);
+    let stated = cadmpeg_ir::scalar::PositiveReal::new(1.0e-2).expect("positive");
+    ir.model.edges[0].tolerance = Some(stated);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+    assert_eq!(ir.model.edges[0].tolerance, Some(stated));
+}
+
+/// An offset the document's own accuracy already covers is not a finding.
+#[test]
+fn infer_edge_parameter_ranges_reports_nothing_for_ordinary_precision() {
+    let mut ir = off_carrier_edge_ir(1.0e-9);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+    assert!(ir.model.edges[0].param_range().is_some());
+    assert_eq!(
+        ir.model.edges[0].tolerance, None,
+        "an edge within the document accuracy is held to it"
+    );
+    assert!(
+        losses.is_empty(),
+        "rounding is not a defect: {:?}",
+        losses.iter().map(|l| &l.message).collect::<Vec<_>>()
+    );
 }

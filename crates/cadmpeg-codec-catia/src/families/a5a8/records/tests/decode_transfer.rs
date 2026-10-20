@@ -2,9 +2,9 @@
 //! A8 object-stream decode transfer cases.
 
 use crate::test_support::test_a5a8::{
-    a8_elided_surface_stream, a8_freeform_curve_stream, a8_pcurve_stream,
+    a8_freeform_curve_stream, a8_pcurve_stream, a8_surface_stream_with_pcurve,
 };
-use crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain;
+use crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain;
 use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -15,8 +15,8 @@ use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
 
 #[test]
-fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
-    let file = object_main_catpart(&a8_elided_surface_stream());
+fn decode_geometry_fallback_transfers_an_inline_a8_pole_grid() {
+    let file = object_main_catpart(&a8_surface_stream_with_pcurve());
     let mut cur = Cursor::new(file);
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
@@ -34,12 +34,12 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 }
 
 #[test]
-fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
-    let stream = a8_elided_surface_stream_with_native_vertex_chain();
+fn decode_float_packed_stream_transfers_an_inline_a8_surface_with_native_topology() {
+    let stream = a8_inline_surface_stream_with_native_vertex_chain();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("generated A8 topology");
     assert!(graph.complete);
     assert_eq!(graph.faces.len(), 1);
@@ -70,7 +70,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
             &mut Cursor::new(object_main_catpart(&stream)),
             &DecodeOptions::default(),
         )
-        .expect("decode elided A8 surface topology");
+        .expect("decode inline A8 surface topology");
     assert_eq!(result.ir().model.surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
         result.ir().model.surfaces[0].geometry.solved()
@@ -94,7 +94,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -116,7 +116,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
             ctx,
             file.clone()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::FloatPackedInnerNoFbb
     );

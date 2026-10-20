@@ -90,6 +90,9 @@ pub(super) fn output_free_trim_surface_construction(
         )
 }
 
+/// Whether the configuration has no body selection, its active-feature
+/// closure does not resolve, or its suppression, feature states, or parameter
+/// values differ from the model.
 pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
@@ -109,36 +112,6 @@ pub(crate) fn active_configuration_state_is_incomplete(
         active_features
     };
     configuration_state_differs(ir, configuration, &required_features)
-}
-
-/// Decode-time form of [`active_configuration_state_is_incomplete`]: the
-/// active-feature closure is charged to the decode budget.
-pub(crate) fn active_configuration_state_is_incomplete_for_decode(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    if configuration_suppression_differs(ir, configuration) {
-        return Ok(true);
-    }
-    let Some(bodies) = configuration.bodies.as_deref() else {
-        return Ok(true);
-    };
-    let required_features = if ir.model.features.is_empty() {
-        BTreeMap::new()
-    } else {
-        let Ok(active_features) =
-            crate::native::history::active_feature_closure_for_decode(ctx, ir, bodies)?
-        else {
-            return Ok(true);
-        };
-        active_features
-    };
-    Ok(configuration_state_differs(
-        ir,
-        configuration,
-        &required_features,
-    ))
 }
 
 /// Whether a feature's suppression differs from the configuration's
@@ -232,23 +205,14 @@ fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
 }
 
 pub(crate) fn incomplete_expression_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
-    let mut owners_storage = ctx.reserve_scoped(0, "nx expression parameter owners")?;
     let mut parameter_owners = BTreeSet::new();
     for parameter in &ir.model.parameters {
-        owners_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut parameter_owners,
-                &parameter.owner,
-                "nx expression parameter owners",
-            )
-        })?;
+        parameter_owners.insert(&parameter.owner);
     }
     let mut incomplete = BTreeSet::new();
     for owner in parameter_owners {
-        let mut workspace = ctx.reserve_scoped(0, "nx expression completeness workspace")?;
         let mut parameters = Vec::new();
         for parameter in ir
             .model
@@ -256,9 +220,6 @@ pub(crate) fn incomplete_expression_parameters(
             .iter()
             .filter(|parameter| &parameter.owner == owner)
         {
-            workspace.with_storage(|| {
-                ctx.reserve_vec(&mut parameters, 1, "nx owned expression parameters")
-            })?;
             parameters.push(parameter);
         }
         let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
@@ -267,22 +228,15 @@ pub(crate) fn incomplete_expression_parameters(
                 parameter.name.as_str(),
                 parameter.properties.get("unit").map(String::as_str),
             );
-            workspace.with_storage(|| {
-                ctx.admit_btree_entry(&ids_by_name, &name_key, "nx expression name index")
-            })?;
             let ids = match ids_by_name.entry(name_key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
-            workspace.with_storage(|| ctx.reserve_vec(ids, 1, "nx expression name identities"))?;
             ids.push(&parameter.id);
         }
-        let mut expected = workspace.with_storage(|| {
-            ctx.collection_vec(parameters.len(), "nx expected expression dependencies")
-        })?;
-        expected.resize_with(parameters.len(), || None::<Vec<ParameterId>>);
-        for (index, parameter) in parameters.iter().enumerate() {
-            expected[index] =
+        let mut expected = Vec::new();
+        for parameter in &parameters {
+            expected.push(
                 (|| -> Result<Option<Vec<ParameterId>>, cadmpeg_core::CodecError> {
                     let unit = match parameter.properties.get("unit").map(String::as_str) {
                         None => None,
@@ -307,27 +261,15 @@ pub(crate) fn incomplete_expression_parameters(
                         if dependencies.iter().any(|id| id == *dependency) {
                             continue;
                         }
-                        workspace.with_storage(|| {
-                            ctx.reserve_vec(&mut dependencies, 1, "nx expression dependencies")
-                        })?;
-                        dependencies.push(workspace.with_storage(|| {
-                            dependency
-                                .try_clone_for_decode(ctx, "nx expression dependency identity")
-                        })?);
+                        dependencies.push((*dependency).clone());
                     }
                     Ok(Some(dependencies))
-                })()?;
+                })()?,
+            );
         }
         let mut indices = BTreeMap::new();
         for (index, parameter) in parameters.iter().enumerate() {
-            workspace.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut indices,
-                    &parameter.id,
-                    index,
-                    "nx expression parameter index",
-                )
-            })?;
+            indices.insert(&parameter.id, index);
         }
         let mut emitted = BTreeSet::new();
         let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
@@ -345,7 +287,6 @@ pub(crate) fn incomplete_expression_parameters(
             let parameter = parameters[index];
             let unit = parameter.properties.get("unit").map(String::as_str);
             let value = crate::native::om::evaluate_parameterized_expression(
-                ctx,
                 &parameter.expression,
                 |name| {
                     let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
@@ -353,7 +294,7 @@ pub(crate) fn incomplete_expression_parameters(
                     };
                     evaluated.get(*dependency).copied()
                 },
-            )?;
+            );
             let stored = match (unit, parameter.value.as_ref()) {
                 (
                     Some("millimeter" | "inch"),
@@ -382,33 +323,18 @@ pub(crate) fn incomplete_expression_parameters(
                         && stored.is_finite()
                         && (canonical_value - stored).abs() <= tolerance
                     {
-                        workspace.with_storage(|| {
-                            ctx.insert_btree_map(
-                                &mut evaluated,
-                                &parameter.id,
-                                native_value,
-                                "nx evaluated expression parameters",
-                            )
-                        })?;
+                        evaluated.insert(&parameter.id, native_value);
                     }
                 }
             }
-            workspace.with_storage(|| {
-                ctx.insert_btree_set(&mut emitted, index, "nx emitted expression parameters")
-            })?;
+            emitted.insert(index);
         }
         for (index, parameter) in parameters.into_iter().enumerate() {
             if expected[index].as_deref() != Some(parameter.dependencies.as_slice())
                 || !emitted.contains(&index)
                 || !evaluated.contains_key(&parameter.id)
             {
-                ctx.insert_btree_set(
-                    &mut incomplete,
-                    parameter
-                        .id
-                        .try_clone_for_decode(ctx, "nx incomplete expression identity")?,
-                    "nx incomplete expression parameters",
-                )?;
+                incomplete.insert(parameter.id.clone());
             }
         }
     }

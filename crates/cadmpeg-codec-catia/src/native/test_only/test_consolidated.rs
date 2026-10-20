@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use crate::families::b2::records::{B2PlaneCarrierLayout, B2PlaneCarrierPayload};
+use crate::native::chamfer::{CatiaConsolidatedChamfer, CatiaObjectChamfer};
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::{
-    CatiaConsolidatedCircle, CatiaConsolidatedClass61Payload, CatiaConsolidatedClass61Record,
-    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
-    CatiaConsolidatedCylinderPayload, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
-    CatiaConsolidatedLineProfile, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
-    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedPlaneCarrierPayload,
+    CatiaConsolidatedCircle, CatiaConsolidatedCone, CatiaConsolidatedCylinder,
+    CatiaConsolidatedCylinderPayload, CatiaConsolidatedLineProfile,
+    CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
     CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
     CatiaConsolidatedTorus,
 };
@@ -12,32 +14,6 @@ use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 use std::mem::size_of;
-
-pub(super) fn validate_consolidated_class61_records(
-    records: &[CatiaConsolidatedClass61Record],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for (index, record) in records.iter().enumerate() {
-        let expected_id = format!("catia:consolidated:class61-record#{index}");
-        let valid_payload = match &record.payload {
-            CatiaConsolidatedClass61Payload::Counted { references, tail } => {
-                !references.is_empty() && !tail.is_empty() && tail.last() == Some(&0x03)
-            }
-            CatiaConsolidatedClass61Payload::Long { members, .. } => {
-                !members.is_empty() && members.windows(2).all(|pair| pair[0] < pair[1])
-            }
-        };
-        if record.id != expected_id
-            || !valid_payload
-            || index > 0 && records[index - 1].byte_offset >= record.byte_offset
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated class-0x61 record `{}` is structurally invalid",
-                record.id
-            )));
-        }
-    }
-    Ok(())
-}
 
 pub(super) fn validate_consolidated_class5b5c_records(
     records: &[CatiaConsolidatedClass5b5cRecord],
@@ -60,57 +36,72 @@ pub(super) fn validate_consolidated_class5b5c_records(
     Ok(())
 }
 
-pub(super) fn validate_consolidated_groups(
-    groups: &[CatiaConsolidatedGroup],
+pub(super) fn validate_consolidated_chamfers(
+    rows: &[CatiaConsolidatedChamfer],
+    parameter_points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for (index, group) in groups.iter().enumerate() {
-        let expected_id = format!("catia:consolidated:group#{index}");
-        if group.id != expected_id
-            || index > 0 && groups[index - 1].byte_offset >= group.byte_offset
+    let points = parameter_points
+        .iter()
+        .map(|point| (point.id.as_str(), point))
+        .collect::<HashMap<_, _>>();
+    for (index, row) in rows.iter().enumerate() {
+        let mut next = row.byte_offset.checked_add(row.byte_len);
+        let valid_contacts = row.parameter_points.iter().enumerate().all(|(index, id)| {
+            let Some(point) = points.get(id.as_str()) else {
+                return false;
+            };
+            if Some(point.byte_offset) != next
+                || point.operand.value() != u32::try_from(index + 1).unwrap_or(u32::MAX)
+            {
+                return false;
+            }
+            next = point.byte_offset.checked_add(point.byte_len);
+            next.is_some()
+        });
+        let payload_len = 24
+            + row
+                .support_surfaces
+                .iter()
+                .chain(&row.support_pcurves)
+                .map(|reference| u64::from(reference.byte_len()))
+                .sum::<u64>();
+        if row.id != format!("catia:consolidated:chamfer#{index}")
+            || !matches!(row.byte_len.checked_sub(payload_len), Some(5..=7))
+            || row
+                .support_surfaces
+                .iter()
+                .any(|reference| reference.byte_len() == 1)
+            || (row.support_pcurves[0].byte_len() == 1) != (row.support_pcurves[1].byte_len() == 1)
+            || !matches!(row.parameter_points.len(), 0 | 2 | 4)
+            || !valid_contacts
+            || index > 0 && rows[index - 1].byte_offset >= row.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated group `{}` is structurally invalid",
-                group.id
+                "consolidated chamfer `{}` is structurally invalid",
+                row.id
             )));
         }
     }
     Ok(())
 }
 
-pub(super) fn validate_consolidated_cone_faces(
-    faces: &[CatiaConsolidatedConeFace],
-    parameter_points: &[CatiaConsolidatedParameterPoint],
+pub(super) fn validate_object_chamfers(
+    rows: &[CatiaObjectChamfer],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let points_by_id = parameter_points
-        .iter()
-        .map(|point| (point.id.as_str(), point))
-        .collect::<HashMap<_, _>>();
-    for (index, face) in faces.iter().enumerate() {
-        let mut expected_point_offset = face.byte_offset.checked_add(face.byte_len);
-        let parameter_run_valid = face.parameter_points.iter().all(|id| {
-            match (expected_point_offset, points_by_id.get(id.as_str())) {
-                (Some(expected), Some(point)) if point.byte_offset == expected => {
-                    expected_point_offset = point.byte_offset.checked_add(point.byte_len);
-                    expected_point_offset.is_some()
-                }
-                _ => false,
-            }
-        });
-        let frame_overhead = face
-            .byte_len
-            .checked_sub(u64::try_from(face.program.len()).unwrap_or(u64::MAX));
-        if face.id != format!("catia:consolidated:cone-face#{index}")
-            || face.program.len() < 16
-            || face.program.first() != Some(&0x85)
-            || !face.program.ends_with(&[0x03, 0x11])
-            || !matches!(frame_overhead, Some(21..=23))
-            || face.half_angle.get() >= std::f64::consts::FRAC_PI_2
-            || !parameter_run_valid
-            || index > 0 && faces[index - 1].byte_offset >= face.byte_offset
+    for (index, row) in rows.iter().enumerate() {
+        let payload_len = 23
+            + row
+                .references
+                .iter()
+                .map(|reference| u64::from(reference.byte_len()))
+                .sum::<u64>();
+        if row.id != format!("catia:object:chamfer#{index}")
+            || row.byte_len != payload_len + 8
+            || index > 0 && rows[index - 1].byte_offset >= row.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated cone-face descriptor `{}` is structurally invalid",
-                face.id
+                "object chamfer `{}` is structurally invalid",
+                row.id
             )));
         }
     }
@@ -129,10 +120,7 @@ pub(super) fn validate_consolidated_pcurves(
             || pcurve.points.len() != count
             || pcurve.first_derivatives.len() != count
             || pcurve.second_derivatives.len() != count
-            || !knots_strictly_increasing(&FiniteReal::raw_lane(&pcurve.knots), |_| {
-                Ok::<(), std::convert::Infallible>(())
-            })
-            .unwrap()
+            || !knots_strictly_increasing(&FiniteReal::raw_lane(&pcurve.knots))
             || !matches!(pcurve.tail.as_slice(), [0x07] | [0x07, 0x00])
             || index > 0 && pcurves[index - 1].byte_offset >= pcurve.byte_offset
         {
@@ -278,64 +266,16 @@ pub(super) fn validate_consolidated_cylinders(
     Ok(())
 }
 
-pub(super) fn validate_consolidated_embedded_cylinders(
-    cylinders: &[CatiaConsolidatedEmbeddedCylinder],
-    groups: &[CatiaConsolidatedGroup],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let groups = groups
-        .iter()
-        .enumerate()
-        .map(|(index, group)| {
-            (
-                group.id.as_str(),
-                (group, groups.get(index + 1).map(|next| next.byte_offset)),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    for (index, cylinder) in cylinders.iter().enumerate() {
-        let dot = |first: [f64; 3], second: [f64; 3]| {
-            first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
-        };
-        let group_valid =
-            groups
-                .get(cylinder.group.as_str())
-                .is_some_and(|(group, next_offset)| {
-                    group.group_type == 3
-                        && group.byte_offset < cylinder.byte_offset
-                        && next_offset.is_none_or(|next| cylinder.byte_offset < next)
-                });
-        if cylinder.id != format!("catia:consolidated:embedded-cylinder#{index}")
-            || !group_valid
-            || !matches!(cylinder.frame_token, 0x19 | 0x1c)
-            || cylinder.axis.get()[2] != 0.0
-            || cylinder.reference_direction.get()
-                != [-cylinder.axis.get()[1], cylinder.axis.get()[0], 0.0]
-            || dot(cylinder.axis.get(), cylinder.reference_direction.get()).abs() > 1.0e-9
-            || !crate::families::b2::records::circle_range_is_full_turn(
-                cylinder.radius.get(),
-                cylinder.u_range.endpoints(),
-            )
-            || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated embedded cylinder `{}` is structurally invalid",
-                cylinder.id
-            )));
-        }
-    }
-    Ok(())
-}
-
 pub(super) fn validate_consolidated_parameter_points(
     points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, point) in points.iter().enumerate() {
         let frame_overhead = point
             .byte_len
-            .checked_sub(u64::from(point.payload.layout()));
+            .checked_sub(u64::from(point.payload.byte_len(point.operand)));
         if point.id != format!("catia:consolidated:parameter-point#{index}")
             || !matches!(frame_overhead, Some(5..=7))
-            || !matches!(point.prefix.as_u8(), 0x05 | 0x09 | 0x0d | 0x11)
+            || !point.payload.matches_control(point.control)
             || index > 0 && points[index - 1].byte_offset >= point.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -351,15 +291,14 @@ pub(super) fn validate_consolidated_plane_carriers(
     carriers: &[CatiaConsolidatedPlaneCarrier],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, carrier) in carriers.iter().enumerate() {
-        let (selector, scalar_count, payload_valid) = match &carrier.payload {
-            CatiaConsolidatedPlaneCarrierPayload::PointDirection2 { direction, .. } => {
-                (0xe4, 7, direction.iter().all(|value| value.is_finite()))
+        let (scalar_count, payload_valid) = match &carrier.payload {
+            B2PlaneCarrierPayload::Plane { layout, .. } => {
+                (layout.scalar_count(), carrier.payload.valid_plane())
             }
-            CatiaConsolidatedPlaneCarrierPayload::PointDirection3 { .. } => (0xc4, 8, true),
-            CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => (0xec, 6, true),
-            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values, .. } => {
-                (carrier.payload.selector(), values.len(), !values.is_empty())
-            }
+            B2PlaneCarrierPayload::ScalarLane { selector, values } => (
+                values.len(),
+                !values.is_empty() && B2PlaneCarrierLayout::try_from(*selector).is_err(),
+            ),
         };
         let header_limit = 1u32 << (8 * u8::from(carrier.width));
         let scalar_count = u64::try_from(scalar_count).map_err(|_| {
@@ -371,11 +310,6 @@ pub(super) fn validate_consolidated_plane_carriers(
         let expected_len = 4 + u64::from(u8::from(carrier.width)) + 2 + 8 * scalar_count;
         if carrier.id != format!("catia:consolidated:plane-carrier#{index}")
             || carrier.header_token >= header_limit
-            || matches!(
-                &carrier.payload,
-                CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. }
-            ) && matches!(carrier.payload.selector(), 0xe4 | 0xc4 | 0xec)
-            || carrier.payload.selector() != selector
             || carrier.byte_len != expected_len
             || !payload_valid
             || index > 0 && carriers[index - 1].byte_offset >= carrier.byte_offset
@@ -387,26 +321,6 @@ pub(super) fn validate_consolidated_plane_carriers(
         }
     }
     Ok(())
-}
-
-pub(super) fn valid_consolidated_plane_geometry(
-    payload: &CatiaConsolidatedPlaneCarrierPayload,
-) -> bool {
-    let (direction, tail) = match payload {
-        CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-            direction, tail, ..
-        } => ([direction[0], direction[1], 0.0], tail.get()),
-        CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-            direction, tail, ..
-        } => (direction.get(), tail.get()),
-        CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => return false,
-        CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. } => return false,
-    };
-    let norm = direction[0].hypot(direction[1]).hypot(direction[2]);
-    (norm - 1.0).abs() <= 1.0e-9
-        && direction[2].abs() <= 1.0e-9
-        && tail[0] > 0.0
-        && tail[1] < tail[2]
 }
 
 pub(super) fn validate_consolidated_reference_lists(
@@ -451,7 +365,7 @@ pub(super) fn validate_consolidated_revolutions(
             direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
         if revolution.id != expected_id
-            || revolution.profile_allocation_id == 0
+            || revolution.profile_reference == 0
             || revolution.profile_circle.as_deref() != expected_profile
             || cross
                 .iter()

@@ -1,11 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::families::b2::records::tests::b2_nurbs_curve_stream;
 use crate::families::b2::records::tests::b2_spatial_circle_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream, b2_class5b5c_stream,
-    b2_cone_stream, b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream,
-    b2_face_node_5f_stream, b2_line_profile_stream, b2_long_61_stream, b2_owner_packet_stream,
-    b2_parameter_point_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_sphere_stream, b2_torus_stream, b2_width_coded_owner_packet_stream,
+    b2_cone_stream, b2_construction_use_stream, b2_cylinder_stream, b2_face_node_5f_stream,
+    b2_line_profile_stream, b2_owner_packet_stream, b2_parameter_point_stream,
+    b2_reference_list_stream, b2_resolved_revolution_stream, b2_sphere_stream, b2_torus_stream,
+    b2_width_coded_owner_packet_stream,
 };
 
 #[test]
@@ -62,14 +64,7 @@ fn indexed_analytic_carrier_decoders_match_one_shot_wrappers() {
     let bytes = b2_resolved_revolution_stream();
     let consolidated = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_resolved_revolutions_from_records(
-                ctx,
-                &bytes,
-                &consolidated,
-            )
-        })
-        .expect("service decode"),
+        crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &consolidated,),
         crate::families::b2::records::b2_resolved_revolutions(&bytes)
     );
 }
@@ -88,13 +83,10 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_reference_lists_from_records(ctx, &bytes, &records)
-                .expect("service decode")
-        })
-        .into_iter()
-        .map(|record| record.pos)
-        .collect(),
+        crate::families::b2::records::b2_reference_lists_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
     );
 
     let bytes = b2_owner_packet_stream();
@@ -123,40 +115,6 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .collect(),
     );
 
-    let bytes = b2_counted_61_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    compare(
-        "counted class 61",
-        crate::families::b2::records::b2_counted_61(&bytes)
-            .into_iter()
-            .map(|record| record.pos)
-            .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
-                .expect("service decode")
-        })
-        .into_iter()
-        .map(|record| record.pos)
-        .collect(),
-    );
-
-    let bytes = b2_long_61_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    compare(
-        "long class 61",
-        crate::families::b2::records::b2_long_61(&bytes)
-            .into_iter()
-            .map(|record| record.pos)
-            .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
-                .expect("service decode")
-        })
-        .into_iter()
-        .map(|record| record.pos)
-        .collect(),
-    );
-
     let bytes = b2_class5b5c_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     compare(
@@ -165,13 +123,11 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.frame.pos)
             .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
-                .expect("service decode")
-        })
-        .into_iter()
-        .map(|record| record.frame.pos)
-        .collect(),
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
+            .expect("decode the B2 class 5B and 5C control records")
+            .into_iter()
+            .map(|record| record.frame.pos)
+            .collect(),
     );
 
     let bytes = b2_face_node_5f_stream();
@@ -190,24 +146,16 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
     let bytes = b2_adjacent_face_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_adjacent_face_owners_from_records(
-                ctx, &bytes, &records,
-            )
-            .expect("service decode")
-        }),
+        crate::families::b2::records::b2_adjacent_face_owners_from_records(&bytes, &records),
         crate::families::b2::records::b2_adjacent_face_owners(&bytes)
     );
 
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
-                ctx, &bytes, &records,
-            )
-        })
-        .expect("service context admits adjacent counted owners"),
+        crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+            &bytes, &records,
+        ),
         crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes)
     );
 
@@ -258,15 +206,11 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_nurbs_curves_from_records(
-                ctx,
-                &bytes,
-                &records,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        })
+        crate::families::b2::records::b2_nurbs_curves_from_records(
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
         .into_iter()
         .map(|record| record.pos)
         .collect(),
@@ -288,12 +232,9 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .iter()
             .map(offset_signature)
             .collect::<Vec<_>>(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
-                .expect("service decode")
-        })
-        .iter()
-        .map(offset_signature)
-        .collect::<Vec<_>>()
+        crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records)
+            .iter()
+            .map(offset_signature)
+            .collect::<Vec<_>>()
     );
 }

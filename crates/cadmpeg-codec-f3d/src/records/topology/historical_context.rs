@@ -30,25 +30,28 @@ pub(crate) struct DesignEdgeRecipeReferenceContext {
     pub(crate) reference_ordinal: u32,
     /// Referenced faces present in the owning feature's result topology.
     pub(crate) result_faces: Vec<FaceId>,
-    /// Ordered loop boundaries of each referenced result face.
+    /// `asm_face_boundaries` records of the referenced result faces in the
+    /// result state, in `result_faces` order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) result_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    pub(crate) result_face_boundary_ids: Vec<String>,
     /// Stable result edge slots shared by the referenced-face boundaries and
     /// the primary candidate-face boundaries.
     pub(crate) result_shared_edge_slots: Vec<i64>,
     /// Referenced faces present in the immediately preceding ASM topology.
     pub(crate) preceding_faces: Vec<FaceId>,
-    /// Ordered loop boundaries of each referenced preceding face.
+    /// `asm_face_boundaries` records of the referenced preceding faces in the
+    /// preceding state, in `preceding_faces` order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    pub(crate) preceding_face_boundary_ids: Vec<String>,
     /// Preceding faces uniquely owning the surface carriers of the referenced
     /// result faces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) preceding_support_face_slots: Vec<i64>,
-    /// Ordered loop boundaries of the uniquely matched preceding support
-    /// faces.
+    /// `asm_face_boundaries` records of the uniquely matched preceding
+    /// support faces in the preceding state, in `preceding_support_face_slots`
+    /// order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) preceding_support_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    pub(crate) preceding_support_face_boundary_ids: Vec<String>,
     /// Stable edge slots shared by the referenced-face boundaries and the
     /// primary candidate-face boundaries.
     pub(crate) shared_edge_slots: Vec<i64>,
@@ -58,6 +61,46 @@ pub(crate) struct DesignEdgeRecipeReferenceContext {
     /// persistent referenced face or its unique preceding surface support.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) changed_reference_edge_slots: Vec<i64>,
+}
+
+/// Ordered loop topology of one face in one historical ASM state.
+///
+/// One record exists for each state and face slot that an edge-recipe
+/// reference context names. The identity is a function of the owning state
+/// and the face slot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmFaceBoundary {
+    /// `{stream}:asm-face-boundary#{state byte offset}:{face slot}`.
+    pub(crate) id: String,
+    /// Owning `asm_delta_states` record.
+    pub(crate) parent: String,
+    /// Stable ASM face slot.
+    pub(crate) face_slot: i64,
+    /// Face loops in their serialized membership order.
+    pub(crate) loops: Vec<DesignHistoricalFaceLoopContext>,
+}
+
+impl AsmFaceBoundary {
+    /// The record identity of `face_slot` in the delta state `state_id`
+    /// located at `state_byte_offset`.
+    pub(crate) fn identity(
+        state_id: &str,
+        state_byte_offset: u64,
+        face_slot: i64,
+    ) -> Option<String> {
+        let stream = crate::ids::native_stream(state_id)?;
+        Some(format!(
+            "{stream}:asm-face-boundary#{state_byte_offset:010}:{face_slot:010}"
+        ))
+    }
+
+    /// The record named `id` in an arena sorted by identity.
+    pub(crate) fn find<'a>(arena: &'a [Self], id: &str) -> Option<&'a Self> {
+        arena
+            .binary_search_by(|boundary| boundary.id.as_str().cmp(id))
+            .ok()
+            .and_then(|index| arena.get(index))
+    }
 }
 
 /// Ordered loop topology retained for one historical face.

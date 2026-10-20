@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::parameters::parse_design_parameter_record;
@@ -40,7 +41,15 @@ use crate::records::topology::fillet::DesignFilletRadiusLaw;
 use crate::records::topology::fillet::HistoricalBinding;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
-use fillet_limits::decode_fillet_radius_groups;
+
+fn decode_fillet_radius_groups(
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    owners: &[DesignParameterOwner],
+    parameters: &[DesignParameter],
+) -> Vec<crate::records::topology::fillet::DesignFilletRadiusGroup> {
+    crate::design::decode::operands::decode_fillet_radius_groups(scopes, groups, owners, parameters)
+}
 
 #[test]
 fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
@@ -191,7 +200,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         .expect("authored Draft timeline")
     };
 
-    let (features, _) = project(&selection);
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        project(&selection);
     let FeatureDefinition::Operation(FeatureOperation::Draft {
         anchor:
             cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -237,7 +247,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             },
             face_slot: 159,
         });
-    let (features, _) = project(&selection);
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        project(&selection);
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -276,19 +287,13 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     let radius = parameter(3, "MidRadius", Some("mm"), 0.4);
     let position = parameter(4, "MidParams", None, 0.25);
     let weight = parameter(5, "TangencyWeight", None, 0.75);
-    let (points, tangency_weight) = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::variable_fillet_law(
-            decode_ctx,
-            &[
-                (0, &start),
-                (1, &end),
-                (2, &radius),
-                (3, &position),
-                (4, &weight),
-            ],
-        )
-    })
-    .unwrap()
+    let (points, tangency_weight) = crate::design::feature_project::variable_fillet_law(&[
+        (0, &start),
+        (1, &end),
+        (2, &radius),
+        (3, &position),
+        (4, &weight),
+    ])
     .expect("complete variable Fillet law");
     assert_eq!(
         points
@@ -336,11 +341,9 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
     };
     let start = parameter(1, "StartRadius", Some("mm"), 0.2);
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
-    let (points, tangency_weight) = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)])
-    })
-    .unwrap()
-    .expect("variable Fillet law without an explicit weight");
+    let (points, tangency_weight) =
+        crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)])
+            .expect("variable Fillet law without an explicit weight");
     assert_eq!(
         points
             .as_slice()
@@ -380,13 +383,12 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
     let weight_one = parameter(3, "TangencyWeight", None, 0.5);
     let weight_two = parameter(4, "TangencyWeight", None, 0.75);
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::variable_fillet_law(
-            decode_ctx,
-            &[(0, &start), (1, &end), (2, &weight_one), (3, &weight_two)],
-        )
-    })
-    .unwrap()
+    assert!(crate::design::feature_project::variable_fillet_law(&[
+        (0, &start),
+        (1, &end),
+        (2, &weight_one),
+        (3, &weight_two)
+    ])
     .is_none());
 }
 
@@ -522,8 +524,6 @@ fn localized_fillet_owner(
     }
     owner
 }
-
-mod fillet_limits;
 
 #[test]
 fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
@@ -689,7 +689,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             chord_length_parameter_record_index: 121,
         }
     );
-    let (chord_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: chord_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -739,7 +742,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         chord_only_assignments[0].tangency_weight_parameter_record_index,
         None
     );
-    let (chord_only_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: chord_only_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -790,7 +796,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             offset_two_parameter_record_index: 151,
         }
     );
-    let (asymmetric_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: asymmetric_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -826,23 +835,24 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .lost_edge_references
         .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
 
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &parameters,
-                owners: &owners,
-                scopes,
-                construction_groups: &operand_groups,
-                fillet_radius_groups: &assignments,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &parameters,
+                    owners: &owners,
+                    scopes,
+                    construction_groups: &operand_groups,
+                    fillet_radius_groups: &assignments,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[0].evaluation.definition()
     else {
@@ -906,7 +916,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ref continuity,
             merge_result: Some(false),
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
-            == Some(&[cadmpeg_ir::features::SurfaceContinuity::Contact][..])
+            == Some(&[cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {}][..])
             && native == &patch_group.id
             && faces.is_empty()
     ));
@@ -1156,7 +1166,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut cell = group(300, 3, vec![301]);
     cell.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_boundary_fill(decode_ctx, &fill_scope, &[tools.clone(), cell.clone()])).unwrap(),
+        crate::design::feature_project::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
         Some(FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
             cells: ref cell_selections,
@@ -1191,7 +1201,10 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         &variable_owners,
         &variable_parameters,
     );
-    let (variable_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: variable_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -1240,7 +1253,10 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
             .collect::<Vec<_>>(),
         vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
     );
-    let (unassigned_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: unassigned_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -1376,11 +1392,9 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
     let start = parameter("StartRadius", f64::MAX);
     let end = parameter("EndRadius", 1.0);
     assert!(crate::design::feature_project::design_length(&start).is_none());
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)])
-    })
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)]).is_none()
+    );
 }
 
 mod chamfer;

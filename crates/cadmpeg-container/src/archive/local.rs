@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, ByteRange, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, ByteRange, View};
 use cadmpeg_core::CodecError;
 
 use super::{ArchiveSnapshot, Declaration, EntryRecord, ZipCompression};
@@ -15,49 +15,34 @@ pub(super) struct Recovery {
     pub(super) tail: Option<ByteRange>,
 }
 
-pub(super) fn recover<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
+pub(super) fn recover(
+    root: View<'_>,
     error: CodecError,
-) -> Result<ArchiveSnapshot<'a>, CodecError> {
+) -> Result<ArchiveSnapshot<'_>, CodecError> {
     // There is no directory to establish an embedded archive's base. Do not
     // search arbitrary payload bytes for a replacement namespace.
     if !root.window().starts_with(b"PK\x03\x04") {
         return Err(error);
     }
-    let reason = ctx.format_retained(
-        format_args!("local ZIP recovery: {error}"),
-        "ZIP recovery diagnostic",
-    )?;
+    let reason = format!("local ZIP recovery: {error}");
     let mut walk = root;
     let mut entries = Vec::new();
     let mut by_name = BTreeMap::new();
     while walk.unread().starts_with(b"PK\x03\x04") {
-        ctx.charge_work(1, "ZIP recovery local frame")?;
-        let Some(entry) = read(ctx, &mut walk)? else {
+        let Some(entry) = read(&mut walk)? else {
             break;
         };
         if by_name.contains_key(&entry.name) {
             return Err(CodecError::malformed("duplicate recovered ZIP entry name"));
         }
-        let name = ctx.copy_retained_text(&entry.name, "ZIP recovered indexed name")?;
-        ctx.insert_btree_map(
-            &mut by_name,
-            name,
-            entries.len(),
-            "ZIP recovered name index",
-        )?;
-        ctx.push_vec(&mut entries, entry, "ZIP recovered entry records")?;
+        by_name.insert(entry.name.clone(), entries.len());
+        entries.push(entry);
     }
     let end = u64_from_index(root.window().len());
     let tail = (!walk.is_empty()).then_some(ByteRange {
         start: u64_from_index(walk.read_len()),
         end,
     });
-    ctx.charge_retained(
-        u64_from_index(std::mem::size_of::<Recovery>()),
-        "ZIP recovery state",
-    )?;
     Ok(ArchiveSnapshot {
         root,
         // Uninterpreted tail bytes are partitioned as padding. No footer or
@@ -69,7 +54,7 @@ pub(super) fn recover<'a>(
     })
 }
 
-fn read(ctx: &DecodeContext<'_>, walk: &mut View<'_>) -> Result<Option<EntryRecord>, CodecError> {
+fn read(walk: &mut View<'_>) -> Result<Option<EntryRecord>, CodecError> {
     let start = u64_from_index(walk.read_len());
     let mut header = *walk;
     if header.remaining() < local_header::LEN {
@@ -87,8 +72,7 @@ fn read(ctx: &DecodeContext<'_>, walk: &mut View<'_>) -> Result<Option<EntryReco
     let Some(raw_name) = header.take(name_len) else {
         return Ok(None);
     };
-    let name = decode_name(ctx, raw_name, flags & 0x800 != 0)?;
-    ctx.charge_work(u64_from_index(extra_len), "ZIP recovery local extra")?;
+    let name = decode_name(raw_name, flags & 0x800 != 0);
     let extra_start = header.position();
     let mut record = EntryRecord {
         name,
@@ -213,7 +197,7 @@ fn zip64_sizes(extra: &mut View<'_>, record: &mut EntryRecord) -> Result<(), &'s
     Ok(())
 }
 
-fn decode_name(ctx: &DecodeContext<'_>, bytes: &[u8], utf8: bool) -> Result<String, CodecError> {
+fn decode_name(bytes: &[u8], utf8: bool) -> String {
     // ZIP's legacy filename encoding is IBM code page 437. ASCII controls keep
     // their byte values, as in the directory parser.
     const HIGH: [char; 128] = [
@@ -226,12 +210,8 @@ fn decode_name(ctx: &DecodeContext<'_>, bytes: &[u8], utf8: bool) -> Result<Stri
         '∞', 'φ', 'ε', '∩', '≡', '±', '≥', '≤', '⌠', '⌡', '÷', '≈', '°', '∙', '·', '√', 'ⁿ', '²',
         '■', '\u{a0}',
     ];
-    ctx.charge_work(
-        u64_from_index(bytes.len()) * 2,
-        "ZIP recovered name decoding",
-    )?;
     if utf8 {
-        return ctx.copy_retained_lossy_utf8(bytes, "ZIP recovered UTF-8 name");
+        return String::from_utf8_lossy(bytes).into_owned();
     }
     let decode = |byte: u8| {
         if byte < 128 {
@@ -240,10 +220,7 @@ fn decode_name(ctx: &DecodeContext<'_>, bytes: &[u8], utf8: bool) -> Result<Stri
             HIGH[usize::from(byte - 128)]
         }
     };
-    let length = bytes.iter().map(|byte| decode(*byte).len_utf8()).sum();
-    let mut name = ctx.retained_string(length, "ZIP recovered legacy name")?;
-    name.extend(bytes.iter().map(|byte| decode(*byte)));
-    Ok(name)
+    bytes.iter().map(|byte| decode(*byte)).collect()
 }
 
 #[cfg(test)]

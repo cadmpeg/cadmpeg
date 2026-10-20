@@ -79,7 +79,7 @@ fn try_lossless_round_trip(
         .decode(&mut Cursor::new(produced), &DecodeOptions::default())
         .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
     let d = cadmpeg_ir::diff::diff(original, round_trip.ir());
     assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");
@@ -215,10 +215,8 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .iter()
             .find(|surface| construction_owns_surface(round_trip.ir(), procedural, &surface.id))
             .expect("round-trip revolution surface");
-        let source_index =
-            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index =
-            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_index = cadmpeg_ir::index::ModelIndex::build(original.ir());
+        let round_index = cadmpeg_ir::index::ModelIndex::build(round_trip.ir());
         let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &source_index,
@@ -242,7 +240,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             "{version:?}"
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -342,10 +340,8 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                 construction_owns_surface(round_trip.ir(), round_procedural, &surface.id)
             })
             .expect("round-trip extrusion surface");
-        let source_index =
-            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index =
-            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_index = cadmpeg_ir::index::ModelIndex::build(original.ir());
+        let round_index = cadmpeg_ir::index::ModelIndex::build(round_trip.ir());
         let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &source_index,
@@ -369,7 +365,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             "{version:?}"
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -495,7 +491,7 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             round_trip.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -560,7 +556,7 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize
             round_trip.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -681,10 +677,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 _ => None,
             })
             .expect("round-trip extrusion interval");
-        let source_index =
-            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index =
-            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_index = cadmpeg_ir::index::ModelIndex::build(original.ir());
+        let round_index = cadmpeg_ir::index::ModelIndex::build(round_trip.ir());
         for fraction in [0.25, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
@@ -721,7 +715,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             round_trip.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -819,10 +813,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                 _ => None,
             })
             .expect("round-trip placed extrusion interval");
-        let source_index =
-            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index =
-            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_index = cadmpeg_ir::index::ModelIndex::build(original.ir());
+        let round_index = cadmpeg_ir::index::ModelIndex::build(round_trip.ir());
         for fraction in [0.25, 0.5, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
@@ -859,7 +851,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             round_trip.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -918,7 +910,7 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             round_trip.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -1005,10 +997,8 @@ fn assert_type120_round_trip(version: IgesVersion) {
             round_trip.report().losses
         );
     };
-    let source_index =
-        cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
-    let round_index =
-        cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+    let source_index = cadmpeg_ir::index::ModelIndex::build(original.ir());
+    let round_index = cadmpeg_ir::index::ModelIndex::build(round_trip.ir());
     let source_range = surface_construction(original.ir(), &source_surface.id)
         .and_then(|procedural| match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => payload

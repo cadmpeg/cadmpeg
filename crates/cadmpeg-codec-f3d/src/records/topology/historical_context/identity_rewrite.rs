@@ -8,7 +8,7 @@ use super::{
     DesignHistoricalLoopPoint, DesignHistoricalLoopPosition, DesignHistoricalLoopVertex,
 };
 
-rewrite_native_record!(DesignEdgeRecipeReferenceContext, []; {reference_ordinal, result_faces, result_face_boundaries, result_shared_edge_slots, preceding_faces, preceding_face_boundaries, preceding_support_face_slots, preceding_support_face_boundaries, shared_edge_slots, changed_shared_edge_slots, changed_reference_edge_slots});
+rewrite_native_record!(DesignEdgeRecipeReferenceContext, []; {reference_ordinal, result_faces, result_face_boundary_ids, result_shared_edge_slots, preceding_faces, preceding_face_boundary_ids, preceding_support_face_slots, preceding_support_face_boundary_ids, shared_edge_slots, changed_shared_edge_slots, changed_reference_edge_slots});
 rewrite_native_record!(DesignHistoricalEdgeContext, []; {edge_slot, incident_loops});
 rewrite_native_record!(DesignHistoricalEdgeLoopContext, []; {coedge_slot, loop_slot, face_slot, boundary_edge_count, coedge_ordinal, previous_edge_slot, next_edge_slot});
 rewrite_native_record!(DesignHistoricalFaceBoundaryContext, []; {face_slot, loops});

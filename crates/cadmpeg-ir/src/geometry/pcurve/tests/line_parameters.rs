@@ -30,15 +30,11 @@ fn pcurve_line_parameters_admit_first_later_and_active_session_frames() {
         (ResourceDimension::RecursionDepth, 1, false),
         (ResourceDimension::RecursionDepth, 2, false),
         (ResourceDimension::RecursionDepth, 3, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 1, false),
-        (ResourceDimension::WorkUnits, 2, false),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
             ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -67,9 +63,7 @@ fn pcurve_line_parameters_preserve_affine_trim_and_non_line_semantics() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 3;
-    policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
         nested_line().line_parameters(&ctx).unwrap(),

@@ -3,6 +3,7 @@
 //!
 //! Helpers hand-build `.prt` byte images and embedded-stream payloads. They
 //! construct raw bytes only; no native record type crosses in here.
+
 #![allow(clippy::unwrap_used)]
 
 use super::test_bytes::shifted_f64_bytes;
@@ -30,9 +31,14 @@ pub(crate) fn segment_stream_payload() -> Vec<u8> {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(b"PS\0\0 (deltas) SCH_test segment stream payload with more than sixty-four inflated bytes........")
+        .write_all(&super::test_bytes::transmit_preamble(
+            ": TRANSMIT FILE (deltas) created by test segment stream payload",
+            "SCH_test",
+        ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    payload[36..40].copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 
@@ -46,14 +52,16 @@ pub(crate) fn segment_body_binding_payload(stream_kind: &str) -> Vec<u8> {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(
-            format!(
-                "PS\0\0 ({stream_kind}) SCH_test segment body binding payload with more than sixty-four inflated bytes........"
-            )
-            .as_bytes(),
-        )
+        .write_all(&super::test_bytes::transmit_preamble(
+            &format!(
+                ": TRANSMIT FILE ({stream_kind}) created by test segment body binding payload"
+            ),
+            "SCH_test",
+        ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    payload[68..72].copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 
@@ -83,11 +91,16 @@ pub(crate) fn segment_body_binding_repeated_link_payload() -> Vec<u8> {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(
-            b"PS\0\0 (partition) SCH_test repeated stream-link payload with more than sixty-four inflated bytes........",
-        )
+        .write_all(&super::test_bytes::transmit_preamble(
+            ": TRANSMIT FILE (partition) created by test repeated stream-link payload",
+            "SCH_test",
+        ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    let size_offset = usize::try_from(wrapper_offset).unwrap() + 4;
+    payload[size_offset..size_offset + 4]
+        .copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 
@@ -99,11 +112,18 @@ pub(crate) fn segment_extended_wrapper_payload() -> Vec<u8> {
     payload.resize(64, 0);
     payload.extend_from_slice(&0xc000_0005u32.to_le_bytes());
     payload.resize(64 + 38, 0);
+    payload[72..76].copy_from_slice(&37_u32.to_le_bytes());
+    payload[76..78].copy_from_slice(&4_u16.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(b"PS\0\0 (partition) SCH_test extended wrapper payload with more than sixty-four inflated bytes........")
+        .write_all(&super::test_bytes::transmit_preamble(
+            ": TRANSMIT FILE (partition) created by test extended wrapper payload",
+            "SCH_test",
+        ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    payload[68..72].copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 
@@ -292,6 +312,73 @@ fn push_feature_operation(bytes: &mut Vec<u8>, object_indices: &[u8], label: &st
 /// label, typed_payload)`.
 pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u8>)]) -> Vec<u8> {
     let mut bytes = size_framed_om_section();
+    if operations.iter().any(|(_, _, payload)| {
+        payload
+            .windows(4)
+            .any(|bytes| bytes == [0x97, 0x75, 0x01, 0x02])
+    }) {
+        // Synthetic body writes use one-based class index 16.
+        // Keep the two existing declarations first, then complete their owner registry.
+        let member = bytes
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let mut classes = Vec::new();
+        for ordinal in 3..=16 {
+            let name = if ordinal == 16 {
+                "UGS::CM_BREF_DATA".to_owned()
+            } else {
+                format!("UGS::BodyWriteFixture{ordinal}")
+            };
+            classes.push(u8::try_from(name.len() + 1).unwrap());
+            classes.extend_from_slice(name.as_bytes());
+            classes.push(0x65);
+        }
+        bytes.splice(member..member, classes);
+    }
+    if operations.iter().any(|(_, label, _)| *label == "ENLARGE") {
+        let member = bytes
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let name = b"UGS::MODIFYSRF_isotrim_parms";
+        let mut class = vec![u8::try_from(name.len() + 1).unwrap()];
+        class.extend_from_slice(name);
+        class.push(0x65);
+        bytes.splice(member..member, class);
+    }
+    if operations
+        .iter()
+        .any(|(_, label, _)| *label == "EXTRACT_FACE")
+    {
+        let member = bytes
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let name = b"UGS::ModlFeature::ExtractFaceParms";
+        let mut class = vec![u8::try_from(name.len() + 1).unwrap()];
+        class.extend_from_slice(name);
+        class.push(0x65);
+        bytes.splice(member..member, class);
+    }
+    if operations
+        .iter()
+        .any(|(_, label, _)| *label == "SYMBOLIC_THREAD")
+    {
+        let member = bytes
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let name = b"UGS::SYMB_THD_PARMS";
+        let mut class = vec![u8::try_from(name.len() + 1).unwrap()];
+        class.extend_from_slice(name);
+        class.push(0x65);
+        bytes.splice(member..member, class);
+    }
     let record_area = bytes.len() + 20;
     bytes.extend_from_slice(
         &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),
@@ -542,9 +629,7 @@ pub(super) fn composed_feature_history_inputs() -> ComposedInputs {
         payload.extend([0; 4]);
         payload
     };
-    let projected_curve =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
-            .to_vec();
+    let projected_curve = projected_curve_payload();
     // SIMPLE HOLE: two identical scalar runs, each followed by two block-reference
     // tokens, then a canonical `Hole_...` template string.
     let simple_hole = {
@@ -690,6 +775,12 @@ pub(super) fn composed_feature_history_inputs() -> ComposedInputs {
 }
 
 pub(crate) fn indexed_om_section() -> Vec<u8> {
+    indexed_om_section_with_expression_tail(&[])
+}
+
+/// [`indexed_om_section`] with `tail` appended to the expression record after
+/// its reference to the root record.
+pub(crate) fn indexed_om_section_with_expression_tail(tail: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0xaa; 32];
     let base = 8usize;
     let class_name = b"UGS::EXP_expression";
@@ -720,6 +811,7 @@ pub(crate) fn indexed_om_section() -> Vec<u8> {
     expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
     expression.extend_from_slice(b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0");
     expression.extend_from_slice(b"\x01\x02\x90\x00\x00");
+    expression.extend_from_slice(tail);
     let records = [root.as_slice(), expression.as_slice()];
     let table = bytes.len() + 4 * 4;
     let table_end = table + 4 + 3 * 4;
@@ -1034,5 +1126,19 @@ pub(crate) fn size_framed_om_section_with_repeated_operations(count: usize) -> V
     }
     let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
+/// One complete N=2 projected storage lane from the byte contract.
+pub(crate) fn projected_curve_payload() -> Vec<u8> {
+    let mut bytes = vec![4, 0, 0, 1, 0, 0, 0];
+    bytes.extend_from_slice(&shifted_f64_bytes(4.0e-5));
+    bytes.extend([0, 0, 0, 1, 2, 0x80, 0x57, 0xff, 1, 2, 5]);
+    bytes.extend([
+        0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 1, 1, 0xff, 0xff, 1, 1, 1, 0, 0,
+    ]);
+    bytes.extend([
+        1, 2, 0xf1, 2, 0xc8, 0xf1, 2, 0xc9, 0x80, 0x57, 0, 2, 1, 0xf1, 2, 0xca, 0xff, 1, 2, 2, 0x7d,
+    ]);
     bytes
 }

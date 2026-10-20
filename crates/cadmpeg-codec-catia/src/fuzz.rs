@@ -3,17 +3,12 @@
 //!
 //! Each wrapper feeds arbitrary bytes to one internal parser and discards the
 //! result. The contract is that no input may panic.
+
 #![doc(hidden)]
 
 /// Exercise `V5_CFV2` container stream-directory parsing.
 pub fn container_directory(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::container::parse_stream_directory(&ctx, data);
+    let _probe = crate::container::parse_stream_directory(data);
 }
 
 /// Exercise `b5 03` object-stream graph parsing.
@@ -32,63 +27,33 @@ pub fn b5_parse(data: &[u8]) {
 pub fn e5_topology(data: &[u8]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    let Ok((_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     else {
         return;
     };
-    let _probe = crate::families::e5::graph::parse_topology(&ctx, data);
+    let _probe = crate::families::e5::graph::parse_topology(data);
 }
 
 /// Exercise standard-family vertex-record scanning.
 pub fn geometry_vertices(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::wire::records::scan_vertex_records(&ctx, data).map(Iterator::count);
+    let _probe = crate::wire::records::scan_vertex_records(data).count();
 }
 
 /// Exercise standard-family surface-prefix extraction.
 pub fn geometry_surface_prefixes(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::families::standard::records::surface_prefixes(&ctx, data);
+    let _probe = crate::families::standard::records::surface_prefixes(data);
 }
 
 /// Exercise A5 freeform surface extraction.
 pub fn geometry_a5_surfaces(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::families::a5a8::records::a5_surfaces(
-        &ctx,
-        data,
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let _probe =
+        crate::families::a5a8::records::a5_surfaces(data, &mut crate::nurbs::LaneRefusals::new());
 }
 
 /// Exercise A8 NURBS surface extraction.
 pub fn geometry_a8_surfaces(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::families::a5a8::records::a8_surfaces(
-        &ctx,
-        data,
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let _probe =
+        crate::families::a5a8::records::a8_surfaces(data, &mut crate::nurbs::LaneRefusals::new());
 }
 
 /// Exercise standard-nested and FBB topology parsing.
@@ -107,45 +72,28 @@ pub fn standard_topology(data: &[u8]) {
 
 /// Exercise `7C0B` value-block parsing.
 pub fn value_blocks(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::value_block::parse(&ctx, data);
+    let _probe = crate::value_block::parse(data);
 }
 
 /// Exercise `7C08` object-graph parsing.
 pub fn object_graph(data: &[u8]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    let Ok((_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     else {
         return;
     };
-    let _probe = crate::object_graph::parse(&ctx, data);
-    let _probe = crate::object_graph::surface_aliases(&ctx, data);
+    let _probe = crate::object_graph::parse(data);
+    let segments = crate::container::finjpl_segments(&crate::container::BodyExtent::whole(data));
+    let _probe = crate::object_graph::surface_aliases(data, &segments);
 }
 
 /// Exercise `7C02` string-catalog parsing.
 pub fn catalog(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::catalog::parse(&ctx, data);
+    let _probe = crate::catalog::parse(data);
 }
 
 /// Exercise zero-entity record inventory parsing.
 pub fn zero_entity(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe = crate::families::zero_entity::records::zero_entity_record_inventory(&ctx, data);
+    let _probe = crate::families::zero_entity::records::zero_entity_record_inventory(data);
 }

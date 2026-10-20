@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::CatiaAllocationReferenceEncoding;
 
-/// Parameter axis held constant by selectors `0x05` and `0x09` in a
+/// Parameter axis held constant by operands 1 and 2 in a
 /// consolidated owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -454,7 +454,7 @@ pub(crate) struct CatiaOwnerChartRelation {
     pub(super) carrier: CatiaOwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
     pub(super) bridge: CatiaOwnerChartBridge,
-    /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
+    /// Byte offsets of the records with operands 1, 2, 3, and 4.
     pub(super) parameter_point_byte_offsets: [u64; 4],
 }
 
@@ -655,7 +655,7 @@ mod tests {
         };
         let arena_name = "bridge_references";
         let json_len = serde_json::to_vec(&record).expect("reference JSON").len();
-        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
@@ -666,7 +666,7 @@ mod tests {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace
                 .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-                .expect("service profile admits reference");
+                .expect("store the native arena");
         });
     }
 
@@ -706,7 +706,7 @@ mod tests {
         };
         let arena_name = "owner_charts";
         let json_len = serde_json::to_vec(&record).expect("chart JSON").len();
-        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
@@ -717,7 +717,7 @@ mod tests {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace
                 .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-                .expect("service profile admits chart");
+                .expect("store the native arena");
         });
     }
 

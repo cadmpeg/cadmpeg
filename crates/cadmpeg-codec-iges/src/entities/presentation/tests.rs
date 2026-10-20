@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -26,124 +24,9 @@ use crate::test_support::test_solids_and_structure::{
 use crate::IgesCodec;
 
 use super::{
-    general_note_font_valid_for_global_table, mirror_flag_valid, retained_utf8, standard_color,
+    general_note_font_valid_for_global_table, mirror_flag_valid, standard_color,
     vertical_text_flag_valid,
 };
-
-#[test]
-fn presentation_names_refuse_retained_limit_before_copy() {
-    for operation in ["iges color definition name", "iges body property name"] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = retained_utf8(&ctx, b"COLOR", operation).unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
-        );
-    }
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap(),
-        Some("COLOR".into())
-    );
-    assert_eq!(
-        retained_utf8(&ctx, b"\xff", "iges color definition name").unwrap(),
-        None
-    );
-}
-
-fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::CollectionItems,
-        operation,
-        0,
-    );
-}
-
-fn assert_presentation_retained_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::RetainedBytes,
-        operation,
-        0,
-    );
-}
-
-#[test]
-fn presentation_appearance_slots_and_copies_refuse_limits() {
-    let color = owned_test_file(&[OwnedTestEntity {
-        entity_type: 314,
-        form: 0,
-        label: "COLOR".into(),
-        status: "00000200",
-        parameters: "314,20,40,60,6Hcustom;".into(),
-    }]);
-    assert_presentation_collection_refusal(&color, "iges neutral appearance slots");
-    assert_presentation_retained_refusal(&color, "iges appearance schema");
-
-    let bound = colored_explicit_vertex_loop_file();
-    assert_presentation_collection_refusal(&bound, "iges appearance binding slots");
-    for operation in [
-        "iges appearance body ID copy",
-        "iges appearance face ID copy",
-        "iges appearance ID copy",
-        "iges appearance object type",
-    ] {
-        assert_presentation_retained_refusal(&bound, operation);
-    }
-}
-
-#[test]
-fn presentation_loss_records_refuse_slot_and_message_limits() {
-    let invalid_color = owned_test_file(&[OwnedTestEntity {
-        entity_type: 314,
-        form: 0,
-        label: "COLOR".into(),
-        status: "00010200",
-        parameters: "314,20,40,60,6Hcustom;".into(),
-    }]);
-    assert_presentation_collection_refusal(&invalid_color, "iges entity loss slots");
-    assert_presentation_retained_refusal(&invalid_color, "iges entity loss message");
-}
-
-#[test]
-fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
-    let fonts = text_font_definition_file();
-    for operation in [
-        "iges presentation parameter index",
-        "iges presentation directory index",
-        "iges presentation font index",
-        "iges presentation decoded sequences",
-    ] {
-        assert_presentation_collection_refusal(&fonts, operation);
-    }
-    assert_presentation_collection_refusal(
-        &definition_levels_file(),
-        "iges presentation definition levels",
-    );
-    let color = owned_test_file(&[OwnedTestEntity {
-        entity_type: 314,
-        form: 0,
-        label: "COLOR".into(),
-        status: "00000200",
-        parameters: "314,20,40,60,6Hcustom;".into(),
-    }]);
-    assert_presentation_collection_refusal(&color, "iges presentation defined colors");
-}
 
 const GLOBAL_V4: &[u8] =
     b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
@@ -637,15 +520,18 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         native.arenas()["colors"][0].id(),
         "iges:presentation:color#D13"
     );
-    assert_eq!(native.arenas()["colors"][0].fields()["red_percent"], 20.0);
+    assert_eq!(
+        native.arenas()["colors"][0].fields().unwrap()["red_percent"],
+        20.0
+    );
     assert_eq!(native.arenas()["display_attributes"].len(), 7);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -695,12 +581,12 @@ fn decode_keeps_raw_display_pointers_when_definition_targets_do_not_resolve() {
         .iter()
         .find(|record| record.id() == "iges:presentation:display-attributes#D1")
         .unwrap();
-    assert_eq!(display.fields()["line_font_number"], -3);
-    assert!(display.fields()["line_font_definition"].is_null());
-    assert_eq!(display.fields()["level_number"], -99);
-    assert!(display.fields()["level_definition"].is_null());
-    assert_eq!(display.fields()["color_number"], -7);
-    assert!(display.fields()["color_definition"].is_null());
+    assert_eq!(display.fields().unwrap()["line_font_number"], -3);
+    assert!(display.fields().unwrap()["line_font_definition"].is_null());
+    assert_eq!(display.fields().unwrap()["level_number"], -99);
+    assert!(display.fields().unwrap()["level_definition"].is_null());
+    assert_eq!(display.fields().unwrap()["color_number"], -7);
+    assert!(display.fields().unwrap()["color_definition"].is_null());
 
     let pointer_losses = result
         .report()
@@ -729,16 +615,19 @@ fn decode_types_template_and_visible_blank_line_fonts() {
     let line_fonts = &native.arenas()["line_fonts"];
     assert_eq!(line_fonts.len(), 2);
     assert_eq!(line_fonts[0].id(), "iges:presentation:line-font#D3");
-    assert_eq!(line_fonts[0].fields()["kind"], "template");
-    assert_eq!(line_fonts[0].fields()["tangent_oriented"], true);
+    assert_eq!(line_fonts[0].fields().unwrap()["kind"], "template");
+    assert_eq!(line_fonts[0].fields().unwrap()["tangent_oriented"], true);
     assert_eq!(
-        line_fonts[0].fields()["template"],
+        line_fonts[0].fields().unwrap()["template"],
         "iges:entity:directory#1"
     );
-    assert_eq!(line_fonts[1].fields()["kind"], "visible_blank_pattern");
-    assert_eq!(line_fonts[1].fields()["segment_count"], 5);
     assert_eq!(
-        crate::test_support::native_bytes(&line_fonts[1].fields()["hexadecimal_pattern"])
+        line_fonts[1].fields().unwrap()["kind"],
+        "visible_blank_pattern"
+    );
+    assert_eq!(line_fonts[1].fields().unwrap()["segment_count"], 5);
+    assert_eq!(
+        crate::test_support::native_bytes(&line_fonts[1].fields().unwrap()["hexadecimal_pattern"])
             .into_iter()
             .map(u64::from)
             .collect::<Vec<_>>(),
@@ -748,9 +637,9 @@ fn decode_types_template_and_visible_blank_line_fonts() {
         .iter()
         .find(|record| record.id() == "iges:presentation:display-attributes#D7")
         .unwrap();
-    assert_eq!(line_display.fields()["line_font_number"], -5);
+    assert_eq!(line_display.fields().unwrap()["line_font_number"], -5);
     assert_eq!(
-        line_display.fields()["line_font_definition"],
+        line_display.fields().unwrap()["line_font_definition"],
         "iges:presentation:line-font#D5"
     );
     assert!(
@@ -851,9 +740,9 @@ fn decode_types_definition_levels_and_directory_level_links() {
     let levels = &native.arenas()["definition_levels"];
     assert_eq!(levels.len(), 1);
     assert_eq!(levels[0].id(), "iges:presentation:definition-levels#D1");
-    assert_eq!(levels[0].fields()["declared_count"], 3);
+    assert_eq!(levels[0].fields().unwrap()["declared_count"], 3);
     assert_eq!(
-        levels[0].fields()["levels"]
+        levels[0].fields().unwrap()["levels"]
             .as_array()
             .unwrap()
             .iter()
@@ -865,9 +754,9 @@ fn decode_types_definition_levels_and_directory_level_links() {
         .iter()
         .find(|record| record.id() == "iges:presentation:display-attributes#D3")
         .unwrap();
-    assert_eq!(line.fields()["level_number"], -1);
+    assert_eq!(line.fields().unwrap()["level_number"], -1);
     assert_eq!(
-        line.fields()["level_definition"],
+        line.fields().unwrap()["level_definition"],
         "iges:presentation:definition-levels#D1"
     );
     assert!(
@@ -886,8 +775,8 @@ fn decode_resolves_directory_line_weight_to_millimetres() {
         )
         .unwrap();
     let display = &result.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
-    assert_eq!(display.fields()["line_weight_number"], 1);
-    assert_eq!(display.fields()["line_weight_mm"], 1.0);
+    assert_eq!(display.fields().unwrap()["line_weight_number"], 1);
+    assert_eq!(display.fields().unwrap()["line_weight_mm"], 1.0);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -917,8 +806,11 @@ fn decode_accepts_v5_relative_directory_line_weights() {
         .unwrap();
 
     let display = &result.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
-    assert_eq!(display.fields()["line_weight_number"], 3);
-    assert_eq!(display.fields()["line_weight_mm"], serde_json::Value::Null);
+    assert_eq!(display.fields().unwrap()["line_weight_number"], 3);
+    assert_eq!(
+        display.fields().unwrap()["line_weight_mm"],
+        serde_json::Value::Null
+    );
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::LineWeightScaleUnavailable.kind()
             || loss.code == crate::loss::IgesLossCode::DisplayDataNotProjected.kind()
@@ -937,19 +829,22 @@ fn decode_distinguishes_absolute_and_incremental_text_templates() {
     assert_eq!(templates.len(), 2);
     let absolute = templates
         .iter()
-        .find(|template| template.fields()["form"] == 0)
+        .find(|template| template.fields().unwrap()["form"] == 0)
         .unwrap();
-    assert_eq!(absolute.fields()["origin_or_increment"][0], 10.0);
-    assert_eq!(absolute.fields()["origin_or_increment"][1], 20.0);
+    assert_eq!(absolute.fields().unwrap()["origin_or_increment"][0], 10.0);
+    assert_eq!(absolute.fields().unwrap()["origin_or_increment"][1], 20.0);
     let incremental = templates
         .iter()
-        .find(|template| template.fields()["form"] == 1)
+        .find(|template| template.fields().unwrap()["form"] == 1)
         .unwrap();
-    assert_eq!(incremental.fields()["font_code"], 18);
-    assert_eq!(incremental.fields()["mirror"], 1);
-    assert_eq!(incremental.fields()["vertical"], 1);
-    assert_eq!(incremental.fields()["origin_or_increment"][0], 2.0);
-    assert_eq!(incremental.fields()["origin_or_increment"][1], -1.0);
+    assert_eq!(incremental.fields().unwrap()["font_code"], 18);
+    assert_eq!(incremental.fields().unwrap()["mirror"], 1);
+    assert_eq!(incremental.fields().unwrap()["vertical"], 1);
+    assert_eq!(incremental.fields().unwrap()["origin_or_increment"][0], 2.0);
+    assert_eq!(
+        incremental.fields().unwrap()["origin_or_increment"][1],
+        -1.0
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -969,38 +864,50 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
     assert_eq!(fonts.len(), 2);
     let base = fonts
         .iter()
-        .find(|font| font.fields()["font_code"] == 101)
+        .find(|font| font.fields().unwrap()["font_code"] == 101)
         .unwrap();
-    assert_eq!(base.fields()["characters"].as_array().unwrap().len(), 2);
-    assert_eq!(base.fields()["characters"][0]["character_code"], 65);
     assert_eq!(
-        base.fields()["characters"][0]["motions"]
+        base.fields().unwrap()["characters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        base.fields().unwrap()["characters"][0]["character_code"],
+        65
+    );
+    assert_eq!(
+        base.fields().unwrap()["characters"][0]["motions"]
             .as_array()
             .unwrap()
             .len(),
         3
     );
-    assert!(base.fields()["characters"][0]["motions"][0]["pen_up"].is_null());
+    assert!(base.fields().unwrap()["characters"][0]["motions"][0]["pen_up"].is_null());
     assert_eq!(
-        base.fields()["characters"][0]["motions"][1]["pen_up"],
+        base.fields().unwrap()["characters"][0]["motions"][1]["pen_up"],
         false
     );
-    assert_eq!(base.fields()["characters"][1]["declared_motion_count"], 0);
+    assert_eq!(
+        base.fields().unwrap()["characters"][1]["declared_motion_count"],
+        0
+    );
     let modification = fonts
         .iter()
-        .find(|font| font.fields()["font_code"] == 102)
+        .find(|font| font.fields().unwrap()["font_code"] == 102)
         .unwrap();
     assert_eq!(
-        modification.fields()["supersedes_definition"],
+        modification.fields().unwrap()["supersedes_definition"],
         "iges:presentation:text-font#D1"
     );
     assert_eq!(
-        modification.fields()["characters"][0]["motions"][0]["pen_up"],
+        modification.fields().unwrap()["characters"][0]["motions"][0]["pen_up"],
         true
     );
     let template = &result.ir().native.namespace("iges").unwrap().arenas()["text_templates"][0];
     assert_eq!(
-        template.fields()["font_definition"],
+        template.fields().unwrap()["font_definition"],
         "iges:presentation:text-font#D3"
     );
     assert!(

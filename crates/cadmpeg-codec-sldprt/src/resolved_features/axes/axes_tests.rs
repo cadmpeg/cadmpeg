@@ -32,154 +32,14 @@ fn compact_line_reference_directions_test(
     object_end: usize,
     excluded_handles: &[usize],
 ) -> Vec<cadmpeg_ir::units::UnitVector3> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("line reference test input fits service policy");
-    compact_line_reference_directions(&ctx, payload, object_start, object_end, excluded_handles)
-        .expect("line reference test scan succeeds")
+    compact_line_reference_directions(payload, object_start, object_end, excluded_handles)
 }
 
 fn enrich_history_revolution_inputs_test(
     histories: &mut [FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let bytes = lanes
-        .first()
-        .map_or(&[][..], |lane| lane.native_payload.as_slice());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("revolution test input fits service policy");
-    enrich_history_revolution_inputs(&ctx, histories, lanes)
-        .expect("revolution test enrichment succeeds");
-}
-
-fn single_revolution_history() -> [FeatureHistory; 1] {
-    [FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![Feature {
-            id: "revolution".into(),
-            parent: "history".into(),
-            xml_tag: "Feature".into(),
-            tree_parent: None,
-            source_id: None,
-            ordinal: 0,
-            name: "Revolution".into(),
-            kind: String::new(),
-            input_class: Some("moRevolution_c".into()),
-            suppressed: false,
-            parameters: BTreeMap::new(),
-            dimension_properties: BTreeMap::new(),
-            properties: BTreeMap::new(),
-            text: None,
-            content: Vec::new(),
-        }],
-    }]
-}
-
-#[test]
-fn revolution_history_enrichment_refuses_collection_limit() {
-    let mut histories = single_revolution_history();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits service policy");
-    let error = enrich_history_revolution_inputs(&ctx, &mut histories, &[])
-        .expect_err("feature name index needs one item");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn revolution_history_enrichment_refuses_retained_limit() {
-    let mut histories = single_revolution_history();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits service policy");
-    let error = enrich_history_revolution_inputs(&ctx, &mut histories, &[])
-        .expect_err("feature name copy needs retained bytes");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn revolution_history_enrichment_refuses_work_limit() {
-    let mut histories = single_revolution_history();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits service policy");
-    let error = enrich_history_revolution_inputs(&ctx, &mut histories, &[])
-        .expect_err("feature name scan needs work");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn revolution_axis_binding_refuses_collection_limit() {
-    let histories = single_revolution_history();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits service policy");
-    let error = super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[])
-        .expect_err("native feature index needs one item");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn revolution_axis_binding_refuses_work_limit() {
-    let histories = single_revolution_history();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits service policy");
-    let error = super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[])
-        .expect_err("native feature index needs work");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn declared_line_reference_directions_refuse_collection_limit() {
-    let mut payload = vec![0; 240];
-    payload[136..144].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
-    payload[148..152].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
-    payload[200..208].copy_from_slice(&1.0f64.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("line reference input fits root policy");
-    let error = super::declared_line_reference_directions(&ctx, &payload, 0, payload.len())
-        .expect_err("declared direction requires one collection item");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn compact_line_reference_directions_refuse_work_limit() {
-    let payload = vec![0; 80];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("line reference input fits root policy");
-    let error = compact_line_reference_directions(&ctx, &payload, 0, payload.len(), &[])
-        .expect_err("one compact handle scan requires work");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    enrich_history_revolution_inputs(histories, lanes);
 }
 
 fn revolution_line_reference_inputs(
@@ -188,12 +48,7 @@ fn revolution_line_reference_inputs(
     object_end: usize,
     profile_sources: &HashSet<u32>,
 ) -> Option<(u32, Point3, Vector3)> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("revolution line reference input fits service policy");
-    typed_revolution_line_reference_inputs(&ctx, payload, object_start, object_end, profile_sources)
-        .expect("revolution line reference scan fits service policy")
+    typed_revolution_line_reference_inputs(payload, object_start, object_end, profile_sources)
         .map(|(source, origin, direction)| (source, origin.get(), *direction.as_raw()))
 }
 
@@ -203,121 +58,7 @@ fn profile_roster_construction_axis_test(
     sketch: &Sketch,
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("profile roster input fits root policy");
-    profile_roster_construction_axis(&ctx, lane, profile_native, sketch, surfaces)
-        .expect("profile roster scan fits service policy")
-}
-
-#[test]
-fn revolution_profile_roster_refuses_collection_limit() {
-    let lane = FeatureInputLane {
-        id: "lane".into(),
-        configuration: None,
-        native_payload: Vec::new().into(),
-        classes: Vec::new(),
-        names: Vec::new(),
-        scalars: Vec::new(),
-        relation_bindings: Vec::new(),
-        relation_instances: Vec::new(),
-        body_selections: Vec::new(),
-        edge_selections: Vec::new(),
-        surface_selections: Vec::new(),
-        generated_surface_identities: Vec::new(),
-        references: Vec::new(),
-        sketch_entities: vec![SketchInputEntity::new(
-            "marker",
-            "lane",
-            1,
-            0,
-            SketchInputKind::Point,
-        )],
-    };
-    let sketch = Sketch {
-        id: SketchId::mint("synthetic:test:id#sketch").expect("valid sketch id"),
-        name: None,
-        configuration: None,
-        visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        )
-        .expect("valid sketch frame"),
-        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-        native_ref: None,
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("empty payload fits root policy");
-    let error = profile_roster_construction_axis(&ctx, &lane, "profile-native", &sketch, &[])
-        .expect_err("one roster marker requires a collection slot");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-fn revolution_line_reference_limit_input() -> Vec<u8> {
-    let mut payload = vec![0; 240];
-    let handles = 96;
-    payload[64..68].copy_from_slice(&42u32.to_le_bytes());
-    payload[68..72].copy_from_slice(&0x5919_4a35u32.to_le_bytes());
-    payload[72..74].copy_from_slice(&0x81dbu16.to_le_bytes());
-    payload[76..80].copy_from_slice(&[0xff; 4]);
-    payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-    payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-    payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
-    for (index, value) in [0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 16 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
-    payload[handles + 64..handles + 68].copy_from_slice(CLASS_MARKER);
-    payload
-}
-
-#[test]
-fn revolution_line_reference_scan_refuses_collection_limit() {
-    let payload = revolution_line_reference_limit_input();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("line reference input fits root policy");
-    let error = typed_revolution_line_reference_inputs(
-        &ctx,
-        &payload,
-        32,
-        payload.len(),
-        &HashSet::from([42]),
-    )
-    .expect_err("one line reference candidate requires a collection slot");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn revolution_line_reference_scan_refuses_work_limit() {
-    let payload = revolution_line_reference_limit_input();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("line reference input fits root policy");
-    let error = typed_revolution_line_reference_inputs(
-        &ctx,
-        &payload,
-        32,
-        payload.len(),
-        &HashSet::from([42]),
-    )
-    .expect_err("one line reference scan requires work");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    profile_roster_construction_axis(lane, profile_native, sketch, surfaces)
 }
 
 fn temporary_axis_reference(
@@ -812,16 +553,10 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     );
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &lane.native_payload,
-            &lane.sketch_entities[3],
-            &markers,
-        )
-        .unwrap()
-        .into_iter()
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(&lane.native_payload, &lane.sketch_entities[3], &markers)
+            .into_iter()
+            .map(crate::records::SketchInputEntity::id)
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -1308,20 +1043,12 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         sketch_entities: entities,
     };
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("profile axis input fits root policy");
-
     assert_eq!(
-        profile_roster_origin_axis_endpoints(&ctx, &lane, "profile-native", &markers)
-            .expect("origin axis scan fits service policy"),
+        profile_roster_origin_axis_endpoints(&lane, "profile-native", &markers),
         Some([[0.0, 0.0], [0.0, 0.01]])
     );
     assert_eq!(
-        profile_roster_principal_axis_endpoints(&ctx, &lane, "profile-native", &markers)
-            .expect("principal axis scan fits service policy"),
+        profile_roster_principal_axis_endpoints(&lane, "profile-native", &markers),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
 }

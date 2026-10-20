@@ -89,14 +89,6 @@ mod budget {
         feature = "nx",
         feature = "sldprt"
     ))]
-    const CATIA_WORK: &[u8] = include_bytes!("fixtures/catia_tetrahedron_topology.CATPart");
-    #[cfg(all(
-        feature = "catia",
-        feature = "creo",
-        feature = "fcstd",
-        feature = "nx",
-        feature = "sldprt"
-    ))]
     const CREO: &[u8] = include_bytes!("../../cadmpeg-fuzz/seeds/creo_container/with_surface_rows");
     #[cfg(all(
         feature = "catia",
@@ -134,9 +126,7 @@ mod budget {
     #[derive(Clone, Copy)]
     enum Starvation {
         Entities,
-        CollectionItems,
         RecursionDepth,
-        WorkUnits,
         DecompressedBytes,
         RetainedBytes,
     }
@@ -152,9 +142,7 @@ mod budget {
         fn apply(self, limits: &mut ResourceLimits) {
             match self {
                 Self::Entities => limits.max_entities = 0,
-                Self::CollectionItems => limits.max_collection_items = 0,
                 Self::RecursionDepth => limits.max_recursion_depth = 0,
-                Self::WorkUnits => limits.max_work_units = 0,
                 Self::DecompressedBytes => {
                     limits.max_decompressed_bytes_total = 0;
                     limits.max_decompressed_bytes_per_expand = 0;
@@ -166,9 +154,7 @@ mod budget {
         const fn dimension(self) -> ResourceDimension {
             match self {
                 Self::Entities => ResourceDimension::Entities,
-                Self::CollectionItems => ResourceDimension::CollectionItems,
                 Self::RecursionDepth => ResourceDimension::RecursionDepth,
-                Self::WorkUnits => ResourceDimension::WorkUnits,
                 Self::DecompressedBytes => ResourceDimension::DecompressedBytes,
                 Self::RetainedBytes => ResourceDimension::RetainedBytes,
             }
@@ -237,19 +223,13 @@ mod budget {
         feature = "nx",
         feature = "sldprt"
     ))]
-    fn cases() -> [Case; 10] {
+    fn cases() -> [Case; 8] {
         [
             Case {
                 name: "catia/entities",
                 codec: &CATIA_CODEC,
                 bytes: CATIA,
                 starvation: Starvation::Entities,
-            },
-            Case {
-                name: "catia/work_units",
-                codec: &CATIA_CODEC,
-                bytes: CATIA_WORK,
-                starvation: Starvation::WorkUnits,
             },
             Case {
                 name: "creo/entities",
@@ -262,12 +242,6 @@ mod budget {
                 codec: &FREECAD_CODEC,
                 bytes: FREECAD,
                 starvation: Starvation::Entities,
-            },
-            Case {
-                name: "freecad/collection_items",
-                codec: &FREECAD_CODEC,
-                bytes: FREECAD,
-                starvation: Starvation::CollectionItems,
             },
             Case {
                 name: "freecad/recursion_depth",
@@ -324,7 +298,7 @@ mod budget {
                     .decode(
                         &mut Cursor::new(case.bytes),
                         &DecodeOptions {
-                            container_only: false,
+                            depth: cadmpeg_core::decode::DecodeDepth::Full,
                             policy,
                         },
                     )
@@ -369,6 +343,105 @@ mod budget {
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::Entities
             ));
+        }
+    }
+}
+
+/// Cross-codec local-cap contracts: a local work cap skips one item, reports a
+/// loss naming its constant, and never refuses the session.
+#[cfg(feature = "fcstd")]
+mod local_cap {
+    use std::fmt::Write as _;
+    use std::io::{Cursor, Write as _};
+
+    use cadmpeg_codec_freecad::FcstdCodec;
+    use cadmpeg_core::decode::{DecodeDepth, DecodePolicy};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    fn fcstd(document: &str) -> Vec<u8> {
+        let mut bytes = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut bytes);
+        zip.start_file(
+            "Document.xml",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored),
+        )
+        .expect("start entry");
+        zip.write_all(document.as_bytes()).expect("write entry");
+        zip.finish().expect("finish ZIP");
+        bytes.into_inner()
+    }
+
+    /// Two sketches: 4096 coincident segments whose endpoint matching needs
+    /// 2 * 4096² candidates, above the per-sketch
+    /// `MAX_PROFILE_ENDPOINT_CANDIDATES`, then a closed triangle.
+    fn dense_then_triangle() -> Vec<u8> {
+        let dense_count = 4096;
+        let dense = r#"<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="1" EndX="2" EndY="1"/></Geometry>"#
+            .repeat(dense_count);
+        let mut document = String::from(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Dense" id="1"/><Object type="Sketcher::SketchObject" name="Triangle" id="2"/></Objects>
+<ObjectData Count="2">"#,
+        );
+        write!(
+            document,
+            r#"<Object name="Dense"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="{dense_count}">{dense}</GeometryList></Property>
+</Properties></Object>
+<Object name="Triangle"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#
+        )
+        .expect("format document");
+        fcstd(&document)
+    }
+
+    #[test]
+    fn an_exhausted_local_cap_skips_one_item_under_every_profile() {
+        let bytes = dense_then_triangle();
+        for (profile, policy) in [
+            ("desktop", DecodePolicy::desktop()),
+            ("service", DecodePolicy::service()),
+        ] {
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        depth: DecodeDepth::Full,
+                        policy,
+                    },
+                )
+                .unwrap_or_else(|error| panic!("{profile}: a local cap refused: {error}"));
+            let sketch = |name: &str| {
+                result
+                    .ir()
+                    .model
+                    .sketches
+                    .iter()
+                    .find(|sketch| sketch.name.as_deref() == Some(name))
+                    .unwrap_or_else(|| panic!("{profile}: sketch {name} was dropped"))
+            };
+            assert!(sketch("Dense").profiles.is_empty(), "{profile}");
+            assert_eq!(sketch("Triangle").profiles.as_slice().len(), 1, "{profile}");
+            let bounded = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "sketch.profile-matching-bounded")
+                .collect::<Vec<_>>();
+            assert_eq!(bounded.len(), 1, "{profile}: {bounded:#?}");
+            assert!(
+                bounded[0]
+                    .message
+                    .contains("MAX_PROFILE_ENDPOINT_CANDIDATES"),
+                "{profile}: {}",
+                bounded[0].message
+            );
         }
     }
 }

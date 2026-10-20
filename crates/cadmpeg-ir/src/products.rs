@@ -960,10 +960,7 @@ impl<'a> AssemblyGraph<'a> {
 
     /// Returns an occurrence by identity.
     pub fn occurrence(&self, id: &OccurrenceId) -> Option<&'a Occurrence> {
-        crate::index::public_result(
-            self.occurrences
-                .occurrence(id, &crate::index::PublicStorage),
-        )
+        self.occurrences.occurrence(id)
     }
 }
 

@@ -3,13 +3,32 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use super::{outer_container_in_scope, LegacyModelingScope};
+use super::{
+    evaluate_formula_expression, evaluate_formula_expression_with_mode, outer_container_in_scope,
+    EvaluatedFormulaValue, LegacyModelingScope,
+};
 use crate::native::CatiaOuterContainerBinding;
+use std::collections::BTreeMap;
 
 mod evaluate;
 mod expression_admission;
 mod legacy_admission;
 mod transfer;
+
+pub(super) fn evaluated<'a>(
+    source: &'a str,
+    bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
+) -> Option<EvaluatedFormulaValue> {
+    evaluate_formula_expression(source, bindings)
+}
+
+pub(super) fn evaluated_with_mode<'a>(
+    source: &'a str,
+    bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
+    evaluate: bool,
+) -> Option<EvaluatedFormulaValue> {
+    evaluate_formula_expression_with_mode(source, bindings, evaluate)
+}
 
 fn binding(stream_name: &str) -> CatiaOuterContainerBinding {
     CatiaOuterContainerBinding {
@@ -53,24 +72,20 @@ fn legacy_parameter_scope_admits_unbound_fragment_runs() {
 }
 
 fn inactive_string_index(value: f64) -> Option<usize> {
-    crate::test_support::with_service_context(|ctx| {
-        let bindings = std::collections::BTreeMap::new();
-        let parser = super::FormulaExpressionParser {
-            source: "",
-            at: 0,
-            bindings: &bindings,
-            ctx,
-            refusal: None,
-            evaluate: false,
-            static_check: false,
-        };
-        parser.string_index(super::EvaluatedFormulaScalar::from_parts(
-            value,
-            super::FormulaDimension::SCALAR,
-            Some(true),
-            Some(value),
-        ))
-    })
+    let bindings = std::collections::BTreeMap::new();
+    let parser = super::FormulaExpressionParser {
+        source: "",
+        at: 0,
+        bindings: &bindings,
+        evaluate: false,
+        static_check: false,
+    };
+    parser.string_index(super::EvaluatedFormulaScalar::from_parts(
+        value,
+        super::FormulaDimension::SCALAR,
+        Some(true),
+        Some(value),
+    ))
 }
 
 #[test]
@@ -94,7 +109,7 @@ fn active_formula_refuses_unknown_integer_binding() {
         "#1_",
         super::static_formula_value(super::FormulaParameterType::Integer),
     )]);
-    assert!(super::evaluate_formula_expression("#1_ + 1", &bindings).is_none());
+    assert!(evaluated("#1_ + 1", &bindings).is_none());
 }
 
 #[test]
@@ -103,9 +118,9 @@ fn inactive_formula_preserves_unknown_integer_type() {
         "#1_",
         super::static_formula_value(super::FormulaParameterType::Integer),
     )]);
-    let result = super::evaluate_formula_expression("false ? #1_ + 1 ; 2", &bindings)
+    let result = evaluated("false ? #1_ + 1 ; 2", &bindings)
         .and_then(super::EvaluatedFormulaValue::scalar)
         .expect("known active result");
     assert_eq!(result.known_value(), Some(2.0));
-    assert!(super::evaluate_formula_expression_with_mode("#1_ + 1", &bindings, false).is_some());
+    assert!(evaluated_with_mode("#1_ + 1", &bindings, false).is_some());
 }

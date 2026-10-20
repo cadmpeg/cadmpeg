@@ -5,17 +5,16 @@
 
 mod consolidated;
 mod constraint;
+mod cylinder_headers;
 mod design;
-mod embedded_cylinders;
 mod entity;
 mod entity_suffix;
 mod entity_suffix_framing;
 mod formula_relation;
 mod inventory;
+mod legacy_value_names;
 mod load;
 mod relation_expression;
 mod relation_program;
 mod wire_projection;
-mod zero_entity_limits;
-
-mod locus_invariants;
+mod zero_entity_records;

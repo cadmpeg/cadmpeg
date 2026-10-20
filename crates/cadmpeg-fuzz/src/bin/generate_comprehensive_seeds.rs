@@ -2,6 +2,8 @@
 //! Writes deep topology, NURBS, and format-variant container seeds for
 //! SolidWorks, CATIA, Creo, and NX. Existing F3D seeds remain unchanged.
 
+
+
 use std::fs;
 
 use cadmpeg_fuzz::seed_paths::seed_dir;
@@ -531,7 +533,7 @@ mod sldprt {
                 &DecodePolicy::default(),
             )
             .expect("root");
-            let (material, _storage) = ctx
+            let material = ctx
                 .inflate_probe(root, payload_len, false)
                 .expect("probe")
                 .expect("material block");
@@ -773,9 +775,8 @@ mod nx {
     /// shell's region. Face, edge and vertex carry their tolerances.
     fn topology_partition_stream() -> Result<Vec<u8>, CodecError> {
         let mut s = Vec::new();
-        s.extend_from_slice(b"PS\x00\x00");
         s.extend_from_slice(
-            b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
+            b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00",
         );
 
         let mut body = record(12, 24)?;
@@ -866,7 +867,7 @@ mod nx {
 
     fn bspline_partition_stream() -> Result<Vec<u8>, CodecError> {
         let mut s = Vec::new();
-        s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
+        s.extend_from_slice(b"PS\x00\x00\x00\x1b: TRANSMIT FILE (partition)\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
         let mut surface = record(124, 23)?;
         put_ref(&mut surface, 2, 10);
         surface[18] = b'+';

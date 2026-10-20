@@ -289,11 +289,9 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
             return Ok(None);
         };
-        require_some!(nurbs.reverse_parameterization_in_range(
-            ctx,
-            intrinsic_range[0],
-            intrinsic_range[1]
-        )?);
+        require_some!(
+            nurbs.reverse_parameterization_in_range(intrinsic_range[0], intrinsic_range[1])
+        );
         let [Some(first), Some(second)] = [first, second].map(FiniteReal::new) else {
             return Ok(None);
         };
@@ -327,11 +325,9 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
             let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
                 return Ok(None);
             };
-            require_some!(nurbs.reverse_parameterization_in_range(
-                ctx,
-                intrinsic_range[0],
-                intrinsic_range[1]
-            )?);
+            require_some!(
+                nurbs.reverse_parameterization_in_range(intrinsic_range[0], intrinsic_range[1])
+            );
             Some(range)
         }
         _ => None,
@@ -781,25 +777,18 @@ mod tests {
     #[test]
     fn reversing_nurbs_rejects_overflow_without_mutating_the_carrier() {
         let original = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("finite NURBS fixture");
         let mut reversed = original.clone();
 
         let range = [cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite range"); 2];
         assert!(reversed
-            .reverse_parameterization_in_range(
-                &cadmpeg_test_support::service_decode_context(),
-                range[0],
-                range[1]
-            )
-            .expect("range reversal admission")
+            .reverse_parameterization_in_range(range[0], range[1])
             .is_none());
         assert_eq!(reversed, original);
     }

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::saved_section_missing_line_geometry;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 fn fixture() -> crate::feature::definitions::FeatureDefinition {
@@ -92,65 +90,10 @@ fn fixture() -> crate::feature::definitions::FeatureDefinition {
     }
 }
 
-fn run(policy: &DecodePolicy) -> Result<Option<(usize, SketchGeometry)>, CodecError> {
-    let definition = fixture();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
-    saved_section_missing_line_geometry(&ctx, &definition)
-}
-
-fn assert_item_refusal(limit: u64, operation: &'static str) {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let error = run(&policy).expect_err("missing-line collection exceeds cap");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn missing_line_refuses_trimmed_id_tree_node() {
-    assert_item_refusal(0, "creo missing-line trimmed ID nodes");
-}
-
-#[test]
-fn missing_line_refuses_saved_geometry_vec_growth() {
-    assert_item_refusal(1, "creo missing-line saved geometries");
-}
-
-#[test]
-fn missing_line_refuses_ordered_id_tree_node() {
-    assert_item_refusal(2, "creo missing-line ordered ID nodes");
-}
-
-#[test]
-fn missing_line_refuses_geometry_id_tree_node() {
-    assert_item_refusal(3, "creo missing-line geometry ID nodes");
-}
-
-#[test]
-fn missing_line_refuses_endpoint_vec_growth() {
-    assert_item_refusal(5, "creo missing-line endpoints");
-}
-
-#[test]
-fn missing_line_refuses_endpoint_pair_work() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let error = run(&policy).expect_err("two endpoints need two ordered comparisons");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo missing-line endpoint pairs"));
-}
-
 #[test]
 fn missing_line_keeps_service_geometry_and_offset() {
-    let (offset, geometry) = run(&DecodePolicy::service())
-        .expect("service resources")
-        .expect("missing line resolved");
+    let (offset, geometry) =
+        saved_section_missing_line_geometry(&fixture()).expect("missing line resolved");
     assert_eq!(offset, 41);
     assert_eq!(
         geometry,

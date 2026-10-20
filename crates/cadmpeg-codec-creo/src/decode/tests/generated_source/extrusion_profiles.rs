@@ -18,12 +18,7 @@ use cadmpeg_ir::sketches::{
 
 #[test]
 fn spline_extrusion_preserves_directrix_basis_and_weights() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
     let directrix = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -34,16 +29,13 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         Some(vec![1.0, 0.5, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid directrix");
     let surface = extruded_nurbs_surface(
-        &ctx,
         &directrix,
         [0.0, 0.0, 4.0],
         &"extrusion directrix fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("extrusion resources")
     .expect("valid extrusion surface");
 
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
@@ -91,18 +83,15 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-            circular_pcurve(
-                ctx,
-                [2.0, 2.0],
-                3.0,
-                start,
-                end,
-                &"circular pcurve fixture",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        })
-        .expect("resource admission")
+        let pcurve = circular_pcurve(
+            [2.0, 2.0],
+            3.0,
+            start,
+            end,
+            &"circular pcurve fixture",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect("compute the circular pcurve")
         .expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::decode::pcurve_uv(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -151,23 +140,23 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
     .expect("valid test fixture");
     let counterclockwise = vec![
         ProfileEntity::new(&ctx, arc.clone(), false)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
         ProfileEntity::new(&ctx, line.clone(), false)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
     ];
     let clockwise = vec![
         ProfileEntity::new(&ctx, arc, true)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
         ProfileEntity::new(&ctx, line, true)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
     ];
     assert!(
         (extrusion_profile_signed_area(&ctx, &counterclockwise)
-            .expect("service area resources")
+            .expect("compute the extrusion profile signed area")
             .expect("positive area")
             .get()
             - std::f64::consts::FRAC_PI_2)
@@ -176,7 +165,7 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
     );
     assert!(
         (extrusion_profile_signed_area(&ctx, &clockwise)
-            .expect("service area resources")
+            .expect("compute the extrusion profile signed area")
             .expect("negative area")
             .get()
             + std::f64::consts::FRAC_PI_2)
@@ -202,11 +191,15 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
         .expect("valid test fixture"),
         false,
     )
-    .expect("service resources")
+    .expect("construct the profile entity")
     .expect("valid profile entity")];
-    let profiles = ordered_extrusion_profiles(&ctx, vec![profile.clone()])
-        .expect("service ordering resources")
-        .expect("a full-turn arc is a closed profile");
+    let profiles = ordered_extrusion_profiles(
+        &ctx,
+        vec![profile.clone()],
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("order the extrusion profiles")
+    .expect("a full-turn arc is a closed profile");
     let area = profiles[0].area();
     assert_eq!(
         profiles
@@ -262,7 +255,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         circle.clone(),
     ));
 
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         resolved_sketch_profiles(
             ctx,
             &ir,
@@ -271,17 +264,21 @@ fn circle_remains_a_closed_extrusion_profile() {
             1,
         )
     })
-    .expect("resource admission")
+    .expect("resolve the sketch profiles")
     .expect("one circle profile");
     assert_eq!(
         profiles,
         vec![vec![ProfileEntity::new(&ctx, circle.clone(), false)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity")]]
     );
-    let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
-        .expect("service ordering resources")
-        .expect("closed circle");
+    let ordered = ordered_extrusion_profiles(
+        &ctx,
+        profiles.clone(),
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("order the extrusion profiles")
+    .expect("closed circle");
     let area = ordered[0].area();
     assert_eq!(
         ordered
@@ -293,18 +290,15 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-            extrusion_cap_pcurve(
-                ctx,
-                &circle,
-                reversed,
-                seam,
-                seam,
-                &"extrusion cap fixture",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        })
-        .expect("resource admission")
+        let pcurve = extrusion_cap_pcurve(
+            &circle,
+            reversed,
+            seam,
+            seam,
+            &"extrusion cap fixture",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect("compute the extrusion cap pcurve")
         .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::decode::pcurve_uv(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -346,7 +340,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         assert_eq!(
             profile_arc(
                 &ProfileEntity::new(&ctx, circle.clone(), reversed)
-                    .expect("service resources")
+                    .expect("construct the profile entity")
                     .expect("valid profile entity")
             ),
             Some((
@@ -365,7 +359,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         seam,
         profile_arc(
             &ProfileEntity::new(&ctx, circle, false)
-                .expect("service resources")
+                .expect("construct the profile entity")
                 .expect("valid profile entity")
         )
         .expect("circle arc"),

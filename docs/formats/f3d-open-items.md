@@ -20,15 +20,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
-### DR-09A. Sheet-metal `Hem` fixed-section semantics
+### DR-09A. Sheet-metal settings compatibility and override encoding
 
-**Question.** What independent native settings do the four retained fixed-section fields and the indexed settings record carry?
+**Question.** What is the Hem Tangent bend-position code, what do the compatibility values `1` and `4` encode, what does the version-3 rule-reference suffix encode, and how do the settings mask bits, optional slots, and override bundle tails map to independent rule controls?
 
-**Known.** `f3d.md` §3.1 "A `Hem` scope names one parameter" gives the owner layouts, the header shift, the parameter source kinds, and the four retained fields. The owner layout separates rolled and teardrop inputs from the gap-and-length inputs. The executed transition separates the gap-and-length forms through its two coaxial bend carriers and supplies the signed direction from the preceding source plane; the settled invariants are in `f3d.md`.
+**Known.** `f3d.md` §3.1 "The common Hem controls start" defines Adjacent code `3`, Flip `0`/`1`, the two null legacy references, and the form-specific owner layouts. "The common sheet-metal settings carrier" defines the versioned optional-reference runs, typed rule and presentation links, feature owner, paired header, and context. Mask `4` with slot 1 reaches BendRadius; mask `240` with slot 2 reaches BendWidth, BendDepth, and BendRemnant. The version-3 rule-reference suffix is `00 00` or `01 00 00`; its byte form remains native. Those joins do not assign each mask bit a meaning or define the suffix control, remaining slots, and bundle tails.
 
-The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` are not the form, direction, or bend-position selectors. The gap-and-length, radius-and-angle, and gap-length-radius frames have distinct fixed-section lengths and rule-radius offsets.
-
-**Need.** A source-preserving writer needs the independent settings carried by those fields and the indexed settings record.
+**Need.** A controlled Tangent Hem and one-control-at-a-time rule overrides must separate the bend-position code, compatibility lanes, individual mask bits, and optional slots. Paired controls must distinguish the two version-3 rule-reference suffix forms. A complete bundle grammar must account for each byte after the verified owner prefixes before a writer generates those bundles.
 
 ### DR-12. Placement `refType` values
 
@@ -38,21 +36,13 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored.
 
-### DR-13. Other `WorkPoint` `refType` values
+### DR-14. `SurfacePatch` boundary-side ordinal mapping
 
-**Question.** What construction does each `refType` value other than `5`, `7`, `8`, `10`, `14`, and `20` select?
+**Question.** Which `PatchFlip` ordinal selects each continuity-direction Boolean and incident face?
 
-**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, the counted input-reference run, and the construction rules, input arities, and carrier envelopes for values `5`, `7`, `8`, `10`, `14`, and `20`. Value `20` uses the finite evaluated `PathDistance` scalar as a normalized path fraction. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point. The decoder retains every other `refType`, the serialized input count, and every input reference without assigning a rule-specific meaning.
+**Known.** `f3d.md` §3.1 assigns `PatchFlip` to the per-boundary u32 at `R + 26` and defines `PatchScale` as the continuity weight. Raw side ordinals `0` and `2` remain distinct. The version-7 scope's whole-surface normal Flip is independent of this ordinal.
 
-**Need.** A writer must emit the `refType` that matches every other input form it writes, and a neutral model that edits such an input must know which rule re-solves the point.
-
-### DR-14. `SurfacePatch` boundary-side and scale values
-
-**Question.** Which field holds the boundary side of a `SurfacePatch` component? What does `PatchScale` hold?
-
-**Known.** `f3d.md` §3.1 defines the boundary-settings member order, offsets, and types. `PatchContinuity` values `0`, `1`, and `2` select positional, tangent, and curvature continuity per boundary component.
-
-**Need.** We must assign the boundary-side selector and the physical quantity represented by `PatchScale`. The mapping must distinguish opposite boundary sides and unequal continuity weights without deriving either value from the generated surface.
+**Need.** One supported edge with two distinct incident faces must be authored with each continuity-direction Boolean while continuity, edge order, and weight remain fixed. The saved ordinals and the API's first co-edge face must identify the side mapping.
 
 ### DR-19. Construction-group fields
 
@@ -251,6 +241,88 @@ the ordered face-selection groups.
 **Need.** A source-less writer must select the referenced record and generate
 its payload. The physical thread construction and face selections decode
 without assigning a semantic role to that record.
+
+### DR-74. Lost-edge runs shorter than the operand list
+
+**Question.** Which operands of a counted edge group do the records of a
+shorter unresolved run name?
+
+**Known.** `f3d.md` §3.1 "An unresolved edge-selection record consists of"
+gives the record layout, the run chaining through following headers, and the
+group that a run terminates at. A run with the group's operand count carries
+one record per operand. A ten-operand group with a one-record run occurs.
+
+**Need.** A decoder must assign each unresolved record to its operand before
+it can bind a shorter run. The decoder binds only a run whose cardinality
+equals the operand count. The records of any other run stay unrepaired lost
+edge references.
+
+### DR-75. Local occurrence carrier GUID
+
+**Question.** What does the LP-UTF16 carrier GUID at offset 44 of a local
+component-occurrence carrier identify?
+
+**Known.** `f3d.md` §3.1 "The component-record reference names the component
+definition record." gives the component-definition join through the
+component-record reference and the naming-space binding. Two carriers that
+name one component definition record can store different carrier GUIDs. The
+`CopyPaste` and `R-Pattern` joins select carriers by equal carrier GUID.
+
+**Need.** A writer must emit this GUID for each new occurrence.
+
+**Conflict.** When a component definition record stores no naming-space
+binding, the decoder keys the neutral component definition by the carrier GUID.
+Two carriers of one definition then project as two definitions.
+
+### DR-76. Nested local occurrence placement
+
+**Question.** How does a local occurrence whose owner entity is the root entity
+of a non-root component compose into the document frame?
+
+**Known.** `f3d.md` §3.1 "The component-record reference names the component
+definition record." gives the owner entity and the root-instance record. An
+occurrence that the root component contains is a child of the root occurrence,
+and its transform maps the component definition into the root component frame.
+
+**Need.** A reader must place every occurrence of a nested component in each
+occurrence of its containing component. The decoder does not place a nested
+occurrence and reports `assembly.local-occurrence-unplaced`.
+
+### DR-77. Operation placements of identity-frame carriers
+
+**Question.** Does the `CopyPaste` source placement or the `R-Pattern` first
+instance transform equal the placement of the carrier it names?
+
+**Known.** `f3d.md` §3.1 "A local component occurrence is an
+occurrence-placement record" gives the identity frame and its identity
+placement. `f3d.md` §3.1 "Legacy `CopyPaste` is a local component-occurrence
+operation." and `f3d.md` §3.1 "When a one-direction `R-Pattern` repeats a local
+component occurrence" give the scope transforms for the source and the seed.
+
+**Need.** A reader must select one placement for each occurrence.
+
+**Conflict.** When the source or seed carrier is an identity frame and the scope
+transform is not the identity, the two placements disagree. The decoder uses
+the scope transform.
+
+### DR-78. Symmetric Extrude distance measurement
+
+**Question.** Which field states whether the distance of a symmetric
+distance `Extrude` is the travel on each side or the whole travel?
+
+**Known.** `f3d.md` §3.1 "An Extrude scope can carry one or both of its
+distance and taper inputs" gives the fixed lanes. One symmetric `Extrude`
+without indexed parameters stores lane zero as `1.2` cm on a Sketch in the
+plane `x = 150.5` mm. Its operation history holds planes at `x = 138.5` mm
+and `x = 162.5` mm, which is `12` mm on each side. The prologue stores
+travel direction `3`, face-extend option `2`, and side extents `[1, 0]`.
+
+**Need.** The neutral symmetric extent states the whole travel. A reader must
+know the measurement form to convert the stored distance. The decoder keeps
+the native feature when a fixed lane carries a symmetric distance.
+
+**Conflict.** The decoder converts an `AlongDistance` parameter of a symmetric
+`Extrude` to the whole travel without reading a measurement form.
 
 ## 2. External references
 

@@ -274,7 +274,7 @@ pub(crate) fn rmfastload_prt() -> Vec<u8> {
 pub(crate) fn many_face_partition_stream(node_id_start: u32) -> Vec<u8> {
     let mut stream = Vec::new();
     stream.extend_from_slice(
-        b"PS\x00\x00XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
+        b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00",
     );
     let mut body = record(12, 24);
     put_ref(&mut body, 2, 2);
@@ -359,7 +359,7 @@ pub(crate) fn prt_with_two_terminal_bodies() -> Vec<u8> {
     payload.resize(first_wrapper_offset, 0);
     for compressed in compressed_streams {
         payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
-        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
         payload.extend_from_slice(&compressed);
         if payload.len() < second_wrapper_offset {
             payload.resize(second_wrapper_offset, 0);

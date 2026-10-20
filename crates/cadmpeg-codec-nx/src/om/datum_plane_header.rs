@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane common headers and exact construction forms.
 
+use std::num::NonZeroU8;
+
 use super::compact::CompactIndexAtom;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SingleForm {
-    Tag1b,
-    Tag23,
+    CountTwo(NonZeroU8),
     Tag28,
 }
 
 impl SingleForm {
     pub(crate) fn from_header(count: u8, tag: u8) -> Option<Self> {
         match (count, tag) {
-            (2, 0x1b) => Some(Self::Tag1b),
-            (2, 0x23) => Some(Self::Tag23),
+            (2, tag) => NonZeroU8::new(tag).map(Self::CountTwo),
             (3, 0x28) => Some(Self::Tag28),
             _ => None,
         }
@@ -24,7 +24,7 @@ impl SingleForm {
 
     fn separator(self) -> &'static [u8] {
         match self {
-            Self::Tag1b | Self::Tag23 => &[0x01],
+            Self::CountTwo(_) => &[0x01],
             Self::Tag28 => &[0x01, 0x29, 0x01, 0x02],
         }
     }
@@ -39,15 +39,14 @@ impl SingleForm {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
         ];
         match self {
-            Self::Tag1b | Self::Tag23 => &COUNT_TWO_SUFFIX,
+            Self::CountTwo(_) => &COUNT_TWO_SUFFIX,
             Self::Tag28 => &SUFFIX,
         }
     }
 
     fn header(self) -> (u8, u8) {
         match self {
-            Self::Tag1b => (2, 0x1b),
-            Self::Tag23 => (2, 0x23),
+            Self::CountTwo(tag) => (2, tag.get()),
             Self::Tag28 => (3, 0x28),
         }
     }
@@ -229,48 +228,35 @@ impl<B> DatumPlaneFrame<B> {
 }
 
 impl DatumPlaneFrame<()> {
-    pub(crate) fn resolve<B, E>(
+    pub(crate) fn resolve<B>(
         &self,
-        mut block: impl FnMut(u32) -> Result<Option<B>, E>,
-    ) -> Result<Option<DatumPlaneFrame<B>>, E> {
+        mut block: impl FnMut(u32) -> Option<B>,
+    ) -> Option<DatumPlaneFrame<B>> {
         let branch = match &self.branch {
             DatumPlaneBranch::Single {
                 form,
                 descriptor,
                 object,
-            } => {
-                let Some(descriptor_block) = block(descriptor.0.value())? else {
-                    return Ok(None);
-                };
-                let Some(object_block) = block(object.0.value())? else {
-                    return Ok(None);
-                };
-                DatumPlaneBranch::Single {
-                    form: *form,
-                    descriptor: (descriptor.0, descriptor_block),
-                    object: (object.0, object_block),
-                }
-            }
+            } => DatumPlaneBranch::Single {
+                form: *form,
+                descriptor: (descriptor.0, block(descriptor.0.value())?),
+                object: (object.0, block(object.0.value())?),
+            },
             DatumPlaneBranch::Double {
                 form,
                 objects: [first, second],
-            } => {
-                let Some(first_block) = block(first.0.value())? else {
-                    return Ok(None);
-                };
-                let Some(second_block) = block(second.0.value())? else {
-                    return Ok(None);
-                };
-                DatumPlaneBranch::Double {
-                    form: *form,
-                    objects: [(first.0, first_block), (second.0, second_block)],
-                }
-            }
+            } => DatumPlaneBranch::Double {
+                form: *form,
+                objects: [
+                    (first.0, block(first.0.value())?),
+                    (second.0, block(second.0.value())?),
+                ],
+            },
         };
-        Ok(Some(DatumPlaneFrame {
+        Some(DatumPlaneFrame {
             origin: self.origin,
             branch,
-        }))
+        })
     }
 }
 
@@ -293,7 +279,7 @@ pub(crate) fn datum_plane_payload_header(
     })
 }
 
-/// Decode any datum-plane branch carrying one descriptor and one object reference.
+/// Decode exact descriptor/object grammar with a retained part-local class selector.
 pub(crate) fn datum_plane_descriptor_reference_branch(
     record: OperationPayload<'_>,
 ) -> Option<DatumPlaneFrame<()>> {
@@ -355,7 +341,7 @@ mod tests {
                 let single = SingleForm::from_header(count, tag);
                 assert_eq!(
                     single.is_some(),
-                    matches!((count, tag), (2, 0x1b | 0x23) | (3, 0x28))
+                    (count == 2 && tag != 0) || (count == 3 && tag == 0x28)
                 );
                 if let Some(form) = single {
                     assert_eq!(form.header(), (count, tag));
@@ -370,14 +356,53 @@ mod tests {
     }
 
     #[test]
+    fn count_two_branch_retains_selector_and_requires_complete_exact_grammar() {
+        use super::{datum_plane_descriptor_reference_branch, OperationPayload};
+        let mut payload = [
+            0x17, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x18, 0x01, 0x02, 0x80, 0x0a, 0x01, 0xf0,
+            0x60, 0x00, 0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
+        ];
+        for tag in [0x18, 0x1b, 0x23, 0x33] {
+            payload[7] = tag;
+            let parsed = datum_plane_descriptor_reference_branch(
+                OperationPayload::new(&payload, 100, "DATUM_PLANE").unwrap(),
+            )
+            .unwrap();
+            assert_eq!(parsed.header(), (2, tag));
+            assert_eq!(parsed.descriptor().unwrap().0.value(), 10);
+            assert_eq!(parsed.descriptor().unwrap().2, 110);
+            let (object, (), offset) = parsed.objects().next().unwrap();
+            assert_eq!((object.value(), offset), (96, 113));
+            for end in 0..payload.len() {
+                assert!(datum_plane_descriptor_reference_branch(
+                    OperationPayload::new(&payload[..end], 100, "DATUM_PLANE").unwrap(),
+                )
+                .is_none());
+            }
+        }
+        for at in [7, 12, 16, 26] {
+            let mut wrong = payload;
+            wrong[at] = if at == 7 { 0 } else { wrong[at] ^ 1 };
+            assert!(datum_plane_descriptor_reference_branch(
+                OperationPayload::new(&wrong, 100, "DATUM_PLANE").unwrap(),
+            )
+            .is_none());
+        }
+        assert!(datum_plane_descriptor_reference_branch(
+            OperationPayload::new(&payload, 100, "DATUM_CSYS").unwrap(),
+        )
+        .is_none());
+    }
+
+    #[test]
     fn frame_positions_and_end_bounds_follow_each_form() {
         use super::{CompactIndexAtom, DatumPlaneBranch, DatumPlaneFrame, PayloadIndexToken};
         let descriptor = CompactIndexAtom::from_wire(4096, &[0x90, 0]).unwrap();
         let first = PayloadIndexToken::from_wire(0, &[0xf0, 0]).unwrap();
         let second = PayloadIndexToken::from_wire(256, &[0xf1, 1, 0]).unwrap();
         for (form, object_offset, byte_len) in [
-            (SingleForm::Tag1b, 113, 28),
-            (SingleForm::Tag23, 113, 28),
+            (SingleForm::from_header(2, 0x1b).unwrap(), 113, 28),
+            (SingleForm::from_header(2, 0x23).unwrap(), 113, 28),
             (SingleForm::Tag28, 116, 54),
         ] {
             let branch = DatumPlaneBranch::Single {
@@ -421,13 +446,9 @@ mod tests {
                 [110, second_offset]
             );
             assert!(frame
-                .resolve(|index| Ok::<_, ()>((index == 0).then_some("block")))
-                .unwrap()
+                .resolve(|index| (index == 0).then_some("block"))
                 .is_none());
-            let resolved = frame
-                .resolve(|index| Ok::<_, ()>(Some(index.to_string())))
-                .unwrap()
-                .unwrap();
+            let resolved = frame.resolve(|index| Some(index.to_string())).unwrap();
             assert_eq!(
                 resolved
                     .objects()

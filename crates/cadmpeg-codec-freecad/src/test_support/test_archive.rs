@@ -47,7 +47,7 @@ pub(crate) fn rewrite_entry(
     let mut found = false;
     for index in 0..source.len() {
         let mut entry = source.by_index(index).expect("archive entry");
-        let name = entry.name().to_owned();
+        let name = entry.name().expect("entry name").into_owned();
         let mut data = Vec::new();
         std::io::copy(&mut entry, &mut data).expect("read entry");
         if name == target {
@@ -69,7 +69,7 @@ pub(crate) fn rewrite_entry(
 
 pub(crate) fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
     let errors = cadmpeg_ir::validate_neutral(ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .into_iter()
         .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)

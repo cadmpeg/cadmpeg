@@ -15,8 +15,8 @@ pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, Code
     let mut supports = BTreeSet::new();
     let mut visit = |id: &str| {
         if !supports.contains(id) {
-            let id = ctx.copy_retained_text(id, "STEP export construction support identity")?;
-            ctx.insert_btree_set(&mut supports, id, "STEP export construction support set")?;
+            let id = id.to_owned();
+            supports.insert(id);
         }
         Ok(())
     };
@@ -25,12 +25,10 @@ pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, Code
             continue;
         };
         while let SolvedCurveGeometry::Transformed(placed) = geometry {
-            ctx.charge_work(1, "STEP export placed construction support")?;
             geometry = placed.basis();
         }
         if let SolvedCurveGeometry::Composite { segments, .. } = geometry {
             for segment in segments {
-                ctx.charge_work(1, "STEP export composite construction support")?;
                 visit(segment.curve.as_str())?;
             }
         }

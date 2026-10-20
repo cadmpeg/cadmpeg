@@ -4,30 +4,7 @@ use crate::om::counted_pattern_references::CountedPatternReferences;
 use crate::om::operation_record::OperationPayload;
 
 fn read_counted_pattern_test(record: OperationPayload<'_>) -> Option<CountedPatternReferences<()>> {
-    crate::test_support::with_decode_context(|ctx| CountedPatternReferences::read(ctx, record))
-        .unwrap()
-}
-
-#[test]
-fn counted_pattern_references_refuse_collection_limit() {
-    let mut payload = vec![1, 2, 0xf1, 0x06, 0xb1];
-    payload.extend_from_slice(&[
-        0, 0, 0, 0x37, 0xff, 0xff, 1, 0, 0, 0, 0x38, 0xff, 1, 0xff, 0xff, 0xff, 0xff, 1, 0xff,
-    ]);
-    let record = OperationPayload::new(&payload, 0, "Pattern Feature").unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &payload,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = CountedPatternReferences::read(ctx, record).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-            );
-        },
-    );
+    CountedPatternReferences::read(record)
 }
 
 #[test]

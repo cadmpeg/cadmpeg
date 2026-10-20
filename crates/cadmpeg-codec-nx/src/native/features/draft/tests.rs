@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    FeatureDraftConstructionBinary32Lane, FeatureDraftConstructionFixedLane,
+    FeatureDraftConstructionBinary32Lane, FeatureDraftConstructionBinary64Lane,
     FeatureDraftConstructionIdentityFrame, FeatureDraftConstructionIndexLane,
     FeatureDraftConstructionTerminalLane,
 };
@@ -10,11 +10,10 @@ use crate::native::features::test_support::check_lane_wire;
 
 #[test]
 fn draft_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeatureDraftConstructionFixedLane>(
-        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
+    check_lane_wire::<FeatureDraftConstructionBinary64Lane>(
+        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[2.0,-32.0],"raw_values":["3000000000000000","b040000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
         &[
             "values",
-            "markers",
             "raw_values",
             "value_payload_offsets",
             "value_source_offsets",

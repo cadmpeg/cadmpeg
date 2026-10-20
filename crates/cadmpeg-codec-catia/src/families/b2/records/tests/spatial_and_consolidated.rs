@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use cadmpeg_test_support::edit;
 
 use crate::families::b2::records::tests::b2_spatial_circle_stream;
 use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
-    b2_edge_node_stream, b2_embedded_cylinder_stream, inner_no_directory_b2_catpart,
+    b2_edge_node_stream, b2_wide_cylinder_stream, inner_no_directory_b2_catpart,
 };
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -56,31 +58,36 @@ fn b2_spatial_circle_parser_rejects_nonorthonormal_invalid_charts_and_nonfinite_
 }
 
 #[test]
-fn b2_composite_parser_reads_embedded_cylinder_frame() {
-    let bytes = b2_embedded_cylinder_stream();
-    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
+fn b2_cylinder_parser_reads_complete_wide_header() {
+    let bytes = b2_wide_cylinder_stream();
+    let cylinders = crate::families::b2::records::b2_cylinders(&bytes);
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].object_id, 0x5678);
-    assert_eq!(cylinders[0].wrapper_pos, 0);
     assert_eq!(
-        cylinders[0].cylinder.u_range.endpoints(),
+        cylinders[0]
+            .header
+            .compact_operand()
+            .expect("closed compact header")
+            .value(),
+        0x5678
+    );
+    assert_eq!(
+        cylinders[0].u_range.endpoints(),
         [0.0, 4.0 * std::f64::consts::PI]
     );
-    assert!(crate::families::b2::records::b2_cylinders(&bytes).is_empty());
 }
 
 #[test]
-fn b2_composite_parser_reads_the_complete_type_three_group() {
-    let one = b2_embedded_cylinder_stream();
+fn b2_cylinder_parser_reads_independent_repeated_frames() {
+    let one = b2_wide_cylinder_stream();
     let frame = one[7..].to_vec();
     let mut bytes = one;
     for _ in 0..30 {
         bytes.extend_from_slice(&frame);
     }
 
-    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
+    let cylinders = crate::families::b2::records::b2_cylinders(&bytes);
     assert_eq!(cylinders.len(), 31);
-    assert!(cylinders.iter().all(|cylinder| cylinder.wrapper_pos == 0));
+    assert!(cylinders.windows(2).all(|pair| pair[0].pos < pair[1].pos));
 }
 
 #[test]
@@ -90,7 +97,7 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
             ctx,
             inner_no_directory_b2_catpart()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::InnerNoDirectory
     );
@@ -98,21 +105,20 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(
-        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.0 })
-    );
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+            if { cylinder_surface.radius().get() == 2.0 }
+    ));
 }
 
 #[test]
 fn offset_support_binds_by_native_domain_knot_limits() {
-    let mut carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A5 surfaces");
     let mut decoy = carriers[0].clone();
     edit::replace(&mut decoy.geometry, |previous| {
         let mut knots = previous.v_knots().to_vec();
@@ -124,7 +130,6 @@ fn offset_support_binds_by_native_domain_knot_limits() {
             }
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -138,7 +143,6 @@ fn offset_support_binds_by_native_domain_knot_limits() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     carriers.push(decoy);
@@ -160,10 +164,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     };
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::offset_support_carriers(ctx, &[offset], &carriers)
-                .expect("service decode")
-        }),
+        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]
     );
 }
@@ -171,14 +172,11 @@ fn offset_support_binds_by_native_domain_knot_limits() {
 #[test]
 fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let tiny = 1e-200_f64;
-    let mut carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A5 surfaces");
     let surface = &mut carriers[0].geometry;
     edit::replace(surface, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -192,7 +190,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             }
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -206,7 +203,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(surface, |previous| {
@@ -221,7 +217,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             }
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -235,7 +230,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     let interval = |range: [f64; 2]| {
@@ -250,33 +244,23 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         v_range: interval([0.0, tiny]),
     };
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::offset_support_carriers(
-                ctx,
-                std::slice::from_ref(&exact),
-                &carriers,
-            )
-            .expect("service decode")
-        }),
+        crate::families::b2::records::offset_support_carriers(
+            std::slice::from_ref(&exact),
+            &carriers,
+        ),
         [Some(0)]
     );
 
     let mut outside_u = exact.clone();
     outside_u.u_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::offset_support_carriers(ctx, &[outside_u], &carriers)
-                .expect("service decode")
-        }),
+        crate::families::b2::records::offset_support_carriers(&[outside_u], &carriers),
         [None]
     );
     let mut outside_v = exact;
     outside_v.v_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::offset_support_carriers(ctx, &[outside_v], &carriers)
-                .expect("service decode")
-        }),
+        crate::families::b2::records::offset_support_carriers(&[outside_v], &carriers),
         [None]
     );
 }
@@ -305,6 +289,46 @@ fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
     let mut invalid_terminal = bytes;
     *invalid_terminal.last_mut().expect("edge terminal") = 0x03;
     assert!(crate::families::b2::records::b2_edge_nodes(&invalid_terminal).is_empty());
+}
+
+#[test]
+fn consolidated_edge_header_values_preserve_the_same_payload() {
+    let original = b2_edge_node_stream();
+    let expected = crate::families::b2::records::b2_edge_nodes(&original).remove(0);
+    for value in [1u16, 2, 3, 63, 64, 255, 256, 2232, 62701, u16::MAX] {
+        let token = match value {
+            0..=63 => vec![u8::try_from(4 * value + 1).expect("narrow header")],
+            64..=255 => vec![4, u8::try_from(value).expect("middle header")],
+            _ => {
+                let [low, high] = value.to_le_bytes();
+                vec![8, low, high]
+            }
+        };
+        let packed = token
+            .iter()
+            .enumerate()
+            .fold(0u32, |packed, (index, byte)| {
+                packed | (u32::from(*byte) << (8 * index))
+            });
+        let mut bytes = vec![
+            0xb1 + u8::try_from(token.len()).expect("header width"),
+            original[1],
+            original[2],
+            original[3],
+        ];
+        bytes.extend_from_slice(&token);
+        bytes.extend_from_slice(&original[5..]);
+        let [node] = crate::families::b2::records::b2_edge_nodes(&bytes)
+            .try_into()
+            .expect("one edge for every canonical header value");
+        assert_eq!(
+            node,
+            crate::families::b2::records::B2EdgeNode {
+                header_token: packed,
+                ..expected
+            }
+        );
+    }
 }
 
 #[test]

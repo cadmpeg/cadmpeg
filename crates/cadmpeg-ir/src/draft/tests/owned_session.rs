@@ -5,27 +5,6 @@ use crate::CadIr;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
-fn owned_commit_session_reuses_borrowed_identity_storage_until_extraction() {
-    let identity = format!("test:model:point#{}", "p".repeat(1024));
-    let mut ir = CadIr::empty();
-    ir.model.points.push(super::point(&identity));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 4096;
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut session = CommitSession::new(ir, &ctx, None).unwrap();
-    assert!(session.contains(&identity).unwrap());
-    assert!(session.contains(&identity).unwrap());
-    let ir = session.into_parts().0;
-    assert_eq!(ir.model.points[0].id.as_str(), identity);
-    let reservation = ctx.reserve_scoped(4096, "owned cache released").unwrap();
-    drop(reservation);
-    ctx.finish_session().unwrap();
-}
-
-#[test]
 fn owned_commit_session_preserves_cross_candidate_references_and_rejections() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
@@ -98,9 +77,6 @@ fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4096;
-    policy.limits.max_materialized_bytes = 4096;
-    // Each moved record has one slot, one cache key, and one cache position.
-    policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     session.push_unknown(first).unwrap();
@@ -125,10 +101,6 @@ fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
     assert_eq!(records[0].links(), ["test:model:point#later"]);
     assert_eq!(records[1].id().as_str(), second_id);
     assert_eq!(records[1].offset(), 29);
-    let reservation = ctx
-        .reserve_scoped(4096, "staged unknown cache released")
-        .unwrap();
-    drop(reservation);
     ctx.finish_session().unwrap();
 }
 
@@ -165,48 +137,6 @@ fn staged_unknown_cache_resolves_draft_references_and_rejects_identity_collision
     assert_eq!(ir.model.vertices[0].point.as_str(), target);
     assert_eq!(ir.model.vertices[1].point.as_str(), target);
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn staged_unknown_append_refusal_preserves_source_and_cached_positions() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-    let first = "test:source:unknown#first";
-    let second = "test:source:unknown#second";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
-    session
-        .push_unknown(crate::unknown::UnknownRecord::retained(
-            first.try_into().unwrap(),
-            0,
-            Vec::new(),
-            Vec::new(),
-        ))
-        .unwrap();
-    assert!(session.contains(first).unwrap());
-    let Err(CodecError::ResourceLimit(limit)) =
-        session.push_unknown(crate::unknown::UnknownRecord::retained(
-            second.try_into().unwrap(),
-            0,
-            Vec::new(),
-            Vec::new(),
-        ))
-    else {
-        panic!("next record slot must refuse");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert!(
-        matches!(session.contains(first), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert_eq!(session.unknowns().len(), 1);
-    let (_, records) = session.into_parts();
-    assert_eq!(records[0].id().as_str(), first);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
 }
 
 #[test]
@@ -288,10 +218,9 @@ fn owned_source_session_clears_cached_source_positions() {
 #[test]
 fn speculative_session_append_reuses_source_cache_across_candidates() {
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
+    let policy = DecodePolicy::service();
     // The source record and its cache use three slots. Each point adds a
     // staging key and position, a committed key and position, and an arena slot.
-    policy.limits.max_collection_items = 13;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let source = "test:source:unknown#owner";
@@ -395,19 +324,22 @@ fn speculative_session_append_keeps_original_resource_refusal_and_model() {
         points: vec![super::point("test:model:point#refused")],
         ..Default::default()
     };
-    let Err(CodecError::ResourceLimit(limit)) =
-        session.try_append(model, crate::native::Native::default(), |_, _| {
-            ctx.charge_work(u64::MAX / 2, "test session callback refusal")?;
-            Ok(Ok::<_, ()>(()))
-        })
-    else {
+    let Err(CodecError::ResourceLimit(limit)) = session.try_append(
+        model,
+        crate::native::Native::default(),
+        |_, _| -> Result<Result<(), ()>, CodecError> {
+            let mut frames = Vec::new();
+            loop {
+                frames.push(ctx.enter_nested("test session callback refusal")?);
+            }
+        },
+    ) else {
         panic!("session callback refusal stays outer");
     };
     assert_eq!(limit.operation, "test session callback refusal");
     assert_eq!(session.document(), &before);
-    assert!(
-        matches!(session.contains("test:model:point#first"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
+    assert!(session.contains("test:model:point#first").unwrap());
+    assert!(!session.contains("test:model:point#refused").unwrap());
     assert_eq!(session.into_parts().0, before);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)

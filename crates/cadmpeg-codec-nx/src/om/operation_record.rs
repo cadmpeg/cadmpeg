@@ -109,6 +109,12 @@ impl<'a> OperationRecord<'a> {
         Some(Self { bytes, label })
     }
 
+    pub(crate) fn bound_payload(self, len: usize) -> Option<Self> {
+        Some(Self {
+            bytes: self.bytes.get(..self.payload_start().checked_add(len)?)?,
+            label: self.label,
+        })
+    }
     pub(crate) fn label(self) -> OperationLabel<'a> {
         self.label
     }
@@ -194,10 +200,7 @@ mod tests {
     fn body_scan_preserves_prefix_references_and_excludes_payload_body_writes() {
         let bytes = b"\x01\x02\x10\x42\xff\x00\x01\x02\x0b\x21\x97\x75\x01\x02\x10\x22\xff";
         let body = OperationBodyInput::new(bytes, 100, 6, "EXTRUDE").unwrap();
-        let references = crate::test_support::with_decode_context(|ctx| {
-            crate::om::operation_body_references(ctx, body)
-        })
-        .unwrap();
+        let references = crate::om::operation_body_references(body);
         assert_eq!(references.len(), 1);
         assert_eq!(references[0].offset, 103);
         assert_eq!(references[0].object_index.value(), 0x42);
