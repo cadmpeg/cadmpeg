@@ -15,10 +15,10 @@ fn draft() -> DesignParameterDraft {
         record_index: 1,
         source_ordinal: 0,
         source: DesignParameterSource::User {
-            family_discriminator: Located {
+            family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
                 offset: 122,
-            },
+            }),
         },
         expression: "-1 mm".into(),
         expression_offset: 140,
@@ -95,10 +95,10 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
     let mut edited = parameter.clone();
     assert!(edited
         .try_set_source(DesignParameterSource::User {
-            family_discriminator: Located {
+            family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
                 offset: 121
-            }
+            })
         })
         .is_err());
     assert_eq!(edited, parameter);

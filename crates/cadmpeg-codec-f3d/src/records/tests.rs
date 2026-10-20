@@ -636,20 +636,11 @@ fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
                 .as_object_mut()
                 .unwrap()
                 .remove("family_discriminator_offset");
-            if kind == "user" {
-                assert!(
-                    serde_json::from_value::<crate::records::parameters::DesignParameter>(
-                        no_discriminator
-                    )
-                    .unwrap_err()
-                    .to_string()
-                    .contains("family_discriminator")
-                );
-            } else {
-                let parameter: crate::records::parameters::DesignParameter =
-                    serde_json::from_value(no_discriminator.clone()).unwrap();
-                assert_eq!(serde_json::to_value(parameter).unwrap(), no_discriminator);
-            }
+            // Typed compact document parameters and compact owned parameters
+            // both store no family discriminator.
+            let parameter: crate::records::parameters::DesignParameter =
+                serde_json::from_value(no_discriminator.clone()).unwrap();
+            assert_eq!(serde_json::to_value(parameter).unwrap(), no_discriminator);
         }
     }
     assert!(
