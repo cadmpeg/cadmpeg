@@ -363,7 +363,7 @@ fn decode_exchange_mode(
     session.charge_pending_ir_entities("step_topology_decode")?;
 
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
-    geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
+    geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx, &mut geometry.losses)?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_pending_ir_entities("step_topology_association")?;
     geometry::associate_topology_carriers(
