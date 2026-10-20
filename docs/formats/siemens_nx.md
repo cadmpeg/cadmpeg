@@ -46,6 +46,10 @@ later than the FOOTER offset. Other payloads remain exact opaque bytes. Entry
 framing is contiguous; invalid framing rejects the complete containing
 directory without bytewise recovery.
 
+A FOOTER offset of `0xffffffffffff` states that the file has no FOOTER region.
+The HEADER directory is then the complete directory, a file range ends no later
+than the file boundary, and the file has no fingerprint.
+
 The four-byte FOOTER fingerprint is retained exactly. The `/Root/` sentinel
 node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
 
@@ -908,6 +912,12 @@ terminal ASCII `Z` (`5a`) ends that declaration; the first type-38 instance's
 index follows it. It is not a separate node tag. Type 90 `GROUP` has the
 two-byte nodetype `005a`.
 
+Type 91 `MEMBER_OF_FEATURE` has logical length 20: `dummy_node_id:u32 +4`,
+then the owning-feature, owner, next, previous, next-member, and
+previous-member references. Its owner reference is non-null. A complete
+`MEMBER_OF_FEATURE` frame and the type-38 inline schema header each begin a
+record, so each bounds the fixed record before it.
+
 ### 4.2 Deltas-stream framing
 
 A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode. Records use the following forms:
@@ -1367,7 +1377,7 @@ referenced list and its instances resolve.
 | Entity   | Rule                                                                                                                                                                                                                                                                                                                                       |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes                                                                                                                                                                                                                                                                      |
-| edges    | one per EDGE node; native endpoint incidence is `EDGE.fin → FIN.vertex` and `FIN.other_fin → FIN.vertex`, with null `other_fin` falling back to `FIN.forward_fin → FIN.vertex`; canonical start/end order follows increasing curve parameter; the carrier resolves through non-null `EDGE.curve`, otherwise through the owning `FIN.curve` |
+| edges    | one per EDGE node; `FIN.vertex` is the vertex at the end of its FIN, and a FIN begins at `FIN.other_fin → FIN.vertex`, or at `FIN.backward_fin → FIN.vertex` when `other_fin` is null; a forward `EDGE.fin` runs along its EDGE and a reversed one against it; the EDGE runs along its curve when the curve's common-header sense is `+` and against it when the sense is `-`; canonical start/end order follows the curve direction and each coedge sense is relative to that order; the carrier resolves through non-null `EDGE.curve`, otherwise through the owning `FIN.curve` |
 | loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE                                                                                                             |
 | faces    | one per FACE node, with resolved surface when available                                                                                                                                                                                                                                                                                    |
 | bodies   | one per validated body-shape SHELL                                                                                                                                                                                                                                                                                                         |
