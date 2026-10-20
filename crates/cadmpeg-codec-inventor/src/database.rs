@@ -220,10 +220,14 @@ pub(crate) fn parse_registry(
             node_count = Some(object.node_count);
             objects.push(object);
         }
-        let node_count = node_count
-            .unwrap_or(1)
-            .checked_sub(1)
-            .ok_or_else(|| CodecError::Malformed("RSe segment node count is zero".into()))?;
+        // The last object stores the node count plus one; zero, like an
+        // entry without objects, stores no nodes.
+        let node_count = match node_count {
+            None | Some(0) => 0,
+            Some(count) => count
+                .checked_sub(1)
+                .ok_or_else(|| CodecError::Malformed("RSe segment node count is invalid".into()))?,
+        };
         let node_count = usize::try_from(node_count)
             .map_err(|_| CodecError::Malformed("RSe segment node count is too large".into()))?;
         if node_count > 1_000_000 {
@@ -592,6 +596,20 @@ mod tests {
         for counts in [[2, 1], [2, 3]] {
             let bytes = registry_fixture(&counts);
             with_context(&bytes, |ctx| assert!(parse_registry(ctx, &bytes).is_err()));
+        }
+    }
+
+    #[test]
+    fn a_zero_or_one_last_object_node_count_stores_no_nodes() {
+        for count in [0, 1] {
+            let mut bytes = registry_fixture(&[count]);
+            let node = bytes.len() - 2 * 2 - 2 * (4 + 16) - 22;
+            bytes.drain(node..node + 22);
+            with_context(&bytes, |ctx| {
+                let registry = parse_registry(ctx, &bytes).expect("registry without nodes parses");
+                assert!(registry.entries[0].nodes.is_empty());
+                assert_eq!(registry.primary_ids, vec![[0x61; 16]]);
+            });
         }
     }
 
