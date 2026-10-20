@@ -138,6 +138,18 @@ pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     file
 }
 
+/// Rewrite a [`prt_with_named_payloads`] image to the form without a FOOTER
+/// region: the FOOTER offset is all one bits and the file ends at the last
+/// payload.
+pub(crate) fn without_footer(mut file: Vec<u8>) -> Vec<u8> {
+    let mut footer_offset = [0; 8];
+    footer_offset[..6].copy_from_slice(&file[0x11..0x17]);
+    let footer_offset = usize::try_from(u64::from_le_bytes(footer_offset)).expect("fixture offset");
+    file.truncate(footer_offset);
+    file[0x11..0x17].copy_from_slice(&[0xff; 6]);
+    file
+}
+
 pub(crate) fn prt_with_arrangements() -> Vec<u8> {
     prt_with_arrangement_attribute(Some("Model"))
 }

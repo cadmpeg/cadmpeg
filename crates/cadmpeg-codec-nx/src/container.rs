@@ -1002,16 +1002,24 @@ pub(crate) enum ContainerLayout {
         version: u8,
         /// File-specific 24-bit little-endian value at offset 9.
         file_tag: u32,
-        /// `FOOTER` region offset.
-        footer_offset: u64,
-        /// Exact four-byte value following the counted FOOTER directory.
-        footer_fingerprint: [u8; 4],
+        /// `FOOTER` region, absent when the HEADER directory is the complete
+        /// directory.
+        footer: Option<Footer>,
     },
     /// Legacy Compound File Binary envelope.
     LegacyCfb {
         /// Version byte in the UGII payload.
         version: u8,
     },
+}
+
+/// The `FOOTER` region of a modern container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Footer {
+    /// `FOOTER` region offset.
+    pub(crate) offset: u64,
+    /// Exact four-byte value following the counted FOOTER directory.
+    pub(crate) fingerprint: [u8; 4],
 }
 
 impl ContainerLayout {
@@ -1028,8 +1036,10 @@ pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
     ContainerLayout::Modern {
         version,
         file_tag: 0,
-        footer_offset: 0,
-        footer_fingerprint: [0; 4],
+        footer: Some(Footer {
+            offset: 0,
+            fingerprint: [0; 4],
+        }),
     }
 }
 
@@ -1254,6 +1264,53 @@ pub(crate) fn scan_bytes<'a>(
     }
     let file_tag = u24_le(&data, splmsstr::FILE_TAG);
     let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
+    let (entries, footer) = if footer_offset == ABSENT_FOOTER_OFFSET {
+        (header_directory(&data)?, None)
+    } else {
+        let (entries, footer) = header_and_footer_directories(&data, footer_offset)?;
+        (entries, Some(footer))
+    };
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
+
+    let mut container = Container {
+        data,
+        physical_size,
+        layout: ContainerLayout::Modern {
+            version,
+            file_tag,
+            footer,
+        },
+        entries,
+        fastload_table: None,
+        indexed_section_layouts: OnceLock::new(),
+        om_section_cache: OnceLock::new(),
+    };
+    container.fastload_table = container.parse_rmfastload_object_id_table()?;
+    Ok(container)
+}
+
+/// FOOTER offset value of a container whose HEADER directory is the complete
+/// directory.
+const ABSENT_FOOTER_OFFSET: u64 = 0xffff_ffff_ffff;
+
+/// Read the complete directory of a container that has no FOOTER region.
+fn header_directory(data: &[u8]) -> Result<Vec<DirEntry>, CodecError> {
+    let (entries, _) = directory_region(
+        data,
+        splmsstr::HEADER_MARKER,
+        *b"HEADER",
+        Region::Header,
+        data.len(),
+    )?;
+    Ok(entries)
+}
+
+/// Read the HEADER and FOOTER directories and the terminal fingerprint of a
+/// container whose FOOTER region begins at `footer_offset`.
+fn header_and_footer_directories(
+    data: &[u8],
+    footer_offset: u64,
+) -> Result<(Vec<DirEntry>, Footer), CodecError> {
     let fo = usize::try_from(footer_offset)
         .map_err(|_| CodecError::Malformed("FOOTER offset exceeds address space".to_string()))?;
     if fo > data.len() {
@@ -1267,14 +1324,14 @@ pub(crate) fn scan_bytes<'a>(
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
     let (mut entries, header_end) = directory_region(
-        &data,
+        data,
         splmsstr::HEADER_MARKER,
         *b"HEADER",
         Region::Header,
         fo,
     )?;
     let (footer_entries, footer_end) =
-        directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
+        directory_region(data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
     entries.extend(footer_entries);
     if header_end > fo {
         return Err(CodecError::Malformed(
@@ -1308,24 +1365,13 @@ pub(crate) fn scan_bytes<'a>(
             "counted FOOTER directory is not followed by exactly four bytes".to_string(),
         ));
     };
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
-
-    let mut container = Container {
-        data,
-        physical_size,
-        layout: ContainerLayout::Modern {
-            version,
-            file_tag,
-            footer_offset,
-            footer_fingerprint,
-        },
+    Ok((
         entries,
-        fastload_table: None,
-        indexed_section_layouts: OnceLock::new(),
-        om_section_cache: OnceLock::new(),
-    };
-    container.fastload_table = container.parse_rmfastload_object_id_table()?;
-    Ok(container)
+        Footer {
+            offset: footer_offset,
+            fingerprint: footer_fingerprint,
+        },
+    ))
 }
 
 /// Open the legacy NX `UG_PART/UG_PART` stream from a validated CFB source.

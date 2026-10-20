@@ -40,6 +40,14 @@ pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
     0x61, 0x00, 0xcc, 0x00, 0x01, 0x5a,
 ];
 
+/// Return whether the complete type-38 schema header starts at `offset`.
+pub(crate) fn intersection_data_schema_header_at(stream: &[u8], offset: usize) -> bool {
+    offset
+        .checked_add(TYPE_38_SCHEMA_HEADER.len())
+        .and_then(|end| stream.get(offset..end))
+        == Some(TYPE_38_SCHEMA_HEADER)
+}
+
 /// A supported fixed-record node with its XMT identifier and source offset.
 #[derive(Debug, Clone)]
 pub(crate) struct Node {
@@ -1189,15 +1197,16 @@ impl Graph {
             if let [node] = cluster {
                 selected.push(*node);
             } else {
-                let mut boundary_candidates = cluster
+                let bounded = cluster
                     .iter()
                     .copied()
-                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
-                let Some(node) = boundary_candidates.next() else {
-                    start = end;
-                    continue;
-                };
-                if boundary_candidates.next().is_none() {
+                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()))
+                    .collect::<Vec<_>>();
+                for node in bounded.iter().copied().filter(|node| {
+                    bounded.iter().all(|other| {
+                        other == node || !(other.pos() < node.end() && node.pos() < other.end())
+                    })
+                }) {
                     selected.push(node);
                 }
             }
