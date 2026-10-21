@@ -16,7 +16,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
 
-mod cache_generation;
+pub(in crate::writer) mod cache_generation;
 
 use super::native_bytes::{
     native_curve_base, native_enum, native_f64, native_i64, native_ident,

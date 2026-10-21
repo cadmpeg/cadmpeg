@@ -232,6 +232,8 @@ pub(crate) enum F3dLossCode {
     WriterDesignRecordsOmitted,
     /// Content that the synthesized writer cannot represent.
     WriterGeometryOmitted,
+    /// A target cache was generated from an unchanged current construction.
+    WriterSurfaceCacheGenerated,
     /// Content that the synthesized writer cannot represent.
     WriterAuxiliaryOmitted,
     /// Content that the synthesized writer cannot represent.
@@ -364,6 +366,7 @@ impl F3dLossCode {
         Self::WriterNativeRecordsOmitted,
         Self::WriterDesignRecordsOmitted,
         Self::WriterGeometryOmitted,
+        Self::WriterSurfaceCacheGenerated,
         Self::WriterAuxiliaryOmitted,
         Self::WriterProceduralReduced,
         Self::WriterNoExportableSolids,
@@ -490,6 +493,7 @@ impl F3dLossCode {
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterDesignRecordsOmitted => "writer.design-records-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterSurfaceCacheGenerated => "writer.surface-cache-generated",
             Self::WriterAuxiliaryOmitted => "writer.auxiliary-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::WriterNoExportableSolids => "writer.no-exportable-solids",
@@ -514,6 +518,7 @@ impl F3dLossCode {
             Self::ImageAssetUntransferred => Severity::Warning,
             Self::WriterDesignRecordsOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Error,
+            Self::WriterSurfaceCacheGenerated => Severity::Info,
             Self::WriterAuxiliaryOmitted => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterNoExportableSolids => Severity::Warning,
@@ -633,6 +638,7 @@ impl F3dLossCode {
             Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterSurfaceCacheGenerated => LossTaxonomy::CarrierSummary,
             Self::WriterAuxiliaryOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -1081,6 +1087,10 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
         Representation::Export,
     ),
     (F3dLossCode::WriterGeometryOmitted, Representation::Export),
+    (
+        F3dLossCode::WriterSurfaceCacheGenerated,
+        Representation::Export,
+    ),
     (F3dLossCode::WriterAuxiliaryOmitted, Representation::Export),
     (F3dLossCode::WriterProceduralReduced, Representation::Export),
     (F3dLossCode::WriterSubdOmitted, Representation::Export),
@@ -1331,6 +1341,7 @@ mod tests {
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
                 "writer.geometry-omitted",
+                "writer.surface-cache-generated",
                 "writer.auxiliary-omitted",
                 "writer.procedural-reduced",
                 "writer.no-exportable-solids",

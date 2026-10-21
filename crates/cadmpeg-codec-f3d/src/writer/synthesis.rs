@@ -11,6 +11,7 @@ use crate::loss::F3dLossCode;
 mod act;
 mod appearance;
 mod body_keys;
+mod cache;
 mod design;
 mod geometry;
 mod native;
@@ -33,6 +34,7 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
     prepare::auxiliary(&mut prepared, &mut losses);
     appearance::prepare(&mut prepared, &mut losses);
     native::reconcile(&mut prepared, &mut losses)?;
+    cache::prepare(&mut prepared, &mut losses)?;
     let mut bytes = Vec::new();
     let coverage = match super::generate::write_new(&prepared, &mut bytes) {
         Ok(coverage) => coverage,
