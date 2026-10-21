@@ -814,7 +814,10 @@ fn assert_writer_metadata(
     output: &DecodeResult,
     report: &cadmpeg_ir::report::export::ExportReport,
 ) {
-    assert_eq!(input.units, output.ir().units, "{name}: document units");
+    // CADIR units are an implicit type invariant, serialized on its wire.
+    let units: serde_json::Value = cadmpeg_test_support::wire::field(output.ir(), "units");
+    assert_eq!(units, serde_json::json!({"length": "millimeter"}),
+        "{name}: canonical document units");
     cadmpeg_ir::compare::values_agree(
         &serde_json::to_value(input.tolerances).unwrap(),
         &serde_json::to_value(output.ir().tolerances).unwrap(),
