@@ -207,14 +207,25 @@ pub(crate) fn enrich_history_parameters_with_features(
             },
             DimensionSubtype::Native(_) => continue,
         };
-        let parameters = &mut histories[*history_index].features[*feature_index].parameters;
-        if parameters.contains_key(name) {
+        let feature = &mut histories[*history_index].features[*feature_index];
+        if feature.parameters.contains_key(name) {
             continue;
         }
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name.to_owned()) else {
             continue;
         };
-        parameters.insert(name, expression);
+        // This temporary parameter comes solely from the agreed PMI record.
+        // Its reference-only state supplies the driving role; an actual
+        // Keywords dimension was handled above and keeps its own Driven fact.
+        feature
+            .dimension_properties
+            .entry(name.as_str().to_owned())
+            .or_default()
+            .insert(
+                cadmpeg_core::nonblank_literal!("Driven"),
+                record.reference_only.to_string(),
+            );
+        feature.parameters.insert(name, expression);
     }
 }
 
