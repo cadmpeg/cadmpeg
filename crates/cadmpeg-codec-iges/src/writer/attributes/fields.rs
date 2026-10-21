@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve current neutral attribute references or out-of-scope typed values.
 
-use super::*;
+use super::{
+    AttributeTarget, AttributeValue, BTreeMap, NativeRecord, SourceAttribute, string_field,
+};
 use serde_json::Value;
 
 pub(super) struct Fields<'a> {

@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::{ResolvedTarget, ResolvedWrite},
     ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
+    target::{ResolvedTarget, ResolvedWrite},
 };
 use cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY;
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -222,14 +222,17 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
     if let Some(namespace) = ir.native.namespace("iges") {
         let represented_names = super::represented_name_properties(ir, namespace).is_some();
         if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
-            !records.is_empty()
-                && !super::ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
-                && !(represented_names
-                    && matches!(arena.as_str(), "properties" | "product_properties"))
+            !(records.is_empty()
+                || super::ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
+                || (represented_names
+                    && matches!(arena.as_str(), "properties" | "product_properties")))
         }) {
-            return Ok(Replay::declined_for_record(record, format!(
-                "IGES native arena {arena} has no synthesized encoding; byte replay cannot supply that content"
-            )));
+            return Ok(Replay::declined_for_record(
+                record,
+                format!(
+                    "IGES native arena {arena} has no synthesized encoding; byte replay cannot supply that content"
+                ),
+            ));
         }
     }
     if crate::document_digest(ir)? != *expected {

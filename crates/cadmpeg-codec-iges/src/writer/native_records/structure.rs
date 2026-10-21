@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed group and associativity parameter grammars.
 
-use super::*;
+use super::{
+    Entity, Fields, NativeRecord, Value, boolean, coordinates, count, entity, integer, real, text,
+};
 
 pub(super) fn shape(record: &NativeRecord) -> Result<(u32, i64), String> {
     Ok(

@@ -49,7 +49,15 @@ impl Builder {
 }
 
 pub(super) fn property(value: &NativePropertyValue) -> Result<Fields, &'static str> {
-    use NativePropertyValue::*;
+    use NativePropertyValue::{
+        AssociativityGroupType, BasicDimension, Closure, DimensionDisplayData, DimensionTolerance,
+        DimensionUnits, DrawingSheetApproval, DrawingSheetId, DrilledHole,
+        ExternalReferenceFileList, FlowLineSpecification, GenericData, Hierarchy, Highlight,
+        IntercharacterSpacing, LepArtworkStackup, LepDrilledHole, LevelFunction,
+        LevelToLepLayerMap, LineFont, LineWidening, Name, NominalSize, Overscore, PartNumber, Pick,
+        PinNumber, ReferenceDesignator, RegionFill, RegionRestriction, TabularData, Underscore,
+        UniformRectangularGrid,
+    };
     let mut fields = Builder(Vec::new());
     macro_rules! integers { ($($field:ident),+ $(,)?) => {{ $(fields.integer(stringify!($field), *$field);)+ }}; }
     macro_rules! reals { ($($field:ident),+ $(,)?) => {{ $(fields.real(stringify!($field), *$field)?;)+ }}; }

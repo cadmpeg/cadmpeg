@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent entity admission for lossy IGES synthesis.
 
-use super::*;
+use super::{
+    BTreeMap, BTreeSet, BodyKind, CadIr, CodecError, DecodeArena, DecodeContext, DecodePolicy,
+    IgesLossCode, SynthesisGraph, native_omission_losses, reference_marker, synthesis_graph,
+    unsupported_model_losses,
+};
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 
 /// Preserve independent bodies and free carriers when one cannot be encoded.
@@ -17,7 +21,7 @@ pub(super) fn graph(
         presentations: BTreeMap::new(),
         losses: unsupported_model_losses(ir)?,
     };
-    result.losses.extend(native_omission_losses(ir)?);
+    result.losses.extend(native_omission_losses(ir));
     let mut owned = BTreeSet::new();
     for body in &ir.model.bodies {
         let (part, identities) = scoped(ir, &ctx, body.id.as_str())?;
@@ -92,8 +96,8 @@ fn admit(
                 result
                     .losses
                     .push(IgesLossCode::WriterEntityOmitted.note(format!(
-                    "IGES sheet {identity} is split into independently admitted faces: {reason}"
-                )));
+                        "IGES sheet {identity} is split into independently admitted faces: {reason}"
+                    )));
                 let arena = DecodeArena::new();
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;

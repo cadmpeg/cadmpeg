@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Order native definitions by their current typed references.
 
-use super::*;
+use super::{
+    ARENAS, BTreeSet, CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, IgesLossCode,
+    NativeExport, NativeRecord, Targets, Value, attributes, coordinates, count, entity, fonts,
+    real, shape, structure, text,
+};
 
 fn encode(
     arena: &str,
@@ -51,7 +55,7 @@ fn encode(
             .ok_or("owners have no typed identity list")?
         {
             let owner = owner.as_str().ok_or("owner has no typed identity")?;
-            let [index] = targets.get(owner).map(Vec::as_slice).unwrap_or(&[]) else {
+            let [index] = targets.get(owner).map_or(&[][..], Vec::as_slice) else {
                 return Err(format!(
                     "current owner {owner} has no unique emitted target"
                 ));

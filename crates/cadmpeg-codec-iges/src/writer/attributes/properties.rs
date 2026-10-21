@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Type 406 field grammars, regenerated from current canonical values.
 
-use super::{fields::collection_size, fields::Fields, *};
+use super::{
+    AttributeValue, BTreeSet, Entity, NativeRecord, Targets, entity, fields::Fields,
+    fields::collection_size, hollerith, typed_value,
+};
 use serde_json::Value;
 
 fn integer(fields: &Fields<'_>, key: &str) -> Result<String, String> {
@@ -256,7 +259,7 @@ pub(super) fn encode(
         _ => {
             return Err(format!(
                 "Type 406 Form {form} has no typed property grammar"
-            ))
+            ));
         }
     }
     let mut parameters = vec![values.len().to_string()];
@@ -272,9 +275,8 @@ fn generic(
     let (name, values) = if let Some(name) = fields.name("") {
         (name.to_owned(), fields.values("")?)
     } else {
-        let name = match fields.one("name")? {
-            Some(AttributeValue::String(name)) => name,
-            _ => return Err("generic attribute has no current name".into()),
+        let Some(AttributeValue::String(name)) = fields.one("name")? else {
+            return Err("generic attribute has no current name".into());
         };
         let mut values = Vec::new();
         for index in 0..collection_size(record, "values")? {
@@ -295,7 +297,7 @@ fn generic(
                             _ => {
                                 return Err(
                                     "native entity attribute is not a directory pointer".into()
-                                )
+                                );
                             }
                         };
                     }
