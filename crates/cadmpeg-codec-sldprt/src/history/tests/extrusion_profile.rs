@@ -246,7 +246,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             .feature_states
             .insert(feature_id, replacement);
     }
-    crate::history::configuration::normalize_configuration_differences(&mut edited);
+    crate::history::configuration::normalize_configuration_differences(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut edited,
+    )
+    .unwrap();
     crate::test_support::assert_synthesis_fallback(&edited, decoded.source_fidelity());
 }
 
