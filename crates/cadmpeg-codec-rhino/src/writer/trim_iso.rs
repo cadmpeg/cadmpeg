@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! ON_Surface::ISO classification of the actual written trim carrier.
+//! `ON_Surface::ISO` classification of the actual written trim carrier.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveGeometry};
