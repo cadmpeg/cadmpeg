@@ -678,11 +678,34 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
             cadmpeg_ir::scalar::Length::new(50.0).unwrap()
         ))
     );
-    assert!(parameter.native_ref.is_none());
-    assert!(sldprt_native(regenerated.ir())
+    // W2: retain the typed native copy, regenerated from the canonical 50 mm
+    // parameter. Its semantic scalar link identifies that copy, not authority.
+    let scalar_id = parameter
+        .native_ref
+        .as_deref()
+        .expect("native scalar counterpart");
+    let native = sldprt_native(regenerated.ir());
+    let lane = native
         .feature_input_lanes
         .iter()
-        .all(|lane| lane.scalars.is_empty()));
+        .find(|lane| lane.scalars.iter().any(|scalar| scalar.id == scalar_id))
+        .expect("linked native scalar lane");
+    let scalar = lane
+        .scalars
+        .iter()
+        .find(|scalar| scalar.id == scalar_id)
+        .unwrap();
+    assert_eq!(scalar.value.get(), 0.05);
+    let name = lane
+        .names
+        .iter()
+        .find(|name| name.id == scalar.name)
+        .unwrap();
+    assert_eq!(name.value, "D1");
+    assert_eq!(
+        scalar.feature_ref.as_deref(),
+        regenerated.ir().model.features[0].native_ref.as_deref()
+    );
 }
 
 #[test]
