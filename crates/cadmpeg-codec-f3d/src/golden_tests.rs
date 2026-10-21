@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
-use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_test_support::golden::snapshots_agree;
 
@@ -313,13 +312,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 }
 
 fn encoder_generated_unit_cube() -> Vec<u8> {
-    let ir = examples::unit_cube().expect("unit cube fixture is admitted");
-    let mut bytes = Vec::new();
-    F3dCodec
-        .encode(&ir, &mut bytes)
-        .expect("encode neutral unit-cube IR");
-    bytes
+    frozen_cube::fixture()
 }
+
+mod frozen_cube;
 
 fn golden_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
