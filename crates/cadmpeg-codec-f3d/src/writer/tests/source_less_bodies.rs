@@ -202,7 +202,18 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     })
     .collect();
 
+    let timestamps = native.creation_timestamps.clone();
     drop(native);
+    for (ordinal, timestamp) in timestamps.into_iter().enumerate() {
+        source_less
+            .model
+            .attributes
+            .push(crate::test_support::native_test::timestamp_attribute(
+                u32::try_from(ordinal).unwrap(),
+                timestamp.target,
+                timestamp.unix_microseconds,
+            ));
+    }
     let mut encoded = Vec::new();
     let export = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
