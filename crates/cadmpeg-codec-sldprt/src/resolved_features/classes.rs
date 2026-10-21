@@ -1634,7 +1634,8 @@ mod idless_history_binding_tests {
             .collect::<Vec<_>>();
         let mut payload = vec![0; 500];
         for name in &names {
-            let offset = usize::try_from(name.offset).expect("required invariant");
+            let offset =
+                usize::try_from(name.offset.expect("source offset")).expect("required invariant");
             payload[offset - 2..offset].copy_from_slice(&0x82a4_u16.to_le_bytes());
         }
         let lane = FeatureInputLane {

@@ -347,24 +347,30 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
             ..
         }) if profile == &profile_b.id
     ));
-    assert_eq!(
-        state_a
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let feature_references = |state: &cadmpeg_ir::features::ConfigurationFeatureState| {
+        let mut references = Vec::new();
+        state
             .definition()
             .unwrap()
-            .feature_references()
-            .cloned()
-            .collect::<Vec<_>>(),
-        vec![profile_a.id.clone()]
-    );
-    assert_eq!(
-        state_b
-            .definition()
-            .unwrap()
-            .feature_references()
-            .cloned()
-            .collect::<Vec<_>>(),
-        vec![profile_b.id.clone()]
-    );
+            .visit_identity_references(&ctx, &mut |reference| {
+                if let Some(feature) = decoded
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .find(|feature| feature.id.as_str() == reference)
+                {
+                    references.push(feature.id.clone());
+                }
+                Ok(())
+            })
+            .unwrap();
+        references
+    };
+    assert_eq!(feature_references(state_a), vec![profile_a.id.clone()]);
+    assert_eq!(feature_references(state_b), vec![profile_b.id.clone()]);
 }
 
 #[test]

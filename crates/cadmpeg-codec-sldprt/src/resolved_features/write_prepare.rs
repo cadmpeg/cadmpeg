@@ -1880,10 +1880,12 @@ mod source_less_lane_tests {
                     SketchConstraintDefinitionInput::Angle {
                         first: first_id.clone(),
                         second: second_id.clone(),
-                        parameter: cadmpeg_ir::features::ParameterId::mint(
-                            "synthetic:test:id#angle-value",
-                        )
-                        .unwrap(),
+                        parameter: cadmpeg_ir::Dimension::Parameter(
+                            cadmpeg_ir::features::ParameterId::mint(
+                                "synthetic:test:id#angle-value",
+                            )
+                            .unwrap(),
+                        ),
                     },
                 )
                 .unwrap(),
