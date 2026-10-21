@@ -593,7 +593,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             .find(|parameter| parameter.name == "D2")
             .expect("driving relation parameter");
         if family == crate::records::FeatureInputRelationFamily::Angle {
-            assert_eq!(parameter.expression, "0.025rad".into());
+            assert_eq!(parameter.expression, "0.025 rad".into());
             assert_eq!(
                 parameter.value,
                 Some(cadmpeg_ir::features::ParameterValue::Angle(

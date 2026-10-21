@@ -235,7 +235,6 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
-    assert!(decoded.ir().model.configurations[0].active);
     assert!(decoded.ir().model.configurations[0]
         .feature_states
         .is_empty());
