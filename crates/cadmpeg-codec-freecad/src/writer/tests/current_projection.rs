@@ -159,21 +159,44 @@ fn assert_coherent_reference_rename(bytes: &[u8], owner: &str, count: usize) {
         .unwrap()
         .arena_as::<ProductNodeRecord>("product_nodes")
         .unwrap();
-    let after = output
-        .ir()
-        .native
-        .namespace("fcstd")
-        .unwrap()
-        .arena_as::<ProductNodeRecord>("product_nodes")
-        .unwrap();
     let before = before.iter().find(|node| node.object == owner).unwrap();
-    let after = after.iter().find(|node| node.object == owner).unwrap();
     assert_eq!(before.element_transforms().len(), count);
     assert_eq!(before.element_count(), Some(u64::try_from(count).unwrap()));
     if count != 0 {
         assert!(!before.element_transforms().is_empty());
     }
-    assert_eq!(after.element_count(), before.element_count());
-    assert_eq!(after.element_transforms(), before.element_transforms());
-    assert_eq!(after.element_scales(), before.element_scales());
+    // Synthesis regenerates the neutral instances as individual scalar links.
+    // Native array grouping is not the geometry's authority (Rule W2). Check
+    // every resulting instance, including the explicit-zero scalar source.
+    let mut expected = current
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.native_ref.as_deref() == Some(owner.as_str()))
+        .collect::<Vec<_>>();
+    let mut actual = output
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.name.as_deref() == Some(owner.as_str()))
+        .collect::<Vec<_>>();
+    expected.sort_by_key(|occurrence| occurrence.ordinal);
+    actual.sort_by_key(|occurrence| occurrence.ordinal);
+    assert_eq!(expected.len(), count.max(1));
+    assert_eq!(actual.len(), expected.len());
+    assert_eq!(
+        output.ir().model.occurrences.len(),
+        current.model.occurrences.len()
+    );
+    for (expected, actual) in expected.into_iter().zip(actual) {
+        assert_eq!(
+            actual.effective_transform().unwrap(),
+            expected.effective_transform().unwrap()
+        );
+        assert_eq!(actual.transform, expected.transform);
+        assert_eq!(actual.linked_prototype, expected.linked_prototype);
+        assert_eq!(actual.visible, expected.visible);
+        assert_eq!(actual.link, expected.link);
+    }
 }
