@@ -409,9 +409,8 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     )
     .unwrap()];
     native.design_body_members = vec![
-        DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
+        DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberContent {
             id: "f3d:generated:design-body-member#0".into(),
-            byte_offset: 0,
             entity_suffix: 985,
             flags: 0,
         })
@@ -424,6 +423,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         })
         .unwrap(),
     ];
+    assert!(native.design_body_members[0].byte_offset().is_none());
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "f3d:generated:entity-header#0".into(),
         byte_offset: Some(0),
@@ -788,47 +788,42 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             )),
         },
     ];
-    native.sketch_relations =
-        vec![
-            SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
-                id: "f3d:generated:sketch-relation#0".into(),
-                record_index: 33,
-                class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
-                    .unwrap(),
-                byte_offset: 0,
-                state_offset: 0,
-                owner_reference: 277,
-                owner_entity_id: None,
-                owner_reference_offset: 0,
-                auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
-                rectangular_counted_reference_count: None,
-                members: (vec![
-                    SketchRelationMember {
-                        relation_ordinal: Some(0),
-                        ..SketchRelationMember::from_index(100)
-                    },
-                    SketchRelationMember {
-                        relation_ordinal: Some(0),
-                        ..SketchRelationMember::from_index(600)
-                    },
-                ])
-                .try_into()
-                .expect("uniform member resolution"),
-                definition: crate::records::sketch_relations::SketchRelationDefinition::new(
-                    0x11, None,
-                )
+    native.sketch_relations = vec![SketchRelation::authored(
+        crate::records::sketch_relations::SketchRelationContent {
+            id: "f3d:generated:sketch-relation#0".into(),
+            record_index: 33,
+            class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+                .unwrap(),
+            owner_reference: 277,
+            owner_entity_id: None,
+            auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: (vec![
+                SketchRelationMember {
+                    relation_ordinal: Some(0),
+                    ..SketchRelationMember::from_index(100)
+                },
+                SketchRelationMember {
+                    relation_ordinal: Some(0),
+                    ..SketchRelationMember::from_index(600)
+                },
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
+            definition: crate::records::sketch_relations::SketchRelationDefinition::new(0x11, None)
                 .expect("valid relation definition"),
-                entity_genesis: None,
-                return_members: (vec![
-                    SketchRelationReturnMember::from_index(600),
-                    SketchRelationReturnMember::from_index(100),
-                ])
-                .try_into()
-                .expect("uniform member resolution"),
-                raw_bytes: vec![0; 160],
-            })
-            .unwrap(),
-        ];
+            entity_genesis: None,
+            return_members: (vec![
+                SketchRelationReturnMember::from_index(600),
+                SketchRelationReturnMember::from_index(100),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
+        },
+    )];
+    assert!(native.sketch_relations[0].byte_offset.is_none());
+    assert!(native.sketch_relations[0].state_offset.is_none());
+    assert!(native.sketch_relations[0].raw_bytes().is_none());
 
     let expected_geometries = native
         .sketch_curve_identities
