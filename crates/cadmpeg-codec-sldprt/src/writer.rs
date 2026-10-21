@@ -127,7 +127,14 @@ pub(super) fn write_semantic_at(
         .transpose()?;
     let source_scan = source_context
         .as_ref()
-        .map(|(ctx, root)| crate::container::scan(ctx, *root))
+        .map(|(ctx, root)| crate::container::scan(ctx, *root).map_err(|error| match error {
+            // W1/P: malformed retained layout declines a patch; it cannot
+            // reject a valid current document or supply synthesis content.
+            CodecError::Malformed(reason) => CodecError::UnsupportedContent(format!(
+                "retained SLDPRT source layout cannot be patched: {reason}"
+            )),
+            other => other,
+        }))
         .transpose()?;
     if let Some(native) = native.as_mut() {
         crate::native::source::attach(native, |id| {
