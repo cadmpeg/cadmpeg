@@ -1530,6 +1530,38 @@ impl ConfigurationSlots {
     }
 }
 
+/// Resolve a source slot using the same native identity rule as scalar lanes.
+/// An independently stated source index must agree, and ambiguity is refused.
+pub(crate) fn configuration_for_source_slot(
+    configurations: &[DesignConfiguration],
+    slot: u32,
+) -> Option<usize> {
+    let slots = ConfigurationSlots::new(configurations);
+    let native_match = slots
+        .explicit
+        .get(&slot)
+        .or_else(|| slots.ordinal.get(&slot));
+    if native_match.is_some_and(|found| !found.unique) {
+        return None;
+    }
+    let native = native_match.map(|found| found.first);
+    let mut indexed = configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| configuration.source_index == Some(slot))
+        .map(|(index, _)| index);
+    let explicit_index = indexed.next();
+    if indexed.next().is_some() {
+        return None;
+    }
+    match (native, explicit_index) {
+        (Some(native), Some(indexed)) if native == indexed => Some(native),
+        (Some(native), None) if configurations[native].source_index.is_none() => Some(native),
+        (None, Some(indexed)) => Some(indexed),
+        _ => None,
+    }
+}
+
 pub(super) fn configuration_lane_assignments(
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
