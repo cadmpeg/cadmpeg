@@ -7,9 +7,8 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{
     holes::{HoleKind, HolePlacement},
-    ConfigurationFeatureState, ConfigurationId, DesignConfiguration, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, LinearTermination, PlanarProfileRef,
-    ProfileRef,
+    ConfigurationId, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+    ExtrudeStart, Feature, LinearTermination, PlanarProfileRef, ProfileRef,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind};
