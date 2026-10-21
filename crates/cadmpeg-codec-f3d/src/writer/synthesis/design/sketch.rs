@@ -204,8 +204,8 @@ fn constraints(
     Ok(constraints)
 }
 
-pub(in crate::writer::synthesis) fn report_constraint_reductions(
-    target: &CadIr,
+pub(in crate::writer::synthesis) fn reduce_constraint_fields(
+    target: &mut CadIr,
     native: &F3dNative,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
@@ -217,7 +217,7 @@ pub(in crate::writer::synthesis) fn report_constraint_reductions(
         &target.model.sketch_entities,
         target.tolerances.linear.get(),
     )?;
-    for stated in &target.model.sketch_constraints {
+    for stated in &mut target.model.sketch_constraints {
         let Some(written) = projected.iter().find(|written| written.id == stated.id) else {
             losses.push(
                 crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
@@ -229,14 +229,43 @@ pub(in crate::writer::synthesis) fn report_constraint_reductions(
         };
         if stated.definition != written.definition {
             use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
+            let mut entity_only = false;
             let detail = match (stated.definition.kind(), written.definition.kind()) {
-                (Definition::Native { entities: before, .. }, Definition::Native { entities: after, .. }) if before != after => format!("ordered entity links reduce from {} to {}; the canonical parameter and typed recipe are retained", before.len(), after.len()),
+                (
+                    Definition::Native { entities: before, .. },
+                    Definition::Native { entities: after, .. },
+                ) if !before.is_empty() && after.is_empty() => {
+                    let mut restored = written.definition.clone();
+                    restored
+                        .edit(|definition| {
+                            if let Definition::Native { entities, .. } = definition {
+                                entities.clone_from(before);
+                            }
+                        })
+                        .map_err(|error| CodecError::Malformed(error.into()))?;
+                    entity_only = restored == stated.definition;
+                    let lost = before
+                        .iter()
+                        .map(|entity| entity.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "ordered entity links reduce from {} to {}; omitted links [{}]",
+                        before.len(), after.len(), lost
+                    )
+                }
                 _ => "the target's dimensional definition cannot retain every canonical constraint field".into(),
             };
             losses.push(
                 crate::loss::F3dLossCode::WriterDesignRecordsOmitted
                     .note(format!("Sketch constraint {}: {detail}", stated.id)),
             );
+            if entity_only {
+                // S-entity: the actual target schema retains Native kind, the
+                // parameter and its real recipe operand with unresolved loci.
+                // Its nonempty operand admits the empty-link definition.
+                stated.definition = written.definition.clone();
+            }
         }
     }
     Ok(())

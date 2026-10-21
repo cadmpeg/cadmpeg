@@ -345,6 +345,7 @@ pub(super) fn dispositions(
         procedural_curves,
         parameters,
         configurations,
+        sketch_constraints,
         appearances
     );
     // Coverage has no implicit omission path: every dropped arena above has

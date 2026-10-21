@@ -102,6 +102,50 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         .sketch_curve_identities
         .iter()
         .any(|curve| curve.id == auxiliary_id && curve.owner_reference.is_none()));
+    let original_constraint = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .find(|constraint| {
+            serde_json::to_value(&constraint.definition).unwrap()["parameter"]
+                == serde_json::json!(parameter_id)
+        })
+        .unwrap();
+    let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { entities, .. } =
+        original_constraint.definition.kind()
+    else {
+        panic!("the source fixture dimension has a Native definition")
+    };
+    assert_eq!(entities.len(), 6);
+    let omitted_ids = entities
+        .iter()
+        .map(|id| id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let reduction = format!(
+        "Sketch constraint {}: ordered entity links reduce from 6 to 0; omitted links [{omitted_ids}]",
+        original_constraint.id
+    );
+    let notes = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message == reduction)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        notes.len(),
+        1,
+        "the exact ordered six-link reduction is named once"
+    );
+    assert_eq!(notes[0].code.local_code(), "writer.design-records-omitted");
+    assert_eq!(notes[0].severity, cadmpeg_ir::report::Severity::Error);
+    let cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage) = plan.report().coverage else {
+        panic!("reduced constraint fields need explicit arena coverage")
+    };
+    assert_eq!(
+        coverage.sketch_constraints,
+        cadmpeg_ir::codec::write::ArenaDisposition::Reported
+    );
     let expected_constraint = owned_dimension_definition(&ir, "d1");
     assert_eq!(expected_constraint["kind"], "native");
     assert_eq!(expected_constraint["entities"].as_array().unwrap().len(), 6);
@@ -128,8 +172,15 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
     );
     assert_eq!(written.ir().model.parameters.len(), 2);
     assert_eq!(written.ir().model.sketch_constraints.len(), 4);
-    assert_eq!(owned_dimension_definition(written.ir(), "d1"), expected_constraint,
-        "the owned dimension retains its complete canonical kind, state, flags, properties, ordered entities, parameter and recipe operands");
+    let mut reduced_constraint = expected_constraint.clone();
+    reduced_constraint["entities"] = serde_json::json!([]);
+    assert_eq!(owned_dimension_definition(written.ir(), "d1"), reduced_constraint,
+        "only the six reported links reduce; kind, state, flags, properties, canonical parameter and the actual recipe operand remain exact");
+    assert_eq!(
+        owned_dimension_definition(&ir, "d1"),
+        expected_constraint,
+        "preparing the reduction does not change the input document"
+    );
     for name in ["d1", "d2"] {
         let parameter = written
             .ir()
@@ -230,6 +281,72 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
             serde_json::to_value(&constraint.definition).unwrap()["parameter"]
                 == serde_json::json!(parameter.id)
         }));
+}
+
+#[test]
+fn unchanged_owned_dimension_retains_all_six_entity_links_without_source_bytes() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_sketch_constraints.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir: cadmpeg_ir::CadIr =
+        serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap()).unwrap();
+    let expected = owned_dimension_definition(&ir, "d1");
+    assert_eq!(expected["entities"].as_array().unwrap().len(), 6);
+    let expected_d2 = owned_dimension_definition(&ir, "d2");
+    let native = crate::test_support::native_test::f3d_native(&ir);
+    assert!(native
+        .design_dimension_recipe_records
+        .iter()
+        .all(|recipe| recipe.prefix_bytes.data().is_none()));
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("ordered entity links reduce")));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    let written = F3dCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, written.ir()).unwrap()
+    });
+    assert!(findings.is_empty(), "native findings: {findings:?}");
+    let validation = cadmpeg_ir::validate::validate_neutral(written.ir(), Vec::new()).unwrap();
+    assert!(
+        validation.is_ok(),
+        "neutral findings: {:?}",
+        validation.findings
+    );
+    assert_eq!(written.ir().model.features.len(), 1);
+    assert_eq!(written.ir().model.sketches.len(), 1);
+    assert_eq!(written.ir().model.sketch_entities.len(), 8);
+    assert_eq!(written.ir().model.sketch_constraints.len(), 4);
+    assert_eq!(written.ir().model.parameters.len(), 2);
+    assert_eq!(owned_dimension_definition(written.ir(), "d1"), expected,
+        "unchanged canonical cache retains the complete kind, ordered six entities, parameter and actual recipe");
+    assert_eq!(owned_dimension_definition(written.ir(), "d2"), expected_d2);
+    for name in ["d1", "d2"] {
+        let before = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap();
+        let after = written
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap();
+        assert_eq!(after.value, before.value);
+        assert_eq!(after.expression, before.expression);
+    }
 }
 
 #[test]
