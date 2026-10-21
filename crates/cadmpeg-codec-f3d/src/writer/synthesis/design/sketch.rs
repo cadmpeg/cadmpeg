@@ -45,6 +45,12 @@ pub(in crate::writer::synthesis) fn admit(
     use crate::design::{design_feature_family, DesignFeatureFamily};
     if native.design_parameter_scopes.is_empty()
         || !native.design_feature_timelines.is_empty()
+        || native.design_dimension_recipe_records.iter().any(|record| {
+            !record.references.is_empty()
+                || !record.matching_edge_operand_ids.is_empty()
+                || record.program.is_empty()
+                || i32::try_from(record.record_index).is_err()
+        })
         || !target.model.spatial_sketches.is_empty()
         || target
             .model
@@ -138,6 +144,7 @@ pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, origina
     native.design_parameter_scopes = original.design_parameter_scopes.clone();
     native.design_sketch_placements = original.design_sketch_placements.clone();
     native.design_parameter_owners = original.design_parameter_owners.clone();
+    native.design_dimension_recipe_records = original.design_dimension_recipe_records.clone();
     native.design_parameter_companions = original
         .design_parameter_companions
         .iter()

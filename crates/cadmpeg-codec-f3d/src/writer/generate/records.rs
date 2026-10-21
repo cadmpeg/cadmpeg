@@ -246,6 +246,13 @@ pub(super) fn encode_design_bulkstream(
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for recipe in &native.construction_recipes {
+        if native
+            .design_dimension_recipe_records
+            .iter()
+            .any(|record| record.recipe_id == recipe.id)
+        {
+            continue;
+        }
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
         if let Some(design) = &recipe.design {
@@ -410,6 +417,30 @@ pub(super) fn encode_design_bulkstream(
                 })?;
             primary_records.push(primary_record(companion.record_index(), out.len())?);
             super::parameter_links::encode(&mut out, &[], std::slice::from_ref(companion))?;
+            let mut recipes = native
+                .design_dimension_recipe_records
+                .iter()
+                .filter(|record| record.companion_record_index == companion.record_index())
+                .collect::<Vec<_>>();
+            recipes.sort_by_key(|record| record.recipe_ordinal);
+            for record in recipes {
+                primary_records.push(primary_record(record.record_index, out.len())?);
+                // The generated prefix uses the standard self-selector frame.
+                // Neither source prefix bytes nor source coordinates supply content.
+                native_lp_ascii(&mut out, record.class_tag.as_str())?;
+                out.extend_from_slice(&record.record_index.to_le_bytes());
+                let record_index = i32::try_from(record.record_index).map_err(|_| {
+                    CodecError::malformed("dimension recipe index exceeds i32::MAX")
+                })?;
+                out.extend_from_slice(&record_index.to_le_bytes());
+                out.extend_from_slice(&[0; 8]);
+                let name = std::str::from_utf8(construction_recipe_name(record.recipe_kind))
+                    .map_err(|_| CodecError::malformed("dimension recipe family is not ASCII"))?;
+                native_lp_ascii(&mut out, name)?;
+                for word in &record.program {
+                    out.extend_from_slice(&word.to_le_bytes());
+                }
+            }
         }
     }
     for reference in &native.persistent_references {
