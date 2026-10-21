@@ -547,6 +547,16 @@ fn product_metadata_does_not_replace_a_typed_vendor_construction_object() {
     assert!(objects
         .iter()
         .any(|object| object.type_name == "Vendor::PartDesign::PadLike"));
+    let properties = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(properties
+        .iter()
+        .all(|property| property.name != "ScaleVector"));
     assert!(output.ir().model.features.is_empty());
     assert_eq!(output.ir().model.product_definitions.len(), 2);
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, decoded.ir(), output.ir());
