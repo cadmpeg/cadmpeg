@@ -3411,42 +3411,36 @@ pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
 impl<P> RevisionCacheForm<P> {
     /// State the fit tolerance this form carries for its solved cache.
     fn write_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
-        if matches!(write, ToleranceWrite::Clear) {
-            if matches!(self, Self::SolvedCache { .. }) {
-                *self = Self::Absent {};
-            }
-            return RevisionCacheWrite::Written;
-        }
-        match self {
-            Self::Absent {} => {
-                if let ToleranceWrite::State(fit_tolerance) = write {
-                    *self = Self::SolvedCache { fit_tolerance };
+        match (self, write) {
+            (form, ToleranceWrite::Clear) => {
+                if matches!(form, Self::SolvedCache { .. }) {
+                    *form = Self::Absent {};
                 }
                 RevisionCacheWrite::Written
             }
-            Self::SolvedCache { fit_tolerance } => {
-                match write {
-                    ToleranceWrite::Clear => {
-                        unreachable!("cache removal is handled before borrowing the tolerance")
-                    }
-                    ToleranceWrite::State(value) => *fit_tolerance = value,
-                    ToleranceWrite::Raise(value) => {
-                        if value.get() > fit_tolerance.get() {
-                            *fit_tolerance = value;
-                        }
-                    }
-                    ToleranceWrite::Scale(scale) => {
-                        let Some(scaled) = fit_tolerance.scaled(scale) else {
-                            return RevisionCacheWrite::InvalidValue(
-                                fit_tolerance.get() * scale.get(),
-                            );
-                        };
-                        *fit_tolerance = scaled;
-                    }
+            (form @ Self::Absent {}, ToleranceWrite::State(fit_tolerance)) => {
+                *form = Self::SolvedCache { fit_tolerance };
+                RevisionCacheWrite::Written
+            }
+            (Self::Absent {}, _) => RevisionCacheWrite::Written,
+            (Self::SolvedCache { fit_tolerance }, ToleranceWrite::State(value)) => {
+                *fit_tolerance = value;
+                RevisionCacheWrite::Written
+            }
+            (Self::SolvedCache { fit_tolerance }, ToleranceWrite::Raise(value)) => {
+                if value.get() > fit_tolerance.get() {
+                    *fit_tolerance = value;
                 }
                 RevisionCacheWrite::Written
             }
-            Self::Parameterization(_) => RevisionCacheWrite::Parameterized,
+            (Self::SolvedCache { fit_tolerance }, ToleranceWrite::Scale(scale)) => {
+                let Some(scaled) = fit_tolerance.scaled(scale) else {
+                    return RevisionCacheWrite::InvalidValue(fit_tolerance.get() * scale.get());
+                };
+                *fit_tolerance = scaled;
+                RevisionCacheWrite::Written
+            }
+            (Self::Parameterization(_), _) => RevisionCacheWrite::Parameterized,
         }
     }
 
