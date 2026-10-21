@@ -205,10 +205,14 @@ pub(crate) fn enrich_history_parameters<'a>(
                 };
                 if let [scalar] = candidates_for_name.as_slice() {
                     let value_only = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
-                        value_only_scalar_offset(&lane.native_payload, name)
-                            == scalar
-                                .offset
-                                .and_then(|offset| usize::try_from(offset).ok())
+                        value_only_scalar_offset(&lane.native_payload, name).is_some_and(
+                            |value_offset| {
+                                scalar
+                                    .offset
+                                    .and_then(|offset| usize::try_from(offset).ok())
+                                    == Some(value_offset)
+                            },
+                        )
                     });
                     let unit = scalar_units
                         .get(scalar.id.as_str())
@@ -290,6 +294,11 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         };
         if replace_existing {
+            if let Some(properties) = feature.dimension_properties.get_mut(name.as_str()) {
+                if properties.contains_key("Value") {
+                    properties.insert(cadmpeg_core::nonblank_literal!("Value"), expression.clone());
+                }
+            }
             feature.parameters.insert(name, expression);
         } else {
             feature.parameters.entry(name).or_insert(expression);
