@@ -526,7 +526,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                     spacing: cadmpeg_ir::Dimension::Literal(
                         cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                     ),
-                    count: actual_count,
+                    count: cadmpeg_ir::Dimension::Literal(3),
                 })
                 .unwrap(),
             }),
@@ -821,7 +821,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
                 direction: Some(actual_direction),
                 distance: actual_spacing,
-                count: cadmpeg_ir::Dimension::Literal(3),
+                count: actual_count,
                 ..
             } if (seeds == &[PatternSeed::Feature(features[2].id.clone())]
             && *actual_direction == Vector3::new(-1.0, 0.0, 0.0)) && crate::history::project::source_dimension_value(actual_spacing.dimension(), std::slice::from_ref(&derived_history)).unwrap().get() == 19.0
