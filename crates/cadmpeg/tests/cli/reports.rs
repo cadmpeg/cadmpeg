@@ -5,7 +5,7 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::{PredicateBooleanExt, predicate};
 use tempfile::tempdir;
 
 use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
@@ -70,13 +70,30 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "plan");
     assert_eq!(value["refusal"]["code"], "empty_geometry");
-    assert!(value["refusal"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("geometry"));
+    assert!(
+        value["refusal"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("geometry")
+    );
     assert!(value["decode_report"].is_object());
     assert!(value["check_report"].is_object());
-    assert!(value["export"].is_null());
+    // The writer completed its plan before caller policy refused the empty
+    // conversion. Preserve that plan and its exact native-omission loss.
+    assert_eq!(value["export"]["identity"]["payload"], "native");
+    assert_eq!(value["export"]["identity"]["target"], "step:ap214");
+    assert_eq!(value["export"]["write_path"]["path"], "synthesized");
+    let export: cadmpeg_ir::report::export::ExportReport =
+        serde_json::from_value(value["export"].clone()).unwrap();
+    let [loss] = export.losses.as_slice() else {
+        panic!("one omitted native arena: {:#?}", export.losses);
+    };
+    assert_eq!(loss.code.namespace(), "export");
+    assert_eq!(loss.code.local_code(), "native.records-omitted");
+    assert_eq!(
+        loss.message,
+        "the step write omits 1 native record(s) from `creo.unknowns`"
+    );
 }
 
 #[test]
@@ -200,13 +217,15 @@ fn f3d_export_report_identifies_regenerated_output() {
         value["export"]["identity"]["target"],
         "f3d:manifest-3-2-0-0"
     );
-    assert!(value["export"]["notes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|note| note
-            .as_str()
-            .is_some_and(|note| note.contains("regenerated"))));
+    assert!(
+        value["export"]["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|note| note
+                .as_str()
+                .is_some_and(|note| note.contains("regenerated")))
+    );
 }
 
 #[test]
