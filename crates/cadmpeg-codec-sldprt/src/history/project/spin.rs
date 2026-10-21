@@ -173,6 +173,9 @@ pub(super) fn project_sweep(
     };
     let twist = super::parameter_dimension(feature, &["Twist"]);
     let scale = super::parameter_dimension(feature, &["Scale"]);
+    if feature.parameters.contains_key("Scale") && scale.is_none() {
+        return None;
+    }
     Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape: cadmpeg_ir::features::SweepShape::sheet_sections(
             mode,
