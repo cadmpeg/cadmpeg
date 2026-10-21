@@ -315,7 +315,7 @@ fn hole_shape_and_profile(
     )>,
     CodecError,
 > {
-    let profile = hole_profile_construction(feature, features_by_source, history_features)?;
+    let profile = hole_profile_construction(feature, features_by_source, history_features);
     let diameter = super::parameter_dimension(feature, &["Diameter"])
         .or_else(|| profile.as_ref().map(|profile| profile.diameter.clone()));
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
@@ -451,9 +451,9 @@ fn hole_profile_construction(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<Option<HoleProfileConstruction>, CodecError> {
+) -> Option<HoleProfileConstruction> {
     let Some(children) = feature.properties.get("DissectableChildren") else {
-        return Ok(None);
+        return None;
     };
     let constructions = children
         .split(',')
@@ -476,12 +476,12 @@ fn hole_profile_construction(
     let mut multiple = false;
     let mut complete = None;
     for profile in constructions {
-        let Some(construction) = hole_sketch_construction(profile)? else {
+        let Some(construction) = hole_sketch_construction(profile) else {
             continue;
         };
         if construction.depth.is_some() {
             if complete.is_some() {
-                return Ok(None);
+                return None;
             }
             complete = Some(construction);
             continue;
@@ -492,23 +492,18 @@ fn hole_profile_construction(
             sole = Some(construction);
         }
     }
-    Ok(complete.or(if multiple { None } else { sole }))
+    complete.or(if multiple { None } else { sole })
 }
 
-pub(super) fn hole_sketch_construction(
-    profile: &Feature,
-) -> Result<Option<HoleProfileConstruction>, CodecError> {
-    Ok(hole_sketch_construction_details(profile)?.map(|(construction, _)| construction))
+pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
+    hole_sketch_construction_details(profile).map(|(construction, _)| construction)
 }
 
 /// Source quantity roles proven by a supported ordered hole-profile construction.
 pub(in crate::history) fn hole_profile_parameter_values(
     profile: &Feature,
-) -> Result<
-    Option<std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>>,
-    CodecError,
-> {
-    Ok(hole_sketch_construction_details(profile)?.map(|(_, controls)| controls))
+) -> Option<std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>> {
+    hole_sketch_construction_details(profile).map(|(_, controls)| controls)
 }
 
 fn hole_profile_dimension<Q>(
@@ -531,15 +526,12 @@ fn hole_profile_dimension<Q>(
         .map(Dimension::Parameter)
 }
 
-fn hole_sketch_construction_details(
-    profile: &Feature,
-) -> Result<
-    Option<(
-        HoleProfileConstruction,
-        std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>,
-    )>,
-    CodecError,
-> {
+type HoleProfileDetails = (
+    HoleProfileConstruction,
+    std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>,
+);
+
+fn hole_sketch_construction_details(profile: &Feature) -> Option<HoleProfileDetails> {
     // Numeric values below classify the source's ordered construction. The
     // resulting design stores only parameter bindings, never these parse values.
     #[derive(Clone)]
@@ -612,7 +604,7 @@ fn hole_sketch_construction_details(
             };
             controls.insert(name.to_owned(), value);
             if dimensions.len() == MAX_DIMENSIONS {
-                return Ok(None);
+                return None;
             }
             dimensions.push(dimension);
         }
@@ -628,7 +620,7 @@ fn hole_sketch_construction_details(
         }
     }
     if diameters.len() > MAX_DIAMETERS || lengths.len() > MAX_LENGTHS || angles.len() > MAX_ANGLES {
-        return Ok(None);
+        return None;
     }
     diameters.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
     lengths.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
@@ -777,7 +769,7 @@ fn hole_sketch_construction_details(
                 recess_diameter.binding.clone(),
                 Some(entry_diameter.binding.clone()),
             ) else {
-                return Ok(None);
+                return None;
             };
             Some(HoleProfileConstruction {
                 diameter: diameter.binding.clone(),
@@ -797,9 +789,9 @@ fn hole_sketch_construction_details(
         }
         _ => None,
     };
-    Ok(construction.map(|construction| (construction, controls)))
+    construction.map(|construction| (construction, controls))
 }
 
-pub(crate) fn is_hole_profile_construction(feature: &Feature) -> Result<bool, CodecError> {
-    Ok(hole_sketch_construction(feature)?.is_some())
+pub(crate) fn is_hole_profile_construction(feature: &Feature) -> bool {
+    hole_sketch_construction(feature).is_some()
 }

@@ -444,10 +444,7 @@ impl SldprtNative {
                     wire.id, wire.parent
                 )));
             };
-            entities.push(
-                crate::records::SketchInputEntity::try_from_wire(wire, payload)
-                    .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?,
-            );
+            entities.push(crate::records::SketchInputEntity::from_wire(wire, payload));
         }
         if let Some(record) = classes
             .iter()

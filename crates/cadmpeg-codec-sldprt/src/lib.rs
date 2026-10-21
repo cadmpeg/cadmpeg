@@ -426,11 +426,8 @@ impl EncoderBackend for SldprtCodec {
     }
 }
 
-fn source_records<'a>(
-    _ir: &CadIr,
-    source_fidelity: &'a SourceFidelity,
-) -> Result<Vec<SourceRecord<'a>>, CodecError> {
-    Ok(source_fidelity
+fn source_records<'a>(_ir: &CadIr, source_fidelity: &'a SourceFidelity) -> Vec<SourceRecord<'a>> {
+    source_fidelity
         .retained_records()
         .iter()
         .map(|(id, record)| SourceRecord {
@@ -439,7 +436,7 @@ fn source_records<'a>(
             data: record.data(),
             metadata: &source_fidelity.metadata,
         })
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]
@@ -544,8 +541,7 @@ mod tests {
         let records = crate::source_records(
             &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
             &fidelity,
-        )
-        .unwrap();
+        );
         let retained = records[0].data.expect("retained source bytes");
         assert_eq!(retained.as_ptr(), payload_ptr);
     }

@@ -444,9 +444,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "12"),
         ("e", "<MOD-DIAM>5.5"),
     ]);
-    let construction = hole_sketch_construction(&counterbore)
-        .expect("read the hole sketch construction")
-        .expect("required invariant");
+    let construction = hole_sketch_construction(&counterbore).expect("required invariant");
     assert_eq!(construction.diameter, source_binding(&counterbore, "e"));
     assert_eq!(construction.depth, Some(source_binding(&counterbore, "d")));
     assert!(matches!(
@@ -468,9 +466,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "10"),
         ("e", "118°"),
     ]);
-    let construction = hole_sketch_construction(&threaded)
-        .expect("read the hole sketch construction")
-        .expect("required invariant");
+    let construction = hole_sketch_construction(&threaded).expect("required invariant");
     assert_eq!(construction.diameter, source_binding(&threaded, "a"));
     assert_eq!(construction.depth, Some(source_binding(&threaded, "b")));
     assert!(matches!(
@@ -491,9 +487,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "11.62"),
         ("f", "<MOD-DIAM>10.29"),
     ]);
-    let construction = hole_sketch_construction(&tapered_thread)
-        .expect("read the hole sketch construction")
-        .expect("tapered thread profile");
+    let construction = hole_sketch_construction(&tapered_thread).expect("tapered thread profile");
     assert_eq!(construction.diameter, source_binding(&tapered_thread, "d"));
     assert_eq!(
         construction.depth,
@@ -528,9 +522,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "<MOD-DIAM>4.5"),
         ("f", "<MOD-DIAM>4.55"),
     ]);
-    let construction = hole_sketch_construction(&counterbore_with_exit_countersink)
-        .expect("read the hole sketch construction")
-        .expect("dual-ended profile");
+    let construction =
+        hole_sketch_construction(&counterbore_with_exit_countersink).expect("dual-ended profile");
     assert_eq!(
         construction.diameter,
         source_binding(&counterbore_with_exit_countersink, "e")
@@ -563,9 +556,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("f", "5.4"),
         ("g", "<MOD-DIAM>9.95"),
     ]);
-    let construction = hole_sketch_construction(&counterdrill)
-        .expect("read the hole sketch construction")
-        .expect("counterdrill profile");
+    let construction = hole_sketch_construction(&counterdrill).expect("counterdrill profile");
     assert_eq!(construction.diameter, source_binding(&counterdrill, "b"));
     assert_eq!(construction.depth, Some(source_binding(&counterdrill, "a")));
     assert_eq!(
@@ -595,9 +586,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "4"),
         ("e", "6"),
     ]);
-    assert!(hole_sketch_construction(&placement_dimensions)
-        .expect("read the hole sketch construction")
-        .is_none());
+    assert!(hole_sketch_construction(&placement_dimensions).is_none());
 
     let unsupported_countersink = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -605,9 +594,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("depth", "6"),
         ("angle", "82°"),
     ]);
-    assert!(hole_sketch_construction(&unsupported_countersink)
-        .expect("read the hole sketch construction")
-        .is_none());
+    assert!(hole_sketch_construction(&unsupported_countersink).is_none());
 
     let unsupported_counterbore = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -615,9 +602,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("entry depth", "3"),
         ("depth", "6"),
     ]);
-    assert!(hole_sketch_construction(&unsupported_counterbore)
-        .expect("read the hole sketch construction")
-        .is_none());
+    assert!(hole_sketch_construction(&unsupported_counterbore).is_none());
 
     let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
     native_profile.id = "native-profile".into();
@@ -1379,9 +1364,7 @@ fn hole_profile_rejects_more_than_supported_dimension_roles() {
         );
         profile.content.push(FeatureContent::Dimension(name.into()));
     }
-    assert!(hole_sketch_construction(&profile)
-        .expect("read the hole sketch construction")
-        .is_none());
+    assert!(hole_sketch_construction(&profile).is_none());
 }
 
 #[test]
@@ -1394,15 +1377,12 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("depth"), "9".into());
-    let construction = hole_sketch_construction(&profile)
-        .expect("read the hole sketch construction")
-        .expect("fallback hole dimensions");
+    let construction = hole_sketch_construction(&profile).expect("fallback hole dimensions");
     // This direct helper accepts a self-contained hole schema even without a
     // Sketch class. Expand that proven source context for the generic binding
     // resolver without changing the authored feature or its expressions.
     let mut source_profile = profile.clone();
     for (name, value) in super::solid::hole_profile_parameter_values(&profile)
-        .unwrap()
         .expect("supported hole-profile quantity roles")
     {
         let name = cadmpeg_core::text::NonBlankString::new(name).unwrap();
@@ -1439,7 +1419,5 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .content
         .push(FeatureContent::Dimension("missing".into()));
-    assert!(hole_sketch_construction(&profile)
-        .expect("read the hole sketch construction")
-        .is_none());
+    assert!(hole_sketch_construction(&profile).is_none());
 }

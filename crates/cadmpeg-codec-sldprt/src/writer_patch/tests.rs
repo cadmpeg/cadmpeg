@@ -984,7 +984,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
         )
         .unwrap();
     let decoded = EditableDecodeResult::from(decoded);
-    let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
+    let records = crate::source_records(decoded.ir(), decoded.source_fidelity());
     let annotations = &decoded.source_fidelity().annotations;
     assert!(
         super::patch_partition(decoded.ir(), annotations, &records, 0.001)
