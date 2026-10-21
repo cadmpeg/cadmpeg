@@ -1444,6 +1444,12 @@ QUALIFIED_SCALAR_TYPES = {
     *{f"std::primitive::{name}" for name in SCALAR_TYPES if name not in {"String"}},
     "alloc::string::String",
     "std::string::String",
+    *{
+        f"{module}::num::NonZero{suffix}"
+        for module in ("core", "std")
+        for suffix in ("I8", "I16", "I32", "I64", "I128", "Isize",
+                       "U8", "U16", "U32", "U64", "U128", "Usize")
+    },
 }
 QUALIFIED_SEQUENCE_TYPES = {
     "alloc::vec::Vec",
