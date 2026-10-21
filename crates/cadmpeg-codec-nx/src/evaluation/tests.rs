@@ -65,12 +65,6 @@ fn complete_block_ir() -> CadIr {
 }
 
 fn attach_complete_active_configuration(ir: &mut CadIr) {
-    let feature_states = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.clone(), ConfigurationFeatureState::Active {}))
-        .collect();
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:id#active".to_string())
             .expect("identity grammar"),
@@ -92,7 +86,7 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
             .unwrap(),
         ),
         parameter_values: BTreeMap::new(),
-        feature_states,
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
 }
