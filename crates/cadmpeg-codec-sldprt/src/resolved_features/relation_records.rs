@@ -1872,7 +1872,7 @@ mod relation_records_tests {
                         ),
                     ),
                 };
-                let scope_end = [next_class, Some(feature_end), Some(unknown_feature_limit)]
+                let scope_end = [next_class, feature_end, unknown_feature_limit]
                     .into_iter()
                     .flatten()
                     .min();
@@ -1971,7 +1971,7 @@ mod relation_records_tests {
         assert_eq!(candidates.len(), usize::try_from(RELATIONS).unwrap());
         assert!(candidates
             .iter()
-            .all(|(class, scalar, _)| scalar.offset == class.offset + 50));
+            .all(|(class, scalar, _)| scalar.offset == class.offset.map(|offset| offset + 50)));
     }
 
     fn circle_scalar(

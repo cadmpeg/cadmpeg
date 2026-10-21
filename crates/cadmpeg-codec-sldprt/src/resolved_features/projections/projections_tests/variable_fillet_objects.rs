@@ -108,7 +108,7 @@ fn variable_fillet_objects_match_the_history_and_lane_scans() {
                         let mut starts = history
                             .features
                             .iter()
-                            .filter_map(|candidate| Some((names.of(candidate)?.offset, candidate)))
+                            .filter_map(|candidate| Some((names.of(candidate)?.offset?, candidate)))
                             .collect::<Vec<_>>();
                         starts.sort_unstable_by_key(|(left, _)| *left);
                         let index = starts
