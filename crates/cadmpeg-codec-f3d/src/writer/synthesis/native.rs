@@ -38,6 +38,7 @@ const WRITTEN: &[&str] = &[
     "design_parameter_scopes",
     "design_parameter_owners",
     "design_parameter_companions",
+    "design_dimension_recipe_records",
     "design_sketch_placements",
     "sketch_points",
     "sketch_curve_identities",
