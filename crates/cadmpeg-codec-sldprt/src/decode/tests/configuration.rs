@@ -97,7 +97,11 @@ fn actual_partition_binds_the_unique_native_slot_before_inferred_configuration()
             source_index: None,
             name: Some(name.into()),
             material: None,
-            properties: BTreeMap::new(),
+            properties: if name == "Default" {
+                BTreeMap::from([(cadmpeg_core::nonblank_literal!("id"), "0".into())])
+            } else {
+                BTreeMap::new()
+            },
             bodies: None,
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
@@ -106,6 +110,18 @@ fn actual_partition_binds_the_unique_native_slot_before_inferred_configuration()
         });
     }
     let body = BodyId::mint("test:model:entity#actual-slot-body").unwrap();
+    let mut unknown_slot = ir.clone();
+    unknown_slot.model.configurations[1].properties.remove("id");
+    assign_configuration_bodies(&mut unknown_slot, vec![(0, vec![body.clone()])]).unwrap();
+    mark_active_configuration(&mut unknown_slot);
+    assert_eq!(unknown_slot.model.configurations.len(), 3);
+    assert_eq!(unknown_slot.model.configurations[1].source_index, None);
+    assert!(unknown_slot.model.configurations[1].bodies.is_none());
+    assert!(unknown_slot
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| !configuration.active));
     assign_configuration_bodies(&mut ir, vec![(0, vec![body.clone()])]).unwrap();
     mark_active_configuration(&mut ir);
     assert_eq!(ir.model.configurations.len(), 2);
