@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::references::DesignClassTag;
-use cadmpeg_ir::features::{FeatureUnitPlaneFrame, FinitePoint3};
+use cadmpeg_ir::features::{FeatureImageBounds, FeatureUnitPlaneFrame, FinitePoint3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::UnitVector3;
@@ -102,15 +102,13 @@ impl DesignCanvasGeometryPayload {
     }
 }
 
-/// Authored Canvas boundary segments in an admitted horizontal or vertical form.
+const EPS_CANVAS_BOUNDARY_CLOSURE: f64 = 64.0 * f64::EPSILON;
+const EPS_CANVAS_BOUNDARY_ORTHOGONAL: f64 = 64.0 * f64::EPSILON;
+
+/// Ordered opposite image edges in the supporting plane.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignCanvasBounds {
-    form: DesignCanvasBoundaryForm,
-}
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum DesignCanvasBoundaryForm {
-    Horizontal([[Point2; 2]; 2]),
-    Vertical([[Point2; 2]; 2]),
+    segments: [[Point2; 2]; 2],
 }
 impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
     type Error = String;
@@ -119,55 +117,64 @@ impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
             return Err("boundary_segments must contain finite coordinates".into());
         }
         let [[a, b], [c, d]] = segments;
-        let close = |left: f64, right: f64| {
-            (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
+        let e = Point2::new(b.u - a.u, b.v - a.v);
+        let f = Point2::new(c.u - a.u, c.v - a.v);
+        let width = e.u.hypot(e.v);
+        let height = f.u.hypot(f.v);
+        if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+            return Err("boundary_segments must have finite nonzero image axes".into());
+        }
+        let dot = (e.u / width) * (f.u / height) + (e.v / width) * (f.v / height);
+        let close = |actual: f64, expected: f64| {
+            expected.is_finite()
+                && (actual - expected).abs()
+                    <= EPS_CANVAS_BOUNDARY_CLOSURE * actual.abs().max(expected.abs()).max(1.0)
         };
-        let horizontal = close(a.v, b.v)
-            && close(c.v, d.v)
-            && close(a.u, c.u)
-            && close(b.u, d.u)
-            && !close(a.v, c.v);
-        let vertical = close(a.u, b.u)
-            && close(c.u, d.u)
-            && close(a.v, c.v)
-            && close(b.v, d.v)
-            && !close(a.u, c.u);
-        let form = if horizontal {
-            DesignCanvasBoundaryForm::Horizontal(segments)
-        } else if vertical {
-            DesignCanvasBoundaryForm::Vertical(segments)
-        } else {
-            return Err(
-                "boundary_segments must form an admitted horizontal or vertical pair".into(),
-            );
-        };
-        Ok(Self { form })
+        if dot.abs() > EPS_CANVAS_BOUNDARY_ORTHOGONAL
+            || !close(d.u, b.u + f.u)
+            || !close(d.v, b.v + f.v)
+        {
+            return Err("boundary_segments must form an ordered rectangle".into());
+        }
+        Ok(Self { segments })
     }
 }
 impl DesignCanvasBounds {
     fn segments(self) -> [[Point2; 2]; 2] {
-        match self.form {
-            DesignCanvasBoundaryForm::Horizontal(segments)
-            | DesignCanvasBoundaryForm::Vertical(segments) => segments,
-        }
+        self.segments
     }
-    pub(crate) fn mirroring(self) -> (bool, bool) {
-        match self.form {
-            DesignCanvasBoundaryForm::Horizontal([[a, b], [c, _]]) => (a.u > b.u, a.v > c.v),
-            DesignCanvasBoundaryForm::Vertical([[a, b], [c, _]]) => (a.u > c.u, a.v > b.v),
-        }
-    }
-    pub(crate) fn extents(self) -> [Point2; 2] {
-        let [[a, b], [c, d]] = self.segments();
-        let (minimum, maximum) = [b, c, d]
-            .into_iter()
-            .fold((a, a), |(minimum, maximum), point| {
-                (
-                    Point2::new(minimum.u.min(point.u), minimum.v.min(point.v)),
-                    Point2::new(maximum.u.max(point.u), maximum.v.max(point.v)),
-                )
-            });
-        [minimum, maximum]
+
+    pub(crate) fn image_placement(
+        self,
+        plane: FeatureUnitPlaneFrame,
+    ) -> Result<(FeatureUnitPlaneFrame, FeatureImageBounds), String> {
+        let [[a, b], [c, _]] = self.segments;
+        let e = Point2::new(b.u - a.u, b.v - a.v);
+        let f = Point2::new(c.u - a.u, c.v - a.v);
+        let width = e.u.hypot(e.v);
+        let height = f.u.hypot(f.v);
+        let u = *plane.u_axis().as_raw();
+        let v = *plane.v_axis().as_raw();
+        let origin = plane
+            .origin()
+            .get()
+            .translated(u, a.u * DESIGN_CANVAS_LENGTH_TO_MM)
+            .translated(v, a.v * DESIGN_CANVAS_LENGTH_TO_MM);
+        let frame = FeatureUnitPlaneFrame::new(
+            origin,
+            u.scale(e.u / width) + v.scale(e.v / width),
+            u.scale(f.u / height) + v.scale(f.v / height),
+        )
+        .ok_or("Canvas image frame must be finite and orthonormal")?;
+        let bounds = FeatureImageBounds::new([
+            Point2::new(0.0, 0.0),
+            Point2::new(
+                width * DESIGN_CANVAS_LENGTH_TO_MM,
+                height * DESIGN_CANVAS_LENGTH_TO_MM,
+            ),
+        ])
+        .ok_or("Canvas image dimensions must be finite and positive")?;
+        Ok((frame, bounds))
     }
 }
 

@@ -403,14 +403,6 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A writer must emit the same member set the reader expects, and the two choices shift every following member by four bytes. A texture asset authored with a map channel other than `1`, or with a non-default advanced channel id, separates them.
 
-### MA-05. Canvas crop
-
-**Question.** Which Canvas fields hold the crop state?
-
-**Known.** `f3d.md` §3.1 "A `Canvas` scope names" gives the Canvas geometry record. Its geometry-prologue byte 14 is the visibility Boolean. The order of the boundary-segment endpoints gives the independent u and v mirroring states. The record also holds the opacity, the plane frame, the label, and the image asset. It names no crop field. The decoder transfers visibility, mirroring, opacity, and the plane frame.
-
-**Need.** A neutral canvas needs the crop state to show the image correctly.
-
 ## 4. T-splines
 
 ### TS-05. Compact Form cage-list tail

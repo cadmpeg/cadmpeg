@@ -22,8 +22,6 @@ use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Point2;
 
-const DESIGN_LENGTH_TO_MM: f64 = 10.0;
-
 /// Decode every structurally complete Canvas geometry and image-asset record.
 pub(crate) fn decode_canvas_images(
     scan: &ContainerScan,
@@ -59,8 +57,6 @@ pub(crate) fn project_canvas_images(
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
-        let [minimum, maximum] = image.geometry().boundary.extents();
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
@@ -71,31 +67,22 @@ pub(crate) fn project_canvas_images(
         {
             assets.push(asset);
         }
-        let (opacity, frame) = image.geometry().payload.decoded();
+        let (opacity, plane) = image.geometry().payload.decoded();
+        let (frame, bounds) = image
+            .geometry()
+            .boundary
+            .image_placement(plane)
+            .map_err(CodecError::malformed)?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::ReferenceImage {
                     asset: asset_id,
                     visible: image.geometry().prologue.visible(),
-                    mirror_u,
-                    mirror_v,
+                    mirror_u: false,
+                    mirror_v: false,
                     frame,
-                    bounds: cadmpeg_ir::features::FeatureImageBounds::new([
-                        Point2::new(
-                            minimum.u * DESIGN_LENGTH_TO_MM,
-                            minimum.v * DESIGN_LENGTH_TO_MM,
-                        ),
-                        Point2::new(
-                            maximum.u * DESIGN_LENGTH_TO_MM,
-                            maximum.v * DESIGN_LENGTH_TO_MM,
-                        ),
-                    ])
-                    .ok_or_else(|| {
-                        CodecError::malformed(
-                            "Canvas bounds must have finite corners and nonzero extents",
-                        )
-                    })?,
+                    bounds,
                     opacity: Some(
                         cadmpeg_ir::scalar::Fraction::new(f64::from(opacity)).ok_or_else(|| {
                             CodecError::malformed(
