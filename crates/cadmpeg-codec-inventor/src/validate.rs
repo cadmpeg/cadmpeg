@@ -65,6 +65,8 @@ const ARENAS: &[&str] = &[
     "pm_dc_feature_properties",
     "pm_dc_feature_terminators",
     "pm_dc_features",
+    "pm_dc_model_roots",
+    "pm_dc_parameter_tables",
     "pm_dc_pattern_features",
     "pm_dc_entity_style_links",
     "pm_dc_parameters",
@@ -332,6 +334,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             ));
         }
     }
+    validate_parameter_scopes(data, &raw, findings);
     let native_parameter_ids = data
         .pm_dc_parameters
         .iter()
@@ -364,6 +367,82 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 issue.segment_token, issue.record_ordinal
             )),
         ));
+    }
+}
+
+fn validate_parameter_scopes(
+    data: &NativeData,
+    raw: &HashMap<(&str, u32), &str>,
+    findings: &mut Vec<Finding>,
+) {
+    let resolves = |token: &str, reference: u32, type_id: Option<&str>| {
+        reference == 0
+            || raw
+                .get(&(token, reference - 1))
+                .is_some_and(|raw_type| type_id.is_none_or(|expected| *raw_type == expected))
+    };
+    let table_type = crate::pmdc::type_id_string(crate::design::scope::PARAMETER_TABLE_TYPE);
+    let root_type = crate::pmdc::type_id_string(crate::design::scope::MODEL_ROOT_TYPE);
+    unique(
+        findings,
+        data.pm_dc_parameter_tables.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmDc parameter table",
+    );
+    unique(
+        findings,
+        data.pm_dc_model_roots.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmDc model root",
+    );
+    for table in &data.pm_dc_parameter_tables {
+        let token = table.identity.segment_token.as_str();
+        let exact = raw.get(&(token, table.identity.record_ordinal)).copied()
+            == Some(table.identity.type_id.as_str())
+            && table.identity.type_id.as_str() == table_type;
+        let references_resolve = resolves(token, table.next.index(), None)
+            && resolves(token, table.context.index(), Some(&root_type))
+            && table
+                .members
+                .references()
+                .iter()
+                .chain(table.names.iter().map(|named| &named.reference))
+                .all(|reference| resolves(token, reference.index(), None));
+        if !exact || !references_resolve {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc parameter table record or reference does not resolve".into(),
+                Some(table.id()),
+            ));
+        }
+    }
+    for root in &data.pm_dc_model_roots {
+        let token = root.identity.segment_token.as_str();
+        let exact = raw.get(&(token, root.identity.record_ordinal)).copied()
+            == Some(root.identity.type_id.as_str())
+            && root.identity.type_id.as_str() == root_type;
+        let references_resolve = resolves(token, root.next.index(), None)
+            && resolves(token, root.parameter_table.index(), Some(&table_type))
+            && root
+                .members
+                .references()
+                .iter()
+                .all(|reference| resolves(token, reference.index(), None));
+        if !exact || !references_resolve {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc model root record or reference does not resolve".into(),
+                Some(root.id()),
+            ));
+        }
     }
 }
 
@@ -991,7 +1070,20 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(|result| (&result.output_of, result))
         .collect::<HashMap<_, _>>();
+    let model_roots = data
+        .pm_dc_model_roots
+        .iter()
+        .map(crate::record_identity::Located::id)
+        .collect::<HashSet<_>>();
     for feature in &ir.model.features {
+        if is_flat_pattern_feature(feature)
+            && feature
+                .native_ref
+                .as_ref()
+                .is_some_and(|native| model_roots.contains(native))
+        {
+            continue;
+        }
         let Some(raw_feature) = feature
             .native_ref
             .as_deref()
@@ -1406,6 +1498,8 @@ struct NativeData {
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
+    pm_dc_parameter_tables: Vec<crate::design::scope::PmDcParameterTable>,
+    pm_dc_model_roots: Vec<crate::design::scope::PmDcModelRoot>,
     design_record_issues: Vec<RecordIssue>,
     pm_dc_sketches: Vec<PmDcSketch>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
@@ -1470,6 +1564,8 @@ impl NativeData {
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
             pm_dc_expressions: namespace.arena_as_for_decode(ctx, "pm_dc_expressions")?,
             pm_dc_units: namespace.arena_as_for_decode(ctx, "pm_dc_units")?,
+            pm_dc_parameter_tables: namespace.arena_as_for_decode(ctx, "pm_dc_parameter_tables")?,
+            pm_dc_model_roots: namespace.arena_as_for_decode(ctx, "pm_dc_model_roots")?,
             design_record_issues: namespace.arena_as_for_decode(ctx, "design_record_issues")?,
             pm_dc_sketches: namespace.arena_as_for_decode(ctx, "pm_dc_sketches")?,
             pm_dc_sketch_entities: namespace.arena_as_for_decode(ctx, "pm_dc_sketch_entities")?,
@@ -2147,6 +2243,16 @@ fn document_kind(ir: &CadIr) -> Option<&str> {
         .as_ref()
         .and_then(|source| source.attributes.get("document_kind"))
         .map(String::as_str)
+}
+
+/// Whether a neutral feature is the flat-pattern model feature of a model root.
+fn is_flat_pattern_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
+    matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+        ) if kind.as_str() == crate::design::scope::FLAT_PATTERN_KIND
+    )
 }
 
 fn unique<T: Eq + std::hash::Hash>(

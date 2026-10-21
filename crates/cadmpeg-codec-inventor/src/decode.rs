@@ -470,6 +470,12 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
     namespace.set_arena(ctx, "pm_dc_units", &design_inventory.units)?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_parameter_tables",
+        &design_inventory.parameter_tables,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_model_roots", &design_inventory.model_roots)?;
     namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
     namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
     namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
@@ -733,6 +739,12 @@ fn decode_container<'a>(
                 unresolved.feature_states
             )));
         }
+        if unresolved.parameter_scopes != 0 {
+            losses.push(InventorLossCode::ParameterScopeUnresolved.note(format!(
+                "Retained {} Inventor parameter record(s) whose parameter table has no established owning model.",
+                unresolved.parameter_scopes
+            )));
+        }
         if unresolved.parameters != 0 {
             losses.push(InventorLossCode::ParameterGraphOpen.note(format!(
                 "Retained {} Inventor parameter record(s) whose unit or expression graph is not closed.",
@@ -985,6 +997,14 @@ fn decode_container<'a>(
         ),
         (crate::coverage::PM_DC_UNITS, design_inventory.units.len()),
         (
+            crate::coverage::PM_DC_PARAMETER_TABLES,
+            design_inventory.parameter_tables.len(),
+        ),
+        (
+            crate::coverage::PM_DC_MODEL_ROOTS,
+            design_inventory.model_roots.len(),
+        ),
+        (
             crate::coverage::DESIGN_PARAMETERS_TRANSFERRED,
             design_parameter_count,
         ),
@@ -1130,6 +1150,7 @@ fn record_ordinal(ordinal: usize, what: &'static str) -> Result<u32, CodecError>
 #[derive(Debug, Default)]
 struct UnresolvedDesign {
     parameters: usize,
+    parameter_scopes: usize,
     bounded_parameters: usize,
     sketches: usize,
     sketch_entities: usize,
@@ -1147,7 +1168,9 @@ fn project_design(
     feature: &crate::feature::FeatureInventory,
 ) -> Result<UnresolvedDesign, CodecError> {
     let mut admitted_entities = 0_u64;
-    let parameters = crate::design::project_parameters(ctx, design, &mut admitted_entities)?;
+    let scopes = crate::design::parameter_scopes(design)?;
+    let parameters =
+        crate::design::project_parameters(ctx, design, &scopes, &mut admitted_entities)?;
     ir.model.parameters = parameters.parameters;
     let sketches = crate::sketch::project(ctx, sketch, &ir.model.parameters)?;
     ir.model.sketches = sketches.sketches;
@@ -1163,8 +1186,25 @@ fn project_design(
     )?;
     ir.model.features = features.features;
     ir.model.feature_result_topologies = features.result_topologies;
+    // Flat-pattern models follow every projected document feature.
+    let first_model_ordinal = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .max()
+        .map_or(Some(0), |ordinal| ordinal.checked_add(1))
+        .ok_or_else(|| CodecError::malformed("Inventor feature ordinal overflows"))?;
+    let model_features = crate::design::scope::project_model_features(
+        ctx,
+        &design.model_roots,
+        &design.brep_segments,
+        first_model_ordinal,
+    )?;
+    ir.model.features.extend(model_features);
     Ok(UnresolvedDesign {
         parameters: parameters.unresolved,
+        parameter_scopes: parameters.unresolved_scopes,
         bounded_parameters: parameters.bounded,
         sketches: sketches.unresolved_sketches,
         sketch_entities: sketches.unresolved_entities,
