@@ -9,7 +9,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::presentation::PresentationStateKind;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 
 fn state(
     tag: &str,
@@ -190,7 +189,11 @@ pub(super) fn write(
     }
     let mut attributes = String::new();
     for (key, value) in &root {
-        let _infallible_string_write = write!(attributes, " {key}=\"{}\"", xml::escaped(value));
+        attributes.push(' ');
+        attributes.push_str(key);
+        attributes.push_str("=\"");
+        attributes.push_str(&xml::escaped(value));
+        attributes.push('"');
     }
     Ok((schema, attributes, states))
 }

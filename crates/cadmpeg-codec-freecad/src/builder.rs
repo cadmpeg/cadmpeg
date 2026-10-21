@@ -2,7 +2,6 @@
 //! Source-less schema-4 document construction.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
@@ -312,12 +311,11 @@ pub(crate) fn document_xml(
     let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
     if schema != "2" {
         for object in objects {
-            let _infallible_string_write = write!(
-                result,
-                "<ObjectDeps Name=\"{}\" Count=\"{}\">",
-                crate::writer::xml::escaped(&object.name),
-                object.dependencies.len()
-            );
+            result.push_str("<ObjectDeps Name=\"");
+            result.push_str(&crate::writer::xml::escaped(&object.name));
+            result.push_str("\" Count=\"");
+            result.push_str(&object.dependencies.len().to_string());
+            result.push_str("\">");
             for dependency in &object.dependencies {
                 result.push_str(&crate::writer::xml::element(
                     "Dep",
@@ -328,46 +326,55 @@ pub(crate) fn document_xml(
         }
     }
     for (index, object) in objects.iter().enumerate() {
-        let _infallible_string_write = write!(
-            result,
-            "<{object_tag} name=\"{}\" type=\"{}\" id=\"{}\"",
-            crate::writer::xml::escaped(&object.name),
-            crate::writer::xml::escaped(&object.kind),
-            index + 1
-        );
+        result.push('<');
+        result.push_str(object_tag);
+        result.push_str(" name=\"");
+        result.push_str(&crate::writer::xml::escaped(&object.name));
+        result.push_str("\" type=\"");
+        result.push_str(&crate::writer::xml::escaped(&object.kind));
+        result.push_str("\" id=\"");
+        result.push_str(&(index + 1).to_string());
+        result.push('"');
         for (name, value) in &object.declaration_attributes {
-            let _infallible_string_write =
-                write!(result, " {name}=\"{}\"", crate::writer::xml::escaped(value));
+            result.push(' ');
+            result.push_str(name);
+            result.push_str("=\"");
+            result.push_str(&crate::writer::xml::escaped(value));
+            result.push('"');
         }
         result.push_str("/>");
     }
-    let _infallible_string_write = write!(
-        result,
-        "</{objects_tag}><{data_tag} Count=\"{}\">",
-        objects.len()
-    );
+    result.push_str("</");
+    result.push_str(objects_tag);
+    result.push_str("><");
+    result.push_str(data_tag);
+    result.push_str(" Count=\"");
+    result.push_str(&objects.len().to_string());
+    result.push_str("\">");
     for object in objects {
-        let _infallible_string_write = write!(
-            result,
-            "<{object_tag} name=\"{}\"{}>{}{}</{object_tag}>",
-            crate::writer::xml::escaped(&object.name),
-            if object.extensions.is_empty() {
-                String::new()
-            } else {
-                " Extensions=\"True\"".to_owned()
-            },
-            if object.extensions.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "<Extensions Count=\"{}\">{}</Extensions>",
-                    object.extensions.len(),
-                    object.extensions.join("")
-                )
-            },
-            properties_xml(&object.properties)
-        );
+        result.push('<');
+        result.push_str(object_tag);
+        result.push_str(" name=\"");
+        result.push_str(&crate::writer::xml::escaped(&object.name));
+        result.push('"');
+        if !object.extensions.is_empty() {
+            result.push_str(" Extensions=\"True\"");
+        }
+        result.push('>');
+        if !object.extensions.is_empty() {
+            result.push_str("<Extensions Count=\"");
+            result.push_str(&object.extensions.len().to_string());
+            result.push_str("\">");
+            result.push_str(&object.extensions.join(""));
+            result.push_str("</Extensions>");
+        }
+        result.push_str(&properties_xml(&object.properties));
+        result.push_str("</");
+        result.push_str(object_tag);
+        result.push('>');
     }
-    let _infallible_string_write = write!(result, "</{data_tag}></Document>");
+    result.push_str("</");
+    result.push_str(data_tag);
+    result.push_str("></Document>");
     result
 }
