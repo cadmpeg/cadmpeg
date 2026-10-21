@@ -235,6 +235,23 @@ fn sync_neutral_parameters(
                 parameter.id
             )));
         }
+        if parameter.value.as_ref().is_some_and(|value| {
+            !crate::resolved_features::parameters::scalar_quantity_matches(
+                lane,
+                &lane.scalars[location.1],
+                value,
+            )
+        }) {
+            if !lane.native_payload.is_empty() {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT scalar {} no longer has its source quantity; regenerate the input lane",
+                    lane.scalars[location.1].id
+                )));
+            }
+            // Synthesis reports omission of this incompatible native copy;
+            // the canonical parameter remains in its current quantity.
+            continue;
+        }
         let scalar = &mut lane.scalars[location.1];
         let value = match parameter.value.as_ref() {
             Some(ParameterValue::Length(length)) => length.get() / 1000.0,

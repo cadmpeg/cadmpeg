@@ -176,7 +176,7 @@ pub(crate) fn regenerate(
                     .map(|operand| (operand.kind, operand.entity_index))
                     .collect::<Vec<_>>();
                 let mut bytes = Vec::new();
-                let value = match scalar_value(ir, scalar, name, &neutral_owners) {
+                let value = match scalar_value(ir, lane, scalar, name, &neutral_owners) {
                     Ok(value) => value.unwrap_or(scalar.value.get()),
                     Err(reason) => {
                         omitted.push(Omission {
@@ -384,6 +384,7 @@ pub(crate) fn regenerate(
 /// scalar target copies resolve those identities instead of keeping old values.
 fn scalar_value(
     ir: &CadIr,
+    lane: &crate::records::FeatureInputLane,
     scalar: &crate::records::FeatureInputScalar,
     name: &crate::records::FeatureInputName,
     owners: &BTreeMap<&str, &cadmpeg_ir::features::Feature>,
@@ -392,6 +393,23 @@ fn scalar_value(
     let Some(owner) = scalar.feature_ref.as_deref().and_then(|id| owners.get(id)) else {
         return Ok(None);
     };
+    if let Some(value) = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.native_ref.as_deref() == Some(scalar.id.as_str())
+                || (parameter.owner.as_ref() == Some(&owner.id)
+                    && parameter.name == name.value.as_str())
+        })
+        .and_then(|parameter| parameter.value.as_ref())
+    {
+        if !super::parameters::scalar_quantity_matches(lane, scalar, value) {
+            return Err(
+                "canonical parameter quantity does not match the retained native scalar quantity",
+            );
+        }
+    }
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
         owner.evaluation.definition()
     else {
