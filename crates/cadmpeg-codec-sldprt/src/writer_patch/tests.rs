@@ -658,12 +658,31 @@ fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
             cadmpeg_ir::scalar::Length::new(30000.0).unwrap(),
         ));
         ir.model.configurations[0].parameter_values.insert(
-            depth,
+            depth.clone(),
             cadmpeg_ir::features::ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(30000.0).unwrap(),
             ),
         );
     }
+    // #209 D15: the active configuration is the edited base state. Preserve
+    // the original duplicate override as a negative; it cannot be the valid
+    // input to the independent opaque-partition synthesis check below.
+    let invalid = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).unwrap();
+    assert!(invalid.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity
+            && finding.severity == cadmpeg_ir::report::Severity::Error
+            && finding.message == "active configuration must use the base state without overrides"
+    }));
+    let override_value = decoded.ir_mut().model.configurations[0]
+        .parameter_values
+        .remove(&depth)
+        .unwrap();
+    assert_eq!(
+        override_value,
+        cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(30000.0).unwrap()
+        )
+    );
 
     {
         let source_fidelity = decoded.source_fidelity_mut();
