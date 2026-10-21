@@ -125,6 +125,27 @@ Parsed by:
 | 35 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes at offsets 35 through 40 |
 | 41 | 4 | `expression_length` | `u32` | little | spec | the expression at offset 41 |
 
+## `design_parameter_typed_compact_owned_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 85 B
+
+Offsets are relative to the indexed header of an owned typed compact parameter through its expression length. The frame ends with the 52-byte typed parameter tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The indexed header is followed by fifteen zero bytes |
+| 11 | 15 | `zero_run_15` | `bytes[15]` | little | spec | The indexed header is followed by fifteen zero bytes |
+| 26 | 4 | `source_ordinal` | `u32` | little | spec | `u32 source_ordinal` at offset 26 |
+| 30 | 1 | `owner_marker` | `u8` | little | spec | The owner field at offset 30 is a reference · value `1` |
+| 31 | 8 | `owner_record_index` | `u64` | little | spec | the u64 owner record index at offset 31 |
+| 39 | 4 | `owner_type_guid_length` | `u32` | little | spec | its u32 length `36` at offset 39 · value `36` |
+| 43 | 36 | `owner_type_guid` | `bytes[36]` | little | spec | the LP-ASCII 36 target type GUID |
+| 79 | 2 | `owner_flags` | `bytes[2]` | little | spec | the two zero flag bytes at offsets 79 and 80 |
+| 81 | 4 | `expression_length` | `u32` | little | spec | Its LP-UTF16 expression begins at offset 81 |
+
 ## `design_parameter_legacy_287_tail`
 
 Spec §3.1 · layout: byte offsets · size: 12 B

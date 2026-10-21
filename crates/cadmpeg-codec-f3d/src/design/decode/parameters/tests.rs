@@ -368,7 +368,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     let archive = zip.finish().unwrap().into_inner();
 
     let parameters = with_scan(&archive, decode_parameters).unwrap();
-    let [parameter] = parameters.as_slice() else {
+    let [parameter] = parameters.parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };
     assert_eq!(parameter.record_index, 71);
@@ -1340,4 +1340,181 @@ fn design_parameter_text_fields_keep_the_name() {
     let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
     let parsed = super::parse_design_parameter(&payload).unwrap().unwrap();
     assert_eq!(parsed.name, "d71");
+}
+
+const TYPED_PARAMETER_TAIL_TYPE: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
+const TYPED_OWNER_TYPE: &str = "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0";
+const TYPED_SCOPE_TYPE: &str = "11111111-2222-3333-4444-555555555555";
+
+fn typed_reference(out: &mut Vec<u8>, target: u64, guid: &str) {
+    out.push(1);
+    out.extend_from_slice(&target.to_le_bytes());
+    out.extend_from_slice(&36u32.to_le_bytes());
+    out.extend_from_slice(guid.as_bytes());
+    out.extend_from_slice(&[0, 0]);
+}
+
+/// A typed compact parameter: owned through a typed owner reference, or a
+/// document parameter with the null owner reference.
+fn typed_parameter_record(record_index: u32, owner: Option<u32>, source_kind: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"331");
+    out.extend_from_slice(&record_index.to_le_bytes());
+    out.extend_from_slice(&[0; 15]);
+    out.extend_from_slice(&8u32.to_le_bytes());
+    let trailer: [u8; 5] = match owner {
+        Some(owner) => {
+            typed_reference(&mut out, u64::from(owner), TYPED_OWNER_TYPE);
+            [0; 5]
+        }
+        None => {
+            out.push(0);
+            [0, 0, 0, 0, 1]
+        }
+    };
+    lp_utf16(&mut out, "3 mm");
+    out.extend_from_slice(&trailer);
+    lp_utf16(&mut out, source_kind);
+    lp_utf16(&mut out, "mm");
+    lp_utf16(&mut out, "d1");
+    out.extend_from_slice(&0.3f64.to_le_bytes());
+    out.push(0);
+    typed_reference(&mut out, 167, TYPED_PARAMETER_TAIL_TYPE);
+    out
+}
+
+#[test]
+fn typed_compact_parameters_read_owned_and_document_forms() {
+    let owned = typed_parameter_record(537, Some(536), "AlongDistance");
+    let parameter = parse_design_parameter_record(&owned).expect("typed owned parameter");
+    assert_eq!(parameter.record_index, 537);
+    assert_eq!(parameter.source_ordinal, 8);
+    assert_eq!(parameter.owner_record_index(), Some(536));
+    assert_eq!(parameter.family_discriminator(), None);
+    assert_eq!(parameter.expression(), "3 mm");
+    assert_eq!(parameter.expression_offset(), 85);
+    assert_eq!(parameter.unit().map(|unit| unit.value.as_str()), Some("mm"));
+    assert_eq!(parameter.name(), "d1");
+    assert_eq!(parameter.evaluated_value().get(), 0.3);
+    assert_eq!(
+        parameter.evaluated_value_offset(),
+        u64::try_from(owned.len() - 60).unwrap()
+    );
+
+    // The owner reference can omit its inline type GUID.
+    let mut plain = owned[..30].to_vec();
+    plain.push(1);
+    plain.extend_from_slice(&536u64.to_le_bytes());
+    plain.extend_from_slice(&[0, 0]);
+    plain.extend_from_slice(&owned[81..]);
+    let parameter = parse_design_parameter_record(&plain).expect("plain-owner typed parameter");
+    assert_eq!(parameter.owner_record_index(), Some(536));
+    assert_eq!(parameter.expression_offset(), 45);
+
+    let document = typed_parameter_record(242, None, "User Parameter");
+    let parameter = parse_design_parameter_record(&document).expect("typed document parameter");
+    assert_eq!(parameter.owner_record_index(), None);
+    assert_eq!(
+        parameter.source(),
+        &crate::records::parameters::DesignParameterSource::User {
+            family_discriminator: None
+        }
+    );
+    assert_eq!(parameter.expression_offset(), 35);
+
+    // Owner presence must agree with the document source kind, and the tail
+    // must name the typed parameter-tail type.
+    assert!(
+        parse_design_parameter_record(&typed_parameter_record(537, None, "AlongDistance"))
+            .is_none()
+    );
+    assert!(parse_design_parameter_record(&typed_parameter_record(
+        537,
+        Some(536),
+        "User Parameter"
+    ))
+    .is_none());
+    let mut other_tail = owned;
+    let guid_at = other_tail.len() - 38;
+    other_tail[guid_at] = b'C';
+    assert!(parse_design_parameter_record(&other_tail).is_none());
+}
+
+#[test]
+fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bulk = typed_parameter_record(537, Some(536), "AlongDistance");
+    let mut rejected = typed_parameter_record(541, Some(540), "AlongDistance");
+    rejected[81 + 4 + 2 * "3 mm".len()] = 7;
+    bulk.extend_from_slice(&rejected);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let [parameter] = decoded.parameters.as_slice() else {
+        panic!("expected the one well-formed typed parameter");
+    };
+    assert_eq!(parameter.record_index, 537);
+    let [unparsed] = decoded.unparsed.as_slice() else {
+        panic!("expected one stream with unparsed typed parameter frames");
+    };
+    assert_eq!(unparsed.stream, stream);
+    assert_eq!(unparsed.count, 1);
+}
+
+/// A scalar owner frame whose five references all use the typed spelling.
+fn typed_owner_frame(repeated_scope_tail: &[u8]) -> Vec<u8> {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&3u32.to_le_bytes());
+    frame.extend_from_slice(b"378");
+    frame.extend_from_slice(&536u32.to_le_bytes());
+    frame.extend_from_slice(&[0; 8]);
+    frame.extend_from_slice(&[1, 1, 0, 0, 0]);
+    typed_reference(&mut frame, 226, TYPED_SCOPE_TYPE);
+    frame.extend_from_slice(&2u32.to_le_bytes());
+    frame.push(0);
+    frame.extend_from_slice(&0.3f64.to_le_bytes());
+    typed_reference(&mut frame, 537, TYPED_OWNER_TYPE);
+    frame.extend_from_slice(&1u32.to_le_bytes());
+    frame.extend_from_slice(&[0; 4]);
+    typed_reference(&mut frame, 226, TYPED_SCOPE_TYPE);
+    frame.extend_from_slice(repeated_scope_tail);
+    typed_reference(&mut frame, 538, TYPED_OWNER_TYPE);
+    frame.push(0);
+    typed_reference(&mut frame, 226, TYPED_SCOPE_TYPE);
+    frame
+}
+
+#[test]
+fn typed_owner_frame_widens_every_reference_and_keeps_the_scalar_envelope() {
+    let frame = typed_owner_frame(&[0, 0]);
+    assert_eq!(frame.len(), 303);
+    let parsed = parse_parameter_owner(&frame).expect("typed scalar owner");
+    assert_eq!(parsed.scope_record_index, 226);
+    assert_eq!(parsed.local_ordinal, 2);
+    assert_eq!(parsed.evaluated_value.get(), 0.3);
+    assert_eq!(parsed.parameter_record_index, 537);
+    assert_eq!(parsed.owned_ordinal, 1);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.companion_record_index, 538);
+    let owner = parsed.into_record("Design1", 1000).expect("typed owner");
+    assert_eq!(owner.evaluated_value_offset(), 1080);
+
+    let variant = typed_owner_frame(&[1, 0, 0]);
+    let parsed = parse_parameter_owner(&variant).expect("typed variant owner");
+    assert_eq!(parsed.frame_length, 304);
+    assert_eq!(parsed.variant, Some(0));
+    assert!(parsed.into_record("Design1", 0).is_some());
+
+    // One plain reference among typed ones is not an owner frame.
+    let mut mixed = frame;
+    mixed.truncate(mixed.len() - 51);
+    mixed.push(1);
+    mixed.extend_from_slice(&226u64.to_le_bytes());
+    mixed.extend_from_slice(&[0, 0]);
+    assert!(parse_parameter_owner(&mixed).is_none());
 }

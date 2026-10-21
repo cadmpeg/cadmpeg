@@ -324,6 +324,30 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** The decoder converts an `AlongDistance` parameter of a symmetric
 `Extrude` to the whole travel without reading a measurement form.
 
+### DR-79. Typed-reference Design record grammars
+
+**Question.** What are the sketch, sketch-relation, construction-recipe, parameter-scope, and feature-scope grammars in the container generation that writes typed references?
+
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the parameter form, and `f3d.md` §3.1 "In the container generation that writes typed references" gives the parameter-owner frames. In that generation every local reference carries its LP-ASCII 36 target type GUID, so each reference is 51 bytes instead of eleven. Sketch and feature records also store typed references. The decoder reads the typed parameter and owner forms only.
+
+**Need.** Sketches, constraints, and feature history in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
+
+### DR-80. Typed parameter tail reference target
+
+**Question.** What record does the typed parameter tail reference name?
+
+**Known.** Its target type GUID is `B0556F58-EE09-46A7-B18F-E296F48E5B13`, and its target record index varies between documents. The twelve-byte tail of the other forms is the same reference without an inline type GUID.
+
+**Need.** A writer must emit this reference to build a typed compact parameter.
+
+### DR-81. Other typed compact parameter trailers
+
+**Question.** What do the typed compact parameter frames with other expression trailers or a null owner on a feature input encode?
+
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. The decoder reports these frames as `parameter.record-unparsed` and does not decode them.
+
+**Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
