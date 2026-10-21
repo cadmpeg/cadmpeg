@@ -215,3 +215,41 @@ fn sole_authored_extrusion_depth_does_not_retype_auxiliary_parameters() {
         .push(FeatureContent::Dimension("aux-1".into()));
     assert!(parameter_dimension::<PositiveLength>(&source, &["m"]).is_none());
 }
+
+#[test]
+fn retained_rotation_parameter_does_not_reactivate_a_removed_body_motion() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut source = feature("move-body", Some("7"), 0);
+    source.kind = "MoveBody".into();
+    source.properties.insert(
+        cadmpeg_core::nonblank_literal!("Translation"),
+        "0mm,0mm,0mm".into(),
+    );
+    source.parameters.insert(
+        cadmpeg_core::nonblank_literal!("Rotation"),
+        "0.25rad".into(),
+    );
+    assert!(matches!(
+        super::modify::project_move_body(&source),
+        Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            rotation: None,
+            ..
+        }))
+    ));
+    assert_eq!(source.parameters["Rotation"], "0.25rad");
+    source.properties.insert(
+        cadmpeg_core::nonblank_literal!("RotationOrigin"),
+        "0mm,0mm,0mm".into(),
+    );
+    assert!(
+        super::modify::project_move_body(&source).is_none(),
+        "partial rotation construction stays malformed"
+    );
+    source.properties.insert(
+        cadmpeg_core::nonblank_literal!("RotationAxis"),
+        "0,1,0".into(),
+    );
+    assert!(
+        matches!(super::modify::project_move_body(&source), Some(FeatureDefinition::Operation(FeatureOperation::MoveBody { rotation: Some(rotation), .. })) if matches!(rotation.angle, Dimension::Parameter(_)))
+    );
+}

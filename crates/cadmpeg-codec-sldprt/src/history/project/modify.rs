@@ -354,13 +354,17 @@ pub(super) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
                     .map(cadmpeg_ir::features::Dimension::Literal)
             })?,
         ];
-        let rotation = match super::parameter_dimension(feature, &["Rotation"]) {
-            Some(angle) => Some(AxisAngle {
-                origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
-                direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
-                angle,
+        let rotation = match (
+            feature.properties.get("RotationOrigin"),
+            feature.properties.get("RotationAxis"),
+        ) {
+            (None, None) => None,
+            (Some(origin), Some(axis)) => Some(AxisAngle {
+                origin: parse_point3_mm(origin)?,
+                direction: parse_valid_direction(axis)?,
+                angle: super::parameter_dimension(feature, &["Rotation"])?,
             }),
-            None => None,
+            _ => return None,
         };
         let copies = super::parameter_dimension(feature, &["Copies"]).or_else(|| {
             feature
