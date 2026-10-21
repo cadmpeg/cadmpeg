@@ -178,8 +178,12 @@ fn original_bad_cache_omits_only_proven_invalid_face_and_preserves_source() {
 /// A separate exact XY extrusion control, using the source fixture's untouched
 /// surviving planar triangle. Its real construction admits every boundary.
 fn planar_control(ir: &mut CadIr, cache_z: f64) {
-    let curve_id = cadmpeg_ir::ids::CurveId::mint("control:directrix").unwrap();
-    let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint("control:extrusion").unwrap();
+    let curve_id =
+        cadmpeg_ir::ids::CurveId::mint("synthetic:cache-control:curve#directrix").unwrap();
+    let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+        "synthetic:cache-control:procedural-surface#extrusion",
+    )
+    .unwrap();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -258,8 +262,9 @@ fn rejecting_bad_cache_preserves_independently_valid_face() {
     let mut ir = result.ir_mut();
     planar_control(&mut ir, 100.0);
     let mut empty_body = ir.model.bodies[0].clone();
-    empty_body.id = cadmpeg_ir::ids::BodyId::mint("control:empty-body").unwrap();
-    let region_id = cadmpeg_ir::ids::RegionId::mint("control:empty-region").unwrap();
+    empty_body.id = cadmpeg_ir::ids::BodyId::mint("synthetic:cache-control:body#empty").unwrap();
+    let region_id =
+        cadmpeg_ir::ids::RegionId::mint("synthetic:cache-control:region#empty").unwrap();
     empty_body.regions = vec![region_id.clone()];
     ir.model.regions.push(cadmpeg_ir::topology::Region {
         id: region_id,
