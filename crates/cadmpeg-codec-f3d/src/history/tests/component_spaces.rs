@@ -86,7 +86,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let binding = |map_ordinal, at, entity_suffix, blob_name: &str| {
         crate::records::bodies::DesignBodyBinding::try_from(
             crate::records::bodies::DesignBodyBindingWire {
-                map_ordinal: map_ordinal,
+                map_ordinal,
                 id: crate::ids::native_design_body_binding_id(design_stream, at),
                 stream: design_stream.into(),
                 pair_count: 1,

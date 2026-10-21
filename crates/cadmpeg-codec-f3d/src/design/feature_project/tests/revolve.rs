@@ -36,7 +36,7 @@ fn revolve_projects_with_native_profile() {
         DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
             scope_record_index: 12,
             scope_reference_ordinal: ordinal,
-            record_index: record_index,
+            record_index,
             byte_offset: 1000,
             role_offset: 1054,
             paired_byte_offset: 1125,

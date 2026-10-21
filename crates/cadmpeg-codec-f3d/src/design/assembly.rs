@@ -1202,7 +1202,7 @@ mod tests {
     fn assemble_features_bind_only_to_projected_joints() {
         let native = FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "Assemble".into(),
-            parameters: (BTreeMap::new()).into(),
+            parameters: BTreeMap::new(),
         });
         let scope = "f3d:Design/BulkStream.dat:design-parameter-scope#3";
         let mut features = [

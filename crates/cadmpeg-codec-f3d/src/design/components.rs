@@ -1223,7 +1223,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DerivedInstance".into(),
-                    parameters: (std::collections::BTreeMap::new()).into(),
+                    parameters: (std::collections::BTreeMap::new()),
                 }),
             ),
             native_ref: None,
@@ -1428,7 +1428,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "ComponentInsert".into(),
-                    parameters: (std::collections::BTreeMap::new()).into(),
+                    parameters: (std::collections::BTreeMap::new()),
                 }),
             ),
             native_ref: Some(scope.id.clone()),

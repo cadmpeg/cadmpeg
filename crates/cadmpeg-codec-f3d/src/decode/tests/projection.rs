@@ -299,7 +299,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Base Mesh Feature".into(),
-                parameters: (std::collections::BTreeMap::new()).into(),
+                parameters: (std::collections::BTreeMap::new()),
             }),
         ),
         native_ref: Some(scope_id.into()),
@@ -411,7 +411,7 @@ fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native {
                 kind: kind.into(),
-                parameters: (std::collections::BTreeMap::new()).into(),
+                parameters: (std::collections::BTreeMap::new()),
             },
         )
     };
@@ -1234,7 +1234,7 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: kind.into(),
-                parameters: (std::collections::BTreeMap::new()).into(),
+                parameters: (std::collections::BTreeMap::new()),
             }),
         ),
         native_ref: None,

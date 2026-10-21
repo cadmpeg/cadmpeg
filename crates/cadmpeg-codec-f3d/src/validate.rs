@@ -7680,7 +7680,7 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
                 _ => false,
             } && match (
                 companion.byte_offset(),
-                payload.and_then(|payload| payload.byte_offset()),
+                payload.and_then(super::records::parameters::DesignCompanionPayload::byte_offset),
             ) {
                 (Some(start), Some(payload_start)) => start.checked_add(58) == Some(payload_start),
                 _ => true,

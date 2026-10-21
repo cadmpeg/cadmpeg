@@ -291,7 +291,7 @@ impl DesignBodyRecipeOperand {
             // authored native semantic field.
             let untyped =
                 if self.class_tag.as_str() == "367" && tail.data() == Some(&[1, 0, 0, 0][..]) {
-                    Default::default()
+                    cadmpeg_ir::ArenaClasses::default()
                 } else {
                     [cadmpeg_ir::document::ArenaClass::Design].into()
                 };

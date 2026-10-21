@@ -117,7 +117,7 @@ pub(super) fn reconcile(
             .act_entities
             .iter()
             .filter(|record| record.stream() == scope)
-            .map(|record| record.record_index())
+            .map(crate::records::act::ActEntity::record_index)
             .chain(
                 native
                     .act_root_components

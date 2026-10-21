@@ -35,7 +35,7 @@ fn check(ir: &CadIr) {
 fn original_bad_cache_omits_only_proven_invalid_face_and_preserves_source() {
     let (bytes, result) = original();
     let ir = result.ir();
-    check(&ir);
+    check(ir);
     let native_findings =
         crate::validate::validate_native(&cadmpeg_test_support::service_decode_context(), ir)
             .expect("native identity validation");

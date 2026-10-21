@@ -107,16 +107,16 @@ pub(in crate::writer::synthesis) fn admit(
 }
 
 pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, original: &F3dNative) {
-    native.design_parameter_scopes = original.design_parameter_scopes.clone();
-    native.design_sketch_placements = original.design_sketch_placements.clone();
-    native.design_parameter_owners = original.design_parameter_owners.clone();
-    native.design_dimension_recipe_records = original.design_dimension_recipe_records.clone();
+    clone_from();
+    clone_from();
+    clone_from();
+    clone_from();
     native.design_parameter_companions = original
         .design_parameter_companions
         .iter()
         .map(crate::records::parameters::DesignParameterCompanion::without_payload)
         .collect();
-    native.sketch_points = original.sketch_points.clone();
+    clone_from();
     native.sketch_curve_identities = original
         .sketch_curve_identities
         .iter()
@@ -157,8 +157,8 @@ pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, origina
         })
         .cloned()
         .collect();
-    native.sketch_relations = original.sketch_relations.clone();
-    native.sketch_texts = original.sketch_texts.clone();
+    clone_from();
+    clone_from();
 }
 
 fn constraints(
@@ -250,7 +250,7 @@ pub(in crate::writer::synthesis) fn reduce_constraint_fields(
                     entity_only = restored == stated.definition;
                     let lost = before
                         .iter()
-                        .map(|entity| entity.as_str())
+                        .map(cadmpeg_ir::SketchEntityId::as_str)
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(

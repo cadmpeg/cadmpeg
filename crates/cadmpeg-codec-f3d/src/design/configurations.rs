@@ -715,7 +715,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "Fillet".into(),
-                    parameters: (BTreeMap::new()).into(),
+                    parameters: BTreeMap::new(),
                 }),
             ),
             native_ref: None,
@@ -780,7 +780,7 @@ mod tests {
                 )),
                 display: None,
                 pmi: None,
-                properties: Default::default(),
+                properties: std::collections::BTreeMap::default(),
                 native_ref: None,
             }];
             let mut configurations = vec![DesignConfiguration {
@@ -795,8 +795,8 @@ mod tests {
                     .clone()
                     .map(|value| [(id.clone(), value)].into())
                     .unwrap_or_default(),
-                properties: Default::default(),
-                feature_states: Default::default(),
+                properties: std::collections::BTreeMap::default(),
+                feature_states: std::collections::BTreeMap::default(),
                 bodies: None,
                 native_ref: None,
             }];

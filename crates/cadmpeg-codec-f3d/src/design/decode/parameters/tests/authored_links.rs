@@ -26,7 +26,7 @@ fn authored_owner_and_companion_keep_semantic_links_without_source_locations() {
             "class_tag": "269",
             "record_index": 3,
             "owner_record_index": 1,
-            "timestamp_micros": 123456
+            "timestamp_micros": 123_456
         }))
         .unwrap();
         assert_eq!(owner.byte_offset(), None);

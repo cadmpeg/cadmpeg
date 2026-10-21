@@ -285,7 +285,7 @@ fn rectangular_parameter_document(parameters: &[DesignParameter; 4]) -> cadmpeg_
                 driving: true,
                 display: None,
                 value: Some(value),
-                properties: Default::default(),
+                properties: std::collections::BTreeMap::default(),
                 pmi: None,
                 native_ref: Some(parameter.id.clone()),
             }

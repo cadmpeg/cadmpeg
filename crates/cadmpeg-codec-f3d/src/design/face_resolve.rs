@@ -2163,7 +2163,7 @@ pub(crate) fn bind_extrude_start_planes(
                             faces: vec![selected],
                             native,
                         },
-                        offset: (retained_offset).map(Into::into),
+                        offset: retained_offset,
                     };
                 }
             }
@@ -2281,7 +2281,7 @@ fn bind_extrude_target_face(
                 faces: vec![face],
                 native,
             },
-            offset: (offset).map(Into::into),
+            offset: offset,
         };
     }
 }

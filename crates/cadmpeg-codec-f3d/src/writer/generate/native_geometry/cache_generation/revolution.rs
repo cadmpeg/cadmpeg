@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A canonical angular chord cache with a bound from the actual fit contract.
 
-use super::*;
+use super::{
+    chart_matches, f64_from_index, profile, truncate_f64_to_usize, CadIr, CodecError,
+    CurveGeometry, DecodeContext, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, Point3,
+    ProceduralSurface, SolvedCurveGeometry,
+};
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction;
 
@@ -51,9 +55,10 @@ pub(super) fn generate(
         .iter()
         .map(|point| point.get().vector_from(origin).cross(axis).norm())
         .fold(0.0_f64, f64::max);
-    let tolerance = construction
-        .cache_fit_tolerance()
-        .map_or(target.tolerances.linear.get(), |fit| fit.get());
+    let tolerance = construction.cache_fit_tolerance().map_or(
+        target.tolerances.linear.get(),
+        cadmpeg_ir::geometry::FitTolerance::get,
+    );
     if !radius.is_finite() || (radius > 0.0 && tolerance <= 0.0) {
         return Ok(None);
     }

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved current surface roots without fabricated face or body topology.
 
-use super::*;
+use super::{
+    encode_surface_record, native_history_tail, native_ident, native_smbh_header, native_string,
+    saved_free_surface_ids, BTreeSet, CadIr, CodecError, F3dNative,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::schema::EntitySchema;
 

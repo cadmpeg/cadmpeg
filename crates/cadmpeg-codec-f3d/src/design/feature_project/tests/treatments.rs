@@ -759,7 +759,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                     },
                     tangency_weight: Some(weight),
                     ..
-                }] if super::dimension_value(&weight, &chord_parameters).get() == 1.0 && super::dimension_value(&actual_chord_length, &chord_parameters).get() == 2.5
+                }] if super::dimension_value(weight, &chord_parameters).get() == 1.0 && super::dimension_value(actual_chord_length, &chord_parameters).get() == 2.5
             )
     ));
     let chord_only_parameters = [parameter(120, 121, "ChordLen", Some("in"), 0.25)];
@@ -812,7 +812,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                     },
                     tangency_weight: None,
                     ..
-                }] if super::dimension_value(&actual_chord_length, &chord_only_parameters).get() == 2.5
+                }] if super::dimension_value(actual_chord_length, &chord_only_parameters).get() == 2.5
             )
     ));
     let asymmetric_parameters = [
@@ -867,7 +867,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                     },
                     tangency_weight: Some(weight),
                     ..
-                }] if super::dimension_value(&weight, &asymmetric_parameters).get() == 1.0 && super::dimension_value(&actual_offset_one, &asymmetric_parameters).get() == 2.0 && super::dimension_value(&actual_offset_two, &asymmetric_parameters).get() == 7.0
+                }] if super::dimension_value(weight, &asymmetric_parameters).get() == 1.0 && super::dimension_value(actual_offset_one, &asymmetric_parameters).get() == 2.0 && super::dimension_value(actual_offset_two, &asymmetric_parameters).get() == 7.0
             )
     ));
     operand_groups[0]
@@ -906,7 +906,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 radius: actual_radius,
             },
             tangency_weight: Some(weight),
-        } if super::dimension_value(&weight, &parameters).get() == 1.0 && super::dimension_value(&actual_radius, &parameters).get() == 5.0
+        } if super::dimension_value(weight, &parameters).get() == 1.0 && super::dimension_value(actual_radius, &parameters).get() == 5.0
     ));
     assert!(matches!(
         &groups[1],
@@ -916,7 +916,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 radius: actual_radius,
             },
             tangency_weight: Some(weight),
-        } if super::dimension_value(&weight, &parameters).get() == 0.75 && (selection == &operand_groups[1].id) && super::dimension_value(&actual_radius, &parameters).get() == 3.0
+        } if super::dimension_value(weight, &parameters).get() == 0.75 && (selection == &operand_groups[1].id) && super::dimension_value(actual_radius, &parameters).get() == 3.0
     ));
 
     let mut patch_scope = scope.clone();

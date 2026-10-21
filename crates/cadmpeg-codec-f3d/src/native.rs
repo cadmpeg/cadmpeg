@@ -1849,7 +1849,7 @@ impl F3dNative {
                     })?,
                 record.byte_offset,
                 if record.raw_bytes.is_empty() {
-                    Default::default()
+                    cadmpeg_ir::ArenaClasses::default()
                 } else {
                     [cadmpeg_ir::document::ArenaClass::Design].into()
                 },
@@ -1884,7 +1884,7 @@ impl F3dNative {
                         )
                     })?,
                 text.byte_offset,
-                Default::default(),
+                cadmpeg_ir::ArenaClasses::default(),
             )?;
         }
         for record in &self.design_dimension_recipe_records {
@@ -1926,7 +1926,7 @@ impl F3dNative {
                     })?,
                 record.prefix_offset,
                 if record.prefix_bytes.is_empty() {
-                    Default::default()
+                    cadmpeg_ir::ArenaClasses::default()
                 } else {
                     [cadmpeg_ir::document::ArenaClass::Design].into()
                 },

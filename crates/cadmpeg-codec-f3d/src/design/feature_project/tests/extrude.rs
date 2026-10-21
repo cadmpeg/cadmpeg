@@ -331,7 +331,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 op: BooleanOp::NewBody,
                 solid: Some(true),
                 ..
-            }) if (profile == &neutral_sketch_id(&placement)) && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_draft, &native_parameters.borrow()).get() == 0.2
+            }) if (profile == &neutral_sketch_id(&placement)) && super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         let reference_aware_prologue = scope.extrude_prologue();
         let Some(DesignExtrudePrologue::ReferenceAware {

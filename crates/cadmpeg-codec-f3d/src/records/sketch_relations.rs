@@ -1151,7 +1151,7 @@ impl SketchRelation {
             let untyped = if self.definition.state() & !SKETCH_CONSTRAINT_MASK != 0 {
                 [cadmpeg_ir::document::ArenaClass::Design].into()
             } else {
-                Default::default()
+                cadmpeg_ir::ArenaClasses::default()
             };
             frame.retain(fidelity, &self.id, stream, self.byte_offset, untyped)?;
         }
