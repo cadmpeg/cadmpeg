@@ -50,11 +50,11 @@ pub(super) fn project(
     let region = ids::region(&stem);
     let shell = ids::shell(&stem);
     let edge = ids::edge(&stem);
-    let start = ids::vertex(&stem.slot(0));
+    let start = ids::vertex(&stem.slot(0_usize));
     let end = if closed {
         start.clone()
     } else {
-        ids::vertex(&stem.slot(1))
+        ids::vertex(&stem.slot(1_usize))
     };
     for (ordinal, position) in endpoints
         .into_iter()
