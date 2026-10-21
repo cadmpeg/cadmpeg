@@ -129,7 +129,7 @@ pub(super) fn encode_design_bulkstream(
     )?;
     let decode_ctx = &decode_ctx;
 
-    let projected_parameters =
+    let mut projected_parameters =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
@@ -155,6 +155,25 @@ pub(super) fn encode_design_bulkstream(
             },
         )?
         .parameters;
+    // Active configuration membership is part of the canonical parameter
+    // projection. Apply the same typed configuration bindings used by decode
+    // before comparing it with the regenerated document.
+    let mut configurations =
+        crate::design::configurations::project_configurations(&native.design_configurations)?;
+    crate::design::configurations::bind_configuration_parameter_overrides(
+        &mut configurations,
+        &projected_parameters,
+    )?;
+    let mut features = target.model.features.clone();
+    crate::design::configurations::bind_configuration_suppressed_features(
+        &mut configurations,
+        &features,
+    );
+    crate::design::configurations::canonicalize_active_configuration(
+        &mut configurations,
+        &mut projected_parameters,
+        &mut features,
+    )?;
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),
