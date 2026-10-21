@@ -4214,7 +4214,7 @@ fn construction_curve_parameter(
         return directed(parameter, surface_derivative);
     }
     let line_interval = if let Some(interval) = curve.parameter_range {
-        crate::topology::ParameterInterval::from(interval).finite_components()
+        crate::topology::ParameterInterval::from(interval).finite_endpoints()
     } else {
         let mut ranges = index
             .ir()
