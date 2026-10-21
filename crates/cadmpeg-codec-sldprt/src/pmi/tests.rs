@@ -82,6 +82,25 @@ fn assert_written_scalar_with_pmi(decoded: &cadmpeg_ir::codec::DecodeResult) {
         .any(|annotation| &annotation.id == id));
 }
 
+fn independent_dimension_values(ir: &cadmpeg_ir::CadIr) -> Vec<f64> {
+    let mut values = ir
+        .model
+        .pmi
+        .iter()
+        .filter_map(|annotation| {
+            let cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) = &annotation.definition
+            else {
+                return None;
+            };
+            let nominal = dimension.nominal()?.literal()?;
+            assert_eq!(nominal.quantity, cadmpeg_ir::pmi::PmiQuantity::Length);
+            Some(nominal.value.get())
+        })
+        .collect::<Vec<_>>();
+    values.sort_by(f64::total_cmp);
+    values
+}
+
 fn pmi_limit_refusal(
     policy: cadmpeg_core::decode::DecodePolicy,
 ) -> cadmpeg_core::decode::ResourceLimit {
@@ -435,7 +454,16 @@ fn parses_array16_dim_items() {
     );
     let mut losses = Vec::new();
     let records = parse_payload(&payload, &mut losses);
-    assert!(losses.is_empty(), "{losses:?}");
+    let [loss] = losses.as_slice() else {
+        panic!("one additional-item loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind()
+    );
+    assert!(loss
+        .message
+        .contains("contains 15 additional semantic dimension item(s) without typed payloads"));
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].item_count.get(), 16);
     assert_eq!(records[0].value.get(), 0.025);
@@ -880,8 +908,9 @@ fn multi_item_pmi_dimension_is_not_bound() {
         .any(|parameter| parameter.name == "D1" && parameter.pmi.is_some()));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
-            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
+            == "1 semantic dimension record(s) have no canonical parameter binding; their independent annotations or typed native payloads are retained"
     }));
+    assert_eq!(independent_dimension_values(decoded.ir()), [25.0]);
 }
 
 #[test]
@@ -899,8 +928,9 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
 
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
-            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
+            == "1 semantic dimension record(s) have no canonical parameter binding; their independent annotations or typed native payloads are retained"
     }));
+    assert_eq!(independent_dimension_values(decoded.ir()), [25.0]);
 }
 
 #[test]
@@ -930,7 +960,7 @@ fn duplicate_pmi_records_share_one_parameter_and_report_annotation_loss() {
     assert_eq!(decoded.ir().model.parameters.len(), 1);
     assert!(decoded.report().losses.iter().all(|loss| !loss
         .message
-        .contains("semantic dimension record(s) are not bound")));
+        .contains("semantic dimension record(s) have no canonical parameter binding")));
 
     {
         let mut ir = decoded.ir_mut();
@@ -973,8 +1003,9 @@ fn semantically_distinct_pmi_records_remain_unbound() {
         .unwrap();
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
-            == "2 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
+            == "2 semantic dimension record(s) have no canonical parameter binding; their independent annotations or typed native payloads are retained"
     }));
+    assert_eq!(independent_dimension_values(decoded.ir()), [25.0, 30.0]);
 }
 
 #[test]
@@ -1359,19 +1390,24 @@ fn pmi_parse_cap_skips_the_remaining_candidates_and_names_the_bound() {
     let record = pmi_semantic_payload();
     let original = parse_payload(&record, &mut Vec::new());
 
-    let (moderate, _) = overlapping_candidates(8, 2048);
+    let (moderate, moderate_stride) = overlapping_candidates(8, 2048);
     let mut payload = record.clone();
     payload.extend_from_slice(&moderate);
     let mut losses = Vec::new();
     assert_eq!(parse_payload(&payload, &mut losses), original);
-    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(losses.len(), 8);
+    assert_untyped_candidate_maps(&losses, record.len(), moderate_stride, 8);
 
     let (chain, stride) = overlapping_candidates(CANDIDATES, 2048);
     let mut payload = record.clone();
     payload.extend_from_slice(&chain);
     let mut losses = Vec::new();
     assert_eq!(parse_payload(&payload, &mut losses), original);
-    let [loss] = losses.as_slice() else {
+    let cap_losses = losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::PmiSemanticParseCapped.kind())
+        .collect::<Vec<_>>();
+    let [loss] = cap_losses.as_slice() else {
         panic!("one parse-cap loss: {losses:?}");
     };
     assert_eq!(
@@ -1393,9 +1429,29 @@ fn pmi_parse_cap_skips_the_remaining_candidates_and_names_the_bound() {
     let skipped = skipped.parse::<usize>().unwrap();
     let offset = offset.parse::<usize>().unwrap();
     assert!(0 < skipped && skipped < CANDIDATES, "{skipped}");
+    assert_eq!(losses.len(), CANDIDATES - skipped + 1);
+    assert_untyped_candidate_maps(&losses, record.len(), stride, CANDIDATES - skipped);
     assert_eq!(
         offset,
         record.len() + (CANDIDATES - skipped) * stride + 36,
         "the loss starts at the candidate the budget ran out in"
     );
+}
+
+fn assert_untyped_candidate_maps(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    base: usize,
+    stride: usize,
+    count: usize,
+) {
+    let untyped = losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(untyped.len(), count);
+    for (index, loss) in untyped.iter().enumerate() {
+        let offset = base + index * stride + 36;
+        let guid = format!("{index:08x}-0000-4000-8000-{index:012x}");
+        assert_eq!(loss.message, format!("PMISemanticDataDB map at offset {offset} (guid {guid}) has no supported typed semantic record"));
+    }
 }
