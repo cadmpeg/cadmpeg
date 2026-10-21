@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed presentation tables authored from current document state.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, LAYER_CLASS, LossNote, RhinoLossCode, TCODE_ENDOFTABLE,
+    TCODE_LAYER_RECORD, attributed_object_record, class_wrapper, class_wrapper_with_direct,
+    crc_chunk, crc_chunk_with_direct, default_layer_payload, framed_object_record,
+    native_count_limit, neutral_object_uuid, object_attributes_payload, short_chunk,
+    unit_color_channel, utf16, wire_index,
+};
 use cadmpeg_ir::presentation::PresentationItem;
 use serde_json::{Map, Value};
 
@@ -174,7 +180,7 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
         payload.extend(
             i32::try_from(index)
                 .map_err(|_| {
-                    native_count_limit(i32::MAX as u64, cadmpeg_core::decode::u64_from_index(index))
+                    native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
                 })?
                 .to_le_bytes(),
         );
@@ -254,7 +260,7 @@ pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError>
         })
         .map_or(Ok(0), |index| {
             i32::try_from(index).map_err(|_| {
-                native_count_limit(i32::MAX as u64, cadmpeg_core::decode::u64_from_index(index))
+                native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
             })
         })
 }

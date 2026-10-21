@@ -21,23 +21,26 @@ use model::{
 };
 
 use crate::loss::RhinoLossCode;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
-use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 use crate::RhinoArchiveVersion;
+use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
 /// Return the exact IR-stated linear tolerance; no implementation floor applies.
 /// An absent entity tolerance uses the document's stated linear tolerance.
 fn stated_write_tolerance(stated: Option<cadmpeg_ir::scalar::PositiveReal>, ir: &CadIr) -> f64 {
-    stated.map_or(ir.tolerances.linear.get(), |tolerance| tolerance.get())
+    stated.map_or(
+        ir.tolerances.linear.get(),
+        cadmpeg_ir::scalar::PositiveReal::get,
+    )
 }
 
 trait WriteSeek: Write + Seek {}
@@ -169,9 +172,7 @@ fn write_seekable(
             POINT_CLASS,
             &payload,
             point.id.as_str(),
-            display.name,
-            display.color,
-            display.visible,
+            display,
         )?)?;
     }
     for (id, (class, payload)) in &plan.curves {
@@ -187,14 +188,7 @@ fn write_seekable(
             curve.source_object.as_ref(),
         );
         output.write_all(&attributed_object_record(
-            ir,
-            4,
-            *class,
-            payload,
-            id,
-            display.name,
-            display.color,
-            display.visible,
+            ir, 4, *class, payload, id, display,
         )?)?;
     }
     for (id, (class, payload)) in &plan.surfaces {
@@ -210,14 +204,7 @@ fn write_seekable(
             surface.source_object.as_ref(),
         );
         output.write_all(&attributed_object_record(
-            ir,
-            8,
-            *class,
-            payload,
-            id,
-            display.name,
-            display.color,
-            display.visible,
+            ir, 8, *class, payload, id, display,
         )?)?;
     }
     for mesh in &plan.meshes {
@@ -471,7 +458,7 @@ fn prepare_write(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        match WritableFaceSurface::try_new(surface).and_then(|value| value.payload()) {
+        match WritableFaceSurface::try_new(surface).and_then(model::WritableFaceSurface::payload) {
             Ok(payload) => surfaces.push((surface.id.as_str(), payload)),
             Err(error) if content_limitation(&error) => losses.push(
                 RhinoLossCode::WriterEntityOmitted
@@ -2218,9 +2205,7 @@ fn attributed_object_record(
     class_uuid: [u8; 16],
     payload: &[u8],
     identity: &str,
-    name: Option<&str>,
-    color: Option<cadmpeg_ir::topology::Color>,
-    visible: Option<bool>,
+    display: presentation::Display<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
         object_type,
@@ -2228,7 +2213,11 @@ fn attributed_object_record(
         payload,
         None,
         Some(object_attributes_payload(
-            ir, identity, name, color, visible,
+            ir,
+            identity,
+            display.name,
+            display.color,
+            display.visible,
         )?),
     )
 }

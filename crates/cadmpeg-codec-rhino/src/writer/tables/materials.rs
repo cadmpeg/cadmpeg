@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Material tables use current appearances; native-only optical settings survive.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Map, Value, anonymous, anonymous_with_children,
+    class_wrapper_with_direct, color, component, crc_chunk_with_direct, records,
+    unit_color_channel, wire_index,
+};
 use cadmpeg_ir::appearance::Appearance;
 
 const MATERIAL_CLASS: [u8; 16] = [

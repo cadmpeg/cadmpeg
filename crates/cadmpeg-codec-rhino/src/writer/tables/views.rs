@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-free saved-view and construction-plane records.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Map, TCODE_ENDOFTABLE, Value, anonymous, anonymous_with_children,
+    crc_chunk_with_direct, integer, records, short_chunk, utf16, wire_index,
+};
 use cadmpeg_ir::presentation::ViewPresentation;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeSet;
@@ -145,7 +148,7 @@ fn encode_view(
             Some(_) => {
                 return Err(CodecError::malformed(format!(
                     "Rhino view {name} must be true or false"
-                )))
+                )));
             }
             None => {
                 if view.is_some() {
@@ -289,7 +292,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> 
                     Some("active") => active.push(encoded),
                     Some("named") => named.push(encoded),
                     _ => return Err(CodecError::malformed("Rhino view has no valid list kind")),
-                };
+                }
                 result.regenerated.insert(record.id().to_owned());
                 if let Some(view) = view {
                     written_views.insert(view.id.as_str());

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Camera frame reconstruction from the current neutral axis-angle pose.
 
-use super::*;
+use super::{CadIr, CodecError, Map, Value, crc_chunk_with_direct, flag, integer, vector};
 use cadmpeg_ir::presentation::PresentationStateKind;
 
-fn pose(
-    ir: &CadIr,
-    fields: &Map<String, Value>,
-) -> Result<Option<([f64; 3], [[f64; 3]; 3])>, CodecError> {
+type CameraPose = ([f64; 3], [[f64; 3]; 3]);
+
+fn pose(ir: &CadIr, fields: &Map<String, Value>) -> Result<Option<CameraPose>, CodecError> {
     let Some(id) = fields.get("neutral_camera").and_then(Value::as_str) else {
         return Ok(None);
     };
@@ -26,7 +25,7 @@ fn pose(
         .iter()
         .filter_map(|state| match &state.kind {
             PresentationStateKind::Camera(camera) => Some(camera),
-            _ => None,
+            PresentationStateKind::Native(_) => None,
         })
         .collect::<Vec<_>>();
     let [camera] = cameras.as_slice() else {

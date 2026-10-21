@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Local prototypes and relative block placements, authored from neutral products.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Value, anonymous, attributed_object_record,
+    class_wrapper_with_direct, crc_chunk_with_direct, neutral_object_uuid, records, utf16,
+    wire_index,
+};
 use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference};
 
 const DEFINITION_CLASS: [u8; 16] = [
@@ -181,9 +185,7 @@ pub(in crate::writer) fn references(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecErr
             REFERENCE_CLASS,
             &payload,
             occurrence.id.as_str(),
-            display.name,
-            display.color,
-            display.visible,
+            display,
         )?);
     }
     Ok(result)

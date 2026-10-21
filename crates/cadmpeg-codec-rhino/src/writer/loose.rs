@@ -5,17 +5,17 @@ use std::collections::BTreeSet;
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Edge;
-use cadmpeg_ir::CadIr;
 
 use crate::loss::RhinoLossCode;
 
 use super::{
+    LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS, WritableEdgeCurve,
     attributed_object_record, bounded_line_payload, check_nurbs_curve, close_point,
-    nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, LINE_CLASS, NURBS_CURVE_CLASS,
-    POINT_CLASS, POINT_CLOUD_CLASS,
+    nurbs_curve_payload, point_cloud_payload,
 };
 
 pub(super) fn write(
@@ -29,7 +29,7 @@ pub(super) fn write(
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.free_vertices())
+        .flat_map(cadmpeg_ir::topology::Shell::free_vertices)
         .filter(|id| seen_vertices.insert((*id).clone()))
         .collect::<Vec<_>>();
     let mut points = Vec::new();
@@ -90,9 +90,11 @@ pub(super) fn write(
             class,
             &payload,
             &identity,
-            body.name.as_deref(),
-            body.color,
-            body.visible,
+            crate::writer::presentation::Display {
+                name: body.name.as_deref(),
+                color: body.color,
+                visible: body.visible,
+            },
         )?)?;
         count += 1;
     }
@@ -100,7 +102,7 @@ pub(super) fn write(
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.wire_edges())
+        .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
         .collect::<BTreeSet<_>>();
     for id in &wires {
         let edge = ir
@@ -117,9 +119,11 @@ pub(super) fn write(
                     class,
                     &payload,
                     edge.id.as_str(),
-                    body.name.as_deref(),
-                    body.color,
-                    body.visible,
+                    crate::writer::presentation::Display {
+                        name: body.name.as_deref(),
+                        color: body.color,
+                        visible: body.visible,
+                    },
                 )?)?;
                 count += 1;
             }
@@ -223,10 +227,10 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, CodecEr
                 )),
             })?
             .get();
-        let tolerance = edge
-            .tolerance
-            .or(vertex.tolerance)
-            .map_or(ir.tolerances.linear.get(), |value| value.get());
+        let tolerance = edge.tolerance.or(vertex.tolerance).map_or(
+            ir.tolerances.linear.get(),
+            cadmpeg_ir::scalar::PositiveReal::get,
+        );
         if !close_point(expected, point.position().get(), tolerance) {
             return Err(CodecError::malformed(format_args!(
                 "wire edge {} carrier disagrees with its endpoint",

@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{ArenaDisposition, EncodeInput, Encoder, target::TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::schema::EntityKind;
 
@@ -74,11 +74,12 @@ fn unsupported_brep_does_not_claim_omitted_topology() {
         plan.report().coverage.disposition(EntityKind::Face),
         ArenaDisposition::Reported
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.severity == cadmpeg_ir::report::Severity::Error }));
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| { loss.severity == cadmpeg_ir::report::Severity::Error })
+    );
 }
 
 #[test]
@@ -111,12 +112,14 @@ fn same_counts_do_not_prove_references_or_names_equal() {
 
 #[test]
 fn numeric_looking_display_names_remain_literal_content() {
-    let left = serde_json::json!({"name": "Part 1.0000000000001", "tolerance": 1.0000000000001});
-    let right = serde_json::json!({"name": "Part 1.0000000000002", "tolerance": 1.0000000000002});
+    let left =
+        serde_json::json!({"name": "Part 1.0000000000001", "tolerance": 1.000_000_000_000_1});
+    let right =
+        serde_json::json!({"name": "Part 1.0000000000002", "tolerance": 1.000_000_000_000_2});
     assert!(cadmpeg_ir::compare::values_agree(&left, &right).is_ok());
     assert!(!super::same_values(&left, &right));
     assert!(super::same_values(
-        &serde_json::json!({"tolerance": 1.0000000000001}),
-        &serde_json::json!({"tolerance": 1.0000000000002}),
+        &serde_json::json!({"tolerance": 1.000_000_000_000_1}),
+        &serde_json::json!({"tolerance": 1.000_000_000_000_2}),
     ));
 }

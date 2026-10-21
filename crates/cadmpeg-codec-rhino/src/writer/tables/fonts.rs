@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text styles authored from typed font characteristics.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Map, Value, anonymous_with_children, class_wrapper_with_direct,
+    component, crc_chunk, crc_chunk_with_direct, integer, native_count_limit, records, utf16, uuid,
+    wire_index,
+};
 
 const TEXT_STYLE_CLASS: [u8; 16] = [
     0xfb, 0x51, 0x0f, 0x4f, 0xd0, 0x35, 0x65, 0x48, 0x99, 0x98, 0x6d, 0x2c, 0x6a, 0x99, 0x72, 0x1d,
@@ -32,11 +36,21 @@ fn font(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
         .get("windows_logfont_weight")
         .is_some_and(Value::is_number);
     if !has_weight && text(fields, "obsolete_description").is_empty() {
-        return anonymous_with_children(1, 0, &payload, &[wide_start..wide_end]);
+        return anonymous_with_children(
+            1,
+            0,
+            &payload,
+            std::slice::from_ref(&(wide_start..wide_end)),
+        );
     }
     payload.extend(utf16(text(fields, "obsolete_description"))?);
     if !has_weight {
-        return anonymous_with_children(1, 1, &payload, &[wide_start..wide_end]);
+        return anonymous_with_children(
+            1,
+            1,
+            &payload,
+            std::slice::from_ref(&(wide_start..wide_end)),
+        );
     }
     payload.extend(integer(Some(fields), "windows_logfont_weight", 0).to_le_bytes());
     payload.extend(
@@ -48,13 +62,23 @@ fn font(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
     );
     let point_size = fields.get("point_size").and_then(Value::as_f64);
     if point_size.is_none() {
-        return anonymous_with_children(1, 2, &payload, &[wide_start..wide_end]);
+        return anonymous_with_children(
+            1,
+            2,
+            &payload,
+            std::slice::from_ref(&(wide_start..wide_end)),
+        );
     }
     payload.extend(point_size.unwrap_or(0.0).to_le_bytes());
     payload.push(0); // No obsolete point-unit structure is retained in typed fonts.
     payload.extend(utf16(text(fields, "family_name"))?);
     let Some(panose) = fields.get("panose").and_then(Value::as_object) else {
-        return anonymous_with_children(1, 4, &payload, &[wide_start..wide_end]);
+        return anonymous_with_children(
+            1,
+            4,
+            &payload,
+            std::slice::from_ref(&(wide_start..wide_end)),
+        );
     };
     for name in [
         "locale_name",

@@ -5,7 +5,7 @@ use super::{
     CandidateError, Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
     SolvedCurveGeometry,
 };
-use cadmpeg_ir::geometry::{nurbs::NurbsCurve, RecordBounds};
+use cadmpeg_ir::geometry::{RecordBounds, nurbs::NurbsCurve};
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
@@ -32,14 +32,12 @@ pub(super) fn construction(
         directrix.clone()
     } else {
         let mut curve = profile.clone();
-        curve
-            .try_map_control_points(|_, point| {
-                cadmpeg_ir::features::FinitePoint3::new(point.get().translated(direction, -v_lower))
-                    .ok_or_else(|| {
-                        "extrusion construction directrix translation is not finite".to_owned()
-                    })
-            })
-            .map_err(|error| error.to_string())?;
+        curve.try_map_control_points(|_, point| {
+            cadmpeg_ir::features::FinitePoint3::new(point.get().translated(direction, -v_lower))
+                .ok_or_else(|| {
+                    "extrusion construction directrix translation is not finite".to_owned()
+                })
+        })?;
         let id = CurveId::mint(format!("{}.sweep-origin", directrix.as_str()))
             .map_err(|error| error.to_string())?;
         ir.model.curves.push(Curve {

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed view attributes, page settings and clipping planes.
 
-use super::*;
+use super::{
+    CodecError, Digest, Map, Value, anonymous, crc_chunk_with_direct, flag, integer, object,
+    scalar, text, utf16, vector, wire_index,
+};
 
-fn optional_real(
-    fields: &Map<String, Value>,
-    name: &str,
-    output: &mut Vec<u8>,
-) -> Result<(), CodecError> {
+fn optional_real(fields: &Map<String, Value>, name: &str, output: &mut Vec<u8>) {
     output.extend(
         fields
             .get(name)
@@ -16,7 +15,6 @@ fn optional_real(
             .unwrap_or(0.0)
             .to_le_bytes(),
     );
-    Ok(())
 }
 
 fn page(fields: Option<&Map<String, Value>>) -> Result<Vec<u8>, CodecError> {
@@ -26,7 +24,7 @@ fn page(fields: Option<&Map<String, Value>>) -> Result<Vec<u8>, CodecError> {
         .to_le_bytes()
         .to_vec();
     for name in ["width_mm", "height_mm"] {
-        optional_real(fields, name, &mut body)?;
+        optional_real(fields, name, &mut body);
     }
     if fields.get("margins_mm").is_some() {
         vector(fields, "margins_mm", 4, &mut body)?;
@@ -158,7 +156,7 @@ pub(super) fn encode(
             "focal_blur_aperture",
             "focal_blur_jitter",
         ] {
-            optional_real(fields, name, &mut body)?;
+            optional_real(fields, name, &mut body);
         }
         for name in ["focal_blur_sample_count", "focal_blur_mode"] {
             body.extend(integer(Some(fields), name, 0).to_le_bytes());

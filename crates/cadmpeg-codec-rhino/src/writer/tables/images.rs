@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Embedded resources are authored from the current asset bytes.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Value, class_wrapper, crc_chunk_with_direct, native_count_limit,
+    records, utf16, uuid,
+};
 use cadmpeg_ir::assets::AssetContent;
 
 const EMBEDDED_BITMAP_CLASS: [u8; 16] = [

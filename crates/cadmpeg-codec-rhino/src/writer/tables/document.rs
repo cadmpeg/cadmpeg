@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Properties regenerated through their current neutral attribute links.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, LossNote, Map, RhinoLossCode, Value, color, crc_chunk, integer,
+    records, short_chunk, utf16, wire_index,
+};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 
 fn current_fields(
@@ -95,11 +98,11 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecEr
     }];
     let typecode = match arena {
         "revisions" => {
-            text(&fields, "created_by", &mut payload)?;
-            integer_vector(&fields, "created_utc_fields", 8, &mut payload)?;
-            text(&fields, "last_edited_by", &mut payload)?;
-            integer_vector(&fields, "last_edited_utc_fields", 8, &mut payload)?;
-            payload.extend(integer(Some(&fields), "revision_count", 0).to_le_bytes());
+            text(fields, "created_by", &mut payload)?;
+            integer_vector(fields, "created_utc_fields", 8, &mut payload)?;
+            text(fields, "last_edited_by", &mut payload)?;
+            integer_vector(fields, "last_edited_utc_fields", 8, &mut payload)?;
+            payload.extend(integer(Some(fields), "revision_count", 0).to_le_bytes());
             0x2000_8021
         }
         "document_notes" => {
@@ -107,7 +110,7 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecEr
                 i32::from(fields.get("html").and_then(Value::as_bool).unwrap_or(false))
                     .to_le_bytes(),
             );
-            text(&fields, "text", &mut payload)?;
+            text(fields, "text", &mut payload)?;
             payload.extend(
                 i32::from(
                     fields
@@ -117,7 +120,7 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecEr
                 )
                 .to_le_bytes(),
             );
-            integer_vector(&fields, "window_rectangle", 4, &mut payload)?;
+            integer_vector(fields, "window_rectangle", 4, &mut payload)?;
             payload.push(u8::from(
                 fields
                     .get("locked")
@@ -128,7 +131,7 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecEr
         }
         _ => {
             for name in ["name", "url", "details"] {
-                text(&fields, name, &mut payload)?;
+                text(fields, name, &mut payload)?;
             }
             0x2000_8024
         }
@@ -233,7 +236,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
             .is_some_and(|value| !value.is_null())
         {
             let mut body = color(Some(&fields), "current_color")?.to_vec();
-            body.extend(integer(Some(&fields), "current_color_source", 0).to_le_bytes());
+            body.extend(integer(Some(fields), "current_color_source", 0).to_le_bytes());
             output.push(crc_chunk(0x2000_803a, &body)?);
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {
@@ -277,7 +280,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
                     .position(|appearance| appearance.id.as_str() == id)
                 {
                     let mut body = wire_index(index)?.to_le_bytes().to_vec();
-                    body.extend(integer(Some(&fields), "current_material_source", 0).to_le_bytes());
+                    body.extend(integer(Some(fields), "current_material_source", 0).to_le_bytes());
                     output.push(crc_chunk(0x2000_8039, &body)?);
                 }
             }

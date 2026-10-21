@@ -2,15 +2,15 @@
 //! Decode image resources into typed assets before discarding source layout.
 
 use super::{EmbeddedImageCompression, EmbeddedImageRecord, WindowsBitmapRecord};
-use crate::chunks::{chunk_at, BoundedReader, FramingError};
+use crate::chunks::{BoundedReader, FramingError, chunk_at};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View, u64_from_index};
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetData, AssetId};
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::CadIr;
 
 fn framing(error: FramingError) -> CodecError {
     match error {
@@ -87,7 +87,7 @@ fn buffer(
         _ => {
             return Err(CodecError::malformed(
                 "Rhino image buffer compression method is not supported",
-            ))
+            ));
         }
     };
     if crc.is_some_and(|crc| crc32fast::hash(&bytes) != crc) {
@@ -275,7 +275,7 @@ pub(super) fn project(
                     },
                     bytes,
                     ordinal,
-                )?
+                )?;
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
@@ -297,7 +297,7 @@ pub(super) fn project(
                     &bitmap.file_path,
                     bytes,
                     images.len() + ordinal,
-                )?
+                )?;
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
