@@ -907,12 +907,47 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         Some("native-position")
     );
 
+    // D1/W2: keep the original known Simple/4mm input as a canonical-winner
+    // control. A profile may supply unknown construction, not overwrite truth.
+    let mut known = features.clone();
+    project_profiled_hole_constructions(
+        &ctx,
+        &mut known,
+        &entities,
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
+    for hole in known.iter().take(1) {
+        assert!(
+            matches!(hole.definition().operation(), FeatureOperation::Hole { shape, .. }
+            if matches!(shape.construction(), cadmpeg_ir::features::holes::HoleConstruction::Form { kind: HoleKind::Simple, .. })
+            && shape.diameter() == Some(&cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap())))
+        );
+    }
+    // Exercise the original exact profile-inference assertions with genuinely
+    // unresolved construction. Profile records, coordinates and IDs are unchanged.
+    for hole in features.iter_mut().take(1) {
+        hole.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = definition
+            else {
+                panic!("hole fixture");
+            };
+            *shape = cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Unresolved(None)),
+                None,
+                None,
+            )
+            .unwrap();
+        });
+    }
+
     project_profiled_hole_constructions(
         &ctx,
         &mut features,
         &entities,
         std::slice::from_ref(&history),
-        &[lane],
+        std::slice::from_ref(&lane),
     )
     .unwrap();
 
@@ -1042,6 +1077,41 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         axial_rectangle("synthetic:test:id#second-sketch", 3.0, 14.0, 4),
     ]
     .concat();
+
+    // D1/W2: keep the original known Simple/4mm input as a canonical-winner
+    // control. A profile may supply unknown construction, not overwrite truth.
+    let mut known = features.clone();
+    project_profiled_hole_constructions(
+        &ctx,
+        &mut known,
+        &entities,
+        std::slice::from_ref(&history),
+        &[],
+    )
+    .unwrap();
+    for hole in known.iter().take(2) {
+        assert!(
+            matches!(hole.definition().operation(), FeatureOperation::Hole { shape, .. }
+            if matches!(shape.construction(), cadmpeg_ir::features::holes::HoleConstruction::Form { kind: HoleKind::Simple, .. })
+            && shape.diameter() == Some(&cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap())))
+        );
+    }
+    // Exercise the original exact profile-inference assertions with genuinely
+    // unresolved construction. Profile records, coordinates and IDs are unchanged.
+    for hole in features.iter_mut().take(2) {
+        hole.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = definition
+            else {
+                panic!("hole fixture");
+            };
+            *shape = cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Unresolved(None)),
+                None,
+                None,
+            )
+            .unwrap();
+        });
+    }
 
     project_profiled_hole_constructions(
         &ctx,
