@@ -4091,15 +4091,10 @@ fn mark_active_configuration(ir: &mut CadIr) {
         matches.next().filter(|_| matches.next().is_none())
     });
     let by_index = active_index.and_then(|index| {
-        let index = u32::try_from(index).ok()?;
-        let mut matches = ir
-            .model
-            .configurations
-            .iter()
-            .enumerate()
-            .filter(|(_, configuration)| configuration.source_index == Some(index))
-            .map(|(position, _)| position);
-        matches.next().filter(|_| matches.next().is_none())
+        crate::history::configuration::configuration_for_source_slot(
+            &ir.model.configurations,
+            u32::try_from(index).ok()?,
+        )
     });
     let selected = if active_name.is_some() {
         by_name
