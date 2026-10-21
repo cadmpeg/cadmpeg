@@ -554,8 +554,31 @@ fn omit_face_parts(
         used: BTreeSet::new(),
         candidates: &possible_surfaces,
     };
+    // The structural visitor includes entity declarations too. Exclude the
+    // Surface declaration slot itself, while still walking its actual data.
+    let surfaces = std::mem::take(&mut model.surfaces);
+    for surface in &surfaces {
+        if surface.source_object.is_some() {
+            references.used.insert(surface.id.as_str().to_owned());
+        }
+        surface.geometry.visit_identity_references(ctx, &mut |id| {
+            if possible_surfaces.contains(id) {
+                references.used.insert(id.to_owned());
+            }
+            Ok(())
+        })?;
+        surface
+            .source_object
+            .visit_identity_references(ctx, &mut |id| {
+                if possible_surfaces.contains(id) {
+                    references.used.insert(id.to_owned());
+                }
+                Ok(())
+            })?;
+    }
     let original = std::mem::take(model);
     model.extend_rewritten(original, &mut references)?;
+    model.surfaces = surfaces;
     model.surfaces.retain(|surface| {
         let id = surface.id.as_str();
         if possible_surfaces.contains(id)
