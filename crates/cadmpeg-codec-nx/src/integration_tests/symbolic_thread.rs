@@ -50,7 +50,14 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
         panic!("cosmetic thread")
     };
     assert_eq!(*face, FaceSelection::Unresolved);
-    assert_eq!(diameter.unwrap().get(), 3.0);
+    assert_eq!(
+        result
+            .ir()
+            .dimension_value(diameter.as_ref().expect("diameter"))
+            .expect("dimension value")
+            .get(),
+        3.0
+    );
     assert!(extent.is_none());
     let (mut ir, report, fidelity) = result.into_parts();
     let validation =
