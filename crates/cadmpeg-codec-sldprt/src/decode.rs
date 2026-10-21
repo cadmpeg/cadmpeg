@@ -2833,7 +2833,7 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    assign_configuration_bodies(&mut ir, configuration_bodies)?;
+    assign_configuration_bodies_with_lanes(&mut ir, configuration_bodies, &all_lanes)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
         &mut ir,
@@ -4162,9 +4162,18 @@ fn mark_active_configuration(ir: &mut CadIr) {
     }
 }
 
+#[cfg(test)]
 fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+) -> Result<(), CodecError> {
+    assign_configuration_bodies_with_lanes(ir, configuration_bodies, &[])
+}
+
+fn assign_configuration_bodies_with_lanes(
+    ir: &mut CadIr,
+    configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+    lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
@@ -4203,7 +4212,23 @@ fn assign_configuration_bodies(
             continue;
         };
         let configuration = &mut ir.model.configurations[position];
-        if configuration.native_ref.is_some() && configuration.source_index.is_none() {
+        let explicit_native_slot = configuration
+            .properties
+            .get("id")
+            .and_then(|id| id.parse::<u32>().ok())
+            == Some(source_index);
+        let native_lane_slot = lanes.iter().any(|lane| {
+            !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
+                && lane
+                    .configuration
+                    .as_deref()
+                    .and_then(|slot| slot.parse::<u32>().ok())
+                    == Some(source_index)
+        });
+        if configuration.native_ref.is_some()
+            && configuration.source_index.is_none()
+            && (explicit_native_slot || native_lane_slot)
+        {
             // The actual partition and unique native slot establish this
             // identity. Never use the neutral vector position as a slot.
             configuration.source_index = Some(source_index);
