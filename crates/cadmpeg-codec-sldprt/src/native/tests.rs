@@ -867,7 +867,16 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
     assert!(!wire["sketch_input_entities"].as_array().unwrap().is_empty());
     wire["sketch_input_entities"] = serde_json::json!([]);
     let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
-    let error = crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("references missing sketch marker"),
+        "{error}"
+    );
+    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    native.feature_input_lanes[0].sketch_entities.clear();
+    let error = crate::native::source::validate(&native).unwrap_err();
     assert!(error.to_string().contains("omits marker"), "{error}");
 }
 

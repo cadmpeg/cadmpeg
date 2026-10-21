@@ -148,6 +148,7 @@ fn operation_real_controls_preserve_integral_literal_spelling_and_quantity() {
     ] {
         let mut source = feature(kind, Some("1"), 0);
         source.kind = kind.into();
+        source.xml_tag = kind.into();
         source.parameters.insert(
             cadmpeg_core::text::NonBlankString::new(name).unwrap(),
             "2".into(),
