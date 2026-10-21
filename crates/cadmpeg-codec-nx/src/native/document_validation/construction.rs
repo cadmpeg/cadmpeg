@@ -118,9 +118,7 @@ fn operation_record(record: &Value) -> Result<(), NativeConvertError> {
         }
     }
     if record.get("stable_identity").is_some()
-        && record["stable_identity"]
-            .as_str()
-            .is_none_or(|value| value.is_empty())
+        && record["stable_identity"].as_str().is_none_or(str::is_empty)
     {
         return Err(fail(record, "stable_identity must be nonempty text"));
     }

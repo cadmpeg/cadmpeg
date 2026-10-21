@@ -280,7 +280,7 @@ pub(super) fn build_geometry_report(
     geometry_report_facts: &GeometryReportFacts<'_>,
     ir: &CadIr,
     model: &crate::native::model::NativeModel,
-) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+) -> DecodeBody {
     let &GeometryReportFacts {
         unmatched_delta_tombstone_counts,
         counts,
@@ -427,7 +427,7 @@ pub(super) fn build_geometry_report(
         );
     }
 
-    append_design_intent_losses(&mut scan.source_untyped(), ir, &mut losses)?;
+    append_design_intent_losses(&mut scan.source_untyped(), ir, &mut losses);
 
     if has_untransferred_attribute_fields {
         push_report_loss(&mut losses, NxLossCode::AttributeValueUnresolved, {
@@ -442,7 +442,7 @@ pub(super) fn build_geometry_report(
     for loss in dialect_losses {
         losses.push(loss.clone());
     }
-    Ok(DecodeBody {
+    DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer {
             scope: cadmpeg_ir::ContentScope::full(),
             geometry_transferred: true,
@@ -451,14 +451,14 @@ pub(super) fn build_geometry_report(
         losses,
         notes: notes.to_vec(),
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    })
+    }
 }
 
 pub(crate) fn append_design_intent_losses(
     source_untyped: &mut cadmpeg_ir::ArenaClasses,
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut current_body_ids = Vec::new();
     for body in &ir.model.bodies {
         current_body_ids.push(body.id.clone());
@@ -1005,7 +1005,6 @@ pub(crate) fn append_design_intent_losses(
             ),
         );
     }
-    Ok(())
 }
 
 #[cfg(test)]
