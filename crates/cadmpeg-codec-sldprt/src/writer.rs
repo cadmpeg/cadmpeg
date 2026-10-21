@@ -120,6 +120,7 @@ pub(super) fn write_semantic_at(
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
+    let ir = &normalized;
     let source_arena = DecodeArena::new();
     let source_context = source_image(retained_records)
         .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
