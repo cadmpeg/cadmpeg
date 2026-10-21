@@ -374,9 +374,44 @@ pub(crate) fn regenerate(
             &lane.id,
             NativeDisposition::Regenerated,
         );
-        native.feature_input_lanes.push(generated);
+        merge_configuration_lane(native, generated)?;
     }
     sketches::merge(document, ir, source, native, losses, dispositions)?;
+    Ok(())
+}
+
+/// A configuration slot has one state lane. Combine only bytes authored in
+/// this synthesis pass, so native-only statements cannot create a second,
+/// ambiguous lane beside the current canonical configuration caches.
+fn merge_configuration_lane(
+    native: &mut SldprtNative,
+    generated: FeatureInputLane,
+) -> Result<(), CodecError> {
+    let candidates = native
+        .feature_input_lanes
+        .iter()
+        .enumerate()
+        .filter(|(_, lane)| {
+            generated.configuration.is_some() && lane.configuration == generated.configuration
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if let [index] = candidates.as_slice() {
+        let previous = &native.feature_input_lanes[*index];
+        if previous.id.starts_with("sldprt:generated:") && !previous.native_payload.is_empty() {
+            let mut payload = previous.native_payload.clone().into_inner();
+            payload.extend_from_slice(&generated.native_payload);
+            let combined = super::write_prepare::generated_native_lane(
+                &native.feature_histories,
+                &previous.id,
+                previous.configuration.clone(),
+                payload,
+            )?;
+            native.feature_input_lanes[*index] = combined;
+            return Ok(());
+        }
+    }
+    native.feature_input_lanes.push(generated);
     Ok(())
 }
 
