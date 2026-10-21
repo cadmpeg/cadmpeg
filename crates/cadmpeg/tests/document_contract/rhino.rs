@@ -10,7 +10,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::{CadIr, DecodeSidecar, decode_sidecar_path};
+use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar};
 use predicates::prelude::predicate;
 use tempfile::tempdir;
 
@@ -257,16 +257,15 @@ fn unedited_v8_roundtrip_agrees_on_every_arena_declared_written() {
             Some(TARGET),
         );
         let claims = cadmpeg_test_support::contract::written_arenas(&report);
-        let required = match name {
-            "brep.3dm" => &[cadmpeg_ir::ArenaName::Faces, cadmpeg_ir::ArenaName::Edges][..],
-            "generated_point.3dm" => {
-                &[cadmpeg_ir::ArenaName::Bodies, cadmpeg_ir::ArenaName::Points][..]
-            }
+        let required: &[&str] = match name {
+            "brep.3dm" => &["faces", "edges"],
+            "generated_point.3dm" => &["bodies", "points"],
             _ => &[],
         };
         for arena in required {
+            let arena = cadmpeg_ir::ArenaName::parse(arena).expect("registered arena");
             assert!(
-                claims.contains(arena),
+                claims.contains(&arena),
                 "{name} must make a substantive Written claim for {arena:?}"
             );
             let model = serde_json::to_value(&result.ir().model).unwrap();

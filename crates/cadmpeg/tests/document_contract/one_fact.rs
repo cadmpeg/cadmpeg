@@ -4,17 +4,17 @@
 use std::collections::BTreeSet;
 use std::fs;
 
-use cadmpeg_ir::CadIr;
 #[cfg(feature = "fcstd")]
 use cadmpeg_ir::document::DimensionEditError;
 #[cfg(any(feature = "fcstd", feature = "sldprt"))]
 use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::features::{Expression, FeatureId, ParameterId, ParameterValue};
 use cadmpeg_ir::report::{
-    Severity,
     export::{ExportReport, WritePath},
+    Severity,
 };
 use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
 use super::{decode, workspace, write_decode};
@@ -224,7 +224,7 @@ fn solidworks_one_fact_updates_keywords_generated_lanes_and_inherited_configurat
     inherited.feature_states.clear();
     inherited.bodies = None;
     ir.model.configurations.push(inherited);
-    ir.model.configurations.finalize();
+    ir.model.finalize();
     let expected_mm = bound.value_mm + 5.0;
     ir.set_dimension(
         &bound.feature,
@@ -633,7 +633,7 @@ fn feature_rename_renders_dependent_expression_tokens_with_the_current_owner_nam
     dependent.driving = false;
     let dependent_id = dependent.id.clone();
     ir.model.parameters.push(dependent);
-    ir.model.parameters.finalize();
+    ir.model.finalize();
     let expression = Expression {
         tokens: vec![
             ExpressionToken::Parameter(bound.parameter.clone()),

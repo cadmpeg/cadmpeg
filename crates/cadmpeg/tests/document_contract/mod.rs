@@ -20,7 +20,7 @@ mod rhino;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::{CadIr, SourceFidelity};
