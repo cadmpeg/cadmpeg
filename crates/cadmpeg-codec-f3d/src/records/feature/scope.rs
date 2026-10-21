@@ -2205,6 +2205,17 @@ impl DesignParameterScope {
         {
             return Err(fail("reference_count_offset/reference_members"));
         }
+        let reference_width = if kind == "Canvas"
+            && draft.kind_offset.checked_sub(draft.reference_count_offset)
+                == u64::try_from(draft.reference_members.len())
+                    .ok()
+                    .and_then(|count| count.checked_mul(51))
+                    .and_then(|length| length.checked_add(12))
+        {
+            51
+        } else {
+            11
+        };
         let mut expected = draft
             .reference_count_offset
             .checked_add(5)
@@ -2217,7 +2228,7 @@ impl DesignParameterScope {
                 return Err(fail("reference_member_offsets"));
             }
             expected = expected
-                .checked_add(11)
+                .checked_add(reference_width)
                 .ok_or_else(|| fail("reference_member_offsets"))?;
         }
         if draft.reference_members.offsets().count() != draft.reference_members.len()
@@ -2225,7 +2236,7 @@ impl DesignParameterScope {
                 .reference_members
                 .offsets()
                 .next_back()
-                .and_then(|offset| offset.checked_add(18))
+                .and_then(|offset| offset.checked_add(reference_width + 7))
                 != Some(draft.kind_offset)
         {
             return Err(fail("reference_member_offsets/kind_offset"));

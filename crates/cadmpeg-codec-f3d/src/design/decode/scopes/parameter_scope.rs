@@ -46,6 +46,7 @@ use super::work_geometry::exact_work_plane_frame;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
+use crate::design::decode::canvas::typed_canvas_reference;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
@@ -54,6 +55,7 @@ use crate::design::DesignFeatureFamily;
 use crate::ids;
 use crate::ids::native_stream;
 use crate::layout::canvas_scope_tail_98 as canvas_tail;
+use crate::layout::canvas_scope_typed_tail as typed_canvas_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
 use crate::records::feature::direct_face;
@@ -873,7 +875,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             };
             let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110)
                 || (kind == "Canvas"
-                    && exact_canvas_scope_tail(bytes.get(kind_end..paired_at)?, record_index));
+                    && (exact_canvas_scope_tail(bytes.get(kind_end..paired_at)?, record_index)
+                        || exact_typed_canvas_scope_tail(bytes.get(kind_end..paired_at)?)));
             if fixed_tail
                 && parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && fixed_candidate
@@ -936,13 +939,16 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 state_id => Some(i64::from(state_id)),
             }
         });
+        let typed_canvas =
+            kind == scope::DesignFeatureKind::Canvas && tail_length == typed_canvas_tail::LEN;
+        let reference_width = if typed_canvas { 51 } else { 11 };
         let mut reference_table = None;
         for count_at in start + 11..reference_table_end {
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
             if count == 0
                 || count_at
                     .checked_add(4)?
-                    .checked_add(count.checked_mul(11)?)?
+                    .checked_add(count.checked_mul(reference_width)?)?
                     != reference_table_end
             {
                 continue;
@@ -953,12 +959,26 @@ pub(in crate::design::decode) fn parse_parameter_scope(
 
             let mut offsets = Vec::new();
             for ordinal in 0..count {
-                let marker = first.checked_add(ordinal.checked_mul(11)?)?;
-                if bytes.get(marker) != Some(&1) || bytes.get(marker + 5..marker + 11)? != [0; 6] {
+                let marker = first.checked_add(ordinal.checked_mul(reference_width)?)?;
+                let target = if typed_canvas {
+                    if count != 2 {
+                        None
+                    } else {
+                        let guid = if ordinal == 0 {
+                            "5A1BF548-241F-46FD-9FB5-E4B05126EB9D"
+                        } else {
+                            "7B6C3C2D-4096-4E6D-B225-699E8C2D9355"
+                        };
+                        typed_canvas_reference(bytes, marker, guid)
+                    }
+                } else {
+                    super::shared_frames::marked_record_reference(bytes, marker)
+                };
+                let Some(target) = target else {
                     members.clear();
                     break;
-                }
-                members.push(View::u32_le_at(bytes, marker + 1)?);
+                };
+                members.push(target);
                 offsets.push(u64::try_from(marker + 1).ok()?);
             }
             if members.len() == count
@@ -1201,6 +1221,40 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         Some(Ok(scope))
     })()
     .transpose()
+}
+
+fn exact_typed_canvas_scope_tail(tail: &[u8]) -> bool {
+    tail.len() == typed_canvas_tail::LEN
+        && View::u32_le_at(tail, typed_canvas_tail::FEATURE_ORDINAL)
+            .is_some_and(|ordinal| ordinal != 0)
+        && tail.get(typed_canvas_tail::ZERO_PREFIX..typed_canvas_tail::FIRST_COMPANION)
+            == Some(&[0; 15])
+        && typed_canvas_reference(
+            tail,
+            typed_canvas_tail::FIRST_COMPANION,
+            "B7F34D7B-DAC4-41A5-B67D-D672537C3BFA",
+        )
+        .is_some_and(|index| index != 0)
+        && View::u32_le_at(tail, typed_canvas_tail::HISTORY_STATE) == Some(u32::MAX)
+        && View::f64_le_at(tail, typed_canvas_tail::DURATION)
+            .is_some_and(|duration| duration.is_finite() && duration >= 0.0)
+        && View::u32_le_at(tail, typed_canvas_tail::EPOCH)
+            == View::u32_le_at(tail, typed_canvas_tail::REPEATED_EPOCH)
+        && typed_canvas_reference(
+            tail,
+            typed_canvas_tail::SECOND_COMPANION,
+            "5FBE538E-139B-46D4-BCAF-CC796D1E1F78",
+        )
+        .is_some_and(|index| index != 0)
+        && tail.get(typed_canvas_tail::ZERO_BEFORE_THIRD..typed_canvas_tail::THIRD_COMPANION)
+            == Some(&[0; 2])
+        && typed_canvas_reference(
+            tail,
+            typed_canvas_tail::THIRD_COMPANION,
+            "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
+        )
+        .is_some_and(|index| index != 0)
+        && tail.get(typed_canvas_tail::ZERO_TAIL..) == Some(&[0; 2])
 }
 
 fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {

@@ -4776,6 +4776,32 @@ pub(crate) mod derived_instance_relation_310_57 {
     pub(crate) const SCOPE_RECORD_INDEX: usize = 47;
 }
 
+/// Byte offsets for the `canvas_geometry_prefix` record.
+///
+/// Spec §3.1. Record length 217 B.
+pub(crate) mod canvas_geometry_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 217;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 26;
+    /// Offset of `plane_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 58;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 69;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 146;
+    /// Offset of `component_reference` (`bytes[12]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 157;
+    /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 169;
+    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 180;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 181;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 213;
+}
+
 /// Byte offsets for the `hem_common_controls` record.
 ///
 /// Spec §3.1. Record length 41 B.
@@ -4988,4 +5014,164 @@ pub(crate) mod canvas_scope_tail_98 {
     pub(crate) const ZERO_TAIL: usize = 97;
     /// Stated value of `zero_tail` (`u8`). Spec §3.1.
     pub(crate) const ZERO_TAIL_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `canvas_geometry_legacy_prefix` record.
+///
+/// Spec §3.1. Record length 214 B.
+pub(crate) mod canvas_geometry_legacy_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 214;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 24;
+    /// Offset of `plane_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 56;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 67;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 144;
+    /// Offset of `component_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 155;
+    /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 166;
+    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 177;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 178;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 210;
+}
+
+/// Byte offsets for the `canvas_geometry_transitional_prefix` record.
+///
+/// Spec §3.1. Record length 216 B.
+pub(crate) mod canvas_geometry_transitional_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 216;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 25;
+    /// Offset of `plane_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 57;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 68;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 145;
+    /// Offset of `component_reference` (`bytes[12]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 156;
+    /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 168;
+    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 179;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 180;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 212;
+}
+
+/// Byte offsets for the `canvas_geometry_extra12_prefix` record.
+///
+/// Spec §3.1. Record length 229 B.
+pub(crate) mod canvas_geometry_extra12_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 229;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 26;
+    /// Offset of `plane_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 58;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 81;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 158;
+    /// Offset of `component_reference` (`bytes[12]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 169;
+    /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 181;
+    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 192;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 193;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 225;
+}
+
+/// Byte offsets for the `canvas_geometry_typed_legacy_prefix` record.
+///
+/// Spec §3.1. Record length 374 B.
+pub(crate) mod canvas_geometry_typed_legacy_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 374;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 24;
+    /// Offset of `plane_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 56;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 107;
+    /// Offset of `scope_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 184;
+    /// Offset of `component_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 235;
+    /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 286;
+    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 337;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 338;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 370;
+}
+
+/// Byte offsets for the `canvas_geometry_typed_transitional_prefix` record.
+///
+/// Spec §3.1. Record length 376 B.
+pub(crate) mod canvas_geometry_typed_transitional_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 376;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 25;
+    /// Offset of `plane_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 57;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 108;
+    /// Offset of `scope_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 185;
+    /// Offset of `component_reference` (`bytes[52]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 236;
+    /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 288;
+    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 339;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 340;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 372;
+}
+
+/// Byte offsets for the `canvas_scope_typed_tail` record.
+///
+/// Spec §3.1. Record length 196 B.
+pub(crate) mod canvas_scope_typed_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 196;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 0;
+    /// Offset of `zero_prefix` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 4;
+    /// Offset of `first_companion` (`bytes[51]`). Spec §3.1.
+    pub(crate) const FIRST_COMPANION: usize = 19;
+    /// Offset of `history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE: usize = 70;
+    /// Offset of `epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EPOCH: usize = 74;
+    /// Offset of `duration` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const DURATION: usize = 78;
+    /// Offset of `repeated_epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_EPOCH: usize = 86;
+    /// Offset of `second_companion` (`bytes[51]`). Spec §3.1.
+    pub(crate) const SECOND_COMPANION: usize = 90;
+    /// Offset of `zero_before_third` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_THIRD: usize = 141;
+    /// Offset of `third_companion` (`bytes[51]`). Spec §3.1.
+    pub(crate) const THIRD_COMPANION: usize = 143;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_TAIL: usize = 194;
 }

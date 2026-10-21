@@ -145,3 +145,72 @@ fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
         assert!(parse(&broken).is_none());
     }
 }
+
+#[test]
+fn typed_canvas_scope_validates_reference_types_and_fixed_tail() {
+    use crate::design::test_support::indexed_record_offsets_for_test;
+    fn reference(bytes: &mut [u8], at: usize, target: u32, guid: &str) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
+        bytes[at + 9..at + 13].copy_from_slice(&36u32.to_le_bytes());
+        bytes[at + 13..at + 49].copy_from_slice(guid.as_bytes());
+    }
+    let mut bytes = vec![0; 350];
+    bytes[..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"300");
+    bytes[7..11].copy_from_slice(&12u32.to_le_bytes());
+    bytes[11..15].copy_from_slice(&2u32.to_le_bytes());
+    reference(&mut bytes, 15, 55, "5A1BF548-241F-46FD-9FB5-E4B05126EB9D");
+    reference(&mut bytes, 66, 56, "7B6C3C2D-4096-4E6D-B225-699E8C2D9355");
+    bytes[117..121].copy_from_slice(&u32::MAX.to_le_bytes());
+    let mut kind = Vec::new();
+    lp_utf16(&mut kind, "Canvas");
+    bytes[121..137].copy_from_slice(&kind);
+    let tail = &mut bytes[137..333];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    reference(tail, 19, 3, "B7F34D7B-DAC4-41A5-B67D-D672537C3BFA");
+    tail[70..74].copy_from_slice(&u32::MAX.to_le_bytes());
+    tail[74..78].copy_from_slice(&8u32.to_le_bytes());
+    tail[78..86].copy_from_slice(&0.25f64.to_le_bytes());
+    tail[86..90].copy_from_slice(&8u32.to_le_bytes());
+    reference(tail, 90, 4, "5FBE538E-139B-46D4-BCAF-CC796D1E1F78");
+    reference(tail, 143, 5, "6CCF41D5-40BE-48ED-A834-18F3EAED6C57");
+    bytes[333..337].copy_from_slice(&3u32.to_le_bytes());
+    bytes[337..340].copy_from_slice(b"260");
+    bytes[340..344].copy_from_slice(&12u32.to_le_bytes());
+    let parse = |bytes: &[u8]| {
+        super::parse_parameter_scope(
+            bytes,
+            &indexed_record_offsets_for_test(bytes),
+            12,
+            &"300".to_owned().try_into().unwrap(),
+            0,
+        )
+        .unwrap()
+    };
+    let scope = parse(&bytes).expect("typed Canvas scope");
+    assert_eq!(
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [55, 56]
+    );
+    let wire = serde_json::to_string(&scope).unwrap();
+    let decoded: crate::records::feature::scope::DesignParameterScope =
+        serde_json::from_str(&wire).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+    for offset in [
+        11, 20, 28, 79, 137, 141, 161, 169, 207, 223, 240, 278, 285, 331,
+    ] {
+        let mut invalid = bytes.clone();
+        invalid[offset] ^= 1;
+        assert!(parse(&invalid).is_none(), "offset {offset}");
+    }
+    for duration in [-0.25, f64::NAN, f64::INFINITY] {
+        let mut invalid = bytes.clone();
+        invalid[215..223].copy_from_slice(&duration.to_le_bytes());
+        assert!(parse(&invalid).is_none());
+    }
+}
