@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Partial FreeCAD design projection exports only document-held content.
+//! Partial `FreeCAD` design projection exports only document-held content.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -326,7 +326,7 @@ fn partial_design_native_guard_and_synthesis_do_not_resurrect_unreadable_objects
         let result = decode(&FcstdCodec, &mixed(kind));
         let expected: cadmpeg_ir::document::ArenaClasses = match kind {
             MixedKind::Unreadable => [ArenaClass::Design].into(),
-            MixedKind::Vendor => Default::default(),
+            MixedKind::Vendor => cadmpeg_ir::document::ArenaClasses::default(),
         };
         assert_eq!(result.source_fidelity().unrepresented(), expected);
         let input = EncodeInput::new(result.ir(), Some(result.source_fidelity()));
