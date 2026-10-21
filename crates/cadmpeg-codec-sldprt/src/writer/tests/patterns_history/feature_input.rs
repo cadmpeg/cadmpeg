@@ -799,16 +799,58 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 50.0
     ));
     let native = sldprt_native(regenerated.ir());
-    assert!(
-        !native.feature_input_lanes[0].scalars.is_empty(),
-        "first output lane must carry the original scalar assertion; report={report:?}; native={native:?}"
-    );
+    // P rebuilds lanes by their current typed owners. The independent source
+    // framing remains first; the operation's scalar belongs to its owner lane.
+    let framing = &native.feature_input_lanes[0];
+    assert_eq!(framing.configuration.as_deref(), Some("0"));
     assert_eq!(
-        sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0]
-            .value
-            .get(),
-        0.05
+        framing
+            .classes
+            .iter()
+            .map(|class| class.name.as_str())
+            .collect::<Vec<_>>(),
+        ["sgPointHandle", "sgLineHandle", "sgArcHandle"]
     );
+    assert!(framing
+        .classes
+        .iter()
+        .all(|class| class.feature_ref.is_none()));
+    assert_eq!(framing.names.len(), 1);
+    assert_eq!(framing.names[0].value, "Sketch1");
+    assert_eq!(framing.names[0].feature_ref, None);
+    assert!(framing.scalars.is_empty());
+
+    let feature = &regenerated.ir().model.features[0];
+    let owner = feature
+        .native_ref
+        .as_deref()
+        .expect("native extrusion owner");
+    let matching = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| {
+            lane.scalars.iter().filter(move |scalar| {
+                scalar.feature_ref.as_deref() == Some(owner)
+                    && lane.names.iter().any(|name| {
+                        name.id == scalar.name
+                            && name.value == "D1"
+                            && name.feature_ref.as_deref() == Some(owner)
+                    })
+            })
+        })
+        .collect::<Vec<_>>();
+    let [scalar] = matching.as_slice() else {
+        panic!("one generated scalar for the extrusion's D1; report={report:?}; native={native:?}");
+    };
+    assert_eq!(scalar.value.get(), 0.05);
+    let parameter = regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
+        .expect("canonical extrusion parameter");
+    assert_eq!(parameter.native_ref.as_deref(), Some(scalar.id.as_str()));
 }
 
 #[test]
