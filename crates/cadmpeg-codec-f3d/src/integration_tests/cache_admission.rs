@@ -50,7 +50,7 @@ fn original_bad_cache_omits_only_proven_invalid_face_and_preserves_source() {
     assert!(result
         .source_fidelity()
         .unrepresented()
-        .contains(cadmpeg_ir::ArenaClass::Model));
+        .contains(&cadmpeg_ir::ArenaClass::Model));
     assert!(result
         .source_fidelity()
         .retained_records()
