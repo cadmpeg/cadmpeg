@@ -3,6 +3,7 @@
 
 mod assembly_local;
 mod attribute_colors;
+mod cache_admission;
 mod design_containment;
 mod history_deltas;
 mod history_scale;
