@@ -4192,6 +4192,24 @@ fn assign_configuration_bodies(
             source_counts.insert(source_index, 1);
         }
     }
+    for &source_index in partition_map.keys() {
+        if source_counts.contains_key(&source_index) {
+            continue;
+        }
+        let Some(position) = crate::history::configuration::configuration_for_source_slot(
+            &ir.model.configurations,
+            source_index,
+        ) else {
+            continue;
+        };
+        let configuration = &mut ir.model.configurations[position];
+        if configuration.native_ref.is_some() && configuration.source_index.is_none() {
+            // The actual partition and unique native slot establish this
+            // identity. Never use the neutral vector position as a slot.
+            configuration.source_index = Some(source_index);
+            source_counts.insert(source_index, 1);
+        }
+    }
     for configuration in &mut ir.model.configurations {
         let Some(source_index) = configuration.source_index else {
             continue;
