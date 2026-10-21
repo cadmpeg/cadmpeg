@@ -121,8 +121,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             &scan,
             ir,
             body,
-            annotations,
-            unknowns,
+            (annotations, unknowns),
             &mut admitted_entities,
         );
     }
@@ -141,8 +140,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             &scan,
             ir,
             body,
-            annotations,
-            unknowns,
+            (annotations, unknowns),
             &mut admitted_entities,
         );
     }
