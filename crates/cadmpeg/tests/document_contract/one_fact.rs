@@ -492,7 +492,7 @@ fn fusion_one_fact_updates_the_bound_sketch_constraint_and_its_owner_state() {
             .join("crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d"),
     )
     .unwrap();
-    let codec = F3dCodec::default();
+    let codec = F3dCodec;
     let decoded = decode(&codec, &bytes);
     let mut ir = decoded.ir().clone();
     // This fixture contains Sketch 1 and two dimensional parameters, not a Pad.
@@ -667,7 +667,7 @@ fn fusion_unchanged_source_free_directional_dimension_retains_its_sole_binding()
             .join("crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d"),
     )
     .unwrap();
-    let codec = F3dCodec::default();
+    let codec = F3dCodec;
     let decoded = decode(&codec, &bytes);
     let ir: CadIr = serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap()).unwrap();
     let source_parameter = ir
@@ -742,7 +742,7 @@ fn parameter_bindings(value: &Value, parameter: &ParameterId) -> Vec<String> {
                     && fields.get("kind").and_then(Value::as_str) == Some("parameter")
                     && fields.get("value").and_then(Value::as_str) == Some(parameter.as_str()) =>
             {
-                paths.push(path.into())
+                paths.push(path.into());
             }
             Value::Object(fields) => {
                 for (key, value) in fields {

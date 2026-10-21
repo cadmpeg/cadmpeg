@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! FreeCAD document edits survive both sidecar artifact flows.
+//! `FreeCAD` document edits survive both sidecar artifact flows.
 
 use std::fs;
 use std::path::Path;
