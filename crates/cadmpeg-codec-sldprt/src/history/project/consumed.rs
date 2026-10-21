@@ -68,7 +68,6 @@ pub(crate) fn keys(definition: &FeatureDefinition) -> &'static [&'static str] {
             "ZEquation",
             "Start",
             "End",
-            "Closed",
         ],
         FeatureOperation::Helix { .. } => &["AxisOrigin", "AxisDirection", "Clockwise"],
         FeatureOperation::Fillet { .. } => &["Edges"],

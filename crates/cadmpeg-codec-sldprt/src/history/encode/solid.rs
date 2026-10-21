@@ -208,7 +208,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ExtrudeExtent::OneSided { side } => match &side.termination {
                     LinearTermination::Unresolved {} => {}
                     LinearTermination::Blind { length } => {
-                        if properties.contains_key("EndCondition") || existing.is_none() {
+                        if existing
+                            .is_none_or(|record| record.properties.contains_key("EndCondition"))
+                        {
                             properties.insert(
                                 cadmpeg_core::nonblank_literal!("EndCondition"),
                                 "Blind".into(),
@@ -360,7 +362,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 );
             }
             if *op != BooleanOp::Unresolved
-                && (properties.contains_key("Operation")
+                && (existing.is_some_and(|record| record.properties.contains_key("Operation"))
                     || existing.and_then(extrude_feature_op).is_none())
             {
                 properties.insert(
