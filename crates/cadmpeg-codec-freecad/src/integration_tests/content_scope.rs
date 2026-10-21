@@ -141,3 +141,72 @@ fn container_projection_does_not_treat_source_bytes_as_typed_records() {
         ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
     );
 }
+
+#[test]
+fn design_operand_and_sheet_ownership_is_independent_of_delivery_depth() {
+    for cells in [
+        r#"<Cells Count="0"/>"#,
+        r#"<Cells Count="1"><Cell address="A1" content="12"/></Cells>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4"><Objects Count="2"><Object name="Feature" type="PartDesign::Feature"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects><ObjectData Count="2">
+<Object name="Feature"><Properties Count="3">
+<Property name="Depth" type="App::PropertyLength"><Float value="6"/></Property>
+<Property name="Length2" type="App::PropertyLength"><Float value="5"/></Property>
+<Property name="UserNote" type="App::PropertyString"><String value="keep this extra"/></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet">{cells}</Property></Properties></Object>
+</ObjectData></Document>"#
+        );
+        let full = decode(&document, DecodeDepth::Full);
+        let geometry = decode(&document, DecodeDepth::Geometry);
+        assert_eq!(full.ir().model.spreadsheets.len(), 1);
+        for (name, expected) in [("Depth", 6.0), ("Length2", 5.0)] {
+            let parameter = full
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| parameter.name == name)
+                .unwrap();
+            assert!(
+                matches!(&parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(length)) if length.get() == expected)
+            );
+        }
+        assert!(geometry.ir().model.parameters.is_empty());
+        assert!(geometry.ir().model.spreadsheets.is_empty());
+        assert_eq!(geometry.ir().model.attributes, full.ir().model.attributes);
+        assert_eq!(geometry.report().losses, full.report().losses);
+        assert!(full
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name == "UserNote"
+                && attribute.values
+                    == vec![cadmpeg_ir::attributes::AttributeValue::String(
+                        "keep this extra".into()
+                    )]));
+        for decoded in [&full, &geometry] {
+            let properties = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<PropertyRecord>("properties")
+                .unwrap();
+            let sheet = properties
+                .iter()
+                .find(|property| property.name == "cells")
+                .unwrap();
+            let exact_xml =
+                crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &sheet.id);
+            assert_eq!(
+                std::str::from_utf8(exact_xml).unwrap(),
+                format!(
+                    r#"<Property name="cells" type="Spreadsheet::PropertySheet">{cells}</Property>"#
+                )
+            );
+        }
+    }
+}
