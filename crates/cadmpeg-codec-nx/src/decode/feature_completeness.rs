@@ -223,8 +223,11 @@ pub(crate) fn incomplete_expression_parameters(
                     .map(|value| value.get())
             };
             let canonical = native_value.and_then(|value| {
-                unit.map_or(Some(value), |unit| {
-                    crate::native::om::canonical_expression_value(unit, value)
+                unit.map_or(Some(value), |unit| match unit {
+                    "millimeter" => Some(value),
+                    "inch" => Some(value * 25.4),
+                    "degree" => Some(value.to_radians()),
+                    _ => None,
                 })
             });
             if let (Some(native), Some(canonical), Some(stored)) = (native_value, canonical, stored)
