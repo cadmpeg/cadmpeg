@@ -498,12 +498,24 @@ fn native_scalar_matches_discrete_parameter(
 }
 
 pub(crate) fn sync_feature_scalars(
+    model: &cadmpeg_ir::document::Model,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
     for lane in lanes {
+        let configuration = lane
+            .configuration
+            .as_deref()
+            .and_then(|slot| slot.parse::<u32>().ok())
+            .and_then(|slot| {
+                crate::history::configuration::configuration_for_source_slot(
+                    &model.configurations,
+                    slot,
+                )
+            })
+            .map(|index| &model.configurations[index]);
         let names_by_id = lane
             .names
             .iter()
@@ -534,7 +546,7 @@ pub(crate) fn sync_feature_scalars(
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })
                     .collect::<Vec<_>>();
-                let parsed = crate::history::parameters::source_parameter_value(feature, name.as_str());
+                let parsed = current_scalar_cache(model, configuration, feature, name.as_str())?;
                 let value = match &parsed {
                     Some(ParameterValue::Length(value)) => value.get() / 1000.0,
                     Some(ParameterValue::Angle(value)) => value.get(),
@@ -587,6 +599,71 @@ pub(crate) fn sync_feature_scalars(
         }
     }
     Ok(())
+}
+
+/// Resolve a duplicate scalar from its canonical owner and effective
+/// configuration. Native-only literal edits retain their declared quantity.
+fn current_scalar_cache(
+    model: &cadmpeg_ir::document::Model,
+    configuration: Option<&cadmpeg_ir::features::DesignConfiguration>,
+    feature: &crate::records::Feature,
+    name: &str,
+) -> Result<Option<cadmpeg_ir::features::ParameterValue>, cadmpeg_core::CodecError> {
+    let owner = model.features.iter().find(|owner| {
+        owner.native_ref.as_deref() == Some(feature.id.as_str())
+            || (owner.native_ref.is_none()
+                && crate::history::write::features::generated_feature_record_id(&owner.id)
+                    == feature.id)
+    });
+    if let Some(owner) = owner {
+        let binding =
+            crate::history::encode::bindings::role_parameter(owner, &feature.parameters, name)?;
+        let parameter = binding
+            .as_ref()
+            .and_then(|id| {
+                model
+                    .parameters
+                    .iter()
+                    .find(|parameter| &parameter.id == id)
+            })
+            .or_else(|| {
+                model.parameters.iter().find(|parameter| {
+                    parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name
+                })
+            });
+        if let Some(parameter) = parameter {
+            let value = match configuration {
+                Some(configuration)
+                    if configuration
+                        .parameter_overrides
+                        .contains_key(&parameter.id) =>
+                {
+                    configuration.parameter_values.get(&parameter.id)
+                }
+                Some(configuration) => configuration
+                    .parameter_values
+                    .get(&parameter.id)
+                    .or(parameter.value.as_ref()),
+                None => parameter.value.as_ref(),
+            };
+            return value.cloned().map(Some).ok_or_else(|| cadmpeg_core::CodecError::UnsupportedContent(format!(
+                "SLDPRT canonical parameter {} has no evaluated scalar in its current configuration", parameter.id
+            )));
+        }
+    }
+    let cache = crate::history::parameters::source_parameter_value(feature, name);
+    let literal = feature.parameters.get(name).and_then(|expression| {
+        crate::history::parameters::parse_native_parameter_literal(feature, name, expression)
+    });
+    Ok(match (literal, cache) {
+        (Some(literal), Some(cache))
+            if std::mem::discriminant(&literal) == std::mem::discriminant(&cache) =>
+        {
+            Some(literal)
+        }
+        (_, Some(cache)) => Some(cache),
+        (literal, None) => literal,
+    })
 }
 
 #[cfg(test)]
