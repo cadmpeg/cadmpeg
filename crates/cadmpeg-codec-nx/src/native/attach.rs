@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
+//! IR-writing attachment of the native object model.
 
 use crate::grouping::group_pairs;
+
 use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -17,7 +19,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, UnknownId,
 };
-use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -28,9 +29,9 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
     features::{
         BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId,
-        DesignConfiguration, DesignParameter, DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
-        FeatureSourceContent, FeatureTreeNodeRole, LinearTermination, ParameterId, ParameterValue,
+        DesignConfiguration, DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent,
+        FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
+        FeatureSourceContent, FeatureTreeNodeRole, LinearTermination, ParameterId,
         PlanarProfileRef, ProfileRef, TreeChildren,
     },
     scalar::{Angle, FiniteReal, Length},
@@ -40,6 +41,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 pub(super) mod body_selection;
 pub(super) mod expressions;
 pub(super) mod feature_projection;
+mod symbolic_thread;
 
 use body_selection::{
     atomic_disjoint_body_selections, boolean_participant_writer, boolean_target_output,
@@ -240,10 +242,6 @@ fn attach_indexed_om_unknowns(
     Ok(())
 }
 
-/// Attach the native object model completely or not at all.
-///
-/// A resource refusal propagates. Any other failure restores every value
-/// [`attach_records`] wrote and reports one loss that names the failure.
 pub(super) fn attach(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -676,19 +674,6 @@ fn attach_configurations<'a>(
                 "NX configuration ordinal {ordinal} exceeds u32"
             ))
         })?;
-        let bodies = if active_attribute_use.is_some() {
-            let mut selected = Vec::new();
-
-            for body in &ir.model.bodies {
-                selected.push(body.id.clone());
-            }
-            Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(selected)
-                    .map_err(cadmpeg_core::CodecError::from)?,
-            )
-        } else {
-            None
-        };
         annotations.note(
             id.as_str(),
             annotation_stream,
@@ -712,14 +697,6 @@ fn attach_configurations<'a>(
         annotations
             .derived(id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::from)?;
-        if bodies
-            .as_deref()
-            .is_some_and(|bodies: &[_]| !bodies.is_empty())
-        {
-            annotations
-                .derived(id.as_str(), "bodies")
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
 
         let mut properties = BTreeMap::new();
         if let Some(relation) = active_attribute_use {
@@ -738,7 +715,7 @@ fn attach_configurations<'a>(
             material: None,
             properties,
             parameter_overrides: BTreeMap::new(),
-            bodies,
+            bodies: None,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(configuration_id.to_string()),
@@ -1506,6 +1483,8 @@ fn attach_feature_operations(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let features = &model.features;
+    let mut symbolic_threads =
+        symbolic_thread::definitions(ctx, ir, &features.feature_symbolic_threads)?;
     let parasolid_group_members = model.parasolid.group_members.as_slice();
     let data_blocks = model.om.data_blocks.as_slice();
     let expressions_by_id = expressions_by_id(&model.om.expressions);
@@ -1554,8 +1533,9 @@ fn attach_feature_operations(
         features.feature_pattern_counted_reference_lanes.as_slice();
     let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
     let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
-    let pattern_construction_fixed_lanes =
-        features.feature_pattern_construction_fixed_lanes.as_slice();
+    let pattern_construction_binary64_lanes = features
+        .feature_pattern_construction_binary64_lanes
+        .as_slice();
     let pattern_transform_lanes = features.feature_pattern_transform_lanes.as_slice();
     let multi_instance_output_lanes = features.feature_multi_instance_output_lanes.as_slice();
     let identical_instance_output_lanes =
@@ -1569,7 +1549,9 @@ fn attach_feature_operations(
     let draft_construction_graph_payloads = features
         .feature_draft_construction_graph_payloads
         .as_slice();
-    let draft_construction_fixed_lanes = features.feature_draft_construction_fixed_lanes.as_slice();
+    let draft_construction_binary64_lanes = features
+        .feature_draft_construction_binary64_lanes
+        .as_slice();
     let draft_construction_binary32_lanes = features
         .feature_draft_construction_binary32_lanes
         .as_slice();
@@ -1615,9 +1597,6 @@ fn attach_feature_operations(
     let block_payload_point_groups = features.feature_block_payload_point_groups.as_slice();
     let extrude_32_constructions = features.feature_extrude_32_constructions.as_slice();
     let extrude_payload_headers = features.feature_extrude_payload_headers.as_slice();
-    let operation_terminal_discriminators = features
-        .feature_operation_terminal_discriminators
-        .as_slice();
     let extrude_payload_32_branches = features.feature_extrude_payload_32_branches.as_slice();
     let operation_body_scalar_triples = features.feature_operation_body_scalar_triples.as_slice();
     let operation_body_members = features.feature_operation_body_members.as_slice();
@@ -1882,10 +1861,15 @@ fn attach_feature_operations(
             .iter()
             .map(|value| (value.operation_label.as_str(), value)),
     );
-    let pattern_construction_fixed_lanes_by_operation = group_pairs(
-        pattern_construction_fixed_lanes
-            .iter()
-            .map(|lane| (lane.operation_label.as_str(), lane)),
+    let pattern_construction_binary64_lanes_by_operation = (pattern_construction_binary64_lanes
+        .iter()
+        .map(|lane| (lane.operation_label.as_str(), lane)))
+    .fold(
+        std::collections::BTreeMap::<_, Vec<_>>::new(),
+        |mut groups, (key, value)| {
+            groups.entry(key).or_default().push(value);
+            groups
+        },
     );
     let pattern_transform_lanes_by_operation = group_pairs(
         pattern_transform_lanes
@@ -1930,10 +1914,15 @@ fn attach_feature_operations(
             .iter()
             .map(|payload| (payload.operation_label.as_str(), payload)),
     );
-    let draft_construction_fixed_lanes_by_operation = group_pairs(
-        draft_construction_fixed_lanes
-            .iter()
-            .map(|lane| (lane.operation_label.as_str(), lane)),
+    let draft_construction_binary64_lanes_by_operation = (draft_construction_binary64_lanes
+        .iter()
+        .map(|lane| (lane.operation_label.as_str(), lane)))
+    .fold(
+        std::collections::BTreeMap::<_, Vec<_>>::new(),
+        |mut groups, (key, value)| {
+            groups.entry(key).or_default().push(value);
+            groups
+        },
     );
     let draft_construction_binary32_lanes_by_operation = group_pairs(
         draft_construction_binary32_lanes
@@ -2068,36 +2057,43 @@ fn attach_feature_operations(
             .iter()
             .map(|payload| (payload.operation_label.as_str(), payload)),
     );
-    let block_dimensions_by_operation = block_dimensions
+    let block_dimensions_by_operation = (block_dimensions
         .iter()
-        .map(|dimensions| (dimensions.operation_label.as_str(), dimensions))
-        .collect::<BTreeMap<_, _>>();
-    let block_payload_points_by_operation = group_pairs(
-        block_payload_points
-            .iter()
-            .map(|point| (point.operation_label.as_str(), point)),
-    );
-    let block_payload_point_groups_by_operation = group_pairs(
-        block_payload_point_groups
-            .iter()
-            .map(|group| (group.operation_label.as_str(), group)),
-    );
-    let extrude_32_constructions_by_operation = extrude_32_constructions
+        .map(|dimensions| (dimensions.operation_label.as_str(), dimensions)))
+    .collect::<std::collections::BTreeMap<_, _>>();
+    let mut block_payload_points_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPoint>>::new();
+    for point in block_payload_points {
+        block_payload_points_by_operation
+            .entry(point.operation_label.as_str())
+            .or_default()
+            .push(point);
+    }
+    let mut block_payload_point_groups_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPointGroup>>::new();
+    for group in block_payload_point_groups {
+        block_payload_point_groups_by_operation
+            .entry(group.operation_label.as_str())
+            .or_default()
+            .push(group);
+    }
+    let extrude_32_constructions_by_operation = (extrude_32_constructions
         .iter()
-        .map(|construction| (construction.operation_label.as_str(), construction))
-        .collect::<BTreeMap<_, _>>();
-    let extrude_payload_headers_by_operation = extrude_payload_headers
+        .map(|construction| (construction.operation_label.as_str(), construction)))
+    .collect::<std::collections::BTreeMap<_, _>>();
+    let extrude_payload_headers_by_operation = (extrude_payload_headers
         .iter()
-        .map(|header| (header.operation_label.as_str(), header))
-        .collect::<BTreeMap<_, _>>();
-    let operation_terminal_discriminators_by_operation = operation_terminal_discriminators
+        .map(|header| (header.operation_label.as_str(), header)))
+    .collect::<std::collections::BTreeMap<_, _>>();
+    let extrude_payload_32_branches_by_operation = (extrude_payload_32_branches
         .iter()
-        .map(|lane| (lane.operation_label.as_str(), lane))
-        .collect::<BTreeMap<_, _>>();
-    let extrude_payload_32_branches_by_operation = group_pairs(
-        extrude_payload_32_branches
-            .iter()
-            .map(|branch| (branch.operation_label.as_str(), branch)),
+        .map(|branch| (branch.operation_label.as_str(), branch)))
+    .fold(
+        std::collections::BTreeMap::<_, Vec<_>>::new(),
+        |mut groups, (key, value)| {
+            groups.entry(key).or_default().push(value);
+            groups
+        },
     );
     let mut operation_body_scalar_triples_by_operation = group_pairs(
         operation_body_scalar_triples
@@ -2142,6 +2138,76 @@ fn attach_feature_operations(
         &mut body_image_outputs_by_write,
         &mut conflicting_body_output_writes,
         &identity_candidates,
+    );
+    let mut body_id_labels = BTreeMap::new();
+    for label in labels {
+        body_id_labels
+            .entry(label.id.as_str())
+            .and_modify(|value| *value = None)
+            .or_insert(Some(label));
+    }
+    let mut operation_body_ids = BTreeMap::new();
+    let mut body_id_candidates = BTreeMap::new();
+
+    for record in operation_records {
+        let encoding = if matches!(
+            record.core,
+            Some(crate::om::operation_core::OperationCore::CurveMesh(_))
+        ) {
+            super::parasolid::body_id::BodyIdEncoding::CurveMeshIgnored
+        } else {
+            let Some(owner) = body_id_labels
+                .get(record.operation_label.as_str())
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+            if owner.value != "BREP" {
+                continue;
+            }
+            super::parasolid::body_id::BodyIdEncoding::BrepInteger
+        };
+        if operation_records
+            .iter()
+            .filter(|r| r.id == record.id)
+            .count()
+            != 1
+        {
+            continue;
+        }
+        for write in operation_body_writes
+            .iter()
+            .filter(|w| w.operation_record == record.id)
+        {
+            let Some(matched) = super::parasolid::body_id::resolve(
+                write.frame.body_identity(),
+                encoding,
+                &model.parasolid.attribute_definitions,
+                &model.parasolid.entity_51_records,
+                &model.parasolid.entity_52_integer_records,
+            ) else {
+                continue;
+            };
+            let (prefix, prefix_len) = stream_prefix(matched.stream, true)?;
+            let mut bodies = ir.model.bodies.iter().filter(|b| {
+                let id = b.id.as_str().as_bytes();
+                id.strip_prefix(&prefix[..prefix_len])
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse::<u32>().ok())
+                    == Some(matched.body_xmt)
+            });
+            if let Some(body) = bodies.next().filter(|_| bodies.next().is_none()) {
+                let owned = body.id.clone();
+                body_id_candidates.insert(write.id.as_str(), owned);
+            }
+            operation_body_ids.insert(write.id.as_str(), matched);
+        }
+    }
+    merge_operation_body_outputs(
+        &mut body_image_outputs_by_write,
+        &mut conflicting_body_output_writes,
+        &body_id_candidates,
     );
     let partition_candidates = operation_body_group_partition_outputs_by_write(
         operation_body_writes,
@@ -2491,14 +2557,37 @@ fn attach_feature_operations(
             );
             insert_source_property(
                 &mut source_properties,
-                format_args!("body_write.{ordinal}.endpoint_tag"),
-                format_args!("{}", write.frame.endpoint_tag().code()),
+                format_args!("body_write.{ordinal}.endpoint_class_index"),
+                format_args!("{}", write.frame.endpoint_class_index().get()),
             );
             insert_source_property(
                 &mut source_properties,
                 format_args!("body_write.{ordinal}.body_image_object_index"),
                 format_args!("{}", write.frame.body_image().value()),
             );
+            if let Some(matched) = operation_body_ids.get(write.id.as_str()) {
+                for (field, value) in [
+                    ("definition", matched.definition),
+                    ("attribute_record", matched.entity),
+                    ("value_record", matched.value_record),
+                ] {
+                    insert_source_property(
+                        &mut source_properties,
+                        format_args!("body_write.{ordinal}.body_id.{field}"),
+                        format_args!("{value}"),
+                    );
+                }
+                insert_source_property(
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.body_id.stream_ordinal"),
+                    format_args!("{}", matched.stream),
+                );
+                insert_source_property(
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.body_id.body_xmt"),
+                    format_args!("{}", matched.body_xmt),
+                );
+            }
             if let Some(use_) = operation_body_image_segment_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
@@ -2897,13 +2986,6 @@ fn attach_feature_operations(
                 &mut source_properties,
                 format_args!("extrude_payload_header"),
                 format_args!("{}", header.id),
-            );
-        }
-        if let Some(lane) = operation_terminal_discriminators_by_operation.get(label.id.as_str()) {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("operation_terminal_discriminator"),
-                format_args!("{}", lane.id),
             );
         }
         for (ordinal, branch) in extrude_payload_32_branches_by_operation
@@ -3387,14 +3469,14 @@ fn attach_feature_operations(
                 format_args!("{}", value.id),
             );
         }
-        for lane in pattern_construction_fixed_lanes_by_operation
+        for lane in pattern_construction_binary64_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
             insert_source_property(
                 &mut source_properties,
-                format_args!("pattern_construction_fixed_lane.{}", lane.ordinal),
+                format_args!("pattern_construction_binary64_lane.{}", lane.ordinal),
                 format_args!("{}", lane.id),
             );
         }
@@ -3506,14 +3588,14 @@ fn attach_feature_operations(
                 format_args!("{}", payload.id),
             );
         }
-        for lane in draft_construction_fixed_lanes_by_operation
+        for lane in draft_construction_binary64_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
             insert_source_property(
                 &mut source_properties,
-                format_args!("draft_construction_fixed_lane.{}", lane.ordinal),
+                format_args!("draft_construction_binary64_lane.{}", lane.ordinal),
                 format_args!("{}", lane.id),
             );
         }
@@ -4096,7 +4178,8 @@ fn attach_feature_operations(
             .or_else(|| blend_projection.map(|(definition, _)| definition))
             .or_else(|| thicken_projection.map(|(definition, _)| definition))
             .or_else(|| offset_projection.map(|(definition, _)| definition))
-            .or(sphere_definition);
+            .or(sphere_definition)
+            .or_else(|| symbolic_threads.remove(label.id.as_str()));
         let brep_projection = if primary_definition.is_none() && label.value == "BREP" {
             brep_feature_definition(&outputs)
         } else {
@@ -4273,6 +4356,11 @@ fn attach_feature_operations(
                 .id
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
+            let first_write = operation_body_writes[0];
+            let result_id = result_topology_id(key, Some(first_write.ordinal))?;
+            let mut bodies = Vec::new();
+            let mut members = FeatureResultGroupMembers::default();
+            let mut members_valid = true;
             for write in operation_body_writes {
                 const BODY_PREFIX: &str = "nx:feature-history:body-identity#";
                 let result_members = operation_body_write_result_group_members(
@@ -4281,22 +4369,53 @@ fn attach_feature_operations(
                     body_write_group_partition_uses,
                     parasolid_group_members,
                 )?;
-                let body = cadmpeg_core::text::NonBlankString::new(format!(
-                    "{BODY_PREFIX}{:010}",
-                    write.frame.body_identity()
-                ))
-                .ok_or_else(|| CodecError::malformed("NX feature result body identity is blank"))?;
+                let _body_len = BODY_PREFIX.len() + 10;
+
+                let mut body_text = String::new();
+
+                std::fmt::Write::write_fmt(
+                    &mut body_text,
+                    format_args!("{BODY_PREFIX}{:010}", write.frame.body_identity()),
+                )
+                .map_err(|_| {
+                    CodecError::malformed("NX feature result body identity formatting failed")
+                })?;
+                let body = cadmpeg_core::text::NonBlankString::new(body_text).ok_or_else(|| {
+                    CodecError::malformed("NX feature result body identity is blank")
+                })?;
+                if !bodies.contains(&body) {
+                    bodies.push(body);
+                }
+                for (target, incoming) in [
+                    (&mut members.faces, result_members.faces),
+                    (&mut members.edges, result_members.edges),
+                    (&mut members.vertices, result_members.vertices),
+                ] {
+                    members_valid &= append_distinct_result_members(ctx, target, incoming);
+                }
+            }
+            let native = if operation_body_writes.len() == 1 {
+                first_write.id.as_str()
+            } else {
+                label.id.as_str()
+            };
+            if members_valid {
+                let mut native_ref = String::new();
+                native_ref.push_str(native);
                 append_feature_result_topology(
                     &mut ir.model.feature_result_topologies,
                     PendingFeatureResult {
-                        result_id: result_topology_id(key, Some(write.ordinal))?,
+                        result_id,
                         output_of: &id,
-                        bodies: vec![body],
-                        members: result_members,
-                        native_ref: write.id.clone(),
+                        bodies,
+                        members,
+                        native_ref,
                     },
                     losses,
                 );
+            } else {
+                let message = format!("Feature result {result_id} has repeated GROUP member claims; native operation {} is retained", label.id);
+                losses.push(NxLossCode::FeatureOutputLineageIncomplete.note(message));
             }
         } else if !deletes_body {
             let result_body = native_result_body_identity(
@@ -4373,6 +4492,27 @@ struct FeatureResultGroupMembers {
     faces: Vec<cadmpeg_core::text::NonBlankString>,
     edges: Vec<cadmpeg_core::text::NonBlankString>,
     vertices: Vec<cadmpeg_core::text::NonBlankString>,
+}
+
+/// Union independently distinct GROUP lists in stable write/member order.
+/// A repeated claim within one list remains invalid, including when another
+/// write already supplied that identity.
+fn append_distinct_result_members(
+    _ctx: &DecodeContext<'_>,
+    target: &mut Vec<cadmpeg_core::text::NonBlankString>,
+    incoming: Vec<cadmpeg_core::text::NonBlankString>,
+) -> bool {
+    let mut seen = BTreeSet::new();
+    let distinct = incoming.iter().all(|member| seen.insert(member));
+    if !distinct {
+        return false;
+    }
+    for member in incoming {
+        if !target.contains(&member) {
+            target.push(member);
+        }
+    }
+    true
 }
 
 fn result_topology_id(
@@ -4494,10 +4634,10 @@ fn feature_result_group_members(
         if matches.next().is_some() {
             continue;
         }
-        if member.partition_stream_ordinal != partition_stream_ordinal {
+        if member.primary_stream_ordinal != partition_stream_ordinal {
             continue;
         }
-        let GroupMemberTarget::Node {
+        let GroupMemberTarget {
             family,
             current_xmt: Some(xmt),
             ..
@@ -4594,10 +4734,13 @@ fn attach_sketch_graph(
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
+    let mut owned_operation_key = String::new();
+
+    owned_operation_key.push_str(operation_key);
     let sketch_id: SketchId = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
         .try_id(
         &cadmpeg_ir::identity_component!("sketch"),
-        operation_key.to_owned(),
+        owned_operation_key,
     )?;
     let mut operation_fixed_points = Vec::new();
     for &point in sources
@@ -4674,7 +4817,7 @@ fn attach_sketch_graph(
                 {
                     "SKETCH_NATIVE_FIXED_POINT"
                 }
-                _ => "SKETCH_NATIVE",
+                _ => return None,
             };
             annotations.note(entity.id().as_str(), stream, *source_offset, Some(tag));
             annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
@@ -4692,7 +4835,13 @@ fn attach_sketch_graph(
     let mut groups_by_id =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
     for group in &operation_groups {
-        if groups_by_id.insert(group.id.as_str(), group).is_some() {
+        if !match groups_by_id.entry(group.id.as_str()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(group);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        } {
             return None;
         }
     }
@@ -4700,14 +4849,17 @@ fn attach_sketch_graph(
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
     for point_use in sources.point_uses {
         if point_use.operation_label != label.id
-            || point_uses_by_group
-                .insert(point_use.sketch_point_group.as_str(), point_use)
-                .is_some()
+            || !match point_uses_by_group.entry(point_use.sketch_point_group.as_str()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(point_use);
+                    true
+                }
+                std::collections::btree_map::Entry::Occupied(_) => false,
+            }
         {
             return None;
         }
     }
-
     if point_uses_by_group
         .keys()
         .any(|group| !groups_by_id.contains_key(group))
@@ -4716,13 +4868,25 @@ fn attach_sketch_graph(
     }
     let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
     for point in sources.points {
-        if points_by_id.insert(point.id.as_str(), point).is_some() {
+        if !match points_by_id.entry(point.id.as_str()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(point);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        } {
             return None;
         }
     }
     let mut scalars_by_id = BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
     for scalar in sources.payload_scalars {
-        if scalars_by_id.insert(scalar.id.as_str(), scalar).is_some() {
+        if !match scalars_by_id.entry(scalar.id.as_str()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(scalar);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        } {
             return None;
         }
     }
@@ -4743,15 +4907,12 @@ fn attach_sketch_graph(
             })
             .unwrap_or(group.id.as_str());
         let entity_id = sketch_entity_identity("point-", entity_key)?;
-        let native_ref = native_ref_source.to_owned();
-        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
-            position: Point2::new(group.coordinates[0], group.coordinates[1]),
-        }) else {
-            return None;
-        };
+        let native_ref = (native_ref_source).to_owned();
+        let kind = ("nx-point-group").to_owned();
+        let kind = cadmpeg_core::text::NonBlankString::new(kind)?;
         entities.push((
             source_offset,
-            SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+            SketchEntity::new(entity_id, sketch_id.clone(), SketchGeometry::native(kind))
                 .with_native_ref(Some(native_ref)),
         ));
     }
@@ -4768,22 +4929,22 @@ fn attach_sketch_graph(
     }
     for (source_offset, entity) in &entities {
         match entity.geometry.definition() {
-            SketchGeometryDefinition::Point { .. } => {
+            SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-point-group" => {
                 annotations.note(
                     entity.id().as_str(),
                     stream,
                     *source_offset,
-                    Some("SKETCH_POINT"),
+                    Some("SKETCH_NATIVE_POINT_GROUP"),
                 );
                 annotations.exactness(entity.id().as_str(), Exactness::Derived);
             }
-            SketchGeometryDefinition::Native { native_kind } => {
-                let tag = if native_kind == "nx-fixed-point" {
-                    "SKETCH_NATIVE_FIXED_POINT"
-                } else {
-                    "SKETCH_NATIVE"
-                };
-                annotations.note(entity.id().as_str(), stream, *source_offset, Some(tag));
+            SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point" => {
+                annotations.note(
+                    entity.id().as_str(),
+                    stream,
+                    *source_offset,
+                    Some("SKETCH_NATIVE_FIXED_POINT"),
+                );
                 annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
             }
             _ => return None,
@@ -5030,7 +5191,35 @@ fn operation_source_properties(
         return;
     }
 
-    properties.insert("operation_record".to_owned(), record.id.clone());
+    properties.insert(("operation_record").to_owned(), record.id.clone());
+    if let Some((key, mode)) = record
+        .core
+        .as_ref()
+        .and_then(crate::om::operation_core::OperationCore::boolean_property)
+    {
+        properties.insert((key).to_owned(), (mode).to_owned());
+    }
+    if let Some(tables) = record
+        .linked_face_payload
+        .as_ref()
+        .and_then(crate::om::linked_face::LinkedFacePayload::tables)
+    {
+        let [body, face, wave] = tables;
+        if body[1] == "Body" && face[1] == "Face" {
+            for (key, value) in [
+                ("linked_face.source_part", face[2]),
+                ("linked_face.source_face_handle", face[5]),
+                ("linked_face.source_face_definition", face[7]),
+                ("linked_face.source_part_specification", face[8]),
+                ("linked_face.destination_part", wave[1]),
+                ("linked_face.interpart_link_type", wave[3]),
+                ("linked_face.assembly_context", wave[4]),
+                ("linked_face.arrangement", wave[6]),
+            ] {
+                properties.insert((key).to_owned(), (value).to_owned());
+            }
+        }
+    }
     let contiguous_common_frames = common_frames
         .iter()
         .filter(|frame| frame.operation_record == record.id)

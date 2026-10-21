@@ -36,6 +36,8 @@ use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl
 use super::vecmath::{add, components, coordinates, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
+use crate::families::chamfer::{ChamferParameters, ChamferResultKind};
+use crate::layout::{b5_cone_payload, b5_loop_numeric_terminal};
 use crate::wire;
 use crate::wire::bytes::{f64_le, f64_point, read_f64_array};
 
@@ -172,11 +174,11 @@ fn edge_pcurve_parameter_values(
         let mut parameters = incidence
             .lanes
             .iter()
-            .filter_map(|lane| (lane.curve == pcurve).then_some(lane.parameter));
+            .filter_map(|lane| (lane.curve == pcurve).then_some((lane.parameter, lane.control)));
         let parameter = parameters.next()?;
         parameters
             .all(|other| other == parameter)
-            .then_some(parameter)
+            .then_some(parameter.0)
     });
     Some([endpoints[0]?, endpoints[1]?])
 }
@@ -293,29 +295,31 @@ pub(in crate::families) enum B5Surface {
     },
     /// `b5 03 29`: a circular cone in its native arc-length/slant chart.
     Cone {
-        /// Cone apex.
-        apex: FinitePoint3,
+        /// Axis origin of the reference-radius cross section.
+        origin: FinitePoint3,
         /// The stored cone-axis unit direction and the stored first transverse
         /// unit direction, the zero-angle ray.
         frame: OrthonormalFrame3,
         /// The stored second transverse unit direction.
         direction_y: UnitVector3,
-        /// Cone half-angle in radians, strictly between zero and a quarter
+        /// Generator angle from the radial plane, strictly between zero and a quarter
         /// turn.
-        half_angle: PositiveAngle,
+        radial_angle: PositiveAngle,
         /// Reference radius of the conical surface, independent of the active chart ranges.
         reference_radius: FiniteReal,
         /// Active azimuth interval.
         angular_range: IncreasingParameterInterval,
         /// Native slant-coordinate range.
         slant_range: IncreasingParameterInterval,
+        /// Subtract this value from native V to obtain local generator length.
+        slant_shift: FiniteReal,
         /// Positive divisor mapping native U to azimuth.
         angular_scale: PositiveReal,
         /// Full-turn azimuth chart domain.
         angular_domain: IncreasingParameterInterval,
         /// Neutral carrier: its origin is the axis point at the slant-interval
         /// start and its radius is the cross-section radius there. Absent
-        /// when that origin is not finite.
+        /// when the origin or radius cannot be admitted.
         surface: Option<ConeSurface>,
     },
     /// `b5 03 2a`: a sphere with a radius-scaled right-handed frame.
@@ -403,6 +407,8 @@ pub(super) enum B5OffsetCarrierKind {
     Sphere,
     /// The torus carrier form.
     Torus,
+    /// The canonical cone carrier form.
+    Cone,
     /// The plane carrier form.
     Plane,
     /// The rollingball carrier form.
@@ -418,6 +424,7 @@ impl B5OffsetCarrierKind {
             0x05 => Some(Self::Cylinder),
             0x09 => Some(Self::Sphere),
             0x0d => Some(Self::Torus),
+            0x11 => Some(Self::Cone),
             0x15 => Some(Self::Plane),
             0x19 => Some(Self::RollingBall),
             0x21 => Some(Self::Extrusion),
@@ -443,7 +450,7 @@ pub(in crate::families) struct B5OffsetSurface {
     pub(super) parameter_bounds: [IncreasingParameterInterval; 2],
 }
 
-/// A `b5 03 2c` extrusion construction with a two-support directrix.
+/// A `b5 03 2c` extrusion construction with an exact directrix.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct B5ExtrusionSurface {
     /// This construction's result surface id.
@@ -459,20 +466,9 @@ pub(in crate::families) struct B5ExtrusionSurface {
 /// Exact directrix construction selected by a `b5 03 2c` extrusion.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum B5ExtrusionDirectrix {
-    /// Two-support intersection carried by an `a8 03 25` record.
-    Intersection {
-        /// Persistent directrix object id.
-        object_id: u32,
-        /// Ordered `(surface, pcurve, pcurve range)` support sides.
-        supports: [(u32, u32, [FiniteReal; 2]); 2],
-        /// Increasing solved-curve parameter range.
-        parameter_range: IncreasingParameterInterval,
-        /// Positive fit tolerance of the serialized sampled cache.
-        cache_fit_tolerance: PositiveReal,
-    },
-    /// One-support curve carried by a `b5 03 24` wrapper.
+    /// One-support lift selected by a surface-curve wrapper or sampled map.
     SurfaceCurve {
-        /// Persistent wrapper object id.
+        /// Persistent directrix object id.
         object_id: u32,
         /// `(surface, pcurve, pcurve range)` support side.
         support: (u32, u32, [FiniteReal; 2]),
@@ -499,18 +495,13 @@ pub(super) enum B5ExtrusionDirectrix {
 impl B5ExtrusionDirectrix {
     pub(super) fn object_id(&self) -> u32 {
         match self {
-            Self::Intersection { object_id, .. }
-            | Self::SurfaceCurve { object_id, .. }
-            | Self::Offset { object_id, .. } => *object_id,
+            Self::SurfaceCurve { object_id, .. } | Self::Offset { object_id, .. } => *object_id,
         }
     }
 
     fn parameter_range(&self) -> IncreasingParameterInterval {
         match self {
-            Self::Intersection {
-                parameter_range, ..
-            }
-            | Self::SurfaceCurve {
+            Self::SurfaceCurve {
                 parameter_range, ..
             }
             | Self::Offset {
@@ -519,7 +510,7 @@ impl B5ExtrusionDirectrix {
         }
     }
 
-    fn reorigin_parameter_range(&mut self, range: IncreasingParameterInterval) -> bool {
+    fn reorigin_parameter_range(&mut self, range: IncreasingParameterInterval) {
         match self {
             Self::SurfaceCurve {
                 parameter_range, ..
@@ -528,22 +519,19 @@ impl B5ExtrusionDirectrix {
                 parameter_range, ..
             } => {
                 *parameter_range = range;
-                true
             }
-            Self::Intersection { .. } => false,
         }
     }
 
-    pub(super) fn supports(&self) -> &[(u32, u32, [FiniteReal; 2])] {
+    pub(super) fn support(&self) -> &(u32, u32, [FiniteReal; 2]) {
         match self {
-            Self::Intersection { supports, .. } => supports,
-            Self::SurfaceCurve { support, .. } => std::slice::from_ref(support),
-            Self::Offset { source, .. } => source.supports(),
+            Self::SurfaceCurve { support, .. } => support,
+            Self::Offset { source, .. } => source.support(),
         }
     }
 }
 
-/// A class-`37` support-bound surface construction with an explicit result carrier.
+/// A two-support fillet or chamfer construction with an explicit result carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct B5SupportedSurface {
     /// This construction's result surface id.
@@ -561,21 +549,15 @@ pub(in crate::families) struct B5SupportedSurface {
 /// Native parameter layouts of a support-bound surface construction.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum B5SupportedSurfaceParameters {
-    /// Class `37`: interleaved controls, a positive construction radius, and
-    /// a zero scalar.
+    /// Class `37`: constant-radius fillet controls and construction radius.
     Radius {
-        /// Six control bytes surrounding the scalar fields.
+        /// Result selector, sentinel, two support sides, bound order, and closure.
         controls: [u8; 6],
         /// Positive radius of the support-bound construction.
         construction_radius: PositiveLength,
     },
-    /// Class `3b`: six contiguous controls followed by two positive scalars.
-    ScalarPair {
-        /// Six contiguous control bytes.
-        controls: [u8; 6],
-        /// Two positive construction scalars.
-        scalars: [PositiveReal; 2],
-    },
+    /// Class `3b`: two-support chamfer controls and definition.
+    Chamfer(ChamferParameters),
 }
 
 /// One class-`06` incidence lane connecting curves to parameters at a vertex.
@@ -583,18 +565,18 @@ pub(super) enum B5SupportedSurfaceParameters {
 pub(in crate::families) struct B5ParameterIncidence {
     /// This record's stream object id.
     pub(super) object_id: u32,
-    /// Curve, parameter, and control triples in serialized order.
+    /// Curve, local parameter, and arc number in serialized order.
     pub(in crate::families) lanes: Vec<B5IncidenceLane>,
 }
 
-/// One curve/parameter/control triple of a class-`06` incidence record.
+/// One curve station of a class-`06` incidence record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::families) struct B5IncidenceLane {
     /// Referenced curve or pcurve object id.
     pub(super) curve: u32,
     /// Finite native parameter on that curve.
     pub(super) parameter: FiniteReal,
-    /// Compact native control for this lane.
+    /// Compact arc number; together with the local parameter, a `CATCrvParam`.
     pub(super) control: u32,
 }
 
@@ -800,7 +782,9 @@ pub(super) struct B5LoopMember {
     pub(super) pcurve: u32,
     /// `object_id` of the member `b5 03 5e` edge.
     pub(super) edge: u32,
-    /// Three signed controls for this occurrence.
+    /// Edge occurrence, pcurve-to-edge parameter orientation, and pcurve
+    /// occurrence signs, in source order. The middle sign compares composite
+    /// stations by arc first, then local parameter within the same arc.
     pub(super) controls: [i16; 3],
 }
 
@@ -816,11 +800,12 @@ pub(in crate::families) struct B5LoopMetadata {
 /// Optional fixed-width numeric extension of a class-`62` loop.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct B5LoopMetadataExtension {
-    /// Four finite binary64 fields in serialized order.
+    /// Local rectangle coordinates U0, V0, U1, V1. The paired patch IDs
+    /// occupy controls 1 through 4; coordinates order within each patch.
     scalars: [FiniteReal; 4],
-    /// Exact admitted odd extension control.
-    control: u8,
-    /// Six finite binary32 fields in serialized order.
+    /// Canonical compact lead, U0/V0/U1/V1 patch IDs, and compact zero.
+    controls: [u8; 6],
+    /// Conservative Cartesian rectangle-image box, as X/Y/Z low/high pairs.
     floats: [f32; 6],
 }
 
@@ -1034,10 +1019,10 @@ fn parse_from_records_with_class21(
             },
         );
     }
-    let grids = crate::families::a5a8::records::A8ExternalGrids::new(bytes);
+
     for frame in frames {
-        let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            &grids,
+        let Some(surface) = crate::families::a5a8::records::a8_surface_from_object_frame(
+            bytes,
             frame.start,
             frame.end,
             frame.object_id,
@@ -1130,9 +1115,8 @@ fn parse_from_records_with_class21(
     }
     let mut extrusion_pcurves = HashSet::new();
     for extrusion in extrusion_surfaces.values() {
-        for (_, pcurve, _) in extrusion.directrix.supports() {
-            extrusion_pcurves.insert(*pcurve);
-        }
+        let (_, pcurve, _) = extrusion.directrix.support();
+        extrusion_pcurves.insert(*pcurve);
     }
     let mut offset_surfaces = BTreeMap::new();
     let mut supported_surfaces = BTreeMap::new();
@@ -1190,17 +1174,17 @@ fn parse_from_records_with_class21(
                 let Some(carrier) = surfaces.get(&construction.carrier_surface) else {
                     continue;
                 };
+                if !supported_surface_parameters_match_carrier(&construction.parameters, carrier) {
+                    continue;
+                }
                 let carrier = copy_surface(carrier)?;
-                let parameters_match_carrier =
-                    supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
                 let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
                 if merge_surface_candidate(
                     &mut surfaces,
                     &mut conflicting_surfaces,
                     record.object_id,
                     carrier,
-                ) && parameters_match_carrier
-                    && supported_surface_pcurves_match(&construction, by_id, &a8_pcurve_supports)
+                ) && supported_surface_pcurves_match(&construction, by_id, &a8_pcurve_supports)
                     && construction
                         .support_surfaces
                         .iter()
@@ -1885,10 +1869,10 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<BTreeMap<u32, B5Surface>, CodecError> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
-    let grids = crate::families::a5a8::records::A8ExternalGrids::new(bytes);
+
     for frame in frames {
-        let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            &grids,
+        let Some(surface) = crate::families::a5a8::records::a8_surface_from_object_frame(
+            bytes,
             frame.start,
             frame.end,
             frame.object_id,
@@ -2136,8 +2120,23 @@ fn resolve_targeted_surface_inner(
             continue;
         }
         if let Some(construction) = parse_supported_surface(record) {
-            object_id = construction.carrier_surface;
-            continue;
+            let Some(carrier) = resolve_targeted_surface_inner(
+                construction.carrier_surface,
+                records,
+                headers,
+                resolved,
+                rolling,
+                (visited.clone(), depth + 1),
+                budget,
+            )?
+            else {
+                return Ok(None);
+            };
+            return Ok(supported_surface_parameters_match_carrier(
+                &construction.parameters,
+                &carrier,
+            )
+            .then_some(carrier));
         }
         if record.family == 0xb5 && record.class == 0x30 {
             return resolve_targeted_analytic_offset(
@@ -3204,36 +3203,41 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             })
         }
         0x29 => {
-            (record.payload.len() == 185 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let apex = f64_point(&record.payload, 1)?;
-            let direction_x = read_f64_array::<3>(&record.payload, 25)?.map(FiniteReal::get);
-            let direction_y = read_f64_array::<3>(&record.payload, 49)?.map(FiniteReal::get);
-            let axis = read_f64_array::<3>(&record.payload, 73)?.map(FiniteReal::get);
-            let half_angle = f64_le(&record.payload, 97)?;
-            let reference_radius = f64_le(&record.payload, 105)?;
+            (record.payload.len() == b5_cone_payload::LEN
+                && record.payload.get(b5_cone_payload::LEAD) == Some(&0x80))
+            .then_some(())?;
+            let chart_origin = f64_point(&record.payload, b5_cone_payload::ORIGIN)?;
+            let direction_x = read_f64_array::<3>(&record.payload, b5_cone_payload::DIRECTION_X)?
+                .map(FiniteReal::get);
+            let direction_y = read_f64_array::<3>(&record.payload, b5_cone_payload::DIRECTION_Y)?
+                .map(FiniteReal::get);
+            let axis =
+                read_f64_array::<3>(&record.payload, b5_cone_payload::AXIS)?.map(FiniteReal::get);
+            let radial_angle = f64_le(&record.payload, b5_cone_payload::RADIAL_ANGLE)?;
+            let reference_radius = f64_le(&record.payload, b5_cone_payload::REFERENCE_RADIUS)?;
             let angular_range = [
-                f64_le(&record.payload, 113)?.get(),
-                f64_le(&record.payload, 121)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_RANGE)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_RANGE + 8)?.get(),
             ];
             let mut slant_range = [
-                f64_le(&record.payload, 129)?.get(),
-                f64_le(&record.payload, 137)?.get(),
+                f64_le(&record.payload, b5_cone_payload::SLANT_RANGE)?.get(),
+                f64_le(&record.payload, b5_cone_payload::SLANT_RANGE + 8)?.get(),
             ];
             if slant_range[0].abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY {
                 slant_range[0] = 0.0;
             }
-            let angular_scale = PositiveReal::new(f64_le(&record.payload, 145)?.get())?;
+            let angular_scale =
+                PositiveReal::new(f64_le(&record.payload, b5_cone_payload::ANGULAR_SCALE)?.get())?;
             let angular_domain = [
-                f64_le(&record.payload, 169)?.get(),
-                f64_le(&record.payload, 177)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_DOMAIN)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_DOMAIN + 8)?.get(),
             ];
+            let slant_shift = f64_le(&record.payload, b5_cone_payload::PARAMETER_SHIFT)?;
             let (frame, direction_y) = cone_frame(axis, direction_x, direction_y)?;
-            let slant_start = NonNegativeLength::new(slant_range[0])?;
-            let positive_half_angle = PositiveAngle::new(half_angle.get())?;
-            (half_angle.get() < std::f64::consts::FRAC_PI_2
+            let positive_radial_angle = PositiveAngle::new(radial_angle.get())?;
+            (radial_angle.get() < std::f64::consts::FRAC_PI_2
                 && periodic_angular_range_is_valid(angular_range, angular_domain)
-                && f64_le(&record.payload, 153)?.get() == 1.0
-                && f64_le(&record.payload, 161)?.get() == 0.0)
+                && f64_le(&record.payload, b5_cone_payload::PARAMETER_SCALE)?.get() == 1.0)
                 .then_some(())?;
             // The angular check admits a strictly increasing range inside a
             // strictly increasing full-turn domain.
@@ -3241,29 +3245,31 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let angular_domain = IncreasingParameterInterval::new(angular_domain)?;
             let slant_range = IncreasingParameterInterval::new(slant_range)?;
             let origin = add(
-                coordinates(apex),
-                scale(axis, slant_range.lower() * half_angle.get().cos()),
+                coordinates(chart_origin),
+                scale(axis, slant_range.lower() * radial_angle.get().sin()),
             );
-            let half_angle_radians = Angle::from_assigned_real(half_angle);
+            let radius = NonNegativeLength::new(
+                reference_radius.get() + slant_range.lower() * radial_angle.get().cos(),
+            );
+            let half_angle = Angle::from_assigned_real(FiniteReal::new(
+                std::f64::consts::FRAC_PI_2 - radial_angle.get(),
+            )?);
             Some(B5Surface::Cone {
-                apex,
+                origin: chart_origin,
                 frame,
                 direction_y,
-                half_angle: positive_half_angle,
+                radial_angle: positive_radial_angle,
                 reference_radius,
                 angular_range,
                 slant_range,
+                slant_shift,
                 angular_scale,
                 angular_domain,
-                surface: FinitePoint3::new(Point3::from(origin)).map(|origin| {
-                    ConeSurface::new(
-                        origin,
-                        frame,
-                        slant_start.scaled_by_sine(half_angle_radians),
-                        PositiveReal::ONE,
-                        half_angle_radians,
-                    )
-                }),
+                surface: FinitePoint3::new(Point3::from(origin)).zip(radius).map(
+                    |(origin, radius)| {
+                        ConeSurface::new(origin, frame, radius, PositiveReal::ONE, half_angle)
+                    },
+                ),
             })
         }
         0x2a => {
@@ -3513,6 +3519,13 @@ fn parse_offset_surface(
         }
     }
     let expected_kind = match surfaces.get(&carrier_surface) {
+        Some(carrier @ B5Surface::Cone { .. }) => cone_offset_construction_agrees(
+            surfaces.get(&source_surface)?,
+            carrier,
+            distance.get(),
+            [u_bounds, v_bounds],
+        )
+        .then_some(B5OffsetCarrierKind::Cone)?,
         Some(carrier @ B5Surface::Plane { .. }) => analytic_offset_magnitude_agrees(
             carrier,
             surfaces.get(&source_surface)?,
@@ -3553,7 +3566,7 @@ fn parse_offset_surface(
             ) {
                 if carrier.direction != source.direction
                     || carrier.u_bounds != v_bounds
-                    || carrier.v_bounds != Some(u_bounds)
+                    || !matches!(carrier.chart, B5ExtrusionChart::Direct { bounds, .. } if bounds == u_bounds)
                 {
                     return None;
                 }
@@ -3579,6 +3592,102 @@ fn parse_offset_surface(
     (carrier_kind == expected_kind).then_some(fields)
 }
 
+fn cone_offset_construction_agrees(
+    source: &B5Surface,
+    carrier: &B5Surface,
+    distance: f64,
+    [u_bounds, v_bounds]: [IncreasingParameterInterval; 2],
+) -> bool {
+    let (
+        B5Surface::Cone {
+            origin: source_origin,
+            frame: source_frame,
+            direction_y: source_y,
+            radial_angle: source_angle,
+            reference_radius: source_radius,
+            angular_scale: source_scale,
+            slant_shift: source_shift,
+            surface: Some(_),
+            ..
+        },
+        B5Surface::Cone {
+            origin,
+            frame,
+            direction_y,
+            radial_angle,
+            reference_radius,
+            angular_scale,
+            angular_range,
+            slant_range,
+            slant_shift,
+            surface: Some(_),
+            ..
+        },
+    ) = (source, carrier)
+    else {
+        return false;
+    };
+    if frame != source_frame
+        || direction_y != source_y
+        || radial_angle != source_angle
+        || angular_scale != source_scale
+    {
+        return false;
+    }
+    let source_origin = coordinates(*source_origin);
+    let origin = coordinates(*origin);
+    let delta = std::array::from_fn::<_, 3, _>(|i| origin[i] - source_origin[i]);
+    let axis = components(frame.axis());
+    let axial = delta.into_iter().zip(axis).map(|(x, a)| x * a).sum::<f64>();
+    let radial = reference_radius.get() - source_radius.get();
+    let (sin, cos) = radial_angle.get().sin_cos();
+    let handedness = cross(components(frame.reference()), components(direction_y))
+        .into_iter()
+        .zip(axis)
+        .map(|(x, a)| x * a)
+        .sum::<f64>()
+        .signum();
+    let translation = axial * sin + radial * cos;
+    let measured = handedness * (radial * sin - axial * cos);
+    let transverse = std::array::from_fn::<_, 3, _>(|i| delta[i] - axial * axis[i]);
+    let transverse_length = transverse[0].hypot(transverse[1]).hypot(transverse[2]);
+    let length_scale = axial.abs().max(radial.abs()).max(distance.abs());
+    let arithmetic_tolerance = 4.0 * f64::EPSILON * length_scale;
+    let transverse_tolerance = EPS_B5_GRAPH_DEGENERATE * length_scale;
+    let distance_tolerance =
+        EPS_B5_GRAPH_DEGENERATE * measured.abs().max(distance.abs()) + arithmetic_tolerance;
+    let shift = slant_shift.get() - source_shift.get();
+    let shift_tolerance =
+        EPS_B5_GRAPH_DEGENERATE * translation.abs().max(shift.abs()) + arithmetic_tolerance;
+    if ![
+        translation,
+        measured,
+        transverse_length,
+        distance_tolerance,
+        shift_tolerance,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+        || transverse_length > transverse_tolerance
+        || (measured - distance).abs() > distance_tolerance
+        || (shift - translation).abs() > shift_tolerance
+    {
+        return false;
+    }
+    let [u0, u1] = u_bounds.endpoints().map(|u| u / angular_scale.get());
+    u0 >= angular_range.lower() - EPS_B5_GRAPH_GEOMETRY
+        && u1 <= angular_range.upper() + EPS_B5_GRAPH_GEOMETRY
+        && slant_range
+            .endpoints()
+            .into_iter()
+            .zip(v_bounds.endpoints())
+            .all(|(local, native)| {
+                let tolerance = EPS_B5_GRAPH_DEGENERATE
+                    * local.abs().max(native.abs()).max(slant_shift.get().abs());
+                (local - (native - slant_shift.get())).abs() <= tolerance
+            })
+}
+
 fn extrusion_offset_construction_agrees(
     source: &B5ExtrusionSurface,
     carrier: &B5ExtrusionSurface,
@@ -3600,13 +3709,11 @@ fn extrusion_offset_construction_agrees(
         return carrier.parameter_bounds == [v_bounds, u_bounds];
     };
     offset_source.object_id() == source.directrix.object_id()
-        && offset_source.supports().first().is_some_and(|support| {
-            source_parameter_range
-                .endpoints()
-                .into_iter()
-                .zip(support.2)
-                .all(|(left, right)| left.to_bits() == right.get().to_bits())
-        })
+        && source_parameter_range
+            .endpoints()
+            .into_iter()
+            .zip(offset_source.parameter_range().endpoints())
+            .all(|(left, right)| left.to_bits() == right.to_bits())
         && curve_distance.get().to_bits() == distance.get().to_bits()
         && *direction == source.direction
         && carrier.parameter_bounds[0]
@@ -3823,38 +3930,51 @@ fn parse_extrusion_surface_with_context(
     let Some(carrier) = extrusion_carrier(record) else {
         return Ok(None);
     };
-    let Some(active_bounds) = carrier.v_bounds else {
-        let Some(directrix_record) = records.get(&carrier.directrix_id) else {
-            return Ok(None);
-        };
-        let Some(directrix) =
-            parse_extrusion_directrix(ctx, directrix_record, records, object_stream_pcurves)?
-        else {
-            return Ok(None);
-        };
-        let Some(parameter_bounds) = contextual_offset_extrusion_bounds(
-            record.object_id,
-            &carrier,
-            &directrix,
-            offset_constructions,
-            extrusion_surfaces,
-        ) else {
-            return Ok(None);
-        };
-        return Ok(Some(B5ExtrusionSurface {
-            object_id: record.object_id,
-            direction: carrier.direction,
-            parameter_bounds,
-            directrix,
-        }));
+    let (active_bounds, controls) = match carrier.chart {
+        B5ExtrusionChart::Direct { bounds, controls } => (bounds, controls),
+        B5ExtrusionChart::OffsetLimits { .. } => {
+            let Some(directrix_record) = records.get(&carrier.directrix_id) else {
+                return Ok(None);
+            };
+            let Some(directrix) =
+                parse_extrusion_directrix(ctx, directrix_record, records, object_stream_pcurves)?
+            else {
+                return Ok(None);
+            };
+            let B5ExtrusionDirectrix::Offset { source, .. } = &directrix else {
+                return Ok(None);
+            };
+            if !records
+                .get(&source.object_id())
+                .is_some_and(|record| record.family == 0xb5 && record.class == 0x24)
+            {
+                return Ok(None);
+            }
+            let Some(parameter_bounds) = contextual_offset_extrusion_bounds(
+                record.object_id,
+                &carrier,
+                &directrix,
+                offset_constructions,
+                extrusion_surfaces,
+                object_stream_pcurves,
+            ) else {
+                return Ok(None);
+            };
+            return Ok(Some(B5ExtrusionSurface {
+                object_id: record.object_id,
+                direction: carrier.direction,
+                parameter_bounds,
+                directrix,
+            }));
+        }
     };
     let active = active_bounds.endpoints();
-    let terminal_span_chart = matches!(carrier.controls, [0x05, 0x15 | 0x19]);
+    let terminal_span_chart = matches!(controls, [0x05, 0x15 | 0x19]);
     let directrix = if terminal_span_chart {
         terminal_span_directrix(
             carrier.directrix_id,
             active_bounds,
-            carrier.controls,
+            controls,
             object_stream_pcurves,
         )
     } else {
@@ -3873,37 +3993,33 @@ fn parse_extrusion_surface_with_context(
             64.0 * f64::EPSILON,
         )
     });
-    let translated_chart = carrier.controls == [0x05, 0x11];
+    let translated_chart = controls == [0x05, 0x11];
+    if records
+        .get(&carrier.directrix_id)
+        .is_some_and(|record| record.family == 0xa8 && record.class == 0x25)
+        && (translated_chart || !directrix_contains_active)
+    {
+        return Ok(None);
+    }
     if translated_chart {
-        if translated_directrix_span_count(
-            &directrix,
-            active,
-            carrier.controls,
-            object_stream_pcurves,
-        )
-        .is_none()
+        if translated_directrix_span_count(&directrix, active, controls, object_stream_pcurves)
+            .is_none()
         {
             return Ok(None);
         }
-        if !directrix.reorigin_parameter_range(active_bounds) {
-            return Ok(None);
-        }
+        directrix.reorigin_parameter_range(active_bounds);
     } else if !directrix_contains_active {
         let source_range = directrix.parameter_range().endpoints();
         let active_span = active[1] - active[0];
-        let suffix_span = directrix
-            .supports()
-            .first()
-            .and_then(|support| object_stream_pcurves.get(&support.1))
+        let suffix_span = object_stream_pcurves
+            .get(&directrix.support().1)
             .and_then(|candidate| candidate.class_21_suffix_scalar);
         if !parameter_range_spans_agree(source_range, active)
             || !suffix_span.is_some_and(|span| parameter_spans_agree(span.get(), active_span))
         {
             return Ok(None);
         }
-        if !directrix.reorigin_parameter_range(active_bounds) {
-            return Ok(None);
-        }
+        directrix.reorigin_parameter_range(active_bounds);
     }
     Ok(Some(B5ExtrusionSurface {
         object_id: record.object_id,
@@ -3919,9 +4035,11 @@ fn contextual_offset_extrusion_bounds(
     directrix: &B5ExtrusionDirectrix,
     offset_constructions: &[B5OffsetSurface],
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
+    object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
 ) -> Option<[IncreasingParameterInterval; 2]> {
     let B5ExtrusionDirectrix::Offset {
         source,
+        source_parameter_range,
         distance,
         direction,
         parameter_range,
@@ -3930,6 +4048,39 @@ fn contextual_offset_extrusion_bounds(
     else {
         return None;
     };
+    let B5ExtrusionChart::OffsetLimits {
+        values,
+        source_knot_count,
+    } = carrier.chart
+    else {
+        return None;
+    };
+    let B5ExtrusionDirectrix::SurfaceCurve { support, .. } = source.as_ref() else {
+        return None;
+    };
+    let pcurve = object_stream_pcurves.get(&support.1)?;
+    (pcurve.class == 0x21).then_some(())?;
+    let active = source_parameter_range.endpoints();
+    let first = pcurve
+        .distinct_knots
+        .iter()
+        .position(|knot| knot.get().to_bits() == active[0].to_bits())?;
+    let last = pcurve
+        .distinct_knots
+        .iter()
+        .position(|knot| knot.get().to_bits() == active[1].to_bits())?;
+    (last.checked_sub(first)?.checked_add(1)? == source_knot_count).then_some(())?;
+    let lower_origin = pcurve.distinct_knots.get(first.checked_sub(1)?)?.get();
+    let upper_origin = pcurve.distinct_knots.get(last)?.get();
+    let upper_flank = pcurve.distinct_knots.get(last.checked_add(1)?)?.get();
+    let result = parameter_range.endpoints();
+    (lower_origin < result[0]
+        && result[0] < active[0]
+        && active[1] < result[1]
+        && result[1] < upper_flank
+        && (result[0] - lower_origin).to_bits() == values[0].get().to_bits()
+        && (result[1] - upper_origin).to_bits() == values[1].get().to_bits())
+    .then_some(())?;
     let mut resolved = None;
     for construction in offset_constructions.iter().filter(|construction| {
         construction.carrier_surface == carrier_surface
@@ -4011,7 +4162,7 @@ fn translated_directrix_span_count(
     )?)
     .ok()?;
     (target_span_count == 1 && source_span_count > 1).then_some(())?;
-    let [support] = directrix.supports().try_into().ok()?;
+    let support = directrix.support();
     let pcurve = object_stream_pcurves.get(&support.1)?;
     (pcurve.class == 0x21).then_some(())?;
     let suffix_span = pcurve.class_21_suffix_scalar?.get();
@@ -4055,11 +4206,20 @@ struct B5ExtrusionCarrier {
     directrix_id: u32,
     direction: UnitVector3,
     u_bounds: IncreasingParameterInterval,
-    /// The increasing V interval, absent on a contextual offset chart, which
-    /// stores its V bounds in decreasing order and takes its chart from the
-    /// offset construction.
-    v_bounds: Option<IncreasingParameterInterval>,
-    controls: [u8; 2],
+    chart: B5ExtrusionChart,
+}
+
+#[derive(Clone, Copy)]
+enum B5ExtrusionChart {
+    Direct {
+        bounds: IncreasingParameterInterval,
+        controls: [u8; 2],
+    },
+    /// Two result limits measured from distinct source-knot origins.
+    OffsetLimits {
+        values: [FiniteReal; 2],
+        source_knot_count: usize,
+    },
 }
 
 fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
@@ -4080,17 +4240,22 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     .then_some(())?;
     let direction = ExactUnitVector3::new([values[0], values[1], values[2]])?.into();
     let u_bounds = IncreasingParameterInterval::new([values[3], values[4]])?;
-    let v_bounds = if contextual_offset_chart {
-        (values[7] > values[8]).then_some(None)?
+    let chart = if contextual_offset_chart {
+        B5ExtrusionChart::OffsetLimits {
+            values: [FiniteReal::new(values[7])?, FiniteReal::new(values[8])?],
+            source_knot_count: if controls[1] == 0x09 { 2 } else { 5 },
+        }
     } else {
-        Some(IncreasingParameterInterval::new([values[7], values[8]])?)
+        B5ExtrusionChart::Direct {
+            bounds: IncreasingParameterInterval::new([values[7], values[8]])?,
+            controls,
+        }
     };
     Some(B5ExtrusionCarrier {
         directrix_id,
         direction,
         u_bounds,
-        v_bounds,
-        controls,
+        chart,
     })
 }
 
@@ -4110,81 +4275,58 @@ fn parse_extrusion_directrix(
     if record.family == 0xb5 && record.class == 0x14 {
         return parse_offset_curve_directrix(ctx, record, records, object_stream_pcurves);
     }
-    let parsed = (|| -> Option<_> {
-        (record.family == 0xa8 && record.class == 0x25 && record.payload.first() == Some(&0x82))
-            .then_some(())?;
-        let mut position = 1;
-        let wrapper_id = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-        let second_pcurve = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-        let tail = record.payload.len().checked_sub(25)?;
-        (position < tail).then_some(())?;
-        let parameter_range = IncreasingParameterInterval::new(
-            read_f64_array::<2>(&record.payload, tail)?.map(FiniteReal::get),
-        )?;
-        let cache_fit_tolerance = PositiveReal::new(f64_le(&record.payload, tail + 16)?.get())?;
-        if record.payload.get(tail + 24) != Some(&0x01) {
-            return None;
-        }
-        let wrapper = records.get(&wrapper_id)?;
-        (wrapper.family == 0xb5 && wrapper.class == 0x24 && wrapper.payload.first() == Some(&0x81))
-            .then_some(())?;
-        let mut wrapper_position = 1;
-        let first_pcurve = wire::tokens::object_ref(&wrapper.payload, &mut wrapper_position, true)?;
-        if wrapper.payload.get(wrapper_position..wrapper_position + 2) != Some(&[0x81, 0x01]) {
-            return None;
-        }
-        wrapper_position += 2;
-        let wrapper_values =
-            read_f64_array::<3>(&wrapper.payload, wrapper_position)?.map(FiniteReal::get);
-        wrapper_position += 24;
-        if wrapper.payload.get(wrapper_position..) != Some(&[0x01])
-            || wrapper_values[2].to_bits() != 0.0f64.to_bits()
-            || wrapper_values[..2]
-                .iter()
-                .zip(parameter_range.endpoints())
-                .any(|(left, right)| left.to_bits() != right.to_bits())
-        {
-            return None;
-        }
-        let first = records.get(&first_pcurve)?;
-        let first_surface = pcurve_surface_reference(first)?;
-        let second = object_stream_pcurves.get(&second_pcurve)?;
-        Some((
-            first,
-            first_surface,
-            first_pcurve,
-            second_pcurve,
-            second.surface,
-            second.parameter_range,
-            parameter_range,
-            cache_fit_tolerance,
-        ))
-    })();
-    let Some((
-        first,
-        first_surface,
-        first_pcurve,
-        second_pcurve,
-        second_surface,
-        second_range,
-        parameter_range,
-        cache_fit_tolerance,
-    )) = parsed
-    else {
+    if record.family != 0xa8 || record.class != 0x25 {
+        return Ok(None);
+    }
+    let map = super::parameter_map::parse(&record.payload);
+    let Some(map) = map else {
         return Ok(None);
     };
-    let Some(first_range) = analytic_pcurve_range(first) else {
+    let Some(first) = parameter_map_support(map.reference, records, object_stream_pcurves) else {
         return Ok(None);
     };
-    Ok(Some(B5ExtrusionDirectrix::Intersection {
+    // Both operands must resolve. Either side may name a surface-curve wrapper.
+    let Some(_second) = parameter_map_support(map.co_curve, records, object_stream_pcurves) else {
+        return Ok(None);
+    };
+    if !map
+        .active_reference_range
+        .endpoints()
+        .into_iter()
+        .all(|value| {
+            cadmpeg_ir::math::parameter_in_domain(
+                value,
+                first.2.map(FiniteReal::get),
+                64.0 * f64::EPSILON,
+            )
+        })
+    {
+        return Ok(None);
+    }
+    Ok(Some(B5ExtrusionDirectrix::SurfaceCurve {
         object_id: record.object_id,
-        supports: [
-            (first_surface, first_pcurve, first_range),
-            (second_surface, second_pcurve, second_range),
-        ],
-        parameter_range,
-        cache_fit_tolerance,
+        support: first,
+        parameter_range: map.active_reference_range,
     }))
+}
+
+fn parameter_map_support(
+    object_id: u32,
+    records: &HashMap<u32, &B5Record>,
+    object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
+) -> Option<(u32, u32, [FiniteReal; 2])> {
+    if let Some(pcurve) = object_stream_pcurves.get(&object_id) {
+        return Some((pcurve.surface, object_id, pcurve.parameter_range));
+    }
+    let record = records.get(&object_id)?;
+    if record.family == 0xb5 && record.class == 0x24 {
+        return match parse_surface_curve_directrix(record, records, object_stream_pcurves) {
+            Some(B5ExtrusionDirectrix::SurfaceCurve { support, .. }) => Some(support),
+            _ => None,
+        };
+    }
+    let surface = pcurve_surface_reference(record)?;
+    analytic_pcurve_range(record).map(|range| (surface, object_id, range))
 }
 
 fn parse_surface_curve_directrix(
@@ -4288,13 +4430,13 @@ fn parse_offset_curve_directrix(
     else {
         return Ok(None);
     };
-    if !source.supports().iter().any(|support| {
-        support
-            .2
-            .into_iter()
-            .zip(source_parameter_range.endpoints())
-            .all(|(left, right)| left.get().to_bits() == right.to_bits())
-    }) {
+    if !source
+        .parameter_range()
+        .endpoints()
+        .into_iter()
+        .zip(source_parameter_range.endpoints())
+        .all(|(left, right)| left.to_bits() == right.to_bits())
+    {
         return Ok(None);
     }
 
@@ -4330,6 +4472,17 @@ fn analytic_pcurve_range(record: &B5Record) -> Option<[FiniteReal; 2]> {
 
 fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
     (record.family == 0xb5 && record.payload.first() == Some(&0x85)).then_some(())?;
+    if record.class == 0x3b {
+        let (references, parameters) = super::chamfer::payload(&record.payload)?;
+        let references = references.map(crate::wire::object_reference::ObjectReference::value);
+        return Some(B5SupportedSurface {
+            object_id: record.object_id,
+            carrier_surface: references[0],
+            support_surfaces: [references[1], references[2]],
+            support_pcurves: [references[3], references[4]],
+            parameters: B5SupportedSurfaceParameters::Chamfer(parameters),
+        });
+    }
     let mut position = 1;
     let references = [
         wire::tokens::object_ref(&record.payload, &mut position, true)?,
@@ -4349,21 +4502,28 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
                 record.payload[position + 20],
                 record.payload[position + 21],
             ];
+            (matches!(controls[0], 0x05 | 0x09 | 0x0d | 0x11)
+                && controls[1] == 0x05
+                && matches!(controls[2], 0x03 | 0x05)
+                && matches!(controls[3], 0x03 | 0x05)
+                && matches!(controls[4], 0x01 | 0x05)
+                && if controls[0] == 0x0d {
+                    matches!(
+                        (controls[4], controls[5]),
+                        (0x01, 0x11 | 0x81) | (0x05, 0x09 | 0x81)
+                    )
+                } else {
+                    controls[5] == 0x05
+                })
+            .then_some(())?;
             let construction_radius =
                 PositiveLength::new(f64_le(&record.payload, position + 2)?.get())?;
-            (f64_le(&record.payload, position + 12)?.get() == 0.0).then_some(())?;
+            (f64_le(&record.payload, position + 12)?.get().to_bits() == 0.0f64.to_bits())
+                .then_some(())?;
             B5SupportedSurfaceParameters::Radius {
                 controls,
                 construction_radius,
             }
-        }
-        0x3b => {
-            let controls = record.payload[position..position + 6].try_into().ok()?;
-            let scalars = [
-                PositiveReal::new(f64_le(&record.payload, position + 6)?.get())?,
-                PositiveReal::new(f64_le(&record.payload, position + 14)?.get())?,
-            ];
-            B5SupportedSurfaceParameters::ScalarPair { controls, scalars }
         }
         _ => return None,
     };
@@ -4387,33 +4547,51 @@ fn supported_surface_parameters_match_carrier(
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
-                ..
+                controls,
             },
             B5Surface::Cylinder { radius, .. },
-        ) => relative_close(construction_radius.get(), radius.get()),
+        ) => controls[0] == 0x05 && relative_close(construction_radius.get(), radius.get()),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
-                ..
+                controls,
             },
             B5Surface::Torus { minor_radius, .. },
-        ) => relative_close(construction_radius.get(), minor_radius.get()),
+        ) => controls[0] == 0x09 && relative_close(construction_radius.get(), minor_radius.get()),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
-                ..
+                controls,
             },
             B5Surface::Sphere {
                 construction_radius: carrier_radius,
+                latitude_range,
                 ..
             },
-        ) => relative_close(construction_radius.get(), carrier_radius.get()),
-        (B5SupportedSurfaceParameters::Radius { .. }, B5Surface::RollingBall { .. }) => true,
-        (B5SupportedSurfaceParameters::ScalarPair { .. }, B5Surface::Plane { .. }) => true,
-        (
-            B5SupportedSurfaceParameters::ScalarPair { scalars, .. },
-            B5Surface::Cone { half_angle, .. },
-        ) => relative_close(scalars[1].get(), half_angle.get()),
+        ) => {
+            let [lower, upper] = latitude_range.endpoints();
+            let pole = std::f64::consts::FRAC_PI_2;
+            let closure = if lower == -pole {
+                0x81
+            } else if controls[4] == 0x01 {
+                0x11
+            } else {
+                0x09
+            };
+            controls[0] == 0x0d
+                && upper == pole
+                && controls[5] == closure
+                && relative_close(construction_radius.get(), carrier_radius.get())
+        }
+        (B5SupportedSurfaceParameters::Radius { controls, .. }, B5Surface::RollingBall { .. }) => {
+            controls[0] == 0x11
+        }
+        (B5SupportedSurfaceParameters::Chamfer(parameters), B5Surface::Plane { .. }) => {
+            parameters.result_kind == ChamferResultKind::Plane
+        }
+        (B5SupportedSurfaceParameters::Chamfer(parameters), B5Surface::Cone { .. }) => {
+            parameters.result_kind == ChamferResultKind::Cone
+        }
         _ => false,
     }
 }
@@ -4524,26 +4702,32 @@ fn lift_pcurve_endpoints(
                 }))
             }
             B5Surface::Cone {
-                apex,
+                origin,
                 frame,
                 direction_y,
-                half_angle,
+                radial_angle,
                 angular_scale,
+                reference_radius,
+                slant_shift,
                 ..
             } => Some(endpoints.map(|[u, v]| {
+                let v = v - slant_shift.get();
                 let angle = u / angular_scale.get();
                 let radial = add(
                     scale(components(frame.reference()), angle.cos()),
                     scale(components(direction_y), angle.sin()),
                 );
                 add(
-                    coordinates(*apex),
-                    scale(
-                        add(
-                            scale(components(frame.axis()), half_angle.get().cos()),
-                            scale(radial, half_angle.get().sin()),
+                    coordinates(*origin),
+                    add(
+                        scale(radial, reference_radius.get()),
+                        scale(
+                            add(
+                                scale(components(frame.axis()), radial_angle.get().sin()),
+                                scale(radial, radial_angle.get().cos()),
+                            ),
+                            v,
                         ),
-                        v,
                     ),
                 )
             })),
@@ -4770,13 +4954,13 @@ fn parse_circle_pcurve_fields(record: &B5Record) -> CirclePcurveFields {
         return None;
     }
     position += 2;
-    let [radius, start, end, orientation, phase] =
+    let [radius, start, end, orientation, _] =
         read_f64_array::<5>(&record.payload, position)?.map(FiniteReal::get);
     if radius <= 0.0 || start >= end || !matches!(orientation, -1.0 | 1.0) {
         return None;
     }
-    let start_angle = phase + orientation * start / radius;
-    let end_angle = phase + orientation * end / radius;
+    let start_angle = orientation * start / radius;
+    let end_angle = orientation * end / radius;
     Some((
         surface,
         center,
@@ -5455,6 +5639,9 @@ fn frame_payload<'a>(bytes: &'a [u8], frame: &ObjectFrame) -> Option<&'a [u8]> {
 }
 
 fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
+    if frame.family == 0xa8 && frame.class == 0x25 && bytes.get(frame.start + 1) != Some(&0x03) {
+        return None;
+    }
     let payload = frame_payload(bytes, frame)?;
     Some(B5Record {
         offset: frame.start,
@@ -5610,7 +5797,6 @@ pub(in crate::families) fn collect_object_stream_frames(bytes: &[u8]) -> Vec<Obj
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs.
 fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
-    let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(bytes);
     let mut ranges = Vec::new();
     let mut position = 0usize;
     while position + 8 <= bytes.len() {
@@ -5633,12 +5819,6 @@ fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
             } else {
                 None
             };
-            let allocation_end = allocation_end.or_else(|| {
-                external_grids
-                    .iter()
-                    .find(|range| range.start == position)
-                    .map(|range| range.end)
-            });
             let Some(end) = allocation_end else {
                 break;
             };
@@ -6134,7 +6314,7 @@ fn is_opaque_surface_class(class: u8) -> bool {
     matches!(class, 0x2c | 0x2e | 0x30 | 0x37 | 0x38 | 0x3b)
 }
 
-fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
+pub(crate) fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
     if !matches!(bytes.get(start + 1), Some(0x03 | 0x13 | 0x83)) {
         return None;
     }
@@ -6175,23 +6355,16 @@ fn parse_face(
     if !surfaces.contains_key(&surface) {
         return None;
     }
-    let canonical_surface = canonical_surface_id(surface_aliases, surface)?;
+    canonical_surface_id(surface_aliases, surface)?;
     let mut loop_ids = Vec::new();
     for &reference in &references[1..] {
-        if loops.contains_key(&reference) {
-            loop_ids.push(reference);
-        } else {
-            let repeats_carrier = surfaces.contains_key(&reference)
-                && canonical_surface_id(surface_aliases, reference) == Some(canonical_surface);
-            if !repeats_carrier {
-                // A distinct surface reference is a multi-surface variant. Its
-                // composition is not represented by the neutral Face type, so
-                // keep the typed record but withhold the face from topology.
-                return None;
-            }
-            // A face may repeat its carrier through an alias identity. This is
-            // the same carrier incidence, not a multi-surface face.
+        if loops
+            .get(&reference)
+            .is_none_or(|loop_| loop_.surface != surface)
+        {
+            return None;
         }
+        loop_ids.push(reference);
     }
     if loop_ids.is_empty() {
         return None;
@@ -6555,22 +6728,30 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec
     let extension = (|| -> Option<_> {
         Some(match bytes.get(controls_end..)? {
             [0x01] => None,
-            extended
-                if extended.len() == 62
-                    && extended[0] == 0x0d
-                    && extended.get(33..35) == Some(&[0x05, 0x05])
-                    && extended[35] & 1 == 1
-                    && extended.get(36..38) == Some(&[0x05, 0x01]) =>
-            {
+            extended if extended.len() == b5_loop_numeric_terminal::LEN => {
+                let mut controls = [0; 6];
+                controls[0] = *extended.get(b5_loop_numeric_terminal::LEAD)?;
+                controls[1..].copy_from_slice(extended.get(
+                    b5_loop_numeric_terminal::TRAILING_CONTROLS..b5_loop_numeric_terminal::BOUNDS,
+                )?);
+                if controls.iter().any(|control| control % 4 != 1) || controls[5] != 0x01 {
+                    return None;
+                }
                 let mut view = View::over_retained(extended);
-                view.seek(1)?;
+                view.seek(b5_loop_numeric_terminal::SCALARS)?;
                 let scalars = [
                     FiniteReal::new(view.f64_le()?)?,
                     FiniteReal::new(view.f64_le()?)?,
                     FiniteReal::new(view.f64_le()?)?,
                     FiniteReal::new(view.f64_le()?)?,
                 ];
-                view.seek(38)?;
+                // Canonical compact bytes preserve decoded patch-ID order.
+                if (controls[1], scalars[0].get()) > (controls[3], scalars[2].get())
+                    || (controls[2], scalars[1].get()) > (controls[4], scalars[3].get())
+                {
+                    return None;
+                }
+                view.seek(b5_loop_numeric_terminal::BOUNDS)?;
                 let floats = [
                     view.f32_le()?,
                     view.f32_le()?,
@@ -6579,12 +6760,14 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec
                     view.f32_le()?,
                     view.f32_le()?,
                 ];
-                if floats.iter().any(|value| !value.is_finite()) {
+                if floats.iter().any(|value| !value.is_finite())
+                    || floats.chunks_exact(2).any(|pair| pair[0] > pair[1])
+                {
                     return None;
                 }
                 Some(B5LoopMetadataExtension {
                     scalars,
-                    control: extended[35],
+                    controls,
                     floats,
                 })
             }
@@ -6625,12 +6808,4 @@ fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
 mod tests;
 
 #[cfg(test)]
-mod nested_frame_work_tests {
-
-    #[test]
-    fn object_stream_frames_collect_nested_a8_frames() {
-        let bytes =
-            crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
-        assert!(!crate::families::b5::graph::collect_object_stream_frames(&bytes).is_empty());
-    }
-}
+mod nested_frame_work_tests {}

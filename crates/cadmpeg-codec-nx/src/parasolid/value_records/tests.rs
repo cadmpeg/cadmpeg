@@ -1,6 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn unowned_value_candidates_cannot_hide_referenced_values() {
+    crate::test_support::with_decode_context(|_ctx| {
+        // These unowned bytes resemble a four-integer value and cover a
+        // complete referenced value. Ownership selects which frame may advance.
+        let mut bytes = vec![0, 0x52];
+        bytes.extend_from_slice(&4u32.to_be_bytes());
+        bytes.extend_from_slice(&999u16.to_be_bytes());
+        let value_offset = bytes.len();
+        bytes.extend_from_slice(&[0, 0x52]);
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&101u16.to_be_bytes());
+        bytes.extend_from_slice(&681u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&[0, 0x51]);
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&50u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&202u16.to_be_bytes());
+        for reference in [2u16, 1, 1, 1, 1, 101] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+
+        let offsets = crate::parasolid::referenced_value_record_offsets(&bytes);
+        assert_eq!(offsets, [value_offset]);
+        let records = super::entity_value_records_at(&bytes, offsets)
+            .unwrap()
+            .integers;
+        assert_eq!(records.len(), 1);
+        assert_eq!(u32::from(records[0].xmt), 101);
+        assert_eq!(records[0].value.as_slice(), [681]);
+
+        // A referenced enclosing value retains its complete frame; bytes in
+        // that payload do not become a nested independent record.
+        let references = [999, 101].into_iter().collect();
+        let candidates = super::value_record_candidates(&bytes, &references);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates.get(&999).unwrap(), &[0]);
+        assert!(!candidates.contains_key(&101));
+    });
+}
+
+#[test]
 fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     let mut bytes = vec![0xaa, 0x00, 0x54];
     bytes.extend_from_slice(&8u32.to_be_bytes());
@@ -182,77 +224,95 @@ fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() 
 
 #[test]
 fn parasolid_entity_value_records_dispatches_all_value_families() {
-    let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
-        let mut bytes = vec![0x00, tag];
-        bytes.extend_from_slice(
-            &u32::try_from(vectors.len())
-                .expect("test vector count fits u32")
-                .to_be_bytes(),
-        );
-        bytes.extend_from_slice(&xmt.to_be_bytes());
-        for vector in vectors {
-            for component in vector {
-                bytes.extend_from_slice(&component.to_be_bytes());
+    crate::test_support::with_decode_context(|_ctx| {
+        let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
+            let mut bytes = vec![0x00, tag];
+            bytes.extend_from_slice(
+                &u32::try_from(vectors.len())
+                    .expect("test vector count fits u32")
+                    .to_be_bytes(),
+            );
+            bytes.extend_from_slice(&xmt.to_be_bytes());
+            for vector in vectors {
+                for component in vector {
+                    bytes.extend_from_slice(&component.to_be_bytes());
+                }
             }
-        }
-        bytes
-    };
-    let vectors = [[1.0, 2.0, 3.0]];
-    let mut bytes = Vec::new();
+            bytes
+        };
+        let vectors = [[1.0, 2.0, 3.0]];
+        let mut bytes = Vec::new();
 
-    let mut integers = vec![0x00, 0x52];
-    integers.extend_from_slice(&2u32.to_be_bytes());
-    integers.extend_from_slice(&10u16.to_be_bytes());
-    integers.extend_from_slice(&3u32.to_be_bytes());
-    integers.extend_from_slice(&u32::MAX.to_be_bytes());
-    bytes.extend(integers);
+        let mut integers = vec![0x00, 0x52];
+        integers.extend_from_slice(&2u32.to_be_bytes());
+        integers.extend_from_slice(&10u16.to_be_bytes());
+        integers.extend_from_slice(&3u32.to_be_bytes());
+        integers.extend_from_slice(&u32::MAX.to_be_bytes());
+        bytes.extend(integers);
 
-    let mut doubles = vec![0x00, 0x53];
-    doubles.extend_from_slice(&1u32.to_be_bytes());
-    doubles.extend_from_slice(&11u16.to_be_bytes());
-    doubles.extend_from_slice(&0.25f64.to_be_bytes());
-    bytes.extend(doubles);
+        let mut doubles = vec![0x00, 0x53];
+        doubles.extend_from_slice(&1u32.to_be_bytes());
+        doubles.extend_from_slice(&11u16.to_be_bytes());
+        doubles.extend_from_slice(&0.25f64.to_be_bytes());
+        bytes.extend(doubles);
 
-    let mut string = vec![0x00, 0x54];
-    string.extend_from_slice(&5u32.to_be_bytes());
-    string.extend_from_slice(&12u16.to_be_bytes());
-    string.extend_from_slice(b"label");
-    string.push(0);
-    bytes.extend(string);
-    bytes.extend(vector_record(0x55, 13, &vectors));
-    bytes.extend(vector_record(0x56, 14, &vectors));
-    bytes.extend(vector_record(0x57, 15, &[vectors[0], [4.0, 5.0, 6.0]]));
+        let mut string = vec![0x00, 0x54];
+        string.extend_from_slice(&5u32.to_be_bytes());
+        string.extend_from_slice(&12u16.to_be_bytes());
+        string.extend_from_slice(b"label");
+        string.push(0);
+        bytes.extend(string);
+        bytes.extend(vector_record(0x55, 13, &vectors));
+        bytes.extend(vector_record(0x56, 14, &vectors));
+        bytes.extend(vector_record(0x57, 15, &[vectors[0], [4.0, 5.0, 6.0]]));
 
-    let mut tags = vec![0x00, 0x58];
-    tags.extend_from_slice(&1u32.to_be_bytes());
-    tags.extend_from_slice(&16u16.to_be_bytes());
-    tags.extend_from_slice(&17u32.to_be_bytes());
-    bytes.extend(tags);
-    bytes.extend(vector_record(0x59, 17, &vectors));
+        let mut tags = vec![0x00, 0x58];
+        tags.extend_from_slice(&1u32.to_be_bytes());
+        tags.extend_from_slice(&16u16.to_be_bytes());
+        tags.extend_from_slice(&17u32.to_be_bytes());
+        bytes.extend(tags);
+        bytes.extend(vector_record(0x59, 17, &vectors));
 
-    let mut unicode = vec![0x00, 0x62];
-    unicode.extend_from_slice(&2u32.to_be_bytes());
-    unicode.extend_from_slice(&18u16.to_be_bytes());
-    unicode.extend_from_slice(&(u16::from(b'N')).to_be_bytes());
-    unicode.extend_from_slice(&(u16::from(b'X')).to_be_bytes());
-    bytes.extend(unicode);
+        let mut unicode = vec![0x00, 0x62];
+        unicode.extend_from_slice(&2u32.to_be_bytes());
+        unicode.extend_from_slice(&18u16.to_be_bytes());
+        unicode.extend_from_slice(&(u16::from(b'N')).to_be_bytes());
+        unicode.extend_from_slice(&(u16::from(b'X')).to_be_bytes());
+        bytes.extend(unicode);
 
-    let records = crate::parasolid::value_records::entity_value_records(&bytes).unwrap();
-    assert_eq!(records.integers.len(), 1);
-    assert_eq!(records.doubles.len(), 1);
-    assert_eq!(records.strings.len(), 1);
-    assert_eq!(records.points.len(), 1);
-    assert_eq!(records.vectors.len(), 1);
-    assert_eq!(records.axes.len(), 1);
-    assert_eq!(records.tags.len(), 1);
-    assert_eq!(records.directions.len(), 1);
-    assert_eq!(records.unicode.len(), 1);
-    assert_eq!(records.integers[0].value.as_slice(), [3, u32::MAX]);
-    assert_eq!(records.doubles[0].value.raw_values(), [0.25]);
-    assert_eq!(records.strings[0].value.as_str(), "label");
-    assert_eq!(records.axes[0].value.as_slice().len(), 1);
-    assert_eq!(records.tags[0].value.as_slice(), [17]);
-    assert_eq!(records.unicode[0].value.as_str(), "NX");
+        let records = crate::parasolid::value_records::entity_value_records(&bytes).unwrap();
+        assert_eq!(records.integers.len(), 1);
+        assert_eq!(records.doubles.len(), 1);
+        assert_eq!(records.strings.len(), 1);
+        assert_eq!(records.points.len(), 1);
+        assert_eq!(records.vectors.len(), 1);
+        assert_eq!(records.axes.len(), 1);
+        assert_eq!(records.tags.len(), 1);
+        assert_eq!(records.directions.len(), 1);
+        assert_eq!(records.unicode.len(), 1);
+        assert_eq!(records.integers[0].value.as_slice(), [3, u32::MAX]);
+        assert_eq!(records.doubles[0].value.raw_values(), [0.25]);
+        assert_eq!(records.strings[0].value.as_str(), "label");
+        assert_eq!(records.axes[0].value.as_slice().len(), 1);
+        assert_eq!(records.tags[0].value.as_slice(), [17]);
+        assert_eq!(records.unicode[0].value.as_str(), "NX");
+
+        let references = (10..=18).collect();
+        let candidates = super::value_record_candidates(&bytes, &references);
+        assert_eq!(candidates.len(), 9);
+        assert!(candidates.values().all(|positions| positions.len() == 1));
+        let selected =
+            super::entity_value_records_at(&bytes, candidates.into_values().flatten()).unwrap();
+        assert_eq!(selected.integers, records.integers);
+        assert_eq!(selected.doubles, records.doubles);
+        assert_eq!(selected.strings, records.strings);
+        assert_eq!(selected.points, records.points);
+        assert_eq!(selected.vectors, records.vectors);
+        assert_eq!(selected.axes, records.axes);
+        assert_eq!(selected.tags, records.tags);
+        assert_eq!(selected.directions, records.directions);
+        assert_eq!(selected.unicode, records.unicode);
+    });
 }
 
 #[test]
@@ -322,4 +382,17 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
             .unicode
             .is_empty()
     );
+}
+
+#[test]
+fn counted_value_identities_require_nonempty_payloads() {
+    crate::test_support::with_decode_context(|_ctx| {
+        for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
+            let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
+            assert!(
+                crate::parasolid::value_records::entity_value_record_identity_at(&bytes, 0)
+                    .is_none()
+            );
+        }
+    });
 }

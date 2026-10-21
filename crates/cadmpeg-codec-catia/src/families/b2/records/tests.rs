@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+mod parameter_points;
+
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -10,18 +12,18 @@ use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
     b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
-    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream,
-    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
-    b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_group_stream,
-    b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
-    b2_offset_support_stream, b2_owner_chart_stream, b2_owner_chart_stream_with_extended_bridge,
-    b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
-    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_revolution_stream, b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
+    b2_class5b5c_stream, b2_class60_reference_stream, b2_cone_stream, b2_construction_use_stream,
+    b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
+    b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_implicit_axis_cylinder_stream,
+    b2_line_profile_stream, b2_offset_support_stream, b2_owner_chart_stream,
+    b2_owner_chart_stream_with_extended_bridge, b2_owner_packet_stream, b2_parameter_point_stream,
+    b2_pcurve_stream, b2_plane_carrier_stream, b2_range_origin_cylinder_stream,
+    b2_reference_list_stream, b2_resolved_revolution_stream, b2_revolution_stream,
+    b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
     b2_width_coded_owner_chart_stream, b2_width_coded_owner_packet_stream,
     b2_width_coded_owner_with_allocation_stream, b3_cylinder_stream, b3_offset_support_stream,
 };
-use crate::test_support::test_b5::{finite, finite_vector, increasing, positive_angle};
+use crate::test_support::test_b5::{finite, finite_vector, increasing};
 
 fn parsed_b2_nurbs_curves(data: &[u8]) -> Vec<crate::families::b2::records::B2NurbsCurve> {
     crate::families::b2::records::b2_nurbs_curves(data)
@@ -36,7 +38,7 @@ fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
 }
 
 #[test]
-fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
+fn b2_parameter_point_parser_reads_ordered_scalar_layouts() {
     use crate::families::b2::records::B2ParameterPointPayload;
 
     let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
@@ -44,21 +46,18 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     assert_eq!(
         points
             .iter()
-            .map(|point| point.prefix.as_u8())
+            .map(|point| point.operand.value())
             .collect::<Vec<_>>(),
-        [0x05, 0x09, 0x0d, 0x11]
+        [1, 2, 3, 4]
     );
-    assert_eq!(points[0].payload.layout(), 0x12);
+    assert_eq!(points[0].payload.byte_len(points[0].operand), 0x12);
     assert!(matches!(
         &points[0].payload,
-        B2ParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
+        B2ParameterPointPayload::TwoScalars { values } if *values == [2.0, 3.0]
     ));
     assert!(matches!(
         &points[1].payload,
-        B2ParameterPointPayload::StationUv {
-            station,
-            uv,
-        } if station.get() == 11.0 && *uv == [4.0, 5.0]
+        B2ParameterPointPayload::ThreeScalars { values } if *values == [11.0, 4.0, 5.0]
     ));
     assert!(matches!(
         &points[2].payload,
@@ -66,56 +65,33 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     ));
     assert!(matches!(
         &points[3].payload,
-        B2ParameterPointPayload::StationUv {
-            station,
-            uv,
-        } if station.get() == 12.0 && *uv == [6.0, 7.0]
+        B2ParameterPointPayload::ThreeScalars { values } if *values == [12.0, 6.0, 7.0]
     ));
 }
 
 #[test]
 fn b2_plane_carrier_parser_preserves_each_selector_layout() {
-    use crate::families::b2::records::B2PlaneCarrierPayload;
-
+    use crate::families::b2::records::{B2PlaneCarrierLayout, B2PlaneCarrierPayload};
     let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
     assert_eq!(carriers.len(), 3);
     assert_eq!(
         carriers
             .iter()
-            .map(|carrier| carrier.payload.selector())
+            .map(|c| c.payload.selector())
             .collect::<Vec<_>>(),
         [0xe4, 0xc4, 0xec]
     );
-    let point = cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0);
-    let direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
-    assert!(matches!(
-        &carriers[0].payload,
-        B2PlaneCarrierPayload::PointDirection2 {
-            origin,
-            frame,
-            tail,
-        } if origin.get() == point
-            && *frame.reference().as_raw() == direction
-            && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &carriers[1].payload,
-        B2PlaneCarrierPayload::PointDirection3 {
-            origin,
-            frame,
-            tail,
-            ..
-        } if origin.get() == point
-            && *frame.reference().as_raw() == direction
-            && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &carriers[2].payload,
-        B2PlaneCarrierPayload::PointTail {
-            point,
-            tail,
-        } if *point == [10.0, 20.0] && *tail == [-2.0, 5.0, -2.0, 3.0]
-    ));
+    for (carrier, layout, u_bounds) in [
+        (&carriers[0], B2PlaneCarrierLayout::DirectionX, [0.0, 5.0]),
+        (&carriers[1], B2PlaneCarrierLayout::DirectionXY, [0.0, 5.0]),
+        (&carriers[2], B2PlaneCarrierLayout::ImplicitX, [-2.0, 5.0]),
+    ] {
+        assert!(matches!(&carrier.payload, B2PlaneCarrierPayload::Plane {
+            layout: actual, point, direction, u_range, v_range,
+        } if *actual == layout && *point == [10.0,20.0]
+            && direction.get() == [1.0,0.0,0.0]
+            && u_range.endpoints() == u_bounds && v_range.endpoints() == [-2.0,3.0]));
+    }
     assert_eq!(carriers[0].end - carriers[0].pos, 63);
 }
 
@@ -182,29 +158,29 @@ fn b2_plane_carrier_parser_rejects_open_or_nonfinite_layouts() {
 }
 
 #[test]
-fn b2_plane_geometry_uses_direction_bearing_layouts_only() {
-    use crate::families::b2::records::B2PlaneCarrierPayload;
-
+fn b2_plane_geometry_uses_stored_and_implicit_directions() {
     let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
-    let geometry =
-        crate::families::b2::records::b2_plane_geometry(&carriers[0]).expect("e4 plane geometry");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-        geometry
-    else {
-        panic!("plane carrier geometry")
-    };
-    let origin = plane_surface.origin();
-    let normal = plane_surface.frame().axis().as_raw();
-    let u_axis = plane_surface.frame().reference().as_raw();
-    assert_eq!(*origin, cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0));
-    assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
-    assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
-    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[1]).is_some());
-    assert!(matches!(
-        &carriers[2].payload,
-        B2PlaneCarrierPayload::PointTail { .. }
-    ));
-    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[2]).is_none());
+    for carrier in &carriers {
+        let geometry =
+            crate::families::b2::records::b2_plane_geometry(carrier).expect("known plane geometry");
+        let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(surface)) =
+            geometry
+        else {
+            panic!("plane carrier geometry")
+        };
+        assert_eq!(
+            *surface.origin(),
+            cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
+        );
+        assert_eq!(
+            *surface.frame().reference().as_raw(),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            *surface.frame().axis().as_raw(),
+            cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0)
+        );
+    }
 }
 
 #[test]
@@ -361,7 +337,7 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
 #[test]
 fn fixed_owner_backward_identities_do_not_cross_group_separator() {
     let (mut bytes, _target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
-    bytes.splice(owner_pos..owner_pos, b2_group_stream());
+    bytes.splice(owner_pos..owner_pos, b2_class60_reference_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
 
     assert!(super::b2_owner_identity_targets_from_records(&bytes, &records).is_empty());
@@ -491,10 +467,10 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
                     .into_iter()
                     .find(|point| point.pos == pos)
                     .expect("chart selector record")
-                    .prefix
-                    .as_u8()
+                    .operand
+                    .value()
             }),
-            [0x05, 0x09, 0x0d, 0x11]
+            [1, 2, 3, 4]
         );
 
         let owner_pos = chart.owner_pos;
@@ -540,10 +516,10 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
                     .into_iter()
                     .find(|point| point.pos == pos)
                     .expect("chart selector record")
-                    .prefix
-                    .as_u8()
+                    .operand
+                    .value()
             }),
-            [0x05, 0x09, 0x0d, 0x11]
+            [1, 2, 3, 4]
         );
     }
 }
@@ -606,36 +582,6 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     separated.insert(side_05.byte_offset(), 0x00);
     let records = crate::wire::records::consolidated_records(&separated);
     assert!(super::b2_owner_charts_from_records(&separated, &records).is_empty());
-}
-
-#[test]
-fn b2_counted_61_parser_separates_references_from_tail() {
-    let records = crate::families::b2::records::b2_counted_61(&b2_counted_61_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].header_token, 5);
-    assert_eq!(records[0].references, [1300, 1294, 30, 74]);
-    assert_eq!(records[0].tail, [0x41, 0x03]);
-}
-
-#[test]
-fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
-    let records = crate::families::b2::records::b2_long_61(&b2_long_61_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(
-        records[0].prefix,
-        [0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]
-    );
-    assert_eq!(records[0].members, [0x064a, 0x0650, 0x0656]);
-    assert_eq!(
-        records[0].references,
-        [0x0100, 0x0103, 0x0106, 0x0109, 0x010c]
-    );
-    assert_eq!(records[0].scalar, finite(42.5));
-
-    let mut short = vec![0xb2, 0x03, 0x61, 27, 0x05];
-    short.extend_from_slice(&[0; 27]);
-    short[13] = 0x06;
-    assert!(crate::families::b2::records::b2_long_61(&short).is_empty());
 }
 
 #[test]
@@ -840,41 +786,6 @@ fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
 }
 
 #[test]
-fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
-    let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].program.len(), 16);
-    assert_eq!(records[0].angular_scale, finite(1.5));
-    assert_eq!(
-        records[0].half_angle,
-        positive_angle(std::f64::consts::FRAC_PI_4)
-    );
-
-    let mut degenerate = b2_cone_face_stream();
-    let half_angle = degenerate.len() - 8;
-    degenerate[half_angle..].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!(crate::families::b2::records::b2_cone_faces(&degenerate).is_empty());
-}
-
-#[test]
-fn b2_cone_face_parser_reads_a_complete_nested_frame() {
-    let nested = b2_cone_face_stream();
-    let mut bytes = vec![0xa5, 0x03, 0x7f];
-    bytes.extend_from_slice(
-        &u32::try_from(nested.len())
-            .expect("bounded nested frame")
-            .to_le_bytes(),
-    );
-    bytes.push(0x05);
-    bytes.extend(nested);
-    let records = crate::families::b2::records::b2_cone_faces(&bytes);
-    let [record] = records.as_slice() else {
-        panic!("one nested cone-face chart")
-    };
-    assert_eq!(record.pos, 8);
-}
-
-#[test]
 fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
     use crate::families::b2::records::B2UseSense;
 
@@ -959,7 +870,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].pos, 0);
         assert_eq!(u8::from(records[0].reference_token), reference_token);
-        assert_eq!(records[0].profile_allocation_id, 0x1234);
+        assert_eq!(records[0].profile_reference, 0x1234);
         assert_eq!(<[f64; 3]>::from(records[0].origin.get()), [1.0, 2.0, 3.0]);
         assert_eq!(records[0].profile_frame.axis().get(), [1.0, 0.0, 0.0]);
         assert_eq!(records[0].profile_frame.reference().get(), [0.0, 1.0, 0.0]);
@@ -1012,7 +923,7 @@ fn b2_revolution_profile_requires_one_exact_circle_interval() {
 }
 
 #[test]
-fn b2_revolution_profile_identity_disambiguates_equal_intervals() {
+fn b2_revolution_profile_reference_does_not_disambiguate_equal_intervals() {
     let mut first = b2_circle_stream();
     first[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
     first[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
@@ -1020,21 +931,16 @@ fn b2_revolution_profile_identity_disambiguates_equal_intervals() {
     let mut second = b2_circle_stream();
     second[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
     second[40..48].copy_from_slice(&9.0f64.to_le_bytes());
-    let second_pos = first.len();
     let mut stream = first;
     stream.extend_from_slice(&second);
     stream.extend_from_slice(&b2_revolution_stream());
 
     let resolved_revolutions = crate::families::b2::records::b2_resolved_revolutions(&stream);
-    let [resolved] = resolved_revolutions.as_slice() else {
-        panic!("one identity-bound revolution profile");
-    };
-    assert_eq!(resolved.profile.record_id, 0x1234);
-    assert_eq!(resolved.profile.pos, second_pos);
+    assert!(resolved_revolutions.is_empty());
 }
 
 #[test]
-fn b2_revolution_profile_identity_mismatch_does_not_fall_back_to_interval() {
+fn b2_revolution_profile_reference_does_not_veto_a_unique_interval() {
     let mut identity_mismatch = b2_circle_stream();
     identity_mismatch[32..40].copy_from_slice(&10.0f64.to_le_bytes());
     identity_mismatch[40..48].copy_from_slice(&20.0f64.to_le_bytes());
@@ -1042,11 +948,18 @@ fn b2_revolution_profile_identity_mismatch_does_not_fall_back_to_interval() {
     interval_match[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
     interval_match[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
     interval_match[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let expected_profile_pos = identity_mismatch.len();
     let mut stream = identity_mismatch;
     stream.extend_from_slice(&interval_match);
     stream.extend_from_slice(&b2_revolution_stream());
 
-    assert!(crate::families::b2::records::b2_resolved_revolutions(&stream).is_empty());
+    let profiles = crate::families::b2::records::b2_resolved_revolutions(&stream);
+    let [resolved] = profiles.as_slice() else {
+        panic!("one profile with the exact unique interval");
+    };
+    assert_eq!(resolved.profile.record_id, 0x9999);
+    assert_eq!(resolved.profile.pos, expected_profile_pos);
+    assert_eq!(resolved.profile.range.endpoints(), [-4.0, 9.0]);
 }
 
 #[test]
@@ -1378,21 +1291,6 @@ fn b2_sphere_parser_rejects_invalid_scaled_frames_and_bounds() {
 }
 
 #[test]
-fn b2_group_parser_reads_separator_and_typed_opener() {
-    let bytes = b2_group_stream();
-    let separators = crate::families::b2::records::b2_group_separators(&bytes);
-    let groups = crate::families::b2::records::b2_groups(&bytes);
-    assert_eq!(separators.len(), 1);
-    assert_eq!(separators[0].token, 0x05);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].group_type, 3);
-
-    let mut invalid = bytes;
-    invalid[14] = 0x85;
-    assert!(crate::families::b2::records::b2_groups(&invalid).is_empty());
-}
-
-#[test]
 fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
     assert_eq!(offsets.len(), 1);
@@ -1465,7 +1363,10 @@ fn b2_spatial_circle_stream() -> Vec<u8> {
 
 mod carrier_records;
 mod indexed_wrappers;
+mod owner_incidence;
 mod spatial_and_consolidated;
+
+mod plane_carriers;
 
 #[test]
 fn all_compact_owner_stream_yields_one_owner_packet() {

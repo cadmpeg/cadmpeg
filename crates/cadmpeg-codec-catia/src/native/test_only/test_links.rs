@@ -1,6 +1,7 @@
-use super::test_consolidated::valid_consolidated_plane_geometry;
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::container;
-use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+use crate::families::consolidated::records::{Class23Slots, ConsolidatedEdgeDefinitionData};
 use crate::native::edge_node::consolidated_vertex_identities;
 use crate::native::edge_node::CatiaConsolidatedEdgeNode;
 use crate::native::projection::{
@@ -9,10 +10,9 @@ use crate::native::projection::{
 use crate::native::{
     repeated_reference_schema_selection, CatiaAliasRow, CatiaCatalog, CatiaConsolidatedCircle,
     CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
-    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedOwnerPacket,
-    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedSphere,
-    CatiaConsolidatedSupportBinding, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
-    CatiaFinjplSegment, CatiaObjectGraph, CatiaOwnerPacketPayload, CatiaValueBlock,
+    CatiaConsolidatedOwnerPacket, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
+    CatiaConsolidatedSphere, CatiaConsolidatedSupportBinding, CatiaConsolidatedTorus,
+    CatiaConsolidatedVertexIdentity, CatiaFinjplSegment, CatiaObjectGraph, CatiaValueBlock,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -21,24 +21,10 @@ pub(super) fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, packet) in packets.iter().enumerate() {
-        let valid_face_node = packet.face_node.is_none_or(|face_node| {
-            face_node.byte_offset.checked_add(face_node.byte_len) == Some(packet.byte_offset)
-                && face_node.target.checked_add(1) == packet.payload.final_reference()
-        });
-        let valid_payload = match &packet.payload {
-            CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => {
-                numeric_tail.header()[0] == 0x84
-                    && matches!(numeric_tail.header()[1], 0x41 | 0xc1)
-                    && numeric_tail.header()[4] == 0x0d
-            }
-            CatiaOwnerPacketPayload::Counted { references, tail } => {
-                !references.is_empty() && !tail.as_slice().is_empty()
-            }
-        };
-        if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.byte_offset)
+        let valid_payload = crate::native::owner_frames::valid_owner_packet(packet);
+        if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.frame.pos)
             || !valid_payload
-            || !valid_face_node
-            || index > 0 && packets[index - 1].byte_offset >= packet.byte_offset
+            || index > 0 && packets[index - 1].frame.pos >= packet.frame.pos
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated owner packet `{}` is structurally invalid",
@@ -53,8 +39,6 @@ pub(super) struct ConsolidatedSupportArenas<'a> {
     pub(super) circles: &'a [CatiaConsolidatedCircle],
     pub(super) cones: &'a [CatiaConsolidatedCone],
     pub(super) cylinders: &'a [CatiaConsolidatedCylinder],
-    pub(super) embedded_cylinders: &'a [CatiaConsolidatedEmbeddedCylinder],
-    pub(super) groups: &'a [CatiaConsolidatedGroup],
     pub(super) planes: &'a [CatiaConsolidatedPlaneCarrier],
     pub(super) spheres: &'a [CatiaConsolidatedSphere],
     pub(super) tori: &'a [CatiaConsolidatedTorus],
@@ -104,30 +88,31 @@ pub(super) fn validate_consolidated_edge_runs(
         .iter()
         .map(|cylinder| cylinder.byte_offset)
         .collect::<HashSet<_>>();
-    let group_offsets = supports
-        .groups
-        .iter()
-        .map(|group| (group.id.as_str(), group.byte_offset))
-        .collect::<HashMap<_, _>>();
-    let embedded_cylinder_offsets = supports
-        .embedded_cylinders
-        .iter()
-        .filter_map(|cylinder| {
-            Some((
-                cylinder.byte_offset,
-                *group_offsets.get(cylinder.group.as_str())?,
-            ))
-        })
-        .collect::<HashSet<_>>();
     let plane_offsets = supports
         .planes
         .iter()
-        .filter(|plane| valid_consolidated_plane_geometry(&plane.payload))
+        .filter(|plane| plane.payload.valid_plane())
         .map(|plane| plane.byte_offset)
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
+        let compact_definition =
+            node.definition
+                .as_ref()
+                .and_then(|definition| match definition.data() {
+                    Some(ConsolidatedEdgeDefinitionData::Compact24 { operand }) => {
+                        Some((*operand, definition.frame().pos > node.byte_offset))
+                    }
+                    _ => None,
+                });
         let uses_valid = node.uses.as_ref().is_none_or(|uses| {
+            if let Some((operand, following)) = compact_definition {
+                return operand
+                    .checked_add(1)
+                    .zip(operand.checked_add(2))
+                    .is_some_and(|(first, second)| uses.references == [[1, first], [2, second]])
+                    && node.parameter_selectors == if following { [1, 2] } else { [2, 1] };
+            }
             node.curve_ref
                 .checked_sub(2)
                 .zip(node.curve_ref.checked_sub(1))
@@ -139,20 +124,23 @@ pub(super) fn validate_consolidated_edge_runs(
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
             node.uses.is_some()
                 && !definition.frame().payload.is_empty()
-                && definition.frame().pos < node.byte_offset
+                && (definition.frame().pos < node.byte_offset
+                    || compact_definition.is_some_and(|(_, following)| following))
         });
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
             let circle = circles.get(binding.circle.as_str());
-            node.uses.is_some()
+            node.uses.as_ref().is_some_and(|uses| uses.references == [[1, 2], [2, 3]])
                 && definition.is_some_and(|definition| {
                     u8::from(definition.class()) == 0x23
                         && matches!(
                             definition.data(),
-                            Some(ConsolidatedEdgeDefinitionData::Scalar {
-                                ref values,
+                            Some(ConsolidatedEdgeDefinitionData::Affine23 {
+                                slots: Class23Slots::OneTwo,
+                                target_range,
                                 ..
-                            }) if values.len() == 8
+                            }) if circle.is_some_and(|circle| target_range.endpoints().map(f64::to_bits)
+                                == circle.range.endpoints().map(f64::to_bits))
                         )
                         && circle.is_some_and(|circle| {
                             binding.descriptor.pos < circle.byte_offset
@@ -167,10 +155,7 @@ pub(super) fn validate_consolidated_edge_runs(
                     u8::from(definition.class()) == 0x25
                         && matches!(
                             definition.data(),
-                            Some(
-                                ConsolidatedEdgeDefinitionData::Scalar25 { .. }
-                                    | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
-                            )
+                            Some(ConsolidatedEdgeDefinitionData::Domain25 { .. })
                         )
                         && descriptor.byte_offset < definition.frame().pos
                 })
@@ -233,10 +218,6 @@ pub(super) fn validate_consolidated_edge_runs(
                 CatiaConsolidatedSupportBinding::Cylinder { byte_offset } => {
                     cylinder_offsets.contains(byte_offset)
                 }
-                CatiaConsolidatedSupportBinding::EmbeddedCylinder {
-                    byte_offset,
-                    wrapper_byte_offset,
-                } => embedded_cylinder_offsets.contains(&(*byte_offset, *wrapper_byte_offset)),
                 CatiaConsolidatedSupportBinding::Circle { byte_offset } => {
                     circle_offsets.contains(byte_offset)
                 }

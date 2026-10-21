@@ -251,10 +251,18 @@ fn isoparametric_angle_coordinate(
         {
             Some((0, *angular_scale))
         }
-        B5Surface::Cone { angular_scale, .. }
-            if constant_coordinate(&pcurve.control_points, 1).is_some() =>
-        {
-            Some((0, (*angular_scale).into()))
+        B5Surface::Cone {
+            angular_scale,
+            frame,
+            direction_y,
+            ..
+        } if constant_coordinate(&pcurve.control_points, 1).is_some() => {
+            let handedness = dot(
+                cross(components(frame.reference()), components(direction_y)),
+                components(frame.axis()),
+            )
+            .signum();
+            Some((0, FiniteReal::new(angular_scale.get() * handedness)?))
         }
         B5Surface::Torus { minor_scale, .. }
             if constant_coordinate(&pcurve.control_points, 0).is_some() =>
@@ -403,8 +411,9 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
         B5Surface::Cone {
             frame,
             direction_y,
-            half_angle,
+            radial_angle,
             slant_range,
+            slant_shift,
             angular_scale,
             ..
         } => Point2::new(
@@ -415,7 +424,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             .signum()
                 * point[0]
                 / angular_scale.get(),
-            (point[1] - slant_range.lower()) * half_angle.get().cos(),
+            (point[1] - slant_shift.get() - slant_range.lower()) * radial_angle.get().sin(),
         ),
         B5Surface::Torus {
             major_scale,
@@ -424,6 +433,100 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
         } => Point2::new(point[0] / major_scale.get(), point[1] / minor_scale.get()),
         _ => Point2::new(point[0], point[1]),
     }
+}
+
+/// Lift in the pcurve's parameter gauge, as required by an extrusion directrix.
+pub(super) fn parameterized_lift(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    if matches!(surface, B5Surface::Plane { .. }) {
+        return lifted_curve_geometry(ctx, pcurve, surface);
+    }
+    let Some(knots) = pcurve_nurbs_knots(pcurve) else {
+        return Ok(None);
+    };
+    if let B5Surface::Nurbs(surface) = surface {
+        // Only a clamped polynomial line states an affine coordinate map.
+        if pcurve.degree != 1
+            || pcurve.weights.is_some()
+            || pcurve.control_points.len() != 2
+            || knots.len() != 4
+            || knots[0] != knots[1]
+            || knots[2] != knots[3]
+        {
+            return Ok(None);
+        }
+        let variable = if constant_coordinate(&pcurve.control_points, 0).is_some() {
+            1
+        } else if constant_coordinate(&pcurve.control_points, 1).is_some() {
+            0
+        } else {
+            return Ok(None);
+        };
+        let q0 = pcurve.control_points[0][variable];
+        let q1 = pcurve.control_points[1][variable];
+        let scale = (knots[2].get() - knots[0].get()) / (q1 - q0);
+        if !scale.is_finite() || scale == 0.0 {
+            return Ok(None);
+        }
+        let Some(mut curve) = nurbs_isocurve(ctx, pcurve, surface)? else {
+            return Ok(None);
+        };
+        if scale < 0.0 {
+            curve.reverse_parameterization();
+        }
+        let mut mapped = Vec::new();
+        for knot in curve.knots() {
+            let coordinate = if scale < 0.0 { -*knot } else { *knot };
+            mapped.push(knots[0].get() + (coordinate - q0) * scale);
+        }
+        if curve
+            .edit_knots(|knots| knots.copy_from_slice(&mapped))
+            .is_err()
+        {
+            return Ok(None);
+        }
+        return Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            curve,
+        ))));
+    }
+    let B5Surface::Cylinder {
+        origin,
+        frame,
+        radius,
+        angular_scale,
+        ..
+    } = surface
+    else {
+        return Ok(None);
+    };
+    if constant_coordinate(&pcurve.control_points, 0).is_none() {
+        return Ok(None);
+    }
+    let points = (pcurve.control_points.iter().map(|uv| {
+        point3(cylinder_point(
+            coordinates(*origin),
+            components(frame.reference()),
+            components(frame.axis()),
+            radius.get(),
+            angular_scale.get(),
+            uv.get(),
+        ))
+    }))
+    .collect::<Vec<_>>();
+    let knots = (knots.into_iter().map(FiniteReal::get)).collect::<Vec<_>>();
+    let weights = pcurve
+        .weights
+        .as_ref()
+        .map(|weights| (weights.iter().copied().map(PositiveReal::get)).collect::<Vec<_>>());
+    Ok(
+        NurbsCurve::from_lanes(pcurve.degree, knots, points, weights, false)
+            .ok()
+            .map(SolvedCurveGeometry::Nurbs)
+            .map(CurveGeometry::Solved),
+    )
 }
 
 pub(super) fn lifted_curve_geometry(
@@ -511,11 +614,12 @@ pub(super) fn lifted_curve_geometry(
                 )))
             }
             B5Surface::Cone {
-                apex,
+                origin,
                 frame,
                 direction_y,
-                half_angle,
+                radial_angle,
                 angular_scale,
+                reference_radius,
                 ..
             } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
                 let [u, _] = pcurve.control_points.first()?.get();
@@ -526,10 +630,13 @@ pub(super) fn lifted_curve_geometry(
                 );
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(
-                        *apex,
+                        FinitePoint3::new(point3(add(
+                            coordinates(*origin),
+                            scale(radial, reference_radius.get()),
+                        )))?,
                         UnitVector3::new(vector(add(
-                            scale(components(frame.axis()), half_angle.get().cos()),
-                            scale(radial, half_angle.get().sin()),
+                            scale(components(frame.axis()), radial_angle.get().sin()),
+                            scale(radial, radial_angle.get().cos()),
                         )))?,
                     ),
                 )))
@@ -582,18 +689,20 @@ pub(super) fn lifted_curve_geometry(
                 )))
             }
             B5Surface::Cone {
-                apex,
+                origin,
                 frame,
-                half_angle,
+                radial_angle,
+                reference_radius,
+                slant_shift,
                 ..
             } => {
-                let slant = constant_coordinate(&pcurve.control_points, 1)?;
-                let radius = slant * half_angle.get().sin();
+                let slant = constant_coordinate(&pcurve.control_points, 1)? - slant_shift.get();
+                let radius = reference_radius.get() + slant * radial_angle.get().cos();
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
                         FinitePoint3::new(point3(add(
-                            coordinates(*apex),
-                            scale(components(frame.axis()), slant * half_angle.get().cos()),
+                            coordinates(*origin),
+                            scale(components(frame.axis()), slant * radial_angle.get().sin()),
                         )))?,
                         signed_reference_frame(*frame, radius),
                         PositiveLength::new(radius.abs())?,
@@ -877,3 +986,6 @@ pub(super) fn emit_pcurves(
     }
     Ok(pcurve_uses)
 }
+
+#[cfg(test)]
+mod tests;

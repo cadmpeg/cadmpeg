@@ -230,7 +230,6 @@ impl SketchText {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[serde(deny_unknown_fields)]
 struct SketchTextSerde {
     id: String,
     record_index: u32,

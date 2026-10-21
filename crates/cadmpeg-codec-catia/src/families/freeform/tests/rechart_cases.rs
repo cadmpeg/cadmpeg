@@ -177,9 +177,15 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
 fn freeform_fallback_retains_exact_consolidated_spheres() {
     let bytes = crate::test_support::test_b2::b2_sphere_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let carriers =
-        freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("decode the freeform surface carriers");
+    let carriers = crate::test_support::with_service_context(|_ctx| {
+        freeform_surface_carriers(
+            &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
     assert!(matches!(carriers.as_slice(), [carrier]
             if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if {
@@ -197,9 +203,15 @@ fn freeform_fallback_retains_exact_consolidated_spheres() {
 fn freeform_fallback_retains_exact_consolidated_tori() {
     let bytes = crate::test_support::test_b2::b2_torus_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let carriers =
-        freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("decode the freeform surface carriers");
+    let carriers = crate::test_support::with_service_context(|_ctx| {
+        freeform_surface_carriers(
+            &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
     assert!(matches!(carriers.as_slice(), [carrier]
             if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if {
@@ -244,9 +256,15 @@ fn a_cone_record_is_refused_when_read_or_builds_its_freeform_carrier() {
     set(&mut overflow_witness, 16, &[1.0e308, 1.5e308]);
     for bytes in [frame_witness, overflow_witness] {
         let records = crate::wire::records::consolidated_records(&bytes);
-        let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-                .expect("decode the freeform surface carriers");
+        let carriers = crate::test_support::with_service_context(|_ctx| {
+            freeform_surface_carriers(
+                &bytes,
+                &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+                &records,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("service decode")
+        });
         assert!(carriers.is_empty());
         assert!(
             crate::families::b2::records::b2_cones_from_records(&bytes, &records)
@@ -361,9 +379,15 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
 fn freeform_fallback_retains_range_origin_cylinder_carriers() {
     let bytes = crate::test_support::test_b2::b2_range_origin_cylinder_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let carriers =
-        freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("decode the freeform surface carriers");
+    let carriers = crate::test_support::with_service_context(|_ctx| {
+        freeform_surface_carriers(
+            &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
     assert!(matches!(carriers.as_slice(), [carrier]
             if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if {
@@ -528,9 +552,13 @@ fn standard_carrier_endpoints_refuse_caller_depth() {
 fn b2_sphere_stream_yields_one_freeform_surface_carrier() {
     let bytes = crate::test_support::test_b2::b2_sphere_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let service =
-        freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("compute the freeform surface carriers");
+    let service = freeform_surface_carriers(
+        &bytes,
+        &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+        &records,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("compute the freeform surface carriers");
     assert_eq!(service.len(), 1);
 }
 

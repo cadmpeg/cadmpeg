@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#![deny(clippy::disallowed_methods)]
 //! Fusion parametric-design records and links to the solved B-rep.
+
+#![deny(clippy::disallowed_methods)]
 
 #[macro_use]
 mod identity_rewrite;
@@ -24,6 +25,7 @@ pub(crate) mod recipes;
 pub(crate) mod references;
 pub(crate) mod serde_column;
 pub(crate) mod source_frame;
+pub(crate) mod sheet_metal_settings;
 pub(crate) mod sketch_geometry;
 pub(crate) mod sketch_links;
 pub(crate) mod sketch_placement;

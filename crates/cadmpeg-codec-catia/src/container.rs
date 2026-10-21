@@ -673,6 +673,10 @@ fn coherent_e5_record_count(data: &[u8]) -> usize {
     let mut best = 0;
     let mut search = 0;
     while search < data.len() {
+        if let Some(end) = e5_frame_end(data, search).filter(|_| data[search + 2] != 0x03) {
+            search = end;
+            continue;
+        }
         let mut relative = None;
         for (offset, window) in data[search..].windows(E5_MARKER.len()).enumerate() {
             if window == E5_MARKER {
@@ -703,11 +707,17 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
         if search >= data.len() {
             return None;
         }
+        // Interstitial frames begin at the previous record's exact end.
+        // Their payloads cannot contribute geometry records.
+        if let Some(end) = e5_frame_end(data, search).filter(|_| data[search + 2] != 0x03) {
+            search = end;
+            continue;
+        }
         let relative = data[search..]
             .windows(E5_MARKER.len())
             .position(|bytes| bytes == E5_MARKER)?;
         let start = search + relative;
-        let Some(end) = e5_record_end(data, start) else {
+        let Some(end) = e5_frame_end(data, start) else {
             search = start + 1;
             continue;
         };
@@ -720,7 +730,13 @@ fn e5_record_walk_count(data: &[u8], start: usize) -> (usize, usize) {
     let mut count = 0;
     let mut position = start;
     let mut consumed = start;
-    while let Some(end) = e5_record_end(data, position) {
+    loop {
+        if !e5_marker_at(data, position) {
+            break;
+        }
+        let Some(end) = e5_frame_end(data, position) else {
+            break;
+        };
         count += 1;
         position = end;
         consumed = end;
@@ -747,11 +763,11 @@ fn e5_record_walk_count(data: &[u8], start: usize) -> (usize, usize) {
     (count, consumed)
 }
 
-fn e5_record_end(data: &[u8], position: usize) -> Option<usize> {
-    if !e5_marker_at(data, position) {
+fn e5_frame_end(data: &[u8], position: usize) -> Option<usize> {
+    let header = data.get(position..position.checked_add(13)?)?;
+    if header[..2] != [0xe5, 0x0d] || !matches!(header[2], 0x03 | 0x13 | 0x83) {
         return None;
     }
-    let header = data.get(position..position.checked_add(7)?)?;
     let size = usize::from(View::u16_le_at(header, 5)?);
     let end = position.checked_add(size.checked_add(13)?)?;
     (end <= data.len()).then_some(end)
@@ -786,8 +802,8 @@ struct Extent {
     phys_off: u32,
     /// Physical byte length of this extent.
     phys_len: u32,
-    /// Raw trailing extent flags word.
-    flags: u32,
+    /// Raw ordinal/reserved word; stream reconstruction does not use it.
+    trailing_word: u32,
 }
 
 /// One catalogued logical stream.
@@ -1336,7 +1352,7 @@ fn read_extent_fields(dirbuf: &[u8], o: usize, index: usize) -> Option<(Extent, 
         Extent {
             phys_off: View::u32_be_at(dirbuf, base + extent::PHYS_OFF)?,
             phys_len: View::u32_be_at(dirbuf, base + extent::PHYS_LEN)?,
-            flags: View::u32_be_at(dirbuf, base + extent::FLAGS)?,
+            trailing_word: View::u32_be_at(dirbuf, base + extent::TRAILING_WORD)?,
         },
         View::u32_be_at(dirbuf, base + extent::LOG_LEN)?,
         View::u32_be_at(dirbuf, base + extent::LOG_OFF)?,
@@ -1837,14 +1853,14 @@ pub(crate) fn scan_bytes<'a>(
 /// Build a [`ContainerSummary`] enumerating the outer and inner directories'
 /// streams and the identified variant.
 pub(crate) fn summarize(scan: &ContainerScan) -> Result<ContainerSummary, CodecError> {
-    struct ExtentFlags<'a>(&'a [Extent]);
-    impl std::fmt::Display for ExtentFlags<'_> {
+    struct ExtentWords<'a>(&'a [Extent]);
+    impl std::fmt::Display for ExtentWords<'_> {
         fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             for (index, extent) in self.0.iter().enumerate() {
                 if index != 0 {
                     out.write_str(",")?;
                 }
-                write!(out, "0x{:08x}", extent.flags)?;
+                write!(out, "0x{:08x}", extent.trailing_word)?;
             }
             Ok(())
         }
@@ -1862,8 +1878,8 @@ pub(crate) fn summarize(scan: &ContainerScan) -> Result<ContainerSummary, CodecE
             attributes.insert("desc_offset".to_owned(), format!("{}", d.desc_offset));
             attributes.insert("extent_count".to_owned(), format!("{}", d.extents.len()));
             attributes.insert(
-                "extent_flags".to_owned(),
-                format!("{}", ExtentFlags(&d.extents)),
+                "extent_words".to_owned(),
+                format!("{}", ExtentWords(&d.extents)),
             );
             if directory == "outer" {
                 if let Some(declaration) = scan
@@ -2021,8 +2037,8 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
 
     if scan.brep.is_some() {
         let note = format!(
-            "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB group(s) \
-             containing {} face row(s), {} vertex record(s), {} edge-table delimiter(s)",
+            "MainDataStream census: {} FBB group(s) \
+                 containing {} face row(s), {} vertex record(s), {} edge-table delimiter(s)",
             scan.census.fbb_runs,
             scan.census.fbb_face_rows,
             scan.census.vertex_markers,

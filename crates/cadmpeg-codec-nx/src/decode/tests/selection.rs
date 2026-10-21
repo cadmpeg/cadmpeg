@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
+
+use cadmpeg_core::decode::ResourceDimension;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -813,9 +816,10 @@ fn decode_assembly_reports_external_dependency() {
 
 #[test]
 fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
+    let mut stream = crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (partition)",
+        "SCH_TEST_1_9999",
+    );
     stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
     let one_copy = cadmpeg_core::decode::u64_from_index(stream.len());
@@ -1540,7 +1544,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         .message
         .contains("10 NX feature history operation"));
     assert_eq!(losses[1].code.category(), LossCategory::DesignIntent);
-    assert!(losses[1].message.contains("2 NX design configuration"));
+    assert!(losses[1].message.contains("2 NX arrangement(s)"));
     assert_eq!(losses[2].code.category(), LossCategory::DesignIntent);
     assert!(losses[2].message.contains("DELETE (2)"));
     assert_eq!(losses[3].code.category(), LossCategory::DesignIntent);

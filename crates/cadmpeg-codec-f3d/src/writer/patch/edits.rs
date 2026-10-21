@@ -3903,6 +3903,7 @@ fn spring_patch_shape_agrees(
 #[cfg(test)]
 mod tests {
     mod timestamps;
+    mod zstd_members;
 
     use super::{
         validate_curve_edits, validate_material_assignment_edits, validate_surface_edits,

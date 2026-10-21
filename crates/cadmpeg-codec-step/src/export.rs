@@ -276,7 +276,9 @@ pub(crate) struct Builder<'a> {
     /// counted loss note.
     curveless_edges: BTreeSet<String>,
 
-    /// Degenerate carriers of point edges written as `VERTEX_LOOP` vertices.
+    /// Degenerate carriers of point edges that need no curve record: those
+    /// written as `VERTEX_LOOP` vertices, and those of collapsed edges left
+    /// out of a loop that has edges with extent.
     point_loop_curves: BTreeSet<String>,
 
     /// Faces skipped because their surface geometry is unknown (opaque), so no
@@ -2664,6 +2666,25 @@ impl<'a> Builder<'a> {
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
         let mut segments = Vec::new();
         let mut seen = BTreeSet::new();
+        // An edge has extent when its ends differ or its carrier is not
+        // degenerate: a closed edge on a circle starts and ends at one vertex.
+        let has_extent = lp.coedges().iter().any(|coedge_id| {
+            self.coedges
+                .get(coedge_id.as_str())
+                .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                .is_some_and(|edge| {
+                    edge.start != edge.end
+                        || edge
+                            .curve()
+                            .and_then(|curve_id| self.curves.get(curve_id.as_str()))
+                            .is_some_and(|curve| {
+                                !matches!(
+                                    curve.geometry.solved(),
+                                    Some(SolvedCurveGeometry::Degenerate(_))
+                                )
+                            })
+                })
+        });
 
         for coedge_id in lp.coedges() {
             let coedge_key = coedge_id.as_str();
@@ -2720,6 +2741,20 @@ impl<'a> Builder<'a> {
                     StepLossCode::EdgeCurveUnsupported,
                     format!("edge {edge_key} was omitted because curve {curve_id} is unsupported"),
                 );
+                continue;
+            }
+            // An edge collapsed to its one vertex has no length to bound the
+            // face with.  It exists to close the loop in parameter space at
+            // a singular point of the surface, which a STEP reader does for
+            // itself; the loop is continuous through the vertex without it.
+            // A loop of nothing else keeps them: they are all it has.
+            if matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Degenerate(_))
+            ) && edge.start == edge.end
+                && has_extent
+            {
+                self.point_loop_curves.insert(curve.id.as_str().to_owned());
                 continue;
             }
             let (start_vertex, end_vertex) = match coedge.sense {

@@ -5,8 +5,7 @@ use super::branch_items::BranchItems;
 use super::discriminators::SurfaceBranchMode;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 
@@ -153,6 +152,13 @@ impl<B> SurfaceBranch<B> {
     pub(crate) fn terminal_offset(&self) -> u64 {
         self.offset + self.terminal_relative_offset()
     }
+
+    pub(crate) fn end_offset(&self) -> u64 {
+        self.terminal_offset()
+            + cadmpeg_core::decode::u64_from_index(self.terminal.0.raw().len())
+            + 1
+            + cadmpeg_core::decode::u64_from_index(self.suffix.0.len())
+    }
 }
 
 impl SurfaceBranch<()> {
@@ -289,32 +295,21 @@ impl<'a> BranchPathSearch<'a> {
     }
 
     /// Number of complete paths of `remaining` groups from `at`, capped at two.
-    fn path_count(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        at: usize,
-        remaining: u8,
-    ) -> Result<u8, CodecError> {
-        let _depth = ctx.enter_nested("NX surface branch path")?;
+    fn path_count(&mut self, at: usize, remaining: u8) -> u8 {
         if let Some(&count) = self.path_counts.get(&(at, remaining)) {
-            return Ok(count);
+            return count;
         }
-        let count = self.uncached_path_count(ctx, at, remaining)?;
+        let count = self.uncached_path_count(at, remaining);
         self.path_counts.insert((at, remaining), count);
-        Ok(count)
+        count
     }
 
-    fn uncached_path_count(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        at: usize,
-        remaining: u8,
-    ) -> Result<u8, CodecError> {
+    fn uncached_path_count(&mut self, at: usize, remaining: u8) -> u8 {
         if remaining == 0 {
-            return Ok(0);
+            return 0;
         }
         let Some(end) = self.group_end(at) else {
-            return Ok(0);
+            return 0;
         };
         let mut count = 0;
         for suffix_len in 1..=5 {
@@ -325,14 +320,14 @@ impl<'a> BranchPathSearch<'a> {
             let continuations = if remaining == 1 {
                 u8::from(self.terminates_at(next))
             } else {
-                self.path_count(ctx, next, remaining - 1)?
+                self.path_count(next, remaining - 1)
             };
             count = (count + continuations).min(2);
             if count == 2 {
                 break;
             }
         }
-        Ok(count)
+        count
     }
 
     /// Rebuild the single path that [`Self::path_count`] counted from `at`.
@@ -378,9 +373,8 @@ impl<'a> BranchPathSearch<'a> {
 /// Decode the unique exactly framed counted branch group in a bounded `SKIN`
 /// or `Studio Surface` payload.
 pub(crate) fn surface_feature_payload_branches(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<SurfaceFeaturePayloadBranches>, CodecError> {
+) -> Option<SurfaceFeaturePayloadBranches> {
     const SKIN_TERMINATOR: [u8; 11] = [
         0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
     ];
@@ -388,7 +382,7 @@ pub(crate) fn surface_feature_payload_branches(
     let terminator = match record.name() {
         "SKIN" => &SKIN_TERMINATOR[..],
         "Studio Surface" => &STUDIO_TERMINATOR[..],
-        _ => return Ok(None),
+        _ => return None,
     };
     let mut search = BranchPathSearch::new(record.payload(), terminator);
     let mut candidate = None;
@@ -419,7 +413,7 @@ pub(crate) fn surface_feature_payload_branches(
         let Some(declared_group_count @ 1..) = record.payload().get(start + 5).copied() else {
             continue;
         };
-        if search.path_count(ctx, start + 6, declared_group_count)? != 1 {
+        if search.path_count(start + 6, declared_group_count) != 1 {
             continue;
         }
         let Some(branches) =
@@ -433,11 +427,11 @@ pub(crate) fn surface_feature_payload_branches(
             branches,
         };
         if candidate.is_some() {
-            return Ok(None);
+            return None;
         }
         candidate = Some(group);
     }
-    Ok(candidate)
+    candidate
 }
 
 #[cfg(test)]
@@ -479,26 +473,22 @@ mod tests {
     fn rejoining_branch_groups_are_searched_once_per_offset() {
         const LEVELS: u8 = 20;
         let payload = rejoining_branch_payload(LEVELS, false);
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             let mut search = BranchPathSearch::new(&payload, &SKIN_TERMINATOR);
-            assert_eq!(search.path_count(ctx, 6, LEVELS + 1).unwrap(), 0);
+            assert_eq!(search.path_count(6, LEVELS + 1), 0);
             assert!(search.path_counts.len() <= 5 * usize::from(LEVELS + 1));
 
             let record = OperationPayload::new(&payload, 0, "SKIN").unwrap();
-            assert!(surface_feature_payload_branches(ctx, record)
-                .unwrap()
-                .is_none());
+            assert!(surface_feature_payload_branches(record).is_none());
         });
     }
 
     #[test]
     fn rejoining_branch_groups_keep_path_count_semantics() {
-        crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::with_decode_context(|_ctx| {
             let single = rejoining_branch_payload(0, true);
             let record = OperationPayload::new(&single, 100, "SKIN").unwrap();
-            let group = surface_feature_payload_branches(ctx, record)
-                .unwrap()
-                .expect("one root group");
+            let group = surface_feature_payload_branches(record).expect("one root group");
             let branches = group.into_branches();
             assert_eq!(branches.len(), 1);
             assert_eq!(branches[0].offset(), 106);
@@ -508,11 +498,9 @@ mod tests {
             for levels in [1, 20] {
                 let payload = rejoining_branch_payload(levels, true);
                 let mut search = BranchPathSearch::new(&payload, &SKIN_TERMINATOR);
-                assert_eq!(search.path_count(ctx, 6, levels + 1).unwrap(), 2);
+                assert_eq!(search.path_count(6, levels + 1), 2);
                 let record = OperationPayload::new(&payload, 0, "SKIN").unwrap();
-                assert!(surface_feature_payload_branches(ctx, record)
-                    .unwrap()
-                    .is_none());
+                assert!(surface_feature_payload_branches(record).is_none());
             }
         });
     }

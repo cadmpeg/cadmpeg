@@ -4,11 +4,11 @@
 use super::{
     AssemblyJoint, CopyOnChange, CopyOnChangePolicy, ExternalDocument, JointConnector,
     JointLimitRange, JointLimits, JointOperand, JointOperands, LinkState, Occurrence,
-    OccurrenceParent, OperandContainer, PairedJointKind, ProductDefinition, ProductDefinitionKind,
-    PrototypeReference,
+    OccurrenceParent, OperandContainer, PairedJointKind, PlaneSense, ProductDefinition,
+    ProductDefinitionKind, PrototypeReference, TangentContact,
 };
 
-rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, native_ref});
+rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, driving_parameter, native_ref});
 rewrite_record!(CopyOnChange, []; {policy, source, group, touched});
 rewrite_enum!(CopyOnChangePolicy, []; {
     Disabled,
@@ -42,7 +42,7 @@ rewrite_enum!(OccurrenceParent, []; {
 });
 rewrite_enum!(OperandContainer, []; {
     Root {},
-    Occurrence {occurrence},
+    Occurrence {occurrence, occurrence_path},
     External {external_document},
 });
 rewrite_enum!(PairedJointKind, []; {
@@ -59,7 +59,20 @@ rewrite_enum!(PairedJointKind, []; {
     Screw {distance},
     Gears {distance, distance2},
     Belt {distance, distance2},
+    PlaneCoincidence {sense, offset},
+    AxisCoincidence {},
+    PointOnAxis {distance},
+    Insert {sense, offset},
+    Tangent {contact},
     Native {name, angle, translation_offset, distance, distance2, angular_limits, linear_limits},
+});
+rewrite_enum!(PlaneSense, []; {
+    Opposed,
+    Aligned,
+});
+rewrite_enum!(TangentContact, []; {
+    Outside,
+    Inside,
 });
 rewrite_record!(ProductDefinition, []; {id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref});
 rewrite_enum!(ProductDefinitionKind, []; {

@@ -54,6 +54,18 @@ pub(crate) mod token {
     pub(crate) const SP_CURVE: u8 = 137;
 }
 
+/// Byte offsets for the `assembly_placement_prefix` record.
+///
+/// Spec §2.3. Record length 6 B.
+///
+/// ```text
+/// Twelve variable-width matrix atoms follow this fixed prefix.
+/// ```
+pub(crate) mod assembly_placement_prefix {
+    /// Stated value of `magic` (`bytes[6]`). Spec §2.3.
+    pub(crate) const MAGIC_VALUE: [u8; 6] = [0xff, 0x00, 0x45, 0x01, 0x04, 0x01];
+}
+
 /// Byte offsets for the `splmsstr_header` record.
 ///
 /// Spec §2. Record length 31 B.
@@ -130,6 +142,66 @@ pub(crate) mod ug_part_segment_index_row {
     pub(crate) const SUBTYPE_CODE: usize = 4;
     /// Offset of `value` (`u32`, little-endian). Spec §2.
     pub(crate) const VALUE: usize = 8;
+}
+
+/// Byte offsets for the `segment_stream_wrapper` record.
+///
+/// Spec §2. Record length 8 B.
+pub(crate) mod segment_stream_wrapper {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `marker` (`u32`, little-endian). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `compressed_byte_len` (`u32`, little-endian). Spec §2.
+    pub(crate) const COMPRESSED_BYTE_LEN: usize = 4;
+}
+
+/// Byte offsets for the `segment_stream_wrapper_a0` record.
+///
+/// Spec §2. Record length 16 B.
+pub(crate) mod segment_stream_wrapper_a0 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 16;
+    /// Offset of `duplicate_byte_len` (`u32`, little-endian). Spec §2.
+    pub(crate) const DUPLICATE_BYTE_LEN: usize = 8;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 12;
+    /// Stated value of `zero` (`u32`). Spec §2.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `segment_stream_wrapper_c0_33` record.
+///
+/// Spec §2. Record length 33 B.
+pub(crate) mod segment_stream_wrapper_c0_33 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 33;
+    /// Offset of `header_code` (`u32`, little-endian). Spec §2.
+    pub(crate) const HEADER_CODE: usize = 8;
+    /// Stated value of `header_code` (`u32`). Spec §2.
+    pub(crate) const HEADER_CODE_VALUE: u32 = 0x0000_0025;
+    /// Offset of `version` (`u16`, little-endian). Spec §2.
+    pub(crate) const VERSION: usize = 12;
+    /// Stated value of `version` (`u16`). Spec §2.
+    pub(crate) const VERSION_VALUE: u16 = 0x0004;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 14;
+    /// Stated value of `zero` (`u32`). Spec §2.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `segment_stream_wrapper_c0_45` record.
+///
+/// Spec §2. Record length 45 B.
+pub(crate) mod segment_stream_wrapper_c0_45 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 45;
+    /// Stated value of `header_code` (`u32`). Spec §2.
+    pub(crate) const HEADER_CODE_VALUE: u32 = 0x0000_002d;
+    /// Stated value of `version` (`u16`). Spec §2.
+    pub(crate) const VERSION_VALUE: u16 = 0x0005;
+    /// Offset of `duplicate_byte_len` (`u32`, little-endian). Spec §2.
+    pub(crate) const DUPLICATE_BYTE_LEN: usize = 14;
 }
 
 /// Byte offsets for the `fastload_structure_envelope` record.
@@ -508,4 +580,85 @@ pub(crate) mod nurbs_curve_descriptor_prefix {
     pub(crate) const KNOT_TYPE: usize = 16;
     /// Offset of `periodic` (`u8`). Spec §6.2.
     pub(crate) const PERIODIC: usize = 17;
+}
+
+/// Byte offsets for the `fset_parameter_prefix` record.
+///
+/// Spec §7.1. Record length 21 B.
+///
+/// ```text
+/// The counted, empty, or two-group construction field follows this fixed parameter prefix.
+/// ```
+pub(crate) mod fset_parameter_prefix {
+    /// Record length in bytes. Spec §7.1.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `class_index` (`u8`). Spec §7.1.
+    pub(crate) const CLASS_INDEX: usize = 0;
+    /// Offset of `fixed_prefix` (`bytes[3]`). Spec §7.1.
+    pub(crate) const FIXED_PREFIX: usize = 1;
+    /// Stated value of `fixed_prefix` (`bytes[3]`). Spec §7.1.
+    pub(crate) const FIXED_PREFIX_VALUE: [u8; 3] = [0x00, 0x00, 0x01];
+    /// Offset of `zeros` (`bytes[17]`). Spec §7.1.
+    pub(crate) const ZEROS: usize = 4;
+    /// Stated value of `zeros` (`bytes[17]`). Spec §7.1.
+    pub(crate) const ZEROS_VALUE: [u8; 17] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+}
+
+/// Byte offsets for the `named_construction_target_prefix` record.
+///
+/// Spec §7.1. Record length 5 B.
+///
+/// ```text
+/// A canonical variable-width feature-object reference follows this fixed prefix.
+/// ```
+pub(crate) mod named_construction_target_prefix {
+    /// Stated value of `magic` (`bytes[5]`). Spec §7.1.
+    pub(crate) const MAGIC_VALUE: [u8; 5] = [0xe0, 0x3c, 0x01, 0x16, 0xa1];
+}
+
+/// Byte offsets for the `named_construction_name_prefix` record.
+///
+/// Spec §7.1. Record length 5 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the variable-width reference. The name length, printable bytes, and terminator follow.
+/// ```
+pub(crate) mod named_construction_name_prefix {
+    /// Stated value of `magic` (`bytes[5]`). Spec §7.1.
+    pub(crate) const MAGIC_VALUE: [u8; 5] = [0xa7, 0x01, 0x66, 0x32, 0x03];
+}
+
+/// Byte offsets for the `rmfastload_prefix` record.
+///
+/// Spec §7.1. Record length 35 B.
+///
+/// ```text
+/// Entry-relative. The platform bytes begin after the length word. Their length and the following filename length determine the nine-word header start.
+/// ```
+pub(crate) mod rmfastload_prefix {
+    /// Stated value of `signature` (`bytes[8]`). Spec §7.1.
+    pub(crate) const SIGNATURE_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `payload_len` (`u32`, big-endian). Spec §7.1.
+    pub(crate) const PAYLOAD_LEN: usize = 8;
+    /// Offset of `marker` (`bytes[4]`). Spec §7.1.
+    pub(crate) const MARKER: usize = 12;
+    /// Stated value of `marker` (`bytes[4]`). Spec §7.1.
+    pub(crate) const MARKER_VALUE: [u8; 4] = [0x4f, 0x4d, 0x01, 0x01];
+    /// Offset of `platform_length` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const PLATFORM_LENGTH: usize = 31;
+}
+
+/// Byte offsets for the `rmfastload_header` record.
+///
+/// Spec §7.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after both length-prefixed strings.
+/// ```
+pub(crate) mod rmfastload_header {
+    /// Record length in bytes. Spec §7.1.
+    pub(crate) const LEN: usize = 36;
 }

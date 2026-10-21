@@ -31,6 +31,7 @@ struct DesignParameter {
     pmi: Option<cadmpeg_ir::ids::PmiId>,
     native_ref: Option<String>,
 }
+mod parameter_names;
 
 const FORMULA_INTEGER_LOWER: f64 = -9_223_372_036_854_775_808.0;
 const FORMULA_OUTPUT_EXPRESSION_OPERATION: &str = "retain CATIA formula output expression";
@@ -569,6 +570,7 @@ pub(crate) fn transfer_parameters(
             &mut tokenization_losses,
         )?);
     }
+    parameter_names::normalize(&mut ir.model.parameters)?;
     let typed_parameter_count = transferred
         .checked_sub(legacy_transfer.parameters)
         .ok_or_else(|| {

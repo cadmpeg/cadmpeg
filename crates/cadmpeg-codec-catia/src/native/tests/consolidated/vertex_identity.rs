@@ -5,8 +5,8 @@
 
 use super::{
     a5_native_edge_identity_stream, a5_native_edge_run_stream, a5_sphere_bound_edge_stream,
-    a5_torus_bound_edge_stream, b2_cone_face_parameter_point_stream, b2_cone_face_stream,
-    b2_cylinder_stream, b2_edge_node_stream, b2_plane_carrier_stream,
+    a5_torus_bound_edge_stream, b2_chamfer_contact_stream, b2_chamfer_stream, b2_cylinder_stream,
+    b2_edge_node_stream, b2_plane_carrier_stream,
 };
 
 #[test]
@@ -232,10 +232,7 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 }
 
-#[test]
-fn native_namespace_retains_resolved_consolidated_plane_supports() {
-    use crate::native::CatiaConsolidatedSupportBinding;
-
+fn plane_bound_edge_stream(second_selector: u8) -> Vec<u8> {
     let plane_stream = b2_plane_carrier_stream();
     let plane_carriers = crate::families::b2::records::b2_plane_carriers(&plane_stream);
     let plane_end = plane_carriers[0].end;
@@ -247,7 +244,17 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
         }
     }
     bytes.extend_from_slice(&a5_native_edge_run_stream(6, 139, 142));
-    bytes.extend_from_slice(&plane_stream[plane_carriers[2].pos..plane_carriers[2].end]);
+    let mut second = plane_stream[plane_carriers[2].pos..plane_carriers[2].end].to_vec();
+    second[6] = second_selector;
+    bytes.extend_from_slice(&second);
+    bytes
+}
+
+#[test]
+fn native_namespace_retains_resolved_consolidated_plane_supports() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let bytes = plane_bound_edge_stream(0x40);
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let [run] = native.consolidated_edge_runs.as_slice() else {
@@ -269,20 +276,20 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
     );
 
     let mut invalid = native.clone();
-    let directionless_offset = invalid
+    let unknown_offset = invalid
         .consolidated_plane_carriers
         .iter()
-        .find(|carrier| carrier.payload.selector() == 0xec)
-        .expect("directionless class-27 carrier")
+        .find(|carrier| carrier.payload.selector() == 0x40)
+        .expect("unknown class-27 carrier")
         .byte_offset;
     invalid.consolidated_edge_runs[0].support_bindings[0] =
         Some(CatiaConsolidatedSupportBinding::Plane {
-            byte_offset: directionless_offset,
+            byte_offset: unknown_offset,
         });
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid directionless plane binding");
+        .expect("store invalid unknown plane binding");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     namespace
@@ -293,6 +300,19 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
         )
         .expect("remove retained plane carriers");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_plane_supports_abstain_when_implicit_and_explicit_charts_match() {
+    // This preserves the original two-plane byte fixture. Both charts now
+    // have the same point and U/V axes, so neither is a unique support.
+    let native = crate::native::CatiaNative::decode(&plane_bound_edge_stream(0xec));
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one ambiguous plane-bound edge run");
+    };
+    assert!(run.support_bindings.iter().all(Option::is_none));
+    assert!(run.shared_loci.is_none());
+    assert_eq!(native.consolidated_plane_carriers.len(), 2);
 }
 
 #[test]
@@ -362,14 +382,17 @@ fn native_namespace_retains_resolved_consolidated_sphere_supports() {
 }
 
 #[test]
-fn cone_face_followed_by_spanning_parameter_point_terminates() {
-    let bytes = b2_cone_face_parameter_point_stream();
-    let split = b2_cone_face_stream().len() + 6;
+fn chamfer_followed_by_spanning_parameter_point_terminates() {
+    let bytes = b2_chamfer_contact_stream();
+    let split =
+        crate::test_support::test_b2::b2_cone_stream().len() + b2_chamfer_stream().len() + 6;
     let records = crate::wire::records::consolidated_records_in_range_sources(
         &bytes,
         [[0..split, split..bytes.len()]],
     );
-    let faces = crate::native::consolidated_cone_faces(&bytes, &records, &[]);
+    let faces = crate::test_support::with_service_context(|_ctx| {
+        crate::native::chamfer::consolidated_chamfers(&bytes, &records, &[])
+    });
     assert_eq!(faces.len(), 1);
     assert!(faces[0].parameter_points.is_empty());
 }

@@ -3,6 +3,7 @@
 //!
 //! Each wrapper feeds arbitrary bytes to one internal parser and discards the
 //! result. The contract is that no input may panic.
+
 #![doc(hidden)]
 
 /// Exercise `V5_CFV2` container stream-directory parsing.
@@ -26,11 +27,11 @@ pub fn b5_parse(data: &[u8]) {
 pub fn e5_topology(data: &[u8]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    let Ok((_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     else {
         return;
     };
-    let _probe = crate::families::e5::graph::parse_topology(&ctx, data);
+    let _probe = crate::families::e5::graph::parse_topology(data);
 }
 
 /// Exercise standard-family vertex-record scanning.
@@ -76,8 +77,15 @@ pub fn value_blocks(data: &[u8]) {
 
 /// Exercise `7C08` object-graph parsing.
 pub fn object_graph(data: &[u8]) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
     let _probe = crate::object_graph::parse(data);
-    let _probe = crate::object_graph::surface_aliases(data);
+    let segments = crate::container::finjpl_segments(&crate::container::BodyExtent::whole(data));
+    let _probe = crate::object_graph::surface_aliases(data, &segments);
 }
 
 /// Exercise `7C02` string-catalog parsing.

@@ -125,6 +125,27 @@ Parsed by:
 | 35 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes at offsets 35 through 40 |
 | 41 | 4 | `expression_length` | `u32` | little | spec | the expression at offset 41 |
 
+## `design_parameter_typed_compact_owned_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 85 B
+
+Offsets are relative to the indexed header of an owned typed compact parameter through its expression length. The frame ends with the 52-byte typed parameter tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The indexed header is followed by fifteen zero bytes |
+| 11 | 15 | `zero_run_15` | `bytes[15]` | little | spec | The indexed header is followed by fifteen zero bytes |
+| 26 | 4 | `source_ordinal` | `u32` | little | spec | `u32 source_ordinal` at offset 26 |
+| 30 | 1 | `owner_marker` | `u8` | little | spec | The owner field at offset 30 is a reference · value `1` |
+| 31 | 8 | `owner_record_index` | `u64` | little | spec | the u64 owner record index at offset 31 |
+| 39 | 4 | `owner_type_guid_length` | `u32` | little | spec | its u32 length `36` at offset 39 · value `36` |
+| 43 | 36 | `owner_type_guid` | `bytes[36]` | little | spec | the LP-ASCII 36 target type GUID |
+| 79 | 2 | `owner_flags` | `bytes[2]` | little | spec | the two zero flag bytes at offsets 79 and 80 |
+| 81 | 4 | `expression_length` | `u32` | little | spec | Its LP-UTF16 expression begins at offset 81 |
+
 ## `design_parameter_legacy_287_tail`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
@@ -4847,6 +4868,65 @@ Spec §3.1 · layout: byte offsets · size: 30 B
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
 | 20 | 5 | `null_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
 | 25 | 5 | `geometry_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
+
+## `surface_patch_boundary_settings_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the settings record's primary header R. The marked model reference begins at 38 and has a variable GUID carrier.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 19 | `indexed_header` | `bytes[19]` | little | spec | The boundary-settings indexed header is |
+| 19 | 2 | `prologue` | `bytes[2]` | little | spec | Its 19 bytes are followed by the two zero prologue bytes |
+| 21 | 1 | `is_seed_selection` | `u8` | little | spec | `IsSeedSel` at `R + 21` |
+| 22 | 4 | `continuity` | `u32` | little | spec | `PatchContinuity` at `R + 22` |
+| 26 | 4 | `side_ordinal` | `u32` | little | spec | `PatchFlip` at indexed-record offset `R + 26` |
+| 30 | 8 | `raw_weight` | `f64` | little | spec | `PatchScale` at `R + 30` |
+
+## `surface_patch_v7_normal_flip_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Only type version 7 assigns normal reversal to primary-scope offset 31.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 31 | `scope_prefix` | `bytes[31]` | little | spec | In a version-7 `SurfacePatch` type |
+| 31 | 1 | `normal_flip` | `u8` | little | spec | the byte at primary-scope offset `P + 31` reverses the whole created surface normal |
+| 32 | 4 | `following_word` | `u32` | little | spec | The following `u32le` at `P + 32` is `4` |
+
+## `hem_common_controls`
+
+Spec §3.1 · layout: byte offsets · size: 41 B
+
+Offsets are relative to C = 85 + S, shared by gap-and-length, rolled and teardrop Hem frames.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `bend_position` | `u32` | little | spec | code `3` selects Adjacent |
+| 30 | 4 | `compatibility_one` | `u32` | little | spec | The u32 at `C+30` is the compatibility value `1` |
+| 34 | 2 | `legacy_references` | `bytes[2]` | little | spec | `C+34` and `C+35` are null optional legacy references |
+| 36 | 4 | `compatibility_four` | `u32` | little | spec | the u32 at `C+36` is the compatibility value `4` |
+| 40 | 1 | `flip` | `u8` | little | spec | The Flip byte at `C+40` |
+
+Unstated regions:
+
+- `4..30` (26 B): Edge count and the edge-wrapper and settings references occupy these bytes.
+
+## `sheet_metal_settings_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 14 B
+
+Offsets are relative to the end of the variable-length primary indexed header. Versioned optional references follow this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 4 | `override_mask` | `u32` | little | spec | ten zero bytes and a u32 override mask |
+
+Unstated regions:
+
+- `0..10` (10 B): Ten zero bytes precede the override mask.
 
 ## `local_component_occurrence_prefix`
 

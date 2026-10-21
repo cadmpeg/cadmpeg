@@ -17,10 +17,9 @@ fn thru_curve_payload_branch_group_for_test(
 fn surface_feature_payload_branches_for_test(
     record: crate::om::operation_record::OperationPayload<'_>,
 ) -> Option<crate::om::surface_branches::SurfaceFeaturePayloadBranches> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::surface_branches::surface_feature_payload_branches(ctx, record)
+    crate::test_support::with_decode_context(|_ctx| {
+        crate::om::surface_branches::surface_feature_payload_branches(record)
     })
-    .unwrap()
 }
 
 fn boolean_operations_with_labels_for_test(
@@ -991,14 +990,14 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     payload.extend([0xff, 1, 2, 0xf0, 0x33, 0, 0xaa]);
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
     let branch = swp104_payload_leading_branch(record).expect("leading branch");
-    assert_eq!(branch.discriminator.get(), 0x21);
+    assert_eq!(branch.parameter_class_index.get(), 0x21);
     assert_eq!(branch.scalars.map(|scalar| scalar.value().get()), [0.04; 4]);
     assert_eq!(
         branch.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
         [raw_scalar; 4]
     );
     assert!(!branch.leading_zero);
-    assert_eq!(branch.mode.get(), 0x23);
+    assert_eq!(branch.profile_class_index.get(), 0x23);
     assert_eq!(branch.members.declared_count(), 3);
     assert_eq!(branch.state_lane.witnessed_count(), Some(4));
     assert_eq!(branch.state_lane.bytes(), [0, 1, 1, 0, 0, 0, 0]);
@@ -1011,8 +1010,22 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
             .collect::<Vec<_>>(),
         [0x31, 0x32]
     );
-    assert_eq!(branch.terminal.value(), 0x33);
+    assert_eq!(branch.successor.value(), 0x33);
     assert_eq!(record.payload_offset() + branch.byte_len(), 259);
+
+    for (offset, value) in [(41, 0), (43, 0x31), (43, 0x33), (57, 0x32), (57, 0x34)] {
+        let mut invalid = payload.clone();
+        invalid[offset] = value;
+        assert!(swp104_payload_leading_branch(
+            crate::om::operation_record::OperationPayload::new(
+                &invalid,
+                record.payload_offset(),
+                record.name(),
+            )
+            .unwrap(),
+        )
+        .is_none());
+    }
 
     let mut malformed_witness = payload.clone();
     malformed_witness[45] = 1;
@@ -1050,75 +1063,6 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     assert!(swp104_payload_leading_branch(
         crate::om::operation_record::OperationPayload::new(
             &unwitnessed,
-            record.payload_offset(),
-            record.name()
-        )
-        .unwrap()
-    )
-    .is_none());
-}
-
-#[test]
-fn om_operation_terminal_discriminator_requires_one_complete_lane() {
-    let scan = crate::om::terminal_discriminator::operation_terminal_discriminator;
-    let label = "EXTRUDE";
-    let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
-    let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let lane = scan(record).unwrap();
-    assert_eq!(lane.origin(), 200);
-    assert_eq!(
-        lane.type_indices().map(|(token, _)| token.value()),
-        [351, 171]
-    );
-    assert_eq!(
-        lane.type_indices().map(|(token, _)| token.raw().to_vec()),
-        [vec![0x81, 0x5f], vec![0x80, 0xab]]
-    );
-    assert_eq!(lane.type_indices().map(|(_, offset)| offset), [203, 205]);
-    assert_eq!(lane.flags(), [1, 2, 1, 1]);
-    assert_eq!(
-        lane.trailing_indices()
-            .map(|(token, _)| token.value())
-            .collect::<Vec<_>>(),
-        [5, 255]
-    );
-    assert_eq!(
-        lane.trailing_indices()
-            .map(|(token, _)| token.raw().to_vec())
-            .collect::<Vec<_>>(),
-        [vec![0x05], vec![0x80, 0xff]]
-    );
-    assert_eq!(
-        lane.trailing_indices()
-            .map(|(_, offset)| offset)
-            .collect::<Vec<_>>(),
-        [220, 221]
-    );
-
-    let subtract = crate::om::operation_record::OperationPayload::new(
-        record.payload(),
-        record.payload_offset(),
-        "SUBTRACT",
-    )
-    .unwrap();
-    assert_eq!(scan(subtract), Some(lane.clone()));
-
-    let truncated = &payload[..payload.len() - 1];
-    assert!(scan(
-        crate::om::operation_record::OperationPayload::new(
-            truncated,
-            record.payload_offset(),
-            record.name()
-        )
-        .unwrap()
-    )
-    .is_none());
-
-    let mut ambiguous = payload[..payload.len() - 1].to_vec();
-    ambiguous.extend_from_slice(payload);
-    assert!(scan(
-        crate::om::operation_record::OperationPayload::new(
-            &ambiguous,
             record.payload_offset(),
             record.name()
         )

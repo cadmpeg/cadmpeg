@@ -234,7 +234,7 @@ rewrite_enum!(FeatureOperation, []; {
     Rib { construction, op },
     SheetMetalBaseFlange { profile, thickness, side },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
-    SheetMetalHem { edges, form, direction, bend_radius },
+    SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
     FullRoundFillet { groups },
     FaceBlend { operands, radius },

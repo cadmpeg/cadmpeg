@@ -130,6 +130,8 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"a"),
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"b"),
         stable_identity: None,
+        core: None,
+        linked_face_payload: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
             .unwrap(),
     };
@@ -320,6 +322,8 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"a"),
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"b"),
         stable_identity: None,
+        core: None,
+        linked_face_payload: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
             .unwrap(),
     };
@@ -411,6 +415,8 @@ fn template_inputs(
         sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"a"),
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"b"),
         stable_identity: None,
+        core: None,
+        linked_face_payload: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
             .unwrap(),
     };

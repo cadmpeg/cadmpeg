@@ -2,6 +2,7 @@
 //! Golden serialized decode/inspect snapshots. NX snapshots are code-built and
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
 //! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
+
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
@@ -53,6 +54,7 @@ use crate::test_support::test_deltas::topology_with_fully_extended_geometry_head
 use crate::test_support::test_deltas::torus_topology_partition_stream;
 use crate::test_support::test_deltas::trimmed_topology_partition_stream;
 use crate::test_support::test_deltas::variable_status_framed_deltas_stream;
+use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_om::multi_section_feature_history_payload;
 use crate::test_support::test_om::offset_only_indexed_om_section;
 use crate::test_support::test_om::offset_only_indexed_om_section_with_control;
@@ -126,6 +128,7 @@ use crate::NxCodec;
 
 /// Arena names the native catalogue can emit.
 const KNOWN_ARENAS: &[&str] = &[
+    "assembly_placements",
     "class_definitions",
     "configuration_attribute_uses",
     "configurations",
@@ -213,7 +216,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_datum_plane_payload_scalar_pairs",
     "feature_datum_plane_payloads",
     "feature_draft_construction_binary32_lanes",
-    "feature_draft_construction_fixed_lanes",
+    "feature_draft_construction_binary64_lanes",
     "feature_draft_construction_graph_payloads",
     "feature_draft_construction_graph_strings",
     "feature_draft_construction_identity_frames",
@@ -229,6 +232,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_extrude_payload_headers",
     "feature_extrude_profile_references",
     "feature_fset_construction_payloads",
+    "feature_fset_index_lanes",
     "feature_fset_reference_graphs",
     "feature_input_block_identity_groups",
     "feature_input_blocks",
@@ -253,16 +257,16 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_operation_tagged_references",
     "feature_operation_records",
     "feature_operation_common_frames",
-    "feature_operation_terminal_discriminators",
     "feature_operation_terminal_frames",
     "feature_operation_state_journal_uses",
     "feature_unlabeled_operation_records",
     "feature_unlabeled_operation_body_writes",
     "feature_parameter_bindings",
     "feature_parameter_uses",
-    "feature_pattern_construction_fixed_lanes",
+    "feature_pattern_construction_binary64_lanes",
     "feature_pattern_construction_payloads",
     "feature_pattern_construction_strings",
+    "feature_construction_named_targets",
     "feature_pattern_counted_reference_lanes",
     "feature_pattern_references",
     "feature_pattern_transform_lanes",
@@ -296,7 +300,10 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_sketch_preceding_named_point_uses",
     "feature_sketch_records",
     "feature_sketch_references",
+    "feature_enlarge_construction_envelopes",
+    "feature_extract_face_construction_envelopes",
     "feature_surface_construction_branches",
+    "feature_studio_post_branch_references",
     "feature_surface_construction_payloads",
     "feature_surface_construction_references",
     "feature_surface_construction_scalar_pairs",
@@ -334,13 +341,10 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_deltas_residual_spans",
     "parasolid_deltas_tagged_reference_lanes",
     "parasolid_deltas_reference_type_maps",
-    "parasolid_deltas_reference_state_packets",
-    "parasolid_deltas_schema_reference_preambles",
+    "parasolid_deltas_pmark_packets",
+    "parasolid_deltas_partition_prefixes",
     "parasolid_deltas_reference_marker_packets",
-    "parasolid_deltas_type_150_state_packets",
-    "parasolid_deltas_inline_schema_declarations",
-    "parasolid_deltas_inline_body_states",
-    "parasolid_deltas_term_use_numeric_tails",
+    "parasolid_deltas_schema_nodes",
     "parasolid_deltas_tombstones",
     "parasolid_entity_51_numeric_uses",
     "parasolid_entity_51_records",
@@ -372,6 +376,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "rm_creation_display_data_relations",
     "rmfastload_object_id_tables",
     "rmfastload_object_ids",
+    "rmfastload_physical_storages",
     "saved_toggle_entries",
     "saved_toggle_streams",
     "segment_body_bindings",
@@ -384,7 +389,7 @@ const KNOWN_ARENAS: &[&str] = &[
 ];
 
 /// Minimum distinct arenas the golden fixtures must collectively populate.
-const ARENA_COVERAGE_FLOOR: usize = 122;
+const ARENA_COVERAGE_FLOOR: usize = 126;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
@@ -409,12 +414,24 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     // geometry. The payload is uncompressed, so this snapshot pins no
     // compressor output.
     f.push(("legacy_cfb_with_ug_part", legacy_cfb_with_ug_part()));
+    f.push((
+        "final_member_registry_heads",
+        crate::test_support::final_member_registry::prt(),
+    ));
 
     // Self-contained `.prt` images.
     f.push(("single_part_prt", single_part_prt()));
     f.push((
         "display_jt_tetrahedron",
         crate::test_support::test_jt_mesh::tetrahedron_prt(),
+    ));
+    f.push((
+        "studio_complete_storage_allocation",
+        crate::test_support::studio_surface::prt(),
+    ));
+    f.push((
+        "skin_complete_storage_allocation",
+        crate::test_support::studio_surface::skin_prt(),
     ));
     f.push(("topology_part_prt", topology_part_prt()));
     f.push(("prt_with_arrangements", prt_with_arrangements()));
@@ -423,6 +440,62 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         prt_with_arrangement_attribute(None),
     ));
     f.push(("prt_with_indexed_om_section", prt_with_indexed_om_section()));
+    f.push((
+        "fset_counted_and_empty_lanes",
+        prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            composed_feature_history_payload(
+                &([
+                    &[1, 9, 121, 101, 82, 97, 84, 100, 0x85, 0x17, 94, 0, 3, 0][..],
+                    &[0, 0, 3, 0][..],
+                    &[1, 10, 28, 26, 43, 29, 27, 30, 31, 32, 33, 0, 3, 0][..],
+                ]
+                .into_iter()
+                .map(|lane| {
+                    let mut payload = vec![49, 0, 0, 1];
+                    payload.resize(21, 0);
+                    payload.extend_from_slice(lane);
+                    (b"\xff\xff\xff\xff".as_slice(), "FSET", payload)
+                })
+                .collect::<Vec<_>>()),
+                &[],
+            ),
+        )]),
+    ));
+    f.push(("construction_named_targets", {
+        let mut graph = vec![
+            0x61, 0xf0, 2, 0xff, 0, 0xff, 1, 0xf0, 3, 0xf0, 4, 0x61, 0xf0, 5, 0xff, 0, 0xff, 1,
+            0xf0, 6, 0xf0, 7, 0xff, 0x62, 0xf0, 8, 0xf0, 9, 0xff, 0, 0, 1, 0xf0, 10, 0xff, 0xff,
+            0xff, 1,
+        ];
+        graph.extend([0, 0]);
+        let operations = [
+            (
+                b"\xff\xff\xff\xff".as_slice(),
+                "EXTRUDE",
+                vec![1, 2, 0x7e, 1, 2, 0xf0, 1, 1, 3, 0x79, 1, 2, 0xf0, 1, 0, 0],
+            ),
+            (b"\xff\xff\xff\xff".as_slice(), "Pattern Feature", graph),
+        ];
+        let profile = b"\xe0\x3c\x01\x16\xa1\x00\xa7\x01\x66\x32\x03\x09Profile\x00";
+        let pattern = b"\xe0\x3c\x01\x16\xa1\x01\xa7\x01\x66\x32\x03\x09Pattern\x00";
+        let store: [&[u8]; 10] = [
+            profile,
+            pattern,
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+        ];
+        prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            composed_feature_history_payload(&operations, &store),
+        )])
+    }));
     f.push((
         "prt_with_size_framed_om_section",
         prt_with_size_framed_om_section(),
@@ -433,6 +506,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         assembly_with_external_paths(),
     ));
     f.push(("rmfastload_prt", rmfastload_prt()));
+    f.push((
+        "rmfastload_physical_storage",
+        crate::test_support::rmfastload::prt(),
+    ));
     f.push((
         "prt_with_two_bodies_and_rmfastload",
         prt_with_two_bodies_and_rmfastload(),
@@ -597,6 +674,14 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             payload.extend_from_slice(&word.to_le_bytes());
         }
         payload.extend_from_slice(&section);
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+    }));
+
+    f.push(("assembly_placement", {
+        let mut payload = vec![0xff, 0, 0x45, 1, 4, 1];
+        payload.extend([1, 0, 0, 0x50, 0x18, 0, 0, 0, 1, 0, 0x80, 0, 0, 1, 0]);
+        payload.extend([0, 0, 0, 1, 63, 0xf0, 0, 0, 0]);
+        payload.extend(b"\x03\x03A\0\x03\x2601234567-89ab-cdef-0123-456789abcdef\0");
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
     }));
 
@@ -937,6 +1022,19 @@ fn golden_snapshots_are_byte_identical() {
     harness().check_inputs(&inputs(), &[Branch::root(snapshot)]);
 }
 
+/// Export only the code-built inputs for independent executable comparisons.
+#[test]
+#[ignore = "requires CADMPEG_NX_FIXTURE_DIR for explicit fixture export"]
+fn export_golden_fixture_inputs() {
+    let directory = std::path::PathBuf::from(
+        std::env::var_os("CADMPEG_NX_FIXTURE_DIR").expect("CADMPEG_NX_FIXTURE_DIR"),
+    );
+    std::fs::create_dir_all(&directory).expect("create fixture directory");
+    for (name, bytes) in fixtures() {
+        std::fs::write(directory.join(format!("{name}.prt")), bytes).expect("write fixture");
+    }
+}
+
 /// Guards against nondeterministic codec output (`HashMap` iteration order,
 /// timestamps): decoding the same bytes twice must produce identical JSON.
 #[test]
@@ -1013,13 +1111,14 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 255, "one catalogue row per model field");
+    // The removed byte-150 arena has no independent record ownership.
+    assert_eq!(CATALOGUE.len(), 258, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
             .count(),
-        117,
+        114,
         "group A family count"
     );
     assert_eq!(
@@ -1027,7 +1126,7 @@ fn catalogue_arenas_match_known_arenas() {
             .iter()
             .filter(|row| matches!(&row.phase, Phase::GroupB { .. }))
             .count(),
-        9,
+        10,
         "group B family count"
     );
 

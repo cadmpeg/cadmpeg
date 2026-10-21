@@ -154,17 +154,6 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                         )),
                     );
                 }
-                if !census.term_use_numeric_tails.is_empty() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.term_use_numeric_tails",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.term_use_numeric_tails.len(),
-                        )),
-                    );
-                }
                 if !census.tagged_reference_lanes.is_empty() {
                     insert_summary_attribute(
                         &mut attributes,
@@ -187,14 +176,14 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                         )),
                     );
                 }
-                if !census.reference_state_packets.is_empty() {
+                if !census.pmark_packets.is_empty() {
                     insert_summary_attribute(
                         &mut attributes,
-                        "records.delta.reference_state_packets",
+                        "records.delta.pmark_packets",
                         "",
                         false,
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.reference_state_packets.len(),
+                            census.pmark_packets.len(),
                         )),
                     );
                 }
@@ -209,14 +198,14 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                         )),
                     );
                 }
-                if !census.inline_schema_declarations.is_empty() {
+                if !census.schema_nodes.is_empty() {
                     insert_summary_attribute(
                         &mut attributes,
-                        "records.delta.inline_schema_declarations",
+                        "records.delta.schema_nodes",
                         "",
                         false,
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.inline_schema_declarations.len(),
+                            census.schema_nodes.len(),
                         )),
                     );
                 }

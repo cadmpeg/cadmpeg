@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pattern construction records and extraction.
 
+use cadmpeg_core::CodecError;
+
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use crate::om::branch_items::BranchItems;
@@ -21,10 +23,7 @@ use super::FeaturePatternKind;
 use crate::om::scalar_run::FramedScalarRun;
 use serde::Deserialize;
 
-use crate::om::fixed::Q155Atom;
-use crate::om::fixed::Q155LaneFrame;
-use crate::om::fixed::Q155Marker;
-use crate::om::fixed::Q155;
+use crate::om::discriminators::ConstructionBinary64Frame;
 use crate::om::nonempty::NonEmpty;
 use crate::om::pattern::PatternRow;
 use crate::om::pattern::PatternRows;
@@ -201,10 +200,10 @@ pub(in crate::native) struct FeaturePatternConstructionString {
     source_offset: u64,
 }
 
-/// Complete signed Q1.55 lane in a reconstructed pattern payload.
+/// Complete shifted-binary64 lane in a reconstructed pattern payload.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "FeaturePatternConstructionFixedLaneWire")]
-pub(in crate::native) struct FeaturePatternConstructionFixedLane {
+#[serde(try_from = "FeaturePatternConstructionBinary64LaneWire")]
+pub(in crate::native) struct FeaturePatternConstructionBinary64Lane {
     /// Globally unique lane identity.
     pub(in crate::native) id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
@@ -214,13 +213,13 @@ pub(in crate::native) struct FeaturePatternConstructionFixedLane {
     /// Zero-based lane order within the payload.
     pub(in crate::native) ordinal: u32,
     /// Framed scalar run with absolute source locations.
-    lane: FramedScalarRun<Q155LaneFrame, u64>,
+    lane: FramedScalarRun<ConstructionBinary64Frame, u64>,
     /// Absolute source offset of the fixed discriminator.
     source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
-struct FeaturePatternConstructionFixedLaneWire {
+struct FeaturePatternConstructionBinary64LaneWire {
     /// Globally unique lane identity.
     id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
@@ -229,12 +228,10 @@ struct FeaturePatternConstructionFixedLaneWire {
     construction_payload: String,
     /// Zero-based lane order within the payload.
     ordinal: u32,
-    /// Ordered dimensionless Q1.55 values.
+    /// Ordered finite shifted-binary64 values.
     values: Vec<f64>,
-    /// Exact atom markers in value order.
-    markers: NativeBytes<Vec<u8>>,
-    /// Exact seven-byte two's-complement payloads.
-    raw_values: Vec<NativeBytes<[u8; 7]>>,
+    /// Exact eight-byte shifted-binary64 atoms.
+    raw_values: Vec<NativeBytes<[u8; 8]>>,
     /// Payload-relative offset of the fixed discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the atom markers.
@@ -246,8 +243,8 @@ struct FeaturePatternConstructionFixedLaneWire {
 }
 
 #[cfg(test)]
-impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFixedLaneWire {
-    fn from(record: FeaturePatternConstructionFixedLane) -> Self {
+impl From<FeaturePatternConstructionBinary64Lane> for FeaturePatternConstructionBinary64LaneWire {
+    fn from(record: FeaturePatternConstructionBinary64Lane) -> Self {
         Self {
             id: record.id,
             operation_label: record.operation_label,
@@ -256,18 +253,12 @@ impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFix
             values: record
                 .lane
                 .iter()
-                .map(|(_, atom, _)| atom.scalar.value())
+                .map(|(_, atom, _)| atom.value().get())
                 .collect(),
-            markers: (record
-                .lane
-                .iter()
-                .map(|(_, atom, _)| atom.marker.byte())
-                .collect::<Vec<_>>())
-            .into(),
             raw_values: record
                 .lane
                 .iter()
-                .map(|(_, atom, _)| atom.scalar.raw())
+                .map(|(_, atom, _)| atom.raw())
                 .map(Into::into)
                 .collect(),
             payload_offset: record.lane.offset(),
@@ -278,46 +269,44 @@ impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFix
     }
 }
 
-impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstructionFixedLane {
+impl TryFrom<FeaturePatternConstructionBinary64LaneWire>
+    for FeaturePatternConstructionBinary64Lane
+{
     type Error = String;
-    fn try_from(wire: FeaturePatternConstructionFixedLaneWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: FeaturePatternConstructionBinary64LaneWire) -> Result<Self, Self::Error> {
         let count = wire.values.len();
-        if wire.markers.len() != count
-            || wire.raw_values.len() != count
+        if wire.raw_values.len() != count
             || wire.value_payload_offsets.len() != count
             || wire.value_source_offsets.len() != count
         {
             return Err(
-                "FeaturePatternConstructionFixedLane scalar columns must have equal lengths".into(),
+                "FeaturePatternConstructionBinary64Lane scalar columns must have equal lengths"
+                    .into(),
             );
         }
         let values = wire
             .values
             .into_iter()
-            .zip(wire.markers)
             .zip(wire.raw_values)
             .zip(wire.value_source_offsets)
-            .map(|(((value, marker), raw), source)| {
+            .map(|((value, raw), source)| {
                 Ok((
-                    Q155Atom {
-                        marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
-                        scalar: Q155::from_wire(value, *raw)?,
-                    },
+                    ConstructionBinary64Frame::atom_from_wire(value, *raw)?,
                     source,
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
         let lane = FramedScalarRun::new(
-            Q155LaneFrame,
+            ConstructionBinary64Frame,
             wire.payload_offset,
-            NonEmpty::from_admitted_vec(values).ok_or("values must contain a Q1.55 atom")?,
+            NonEmpty::from_admitted_vec(values).ok_or("values must contain a binary64 atom")?,
         )?;
         if !lane
             .iter()
             .map(|(offset, _, _)| offset)
             .eq(wire.value_payload_offsets)
         {
-            return Err("value_payload_offsets must follow the contiguous Q1.55 atoms".into());
+            return Err("value_payload_offsets must follow the contiguous binary64 atoms".into());
         }
         Ok(Self {
             id: wire.id,
@@ -361,7 +350,7 @@ struct FeaturePatternTransformLaneWire {
     row_schema_index: NonZeroU8,
     /// Row byte layout selected by the terminal mode.
     layout: FeaturePatternTransformLayout,
-    /// Count including the implicit seed row.
+    /// Count equal to the explicit row count plus one.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     declared_count: usize,
     /// Scalar encodings selected independently in row order.
@@ -536,7 +525,7 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
 
     fn try_from(wire: FeaturePatternTransformLaneWire) -> Result<Self, Self::Error> {
         if wire.declared_count != wire.selectors.len() + 1 {
-            return Err("declared_count must equal the row count plus the implicit seed".into());
+            return Err("declared_count must equal the row count plus one".into());
         }
         let width = match wire.layout {
             FeaturePatternTransformLayout::ScalarRows => 1,
@@ -648,23 +637,23 @@ struct FeatureMultiInstanceOutputLaneWire {
     id: String,
     /// Owning `Multi Instance Output` operation label.
     operation_label: String,
-    /// Count including the implicit seed row.
+    /// Count equal to the explicit row count plus one.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     declared_count: usize,
-    /// Ordered non-null compact selectors.
+    /// Ordered non-null source-topology tags.
     selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
+    /// Exact compact-index source-topology tag tokens in row order.
     raw_selectors: Vec<NativeBytes<Vec<u8>>>,
     /// Ordered serialized instance ordinals.
     ordinals: NativeBytes<Vec<u8>>,
-    /// Ordered serialized row indices.
+    /// Ordered target-label indices in the tracking table.
     row_indices: Vec<usize>,
-    /// Count including the implicit seed instance.
+    /// Total instance count, one greater than the instance-map handle count.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     instance_count: usize,
-    /// Ordered non-null trailing object indices.
+    /// Ordered non-null instance-map handles; no geometry target is assigned.
     trailing_object_indices: Vec<u32>,
-    /// Exact trailing object-index tokens in row order.
+    /// Exact instance-map handle tokens in map order.
     raw_trailing_object_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute source offset of the opening `25 01, count` field.
     source_offset: u64,
@@ -731,7 +720,7 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
     type Error = String;
     fn try_from(wire: FeatureMultiInstanceOutputLaneWire) -> Result<Self, Self::Error> {
         if wire.declared_count != wire.selectors.len() + 1 {
-            return Err("declared_count must equal the row count plus the implicit seed".into());
+            return Err("declared_count must equal the row count plus one".into());
         }
         if wire
             .row_indices
@@ -742,10 +731,7 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
             return Err("row_indices must enumerate rows from two".into());
         }
         if wire.instance_count != wire.trailing_object_indices.len() + 1 {
-            return Err(
-                "instance_count must equal the trailing reference count plus the implicit seed"
-                    .into(),
-            );
+            return Err("instance_count must equal the trailing reference count plus one".into());
         }
         if wire.raw_selectors.len() != wire.selectors.len()
             || wire.ordinals.len() != wire.selectors.len()
@@ -889,7 +875,7 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
             return Err("row_schema_indices must follow count_schema_index consecutively".into());
         }
         if wire.declared_count != wire.selectors.len() + 1 {
-            return Err("declared_count must equal the row count plus the implicit seed".into());
+            return Err("declared_count must equal the row count plus one".into());
         }
         if wire.raw_selectors.len() != wire.selectors.len()
             || wire.selector_source_offsets.len() != wire.selectors.len()
@@ -1151,18 +1137,19 @@ pub(in crate::native) fn feature_pattern_construction_strings(
     Ok(strings)
 }
 
-/// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
-pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
+/// Decode complete shifted-binary64 lanes from reconstructed pattern payloads.
+pub(in crate::native) fn feature_pattern_construction_binary64_lanes(
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeaturePatternConstructionFixedLane>, cadmpeg_core::CodecError> {
+) -> Result<Vec<FeaturePatternConstructionBinary64Lane>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(container)?;
     let mut lanes = Vec::new();
     for payload in payloads {
         let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) else {
             continue;
         };
-        for (ordinal, lane) in crate::om::draft_construction_fixed_lanes(joined.bytes())
+        for (ordinal, lane) in crate::om::construction_binary64_lanes(joined.bytes())
             .into_iter()
             .enumerate()
         {
@@ -1174,13 +1161,15 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
                 continue;
             };
             let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
-                cadmpeg_core::CodecError::malformed("NX pattern fixed lane ordinal exceeds u32")
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "NX pattern binary64 lane ordinal"
+                ))
             })?;
-            let id = format_feature_child_id(&payload.id, "-fixed-lane-", ordinal);
+            let id = format_feature_child_id(&payload.id, "-binary64-lane-", ordinal);
             let operation_label = payload.operation_label.clone();
             let construction_payload = payload.id.clone();
-
-            lanes.push(FeaturePatternConstructionFixedLane {
+            lanes.push(FeaturePatternConstructionBinary64Lane {
                 id,
                 operation_label,
                 construction_payload,

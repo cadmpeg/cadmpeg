@@ -73,24 +73,26 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.assertIsNone(actual)
         self.assertEqual(error, "decode refusal report status is not refused")
 
-    def test_rejects_v6_refusal_version(self) -> None:
-        self.write(
-            {
-                "ir_version": "6",
-                "command": "dump",
-                "status": "refused",
-                "refusal": {
-                    "stage": "decode",
-                    "code": "decode_failed",
-                    "message": "old report",
-                },
-            }
-        )
+    def test_rejects_unsupported_refusal_version(self) -> None:
+        for version in ("5", "6", "8", "9", "10", "37"):
+            with self.subTest(version=version):
+                self.write(
+                    {
+                        "ir_version": version,
+                        "command": "dump",
+                        "status": "refused",
+                        "refusal": {
+                            "stage": "decode",
+                            "code": "decode_failed",
+                            "message": "old report",
+                        },
+                    }
+                )
 
-        actual, error = MODULE.load_decode_refusal(self.path)
+                actual, error = MODULE.load_decode_refusal(self.path)
 
-        self.assertIsNone(actual)
-        self.assertEqual(error, 'decode refusal report does not use ir_version "7"')
+                self.assertIsNone(actual)
+                self.assertEqual(error, 'decode refusal report does not use ir_version "7"')
 
     def test_gate_rejects_unclassified_decode_exit(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"

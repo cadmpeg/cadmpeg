@@ -30,10 +30,15 @@ use sketch_references::SketchReferenceField;
 pub(crate) mod block_construction;
 pub(crate) mod body_write;
 pub(crate) mod common_frame;
+mod core_reader;
 pub(crate) mod direct_reference;
-use body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
+pub(crate) mod linked_face;
+pub(crate) mod move_face;
+pub(crate) mod operation_core;
+use body_write::{BodyWriteFrame, BodyWriteIndex};
 use common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 pub(crate) mod instances;
+pub(crate) mod named_target;
 use reference_index::ReferenceIndexToken;
 pub(crate) mod control_word;
 use control_word::ControlWord24;
@@ -48,18 +53,22 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) mod compact;
+pub(crate) mod rmfastload;
 use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
 pub(crate) mod body_scalar_triple;
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
+pub(crate) mod enlarge;
+pub(crate) mod extract_face;
 pub(crate) mod extrude_32;
 pub(crate) mod extrude_profile;
 pub(crate) mod simple_hole_references;
+pub(crate) mod studio_references;
 pub(crate) mod surface_branches;
 pub(crate) mod surface_envelope;
-pub(crate) mod terminal_discriminator;
+pub(crate) mod symbolic_thread;
 use branch_items::BranchItems;
 pub(crate) mod binary64_pair;
 pub(crate) mod name_field;
@@ -71,7 +80,8 @@ use scalar_run::FramedScalarRun;
 pub(crate) mod sketch_scalar;
 use sketch_scalar::{SketchMixedScalars, SketchScalarLaneForm, SketchScaledAtom};
 pub(crate) mod fixed;
-use fixed::{Q155Atom, Q155LaneFrame, Q155Marker, Q155};
+use discriminators::ConstructionBinary64Frame;
+use fixed::Q155;
 pub(crate) mod nonempty;
 pub(crate) mod state_index;
 pub(crate) mod state_slot_lane;
@@ -96,6 +106,7 @@ use state_message::OperationStateMessage;
 use state_tagged_value::StateTaggedValue;
 pub(crate) mod counted_pattern_references;
 pub(crate) mod delete_references;
+pub(crate) mod fset_indices;
 pub(crate) mod fset_references;
 pub(crate) mod pattern;
 pub(crate) mod pattern_references;
@@ -180,7 +191,7 @@ pub(crate) struct TypeDefinition<'a> {
 pub(crate) struct FieldDefinition<'a> {
     /// Offset of the declaration length byte.
     pub(crate) offset: usize,
-    /// Registered `m_` member name.
+    /// Registered field name, including a bounded plain-name declaration.
     pub(crate) name: &'a str,
     /// Complete registry bytes following the member name.
     pub(crate) registry_tail: &'a [u8],
@@ -741,23 +752,44 @@ impl PointFeatureScalarLane {
 /// Exact leading construction branch in a `SWP104` payload.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Swp104PayloadLeadingBranch {
-    /// Nonzero construction discriminator at the payload start.
-    pub(crate) discriminator: NonZeroU8,
+    /// One-based parameter-class index in the owning OM section.
+    pub(crate) parameter_class_index: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
     pub(crate) scalars: [ShiftedBinary64; 4],
-    /// Whether one zero byte precedes the branch mode.
+    /// Whether one zero byte precedes the profile-class index.
     pub(crate) leading_zero: bool,
-    /// Serialized nonzero branch mode.
-    pub(crate) mode: NonZeroU8,
-    /// Exact state lane preceding the terminal marker.
+    /// One-based profile-class index in the owning OM section.
+    pub(crate) profile_class_index: NonZeroU8,
+    /// Exact state lane preceding the successor marker.
     pub(crate) state_lane: Swp104StateLane,
-    /// Ordered nonterminal references.
+    /// Ordered member column references.
     pub(crate) members: BranchItems<reference_index::PayloadIndexToken>,
-    /// Terminal reference.
-    pub(crate) terminal: reference_index::PayloadIndexToken,
+    /// Successor column reference.
+    pub(crate) successor: reference_index::PayloadIndexToken,
 }
 
 impl Swp104PayloadLeadingBranch {
+    /// Test the complete non-null consecutive column sequence without allocation.
+    pub(crate) fn consecutive_column_indices(
+        indices: impl IntoIterator<Item = reference_index::PayloadIndexToken>,
+    ) -> bool {
+        let mut indices = indices.into_iter();
+        let Some(first) = indices.next() else {
+            return false;
+        };
+        let mut previous = first.value();
+        if previous == 0 {
+            return false;
+        }
+        for index in indices {
+            if previous.checked_add(1) != Some(index.value()) {
+                return false;
+            }
+            previous = index.value();
+        }
+        true
+    }
+
     pub(crate) fn byte_len(&self) -> usize {
         40 + usize::from(self.leading_zero)
             + self
@@ -768,7 +800,7 @@ impl Swp104PayloadLeadingBranch {
                 .sum::<usize>()
             + self.state_lane.byte_len()
             + 3
-            + self.terminal.raw().len()
+            + self.successor.raw().len()
             + 1
     }
 }
@@ -2039,8 +2071,15 @@ pub(crate) fn swp104_payload_leading_branch(
     if record.name() != "SWP104" {
         return Ok(None);
     }
-    let Some((discriminator, scalars, leading_zero, mode, declared_count, mut at)) = (|| {
-        let discriminator = NonZeroU8::new(*record.payload().first()?)?;
+    let Some((
+        parameter_class_index,
+        scalars,
+        leading_zero,
+        profile_class_index,
+        declared_count,
+        mut at,
+    )) = (|| {
+        let parameter_class_index = NonZeroU8::new(*record.payload().first()?)?;
         (record.payload().get(1..5) == Some(&HEADER)).then_some(())?;
         let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
             ShiftedBinary64::read(record.payload().get(5 + i * 8..13 + i * 8)?)
@@ -2049,21 +2088,22 @@ pub(crate) fn swp104_payload_leading_branch(
         let mut at = 37;
         let leading_zero = record.payload().get(at) == Some(&0x00);
         at += usize::from(leading_zero);
-        let mode = NonZeroU8::new(*record.payload().get(at)?)?;
+        let profile_class_index = NonZeroU8::new(*record.payload().get(at)?)?;
         (*record.payload().get(at + 1)? == 0x01).then_some(())?;
         let declared_count @ 2.. = *record.payload().get(at + 2)? else {
             return None;
         };
         at += 3;
         Some((
-            discriminator,
+            parameter_class_index,
             scalars,
             leading_zero,
-            mode,
+            profile_class_index,
             declared_count,
             at,
         ))
-    })() else {
+    })()
+    else {
         return Ok(None);
     };
     let mut members = Vec::new();
@@ -2119,22 +2159,28 @@ pub(crate) fn swp104_payload_leading_branch(
     };
     let width = object_index.raw().len();
     at += width;
-    let terminal = object_index;
+    let successor = object_index;
     if record.payload().get(at) != Some(&0x00) {
         return Ok(None);
     }
 
+    if !Swp104PayloadLeadingBranch::consecutive_column_indices(
+        members.iter().copied().chain(std::iter::once(successor)),
+    ) {
+        return Ok(None);
+    }
+
     Ok(Some(Swp104PayloadLeadingBranch {
-        discriminator,
+        parameter_class_index,
         scalars,
         leading_zero,
-        mode,
+        profile_class_index,
         state_lane,
         members: match BranchItems::new(members) {
             Ok(members) => members,
             Err(_) => return Ok(None),
         },
-        terminal,
+        successor,
     }))
 }
 
@@ -2534,34 +2580,28 @@ pub(crate) fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPaylo
     pairs
 }
 
-/// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
-pub(crate) fn draft_construction_fixed_lanes(
+/// Decode every complete shifted-binary64 lane in a reconstructed draft graph payload.
+pub(crate) fn construction_binary64_lanes(
     bytes: &[u8],
-) -> Vec<FramedScalarRun<Q155LaneFrame, ()>> {
+) -> Vec<FramedScalarRun<ConstructionBinary64Frame, ()>> {
     let mut lanes = Vec::new();
     for (offset, window) in bytes
-        .windows(Q155LaneFrame::DISCRIMINATOR.len())
+        .windows(ConstructionBinary64Frame::DISCRIMINATOR.len())
         .enumerate()
     {
-        if window != Q155LaneFrame::DISCRIMINATOR {
+        if window != ConstructionBinary64Frame::DISCRIMINATOR {
             continue;
         }
-        let mut at = offset + Q155LaneFrame::DISCRIMINATOR.len();
+        let mut at = offset + ConstructionBinary64Frame::DISCRIMINATOR.len();
         let mut values = Vec::new();
         let complete = loop {
-            let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) else {
+            let Some(0x30 | 0xb0) = bytes.get(at) else {
                 break bytes.get(at) == Some(&0x00);
             };
-            let Some(raw) = bytes
-                .get(at + 1..at + 8)
-                .and_then(|raw| raw.try_into().ok())
-            else {
+            let Some(scalar) = bytes.get(at..at + 8).and_then(ShiftedBinary64::read) else {
                 break false;
             };
-            let Some(scalar) = Q155::from_raw(raw) else {
-                break false;
-            };
-            values.push((Q155Atom { marker, scalar }, ()));
+            values.push((scalar, ()));
             at += 8;
         };
         if !complete {
@@ -2571,7 +2611,7 @@ pub(crate) fn draft_construction_fixed_lanes(
             continue;
         };
         let Ok(lane) = FramedScalarRun::new(
-            Q155LaneFrame,
+            ConstructionBinary64Frame,
             cadmpeg_core::decode::u64_from_index(offset),
             values,
         ) else {
@@ -2815,14 +2855,14 @@ fn operation_body_write_frame_at(
     let group_node = BodyWriteIndex::read(payload.get(marker + 3..)?)?;
     let first_end = marker + 3 + group_node.raw().len();
     (payload.get(first_end..first_end + 4) == Some(&[0x97, 0x75, 0x01, 0x02])).then_some(())?;
-    let endpoint_tag = BodyImageTag::try_from(*payload.get(first_end + 4)?).ok()?;
+    let endpoint_class_index = NonZeroU8::new(*payload.get(first_end + 4)?)?;
     let image_at = first_end + 5;
     let body_image = BodyWriteIndex::read(payload.get(image_at..)?)?;
     (payload.get(image_at + body_image.raw().len()) == Some(&0xff)).then_some(())?;
     BodyWriteFrame::<usize>::new(
         body_identity,
         group_node,
-        endpoint_tag,
+        endpoint_class_index,
         body_image,
         payload_offset.checked_add(marker)?,
     )
@@ -3658,6 +3698,7 @@ pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
             continue;
         }
         let type_registry = registry::type_registry(bytes, offset + 16, end);
+        let field_owner_count = type_registry.field_owner_count;
         let types = type_registry.definitions;
         let field_start = type_registry.field_start;
         let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end)
@@ -3667,11 +3708,19 @@ pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
         let (fields, record_area_offset) =
             if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
                 (
-                    registry::all_field_definitions(bytes, field_start, pointer_offset),
+                    registry::all_field_definitions(
+                        bytes,
+                        field_start,
+                        pointer_offset,
+                        field_owner_count,
+                    ),
                     Some(record_area_offset),
                 )
             } else {
-                (registry::field_definitions(bytes, field_start, end)?, None)
+                (
+                    registry::field_definitions(bytes, field_start, end, field_owner_count)?,
+                    None,
+                )
             };
         let record_area = record_area_offset.map(|start| RecordArea {
             offset: start,
@@ -3869,10 +3918,17 @@ fn select_outer_indexed_candidates(
 fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSection<'_> {
     let bytes = candidate.source();
     let entity_index_offset = candidate.start();
-    let base = candidate.base();
+    let base = match &candidate.kind {
+        IndexedCandidateKind::Fixed(index) => index.base(),
+        IndexedCandidateKind::OffsetOnly(_) => 0,
+    };
     let type_registry = registry::type_registry(bytes, base, entity_index_offset);
-    let fields =
-        registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
+    let fields = registry::all_field_definitions(
+        bytes,
+        type_registry.field_start,
+        entity_index_offset,
+        type_registry.field_owner_count,
+    );
     let (object_id_table_offset, store) = match candidate.kind {
         IndexedCandidateKind::Fixed(index) => (
             index.object_id_table_offset(),

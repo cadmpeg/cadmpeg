@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use super::super::super::graph::{
     loop_chain_closes, B5Face, B5Graph, B5IncidenceLane, B5LogicalVertex, B5Loop, B5OpaquePcurve,
     B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
@@ -8,6 +10,7 @@ use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::{
     build_plan, resolved_surface_carrier_in_graph, transfer, CurvePlan, ResolvedPcurveSurface,
 };
+const EPS_PCURVE_CONE_GEOMETRY: f64 = 1.0e-12;
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 use super::super::edges::merge_curve_plan;
@@ -423,11 +426,12 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
     .is_some());
 
     let cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
+        radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, scale]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
@@ -445,7 +449,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         matches!(lifted_curve_geometry(&cone_pcurve, &cone), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
-            radius == scale * 0.5
+            (radius - scale * std::f64::consts::FRAC_PI_6.cos()).abs() < EPS_PCURVE_CONE_GEOMETRY
         })
     );
 
@@ -829,13 +833,14 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
     )
     .is_none());
 
-    let half_angle = std::f64::consts::FRAC_PI_6;
+    let radial_angle = std::f64::consts::FRAC_PI_6;
     let cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(half_angle),
+        radial_angle: crate::test_support::test_b5::positive_angle(radial_angle),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([-4.0, 0.0]),
         angular_scale: crate::test_support::test_b5::positive(2.0),
@@ -852,9 +857,9 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
     let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone).expect("signed cone latitude");
     let cone_point = |angle: f64| {
         [
-            -4.0 * half_angle.sin() * angle.cos(),
-            -4.0 * half_angle.sin() * angle.sin(),
-            -4.0 * half_angle.cos(),
+            -4.0 * radial_angle.cos() * angle.cos(),
+            -4.0 * radial_angle.cos() * angle.sin(),
+            -4.0 * radial_angle.sin(),
         ]
     };
     let signed = oriented_circle_plan(
@@ -871,7 +876,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
                 if {
                     let ref_direction = circle_curve.frame().reference().as_raw();
         let radius = circle_curve.radius().get();
-                    radius == 2.0 && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+                    (radius - 4.0 * radial_angle.cos()).abs() < EPS_PCURVE_CONE_GEOMETRY && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
                 })
     );
 }
@@ -932,13 +937,14 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
 
 #[test]
 fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
-    let half_angle = std::f64::consts::FRAC_PI_6;
+    let radial_angle = std::f64::consts::FRAC_PI_6;
     let cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+        origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(half_angle),
-        reference_radius: crate::test_support::test_b5::finite(0.0),
+        radial_angle: crate::test_support::test_b5::positive_angle(radial_angle),
+        reference_radius: crate::test_support::test_b5::finite(4.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([2.0, 8.0]),
         angular_scale: crate::test_support::test_b5::positive(3.0),
@@ -971,8 +977,8 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
             .map(|point| neutral_pcurve_point(point.get(), &cone))
             .collect::<Vec<_>>(),
         [
-            Point2::new(0.0, 2.0 * half_angle.cos()),
-            Point2::new(std::f64::consts::PI, 2.0 * half_angle.cos()),
+            Point2::new(0.0, 2.0 * radial_angle.sin()),
+            Point2::new(std::f64::consts::PI, 2.0 * radial_angle.sin()),
         ]
     );
     let mut opposite_handed = cone.clone();
@@ -982,7 +988,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
     *frame = crate::test_support::test_b5::frame([0.0, 0.0, -1.0], [1.0, 0.0, 0.0]);
     assert_eq!(
         neutral_pcurve_point([3.0 * std::f64::consts::PI, 4.0], &opposite_handed),
-        Point2::new(-std::f64::consts::PI, 2.0 * half_angle.cos())
+        Point2::new(-std::f64::consts::PI, 2.0 * radial_angle.sin())
     );
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
         lifted_curve_geometry(&pcurve, &cone)
@@ -992,9 +998,62 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
     let center = circle_curve.center().get();
     let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
-    assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * half_angle.cos()));
+    assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * radial_angle.sin()));
     assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
-    assert!((radius - 2.0).abs() < 1.0e-12);
+    assert!((radius - (4.0 + 4.0 * radial_angle.cos())).abs() < EPS_PCURVE_CONE_GEOMETRY);
+    let opposite_geometry =
+        lifted_curve_geometry(&pcurve, &opposite_handed).expect("left-handed latitude carrier");
+    assert!(oriented_circle_plan(
+        &pcurve,
+        &opposite_handed,
+        &opposite_geometry,
+        [0.0, 3.0 * std::f64::consts::PI],
+        [radius, 0.0, -4.0 * radial_angle.sin()],
+        [-radius, 0.0, -4.0 * radial_angle.sin()],
+    )
+    .is_some());
+    let mut shifted_cone = cone.clone();
+    let B5Surface::Cone { slant_shift, .. } = &mut shifted_cone else {
+        unreachable!();
+    };
+    *slant_shift = crate::test_support::test_b5::finite(1.25);
+    let shifted_pcurve = B5Pcurve {
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 5.25]),
+            crate::test_support::test_b5::finite_vector([3.0 * std::f64::consts::PI, 5.25]),
+        ],
+        ..pcurve.clone()
+    };
+    assert_eq!(
+        neutral_pcurve_point([0.0, 5.25], &shifted_cone),
+        neutral_pcurve_point([0.0, 4.0], &cone)
+    );
+    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(shifted_circle))) =
+        lifted_curve_geometry(&shifted_pcurve, &shifted_cone)
+    else {
+        panic!("expected shifted cone latitude circle");
+    };
+    assert_eq!(shifted_circle, circle_curve);
+    let generator = B5Pcurve {
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 3.0]),
+            crate::test_support::test_b5::finite_vector([0.0, 5.0]),
+        ],
+        ..pcurve
+    };
+    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line))) =
+        lifted_curve_geometry(&generator, &cone)
+    else {
+        panic!("expected cone generator line");
+    };
+    assert_eq!(line.origin().get(), Point3::new(4.0, 0.0, 0.0));
+    let expected = [radial_angle.cos(), 0.0, radial_angle.sin()];
+    let direction = line.direction();
+    let direction = direction.as_raw();
+    assert!([direction.x, direction.y, direction.z]
+        .into_iter()
+        .zip(expected)
+        .all(|(a, b)| (a - b).abs() < EPS_PCURVE_CONE_GEOMETRY));
 }
 
 #[test]
@@ -1229,7 +1288,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         assert!(transfer(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            graph,
+            &graph,
             &payload,
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
@@ -1420,7 +1479,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         assert!(transfer(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            graph,
+            &graph,
             &UnknownId::mint("catia:payload:unknown#test".to_string()).expect("identity grammar"),
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,

@@ -97,7 +97,7 @@ impl<'a> InventorContainer<'a> {
         }
         let recovery = crate::dialect::DialectRecovery::of(self);
         let matched = recovery.classify();
-        let mut losses = Vec::new();
+        let mut losses = deviation_losses(&self.snapshot);
         if let Some(loss) = crate::dialect::dialect_loss(&matched, &recovery) {
             losses.push(loss);
         }
@@ -124,6 +124,18 @@ impl<'a> InventorContainer<'a> {
             vec![note],
         ))
     }
+}
+
+/// One loss per noncanonical encoding the compound reader admitted.
+pub(crate) fn deviation_losses(
+    snapshot: &CompoundSnapshot<'_>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    snapshot
+        .deviations()
+        .map(|deviation| {
+            crate::loss::InventorLossCode::ContainerNoncanonical.note(deviation.description())
+        })
+        .collect()
 }
 
 fn find_summary_entry(

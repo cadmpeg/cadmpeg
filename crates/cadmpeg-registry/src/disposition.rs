@@ -53,16 +53,21 @@ impl fmt::Display for LadderLevel {
 ///
 /// The `read` column of `crates/cadmpeg-registry/docs/dialect-support.toml`, verbatim. The column is
 /// three refusal-and-recovery states plus one ladder score, and they are not
-/// points on one scale: `detected` is "recognized, with no fixture witnessing
-/// a decode", which is a statement about evidence, while `refused` is a
-/// statement about the codec.
+/// points on one scale: `detected` is "recognized, with no fixture-backed read
+/// level claimed", which is a statement about global evidence, while `refused`
+/// is a statement about the codec.
+/// Primary admission follows this row. Embedded Parasolid admission follows
+/// the containing host's verified grammar set. A residual occurrence under
+/// one host does not make the global row unclassified when another host
+/// verifies that grammar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub enum ReadDisposition {
     /// A `docs/format-support.md` ladder score, `L0` through `L9`.
     Level(LadderLevel),
-    /// Classified, with no fixture witnessing a decode. The floor for an
-    /// unwitnessed dialect.
+    /// Classified, with no fixture-backed read level claimed. This global
+    /// cell does not say whether any host verifies a secondary Parasolid
+    /// layer's grammar.
     Detected,
     /// The codec refuses the file, by `Admission::Refused` or by a
     /// `CodecError` raised before any report exists.

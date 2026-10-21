@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::families::standard::records::AnalyticSurfaceKind;
 use crate::families::standard::topology::EdgeRow;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -1235,7 +1237,10 @@ fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
             crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
         ),
     ]);
-    let planes = crate::families::standard::records::plane_params(&bytes, &normals);
+    let records = plane_records(&bytes);
+    let planes = crate::test_support::with_service_context(|_ctx| {
+        crate::families::standard::records::plane_params(&bytes, &records, &normals)
+    });
 
     assert_eq!(planes.len(), 3);
     assert_eq!(planes[0].target, 0x0001_0203);
@@ -1262,7 +1267,17 @@ fn plane_bounds_record(
     ] {
         bytes.extend_from_slice(&le_f32(value));
     }
+    bytes.push(0x01);
     bytes
+}
+
+fn plane_records(bytes: &[u8]) -> Vec<StandardSurfaceRecord> {
+    crate::test_support::with_service_context(|_ctx| {
+        crate::families::standard::records::surface_prefixes(bytes)
+    })
+    .into_iter()
+    .map(StandardSurfaceRecord::Analytic)
+    .collect()
 }
 
 #[test]
@@ -1325,7 +1340,10 @@ fn plane_bounds_withhold_duplicates_and_excessive_containment_error() {
         ),
     ]);
 
-    let planes = crate::families::standard::records::plane_params(&bytes, &normals);
+    let records = plane_records(&bytes);
+    let planes = crate::test_support::with_service_context(|_ctx| {
+        crate::families::standard::records::plane_params(&bytes, &records, &normals)
+    });
 
     assert_eq!(planes.len(), 2);
     assert_eq!(planes[0].target, valid_tag);
@@ -1844,5 +1862,10 @@ fn duplicate_plane_parameter_rows_yield_no_plane_params() {
         0x0001_0203,
         crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
     )]);
-    assert!(crate::families::standard::records::plane_params(&bytes, &normals).is_empty());
+    assert!(crate::families::standard::records::plane_params(
+        &bytes,
+        &plane_records(&bytes),
+        &normals
+    )
+    .is_empty());
 }

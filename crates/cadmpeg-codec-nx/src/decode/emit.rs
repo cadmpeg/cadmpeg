@@ -386,6 +386,7 @@ pub(super) fn emit_topology(
     }
     let mut curve_point_cache = CurvePointCache::default();
     let mut edges: BTreeMap<u32, EdgeId> = BTreeMap::new();
+    let mut edges_against_source: BTreeSet<u32> = BTreeSet::new();
     for node in graph
         .of_kind(NodeKind::Edge)
         .filter(|node| valid_edge_xmts.contains(&node.xmt()))
@@ -537,7 +538,7 @@ pub(super) fn emit_topology(
         let end_fin = fin_fields
             .other
             .filter(|target| u32::from(*target) > 1)
-            .or(fin_fields.forward);
+            .or(fin_fields.backward);
         let Some(end_fields) = graph
             .get_target(NodeKind::Fin, end_fin)
             .and_then(Node::fin_fields)
@@ -562,7 +563,20 @@ pub(super) fn emit_topology(
         let Some(end) = end else {
             continue;
         };
-        let (mut start, mut end) = (start, end);
+        // FIN.vertex closes its FIN: `start` is where EDGE.fin ends and `end`
+        // is where it begins. The IR edge runs along its curve.
+        let curve_forward = fields
+            .curve
+            .filter(|target| u32::from(*target) > 1)
+            .and_then(|target| curve_sense(graph, u32::from(target)))
+            != Some(cadmpeg_ir::topology::Sense::Reversed);
+        let (mut start, mut end) =
+            if (fin_fields.sense == cadmpeg_ir::topology::Sense::Forward) == curve_forward {
+                (end, start)
+            } else {
+                (start, end)
+            };
+        let mut against_source = !curve_forward;
         let id: EdgeId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("edge"), node.xmt())?;
         annotate_node(annotations, id.as_str(), source_stream, node, "EDGE");
@@ -607,6 +621,7 @@ pub(super) fn emit_topology(
                     param_range = Some(oriented);
                     if reverse_edge {
                         std::mem::swap(&mut start, &mut end);
+                        against_source = !against_source;
                     }
                 }
                 None => {
@@ -624,6 +639,9 @@ pub(super) fn emit_topology(
             tolerance: decoded_tolerance(fields.tolerance()),
         });
         edges.insert(node.xmt(), id);
+        if against_source {
+            edges_against_source.insert(node.xmt());
+        }
     }
     let mut edge_curves_by_id: BTreeMap<EdgeId, CurveId> = BTreeMap::new();
     for edge in &ir.model.edges {
@@ -768,12 +786,13 @@ pub(super) fn emit_topology(
                             face.surface
                                 .and_then(|target| surfaces.get(&u32::from(target)))
                         })?;
-                    let carrier_id = fields
-                        .curve_xmt
-                        .and_then(|target| pcurves.get(&u32::from(target)))?;
-                    let use_range = fields
-                        .curve_xmt
-                        .and_then(|target| trim_ranges.get(&u32::from(target)))
+                    let carrier_xmt = u32::from(fields.curve_xmt?);
+                    if pcurve_supports.get(&carrier_xmt) != Some(support) {
+                        return None;
+                    }
+                    let carrier_id = pcurves.get(&carrier_xmt)?;
+                    let use_range = trim_ranges
+                        .get(&carrier_xmt)
                         .copied()
                         .and_then(ordered_parameter_range);
                     Some((edge, support, carrier_id, use_range))
@@ -971,10 +990,6 @@ pub(super) fn emit_topology(
                 .curve_xmt
                 .and_then(|target| curves.get(&u32::from(target)))
                 == Some(edge_curve)
-                && fields
-                    .curve_xmt
-                    .and_then(|target| pcurve_supports.get(&u32::from(target)))
-                    == Some(support)
             {
                 serialized_branch_pcurves.insert((
                     edge_curve.clone(),
@@ -1032,12 +1047,20 @@ pub(super) fn emit_topology(
                     .map_err(CodecError::malformed)?,
             });
         }
+        let sense = if fields
+            .edge
+            .is_some_and(|target| edges_against_source.contains(&u32::from(target)))
+        {
+            reversed(fields.sense)
+        } else {
+            fields.sense
+        };
         ir.model.coedges.push(Coedge {
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
             radial_next,
-            sense: fields.sense,
+            sense,
             pcurves: pcurve_uses,
             use_curve: None,
         });
@@ -1455,6 +1478,30 @@ impl CurvePointCache {
     }
 }
 
+/// Sense of a curve carrier's common header relative to its parameterization.
+fn curve_sense(graph: &Graph, xmt: u32) -> Option<cadmpeg_ir::topology::Sense> {
+    [
+        NodeKind::Line,
+        NodeKind::Circle,
+        NodeKind::Ellipse,
+        NodeKind::Intersection,
+        NodeKind::BCurve,
+        NodeKind::TrimmedCurve,
+        NodeKind::SpCurve,
+    ]
+    .into_iter()
+    .find_map(|kind| graph.get(kind, xmt))
+    .and_then(Node::common_header)
+    .map(|(sense, _)| sense)
+}
+
+fn reversed(sense: cadmpeg_ir::topology::Sense) -> cadmpeg_ir::topology::Sense {
+    match sense {
+        cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
+        cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
+    }
+}
+
 struct EdgeGeometryRange<'inputs> {
     geometry: &'inputs CurveGeometry,
     curve: &'inputs CurveId,
@@ -1611,12 +1658,11 @@ pub(super) fn source_meta(
         scan.container.entry_count(crate::container::Region::Header),
     );
     if let crate::container::ContainerLayout::Modern {
-        footer_offset,
-        footer_fingerprint,
+        footer: Some(footer),
         ..
     } = scan.container.layout
     {
-        insert_source_attribute(&mut attributes, "footer_offset", footer_offset);
+        insert_source_attribute(&mut attributes, "footer_offset", footer.offset);
         insert_source_attribute(
             &mut attributes,
             "footer_entry_count",
@@ -1625,7 +1671,7 @@ pub(super) fn source_meta(
         insert_source_attribute(
             &mut attributes,
             "footer_fingerprint",
-            format_args!("{:08x}", assemble_u32_be(footer_fingerprint)),
+            format_args!("{:08x}", assemble_u32_be(footer.fingerprint)),
         );
     }
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
@@ -1770,13 +1816,6 @@ pub(super) fn source_meta(
                 census.body_revisions.len(),
             );
         }
-        if !census.term_use_numeric_tails.is_empty() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.term_use_numeric_tails"),
-                census.term_use_numeric_tails.len(),
-            );
-        }
         if !census.tagged_reference_lanes.is_empty() {
             insert_source_attribute(
                 &mut attributes,
@@ -1791,11 +1830,11 @@ pub(super) fn source_meta(
                 census.reference_type_maps.len(),
             );
         }
-        if !census.reference_state_packets.is_empty() {
+        if !census.pmark_packets.is_empty() {
             insert_source_attribute(
                 &mut attributes,
-                format_args!("deltas.{index}.reference_state_packets"),
-                census.reference_state_packets.len(),
+                format_args!("deltas.{index}.pmark_packets"),
+                census.pmark_packets.len(),
             );
         }
         if !census.reference_marker_packets.is_empty() {
@@ -1805,11 +1844,11 @@ pub(super) fn source_meta(
                 census.reference_marker_packets.len(),
             );
         }
-        if !census.inline_schema_declarations.is_empty() {
+        if !census.schema_nodes.is_empty() {
             insert_source_attribute(
                 &mut attributes,
-                format_args!("deltas.{index}.inline_schema_declarations"),
-                census.inline_schema_declarations.len(),
+                format_args!("deltas.{index}.schema_nodes"),
+                census.schema_nodes.len(),
             );
         }
         for (name, count) in census.full_counts() {

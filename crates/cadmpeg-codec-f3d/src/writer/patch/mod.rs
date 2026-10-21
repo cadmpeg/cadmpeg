@@ -582,31 +582,63 @@ pub(crate) fn write_semantic(
     let mut zip = zip::ZipWriter::new(output);
     let mut patched_protein_appearances = BTreeSet::new();
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|error| {
-            CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
-        })?;
-        let name = entry
-            .name()
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
-            })?
-            .into_owned();
-        let options = crate::zip_write::file_options(entry.compression());
-        if entry.is_dir() {
-            zip.add_directory(name, options).map_err(|error| {
-                CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
-            })?;
-            continue;
-        }
-        let mut bytes = Vec::new();
-        let mut chunk = [0_u8; 16 * 1024];
-        loop {
-            let read = entry.read(&mut chunk)?;
-            if read == 0 {
-                break;
+        // `zip` cannot expand or write a Zstandard member: it is read raw and expanded by
+        // `cadmpeg-core`, and written back by `write_zstd_member` below.
+        let zstd = crate::zip_write::is_zstd_member(&mut archive, index)?;
+        let (name, options, mut bytes) = {
+            let mut entry = if zstd {
+                archive.by_index_raw(index)
+            } else {
+                archive.by_index(index)
             }
-            bytes.extend_from_slice(&chunk[..read]);
-        }
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
+            })?;
+            let name = entry
+                .name()
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+                })?
+                .into_owned();
+            let options = crate::zip_write::file_options(entry.compression());
+            if entry.is_dir() {
+                drop(entry);
+                if zstd {
+                    crate::zip_write::write_zstd_member(
+                        &mut zip,
+                        &mut archive,
+                        index,
+                        &[],
+                        &[],
+                        notes,
+                    )?;
+                } else {
+                    zip.add_directory(name, options).map_err(|error| {
+                        CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
+                    })?;
+                }
+                continue;
+            }
+            let mut bytes = Vec::new();
+            if zstd {
+                bytes.extend(crate::zip_write::expand_zstd_member(
+                    &mut entry,
+                    &name,
+                    cadmpeg_core::decode::u64_from_index(source_image.len()),
+                )?);
+            } else {
+                let mut chunk = [0_u8; 16 * 1024];
+                loop {
+                    let read = entry.read(&mut chunk)?;
+                    if read == 0 {
+                        break;
+                    }
+                    bytes.extend_from_slice(&chunk[..read]);
+                }
+            }
+            (name, options, bytes)
+        };
+        let expanded = zstd.then(|| bytes.clone());
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
         }
@@ -704,6 +736,17 @@ pub(crate) fn write_semantic(
             if let Some(edits) = act_entity_edits.get(&name) {
                 patch_act_entities(&mut bytes, edits)?;
             }
+        }
+        if let Some(expanded) = expanded {
+            crate::zip_write::write_zstd_member(
+                &mut zip,
+                &mut archive,
+                index,
+                &expanded,
+                &bytes,
+                notes,
+            )?;
+            continue;
         }
         zip.start_file(name, options).map_err(|error| {
             CodecError::malformed(format_args!("cannot write F3D entry: {error}"))

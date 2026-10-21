@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
     analytic_offset_magnitude_agrees, counted_cardinality, is_referenced_geometry_class,
@@ -9,6 +11,8 @@ use crate::families::b5::graph::{
 use crate::wire;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use std::collections::{BTreeMap, HashMap};
+
+const OUTSIDE_DIRECTRIX_MARGIN: f64 = 1.0e-9;
 
 fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
@@ -329,11 +333,12 @@ fn cone_surface_reads_the_native_slant_chart() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Cone {
-            apex: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
             direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-            half_angle: crate::test_support::test_b5::positive_angle(0.25),
+            radial_angle: crate::test_support::test_b5::positive_angle(0.25),
             reference_radius: crate::test_support::test_b5::finite(4.0),
+            slant_shift: crate::test_support::test_b5::finite(0.0),
             angular_range: crate::test_support::test_b5::increasing([
                 0.5,
                 0.5 + std::f64::consts::PI
@@ -349,11 +354,11 @@ fn cone_surface_reads_the_native_slant_chart() {
                     cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                    0.0,
+                    4.0,
                     1.0,
-                    0.25,
+                    std::f64::consts::FRAC_PI_2 - 0.25,
                 )
-                .expect("the apex-chart cone carrier"),
+                .expect("the origin-chart cone carrier"),
             ),
         })
     );
@@ -1320,7 +1325,7 @@ fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
             *surface.frame().reference().as_raw(),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
         );
-        assert_eq!(surface.radius().get(), 2.0 * 0.25_f64.sin());
+        assert_eq!(surface.radius().get(), 4.0 + 2.0 * 0.25_f64.cos());
     }
     // Two components 1.5e-12 from the cross product: about 2.1e-12 away.
     assert_eq!(cone([1.5e-12, 1.5e-12, 1.0]), None);
@@ -1345,11 +1350,12 @@ fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
 #[test]
 fn offset_surface_does_not_infer_cone_construction_from_result_class() {
     let carrier = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(0.25),
+        radial_angle: crate::test_support::test_b5::positive_angle(0.25),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([-2.0, 4.0]),
         angular_scale: crate::test_support::test_b5::positive(3.0),
@@ -1552,7 +1558,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
 }
 
 #[test]
-fn extrusion_surface_binds_two_mapped_directrix_supports() {
+fn extrusion_surface_uses_complete_sampled_map_reference_lift() {
     let mut pcurve_payload = vec![0x81, 0x86, 0x05];
     for value in [2.0f64, -3.0, 4.0] {
         pcurve_payload.extend_from_slice(&value.to_le_bytes());
@@ -1576,8 +1582,12 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         object_id: 2,
         payload: wrapper_payload,
     };
-    let mut directrix_payload = vec![0x82, 0x82, 0x84, 0x00];
-    for value in [-3.0f64, 4.0, 0.01] {
+    let mut directrix_payload = vec![0x82, 0x82, 0x84, 0x81, 0x15];
+    for value in [-3.0f64, 4.0, 0.0, 10.0, 20.0] {
+        directrix_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    directrix_payload.push(0x82);
+    for value in [-3.0_f64, 4.0, 20.0, 10.0, -3.0, 4.0, 0.0] {
         directrix_payload.extend_from_slice(&value.to_le_bytes());
     }
     directrix_payload.push(0x01);
@@ -1612,21 +1622,81 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
                 [-2.0, 6.0],
                 [-3.0, 4.0]
             ]),
-            directrix: B5ExtrusionDirectrix::Intersection {
+            directrix: B5ExtrusionDirectrix::SurfaceCurve {
                 object_id: 5,
-                supports: [
-                    (6, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
-                    (
-                        7,
-                        4,
-                        crate::test_support::test_b5::finite_pair([10.0, 20.0])
-                    )
-                ],
+                support: (6, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
                 parameter_range: crate::test_support::test_b5::increasing([-3.0, 4.0]),
-                cache_fit_tolerance: crate::test_support::test_b5::positive(0.01),
             },
         })
     );
+    let mut co_wrapper_payload = vec![0x81, 0x84, 0x81, 0x01];
+    for value in [10.0_f64, 20.0, 0.0] {
+        co_wrapper_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    co_wrapper_payload.push(1);
+    let co_wrapper = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x24,
+        object_id: 9,
+        payload: co_wrapper_payload,
+    };
+    for (reference, co_curve) in [(2, 4), (3, 4), (2, 9), (3, 9)] {
+        let mut candidate = directrix.clone();
+        candidate.payload[1] = 0x80 + reference;
+        candidate.payload[2] = 0x80 + co_curve;
+        let candidates = HashMap::from([
+            (2, &wrapper),
+            (3, &pcurve),
+            (5, &candidate),
+            (9, &co_wrapper),
+        ]);
+        let parsed = parse_extrusion_surface(&record, &candidates, &pcurves)
+            .expect("either operand may be a wrapper");
+        assert!(matches!(
+            parsed.directrix,
+            B5ExtrusionDirectrix::SurfaceCurve {
+                object_id: 5,
+                support: (6, 3, _),
+                ..
+            }
+        ));
+    }
+    for (offset, value) in [(4, 0x14), (45, 0x83), (1, 0x8f), (2, 0x8f)] {
+        let mut candidate = directrix.clone();
+        candidate.payload[offset] = value;
+        let candidates = HashMap::from([(2, &wrapper), (3, &pcurve), (5, &candidate)]);
+        assert!(parse_extrusion_surface(&record, &candidates, &pcurves).is_none());
+    }
+    let mut incomplete = directrix.clone();
+    incomplete.payload = vec![0x82, 0x82, 0x84, 0];
+    for value in [-3.0_f64, 4.0, 0.01] {
+        incomplete.payload.extend_from_slice(&value.to_le_bytes());
+    }
+    incomplete.payload.push(1);
+    let candidates = HashMap::from([(2, &wrapper), (3, &pcurve), (5, &incomplete)]);
+    assert!(parse_extrusion_surface(&record, &candidates, &pcurves).is_none());
+
+    // A sampled-map reference gauge does not inherit the class-24 jet-origin translation.
+    let mut shifted_map = record.clone();
+    shifted_map.payload[58..66].copy_from_slice(&10.0_f64.to_le_bytes());
+    shifted_map.payload[66..74].copy_from_slice(&17.0_f64.to_le_bytes());
+    let jet_records = HashMap::from([(2, &wrapper), (5, &directrix)]);
+    let mut jet_pcurves = BTreeMap::from([(4, object_stream_pcurve(7, vec![10.0, 20.0], None))]);
+    jet_pcurves.insert(3, object_stream_pcurve(6, vec![-3.0, 4.0], Some(7.0)));
+    assert!(parse_extrusion_surface(&record, &jet_records, &jet_pcurves).is_some());
+    assert!(parse_extrusion_surface(&shifted_map, &jet_records, &jet_pcurves).is_none());
+
+    jet_pcurves.insert(
+        3,
+        object_stream_pcurve(6, vec![-3.0, -1.25, 0.5, 2.25, 4.0], Some(1.75)),
+    );
+    assert!(parse_extrusion_surface(&record, &jet_records, &jet_pcurves).is_some());
+    shifted_map.payload[66..74].copy_from_slice(&11.75_f64.to_le_bytes());
+    let tail = shifted_map.payload.len() - 2;
+    shifted_map.payload[tail..].copy_from_slice(&[0x05, 0x11]);
+    assert!(parse_extrusion_surface(&shifted_map, &jet_records, &jet_pcurves).is_none());
+
     let directrix_lower_bound = 2 + 7 * 8;
     let mut trimmed_interval = record.clone();
     trimmed_interval.payload[directrix_lower_bound..directrix_lower_bound + 8]
@@ -1637,7 +1707,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
     );
     let mut outside_interval = record.clone();
     outside_interval.payload[directrix_lower_bound..directrix_lower_bound + 8]
-        .copy_from_slice(&(-3.0_f64 - 1.0e-9).to_le_bytes());
+        .copy_from_slice(&(-3.0_f64 - OUTSIDE_DIRECTRIX_MARGIN).to_le_bytes());
     assert_eq!(
         parse_extrusion_surface(&outside_interval, &records, &pcurves),
         None,
@@ -1703,3 +1773,89 @@ fn point_cell_refuses_negative_spatial_overflow() {
 fn point_cell_refuses_nonfinite_coordinate() {
     assert_eq!(super::super::point_cell([f64::NAN, 0.0, 0.0]), None);
 }
+
+#[test]
+fn sampled_map_offset_uses_active_reference_range_inside_full_pcurve_domain() {
+    let mut line_payload = vec![0x81, 0x86, 0x05];
+    for value in [2.0_f64, 0.0, 1.0] {
+        line_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let line = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x18,
+        object_id: 1,
+        payload: line_payload,
+    };
+    let map = B5Record {
+        offset: 0,
+        family: 0xa8,
+        class: 0x25,
+        object_id: 4,
+        payload: crate::test_support::test_parameter_map::payload(17, true, 0.0),
+    };
+    let mut payload = vec![0x81, 0x84];
+    for value in [0.25_f64, 0.75] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.push(0x05);
+    for value in [0.5_f64, 0.0, 0.0, 1.0, 2.0, 3.0] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let offset = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x14,
+        object_id: 5,
+        payload,
+    };
+    let records = HashMap::from([(1, &line), (4, &map)]);
+    let pcurves = BTreeMap::from([(2, object_stream_pcurve(7, vec![2.0, 3.0], None))]);
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        super::super::parse_extrusion_directrix(ctx, &offset, &records, &pcurves)
+    })
+    .expect("bounded directrix parse")
+    .expect("active map interval closes");
+    let B5ExtrusionDirectrix::Offset {
+        source,
+        source_parameter_range,
+        ..
+    } = parsed.clone()
+    else {
+        panic!("offset source");
+    };
+    assert_eq!(source_parameter_range.endpoints(), [0.25, 0.75]);
+    assert!(matches!(*source, B5ExtrusionDirectrix::SurfaceCurve {
+        object_id: 4, support: (6, 1, _), parameter_range,
+    } if parameter_range.endpoints() == [0.25, 0.75]));
+    let source_extrusion = B5ExtrusionSurface {
+        object_id: 9,
+        direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+        parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+            [0.0, 1.0],
+            [0.25, 0.75],
+        ]),
+        directrix: *source,
+    };
+    let carrier_extrusion = B5ExtrusionSurface {
+        object_id: 10,
+        direction: source_extrusion.direction,
+        parameter_bounds: crate::test_support::test_b5::increasing_bounds([[0.0, 1.0], [2.0, 3.0]]),
+        directrix: parsed,
+    };
+    assert!(super::super::extrusion_offset_construction_agrees(
+        &source_extrusion,
+        &carrier_extrusion,
+        crate::test_support::test_b5::finite(0.5),
+        crate::test_support::test_b5::increasing_bounds([[2.0, 3.0], [0.0, 1.0]]),
+    ));
+    let mut wrong = offset;
+    wrong.payload[2..10].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::parse_extrusion_directrix(ctx, &wrong, &records, &pcurves)
+    })
+    .expect("bounded directrix parse")
+    .is_none());
+}
+
+mod circle;

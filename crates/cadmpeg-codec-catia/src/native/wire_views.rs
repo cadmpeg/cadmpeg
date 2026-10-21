@@ -11,12 +11,10 @@ use super::owner_chart::CatiaOwnerChartRelation;
 use super::{
     slice_is_empty, CatiaCircleLayout, CatiaConsolidatedCircle, CatiaConsolidatedCylinder,
     CatiaConsolidatedCylinderPayload, CatiaConsolidatedCylinderPayloadWire,
-    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
-    CatiaConsolidatedParameterPointPayload, CatiaConsolidatedPlaneCarrier,
-    CatiaConsolidatedPlaneCarrierPayload, CatiaFaceNodeRelation, CatiaOwnerBoundaryCycle,
-    CatiaOwnerIdentityEncoding, CatiaOwnerIdentityTarget, CatiaOwnerNumericTail,
-    CatiaOwnerPacketPayload, CatiaOwnerReferenceEncoding, ConsolidatedFrameFlag,
-    ConsolidatedFrameWidth,
+    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint, CatiaConsolidatedPlaneCarrier,
+    CatiaFaceNodeRelation, CatiaOwnerBoundaryCycle, CatiaOwnerIdentityEncoding,
+    CatiaOwnerIdentityTarget, CatiaOwnerNumericTail, CatiaOwnerPacketPayload,
+    CatiaOwnerReferenceEncoding, ConsolidatedFrameFlag, ConsolidatedFrameWidth,
 };
 
 #[derive(Serialize)]
@@ -30,6 +28,7 @@ enum CatiaOwnerPacketPayloadWireRef<'a> {
     },
     Counted {
         references: &'a [u32],
+        reference_encodings: &'a [super::CatiaAllocationReferenceEncoding],
         tail: NativeBytes<&'a [u8]>,
     },
 }
@@ -37,9 +36,9 @@ enum CatiaOwnerPacketPayloadWireRef<'a> {
 #[derive(Serialize)]
 struct CatiaConsolidatedOwnerPacketWireRef<'a> {
     id: &'a str,
-    byte_offset: u64,
+    source_offset: u64,
     source_index: usize,
-    header_token: u32,
+    frame: &'a crate::wire::records::ConsolidatedRawFrame<u64>,
     payload: CatiaOwnerPacketPayloadWireRef<'a>,
     #[serde(skip_serializing_if = "slice_is_empty")]
     identity_targets: &'a [CatiaOwnerIdentityTarget],
@@ -76,9 +75,14 @@ impl Serialize for CatiaConsolidatedOwnerPacket {
                 owner_chart.as_deref(),
                 boundary_cycle.as_deref(),
             ),
-            CatiaOwnerPacketPayload::Counted { references, tail } => (
+            CatiaOwnerPacketPayload::Counted {
+                references,
+                reference_encodings,
+                tail,
+            } => (
                 CatiaOwnerPacketPayloadWireRef::Counted {
                     references,
+                    reference_encodings,
                     tail: tail.as_slice().into(),
                 },
                 &[][..],
@@ -88,9 +92,9 @@ impl Serialize for CatiaConsolidatedOwnerPacket {
         };
         CatiaConsolidatedOwnerPacketWireRef {
             id: &self.id,
-            byte_offset: self.byte_offset,
+            source_offset: self.source_offset,
             source_index: self.source_index,
-            header_token: self.header_token,
+            frame: &self.frame,
             payload,
             identity_targets,
             face_node: &self.face_node,
@@ -139,6 +143,7 @@ impl Serialize for CatiaConsolidatedCircle {
 struct CatiaConsolidatedCylinderWireRef<'a> {
     id: &'a str,
     byte_offset: u64,
+    header: crate::wire::records::WidthCodedToken,
     layout: u8,
     origin: &'a FiniteVector<3>,
     radius: &'a cadmpeg_ir::scalar::PositiveLength,
@@ -182,6 +187,7 @@ impl Serialize for CatiaConsolidatedCylinder {
         CatiaConsolidatedCylinderWireRef {
             id: &self.id,
             byte_offset: self.byte_offset,
+            header: self.header,
             layout: self.payload.layout(),
             origin: &self.origin,
             radius: &self.radius,
@@ -198,10 +204,9 @@ struct CatiaConsolidatedParameterPointWireRef<'a> {
     id: &'a str,
     byte_offset: u64,
     byte_len: u64,
-    layout: u8,
-    prefix: u8,
+    operand: crate::wire::compact_unsigned::CompactUnsigned,
     control: u8,
-    payload: &'a CatiaConsolidatedParameterPointPayload,
+    payload: &'a crate::families::b2::records::B2ParameterPointPayload,
 }
 
 impl Serialize for CatiaConsolidatedParameterPoint {
@@ -213,8 +218,7 @@ impl Serialize for CatiaConsolidatedParameterPoint {
             id: &self.id,
             byte_offset: self.byte_offset,
             byte_len: self.byte_len,
-            layout: self.payload.layout(),
-            prefix: self.prefix.as_u8(),
+            operand: self.operand,
             control: self.control,
             payload: &self.payload,
         }
@@ -231,7 +235,7 @@ struct CatiaConsolidatedPlaneCarrierWireRef<'a> {
     flag: ConsolidatedFrameFlag,
     header_token: u32,
     selector: u8,
-    payload: &'a CatiaConsolidatedPlaneCarrierPayload,
+    payload: &'a crate::families::b2::records::B2PlaneCarrierPayload,
 }
 
 impl Serialize for CatiaConsolidatedPlaneCarrier {

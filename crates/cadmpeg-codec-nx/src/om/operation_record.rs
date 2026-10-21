@@ -109,6 +109,12 @@ impl<'a> OperationRecord<'a> {
         Some(Self { bytes, label })
     }
 
+    pub(crate) fn bound_payload(self, len: usize) -> Option<Self> {
+        Some(Self {
+            bytes: self.bytes.get(..self.payload_start().checked_add(len)?)?,
+            label: self.label,
+        })
+    }
     pub(crate) fn label(self) -> OperationLabel<'a> {
         self.label
     }

@@ -17,25 +17,29 @@ pub(super) fn summarize(
     let mut notes = Vec::new();
     match c.layout {
         crate::container::ContainerLayout::LegacyCfb { .. } => notes.push(format!(
-                "legacy CFB container: {} directory entr{}",
-                header_entry_count,
-                if header_entry_count == 1 { "y" } else { "ies" },
-            ),
-        ),
+            "legacy CFB container: {} directory entr{}",
+            header_entry_count,
+            if header_entry_count == 1 { "y" } else { "ies" },
+        )),
         crate::container::ContainerLayout::Modern {
             file_tag,
-            footer_offset,
-            footer_fingerprint,
+            footer: Some(footer),
             ..
         } => notes.push(format!(
-                "SPLMSSTR container: file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
-                file_tag,
-                footer_offset,
-                header_entry_count,
-                footer_entry_count,
-                assemble_u32_be(footer_fingerprint),
-            ),
-        ),
+            "SPLMSSTR container: file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
+            file_tag,
+            footer.offset,
+            header_entry_count,
+            footer_entry_count,
+            assemble_u32_be(footer.fingerprint),
+        )),
+        crate::container::ContainerLayout::Modern {
+            file_tag,
+            footer: None,
+            ..
+        } => notes.push(format!(
+            "SPLMSSTR container: file tag {file_tag}, no FOOTER region, {header_entry_count} HEADER directory entry/ies"
+        )),
     }
     notes.push(format!(
             "embedded streams: {} partition, {} deltas, {} plain (cached body), {} preview/non-Parasolid",

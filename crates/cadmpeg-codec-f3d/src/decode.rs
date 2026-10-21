@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(
-    test,
-    allow(clippy::default_trait_access, clippy::field_reassign_with_default)
-)]
 //! Assemble a `.f3d` archive into a [`CadIr`] document and [`DecodeBody`].
 //!
 //! [`crate::container`] scans the ZIP, reads ASM headers, finds the history
@@ -14,6 +10,11 @@
 //! A framing failure or a stream without decoded geometry produces a
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
+
+#![cfg_attr(
+    test,
+    allow(clippy::default_trait_access, clippy::field_reassign_with_default)
+)]
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -1017,7 +1018,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             let support_is_required = continuity
                 .resolved()
-                .is_some_and(|continuity| continuity.conditions.iter().copied().any(needs_support));
+                .is_some_and(|continuity| {
+                    continuity
+                        .conditions
+                        .iter()
+                        .map(|condition| condition.continuity())
+                        .any(needs_support)
+                });
 
             !boundary_is_resolved
                 || !continuity_is_resolved
@@ -1752,6 +1759,22 @@ fn push_loss_vec(
     args: std::fmt::Arguments<'_>,
 ) {
     losses.push(code.note(args.to_string()));
+}
+
+fn report_unparsed_parameter_records(
+    report: &mut DecodeBody,
+    unparsed: &[crate::design::decode::parameters::UnparsedParameterRecords],
+) {
+    for records in unparsed {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterRecordUnparsed,
+            format_args!(
+                "{} typed compact parameter frame(s) in {} match no parameter grammar and were not decoded.",
+                records.count, records.stream
+            ),
+        );
+    }
 }
 
 fn report_design_projection_gaps(
@@ -2517,6 +2540,7 @@ impl<'a> F3dDecodeSession<'a> {
     fn into_result(mut self, path: SessionPath) -> Result<AuthoredDecoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let prereqs = self.decode_product_prereqs(&path)?;
+        report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)

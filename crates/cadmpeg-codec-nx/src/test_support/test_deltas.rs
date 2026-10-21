@@ -16,7 +16,7 @@ use super::test_streams::topology_partition_stream;
 /// Shared `PS`-signatured deltas-stream transmit preamble used by the deltas
 /// fixture builders.
 pub(crate) const DELTAS_PREAMBLE: &[u8] =
-    b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00";
+    b"PS\x00\x00\x00,: TRANSMIT FILE (deltas) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00";
 
 /// Append `count` deltas topology references, each the placeholder index `1`
 /// followed by a set status byte, matching the deltas record framing.
@@ -491,7 +491,9 @@ pub(crate) fn deltas_torus_partition_stream() -> Vec<u8> {
 
 pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
+    s.extend_from_slice(
+        b"PS\x00\x00\x00\x1b: TRANSMIT FILE (partition)\x00\x00\x00\x0fSCH_TEST_1_9999\x00",
+    );
     let mut surface = record(124, 23);
     put_ref(&mut surface, 2, 10);
     surface[18] = b'+';

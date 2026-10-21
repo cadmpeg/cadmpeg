@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! E5 storage-variant record decoders.
 //!
 //! Decodes E5 `05 08 01` vertex rosters, inline `0xc9` circle carriers,
@@ -20,7 +21,7 @@ use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveAngle, PositiveLength}
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::families::e5::graph::Sign;
-use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
+use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array};
 use crate::wire::records::scan_vertex_records;
 
 /// A directly decoded E5 circle carrier.
@@ -141,6 +142,7 @@ const _: () = assert!(
 );
 
 const E5_NURBS_SURFACE_TAIL_BYTES: usize = 148;
+const EPS_CURRENT_LIMIT_DOMAIN: f64 = 1.0e-9;
 const E5_D8_TAIL_BYTES: usize = 63;
 const E5_D8_ARC_TOLERANCE: f64 = 1e-8;
 const E5_D8_RADIUS_TOLERANCE: f64 = 1e-8;
@@ -262,33 +264,12 @@ pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
     out
 }
 
-/// A directly framed E5 edge-use record.  The endpoint ids are E5 vertex
-/// records, not point-table indexes.
-#[derive(Debug, Clone)]
-pub(in crate::families::e5) struct E5Edge {
-    /// Referenced start-vertex (class `0xfe`) record id.
-    pub(super) start_vertex_id: u32,
-    /// Referenced end-vertex (class `0xfe`) record id.
-    pub(super) end_vertex_id: u32,
-}
-
-/// Decode E5 `0xff` five-reference edge records.
+/// Decode complete E5 `0xff` edges, including their allocation terminal.
 pub(super) fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
     let mut out = Vec::new();
-    for record in e5_records(data) {
-        let pos = record.pos;
-        if record.class == 0xff && data.get(pos + 13) == Some(&0x85) {
-            let payload = &data[pos + 13..record.end()];
-            if let Some((_, next)) = e5_ref(payload, 1) {
-                if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
-                    if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
-                        out.push(E5Edge {
-                            start_vertex_id,
-                            end_vertex_id,
-                        });
-                    }
-                }
-            }
+    for record in e5_records(data).filter(|record| record.class == 0xff) {
+        if let Some(edge) = super::graph::parse_edge(&data[record.pos + 13..record.end()]) {
+            out.push(edge);
         }
     }
     out
@@ -653,12 +634,12 @@ fn e5_nurbs_surface(
     let Some((v_degree, v_knots, v_multiplicities)) = read_nurbs_axis(&mut view) else {
         return Ok(None);
     };
-    let Some((u_knots, u_count)) =
+    let Some((u_expanded_knots, u_count)) =
         expand_nurbs_axis(u_degree, &u_knots, &u_multiplicities, record.size)
     else {
         return Ok(None);
     };
-    let Some((v_knots, v_count)) =
+    let Some((v_expanded_knots, v_count)) =
         expand_nurbs_axis(v_degree, &v_knots, &v_multiplicities, record.size)
     else {
         return Ok(None);
@@ -704,9 +685,80 @@ fn e5_nurbs_surface(
     if view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES {
         return Ok(None);
     }
-    if view.skip(E5_NURBS_SURFACE_TAIL_BYTES).is_none() || !view.is_empty() {
+    let Some((arcs, locals, affine)) = (|| {
+        Some((
+            [
+                view.u16_le()?,
+                view.u16_le()?,
+                view.u16_le()?,
+                view.u16_le()?,
+            ],
+            [
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ],
+            [
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ],
+        ))
+    })() else {
+        return Ok(None);
+    };
+    if affine != [1.0, 0.0, 1.0, 0.0] {
         return Ok(None);
     }
+    let Some((u_limits, v_limits)) = (|| {
+        Some((
+            super::parameters::current_limits([arcs[0], arcs[1]], [locals[0], locals[1]], |arc| {
+                Some([*u_knots.get(arc)?, *u_knots.get(arc.checked_add(1)?)?])
+            })?,
+            super::parameters::current_limits([arcs[2], arcs[3]], [locals[2], locals[3]], |arc| {
+                Some([*v_knots.get(arc)?, *v_knots.get(arc.checked_add(1)?)?])
+            })?,
+        ))
+    })() else {
+        return Ok(None);
+    };
+    for (limits, knots, degree, count) in [
+        (u_limits, &u_expanded_knots, u_degree, u_count),
+        (v_limits, &v_expanded_knots, v_degree, v_count),
+    ] {
+        let Some(degree) = usize::try_from(degree).ok() else {
+            return Ok(None);
+        };
+        let low_error = limits[0].get() - knots[degree];
+        let high_error = limits[1].get() - knots[count];
+        let domain_span = knots[count] - knots[degree];
+        let tolerance = EPS_CURRENT_LIMIT_DOMAIN * (1.0 + domain_span.abs());
+        if !tolerance.is_finite() || low_error.abs() > tolerance || high_error.abs() > tolerance {
+            return Ok(None);
+        }
+    }
+    for _ in 0..3 {
+        if view.u16_le() != Some(0) {
+            return Ok(None);
+        }
+    }
+    for _ in 0..8 {
+        if view.f64_le() != Some(0.0) {
+            return Ok(None);
+        }
+    }
+    for _ in 0..6 {
+        if view.u8() != Some(0) {
+            return Ok(None);
+        }
+    }
+    if !view.is_empty() {
+        return Ok(None);
+    }
+    let u_knots = u_expanded_knots;
+    let v_knots = v_expanded_knots;
     let mut point_rows = Vec::new();
     for row in control_points.chunks(v_count) {
         let copied = row.to_vec();
@@ -850,25 +902,14 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength,
     Some((geometry, major_radius, minor_radius))
 }
 
-fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
-    match *bytes.get(at)? {
-        0x38 => Some((u32_le_24(bytes, at + 1)?, at + 4)),
-        0x18 => Some((u32::from(View::u16_le_at(bytes, at + 1)?), at + 3)),
-        0x10 => Some((u32::from(*bytes.get(at + 1)?) << 8, at + 2)),
-        0x08 => Some((u32::from(*bytes.get(at + 1)?), at + 2)),
-        byte if byte >= 0x80 => Some((u32::from(byte - 0x80), at + 1)),
-        _ => None,
-    }
-}
+use super::graph::E5Edge;
 
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    use super::{
-        e5_cone, e5_ref, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces, e5_torus,
-    };
+    use super::{e5_cone, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces, e5_torus};
     use crate::test_support::test_e5::append_e5_record;
 
     const TEST_F64_TOLERANCE: f64 = 1e-12;
@@ -992,7 +1033,7 @@ mod tests {
         assert_close(jet.stations[1].site.second_derivative.angle.get(), 4.0);
         assert!(matches!(
             (jet.definition())
-                
+
                 .expect("valid rolling-ball jet fixture"),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet)
                 if jet.degree() == 5
@@ -1029,13 +1070,24 @@ mod tests {
                 payload.extend_from_slice(&weight.to_le_bytes());
             }
         }
-        payload.extend_from_slice(&[0; 148]);
+        for arc in [1_u16; 4] {
+            payload.extend_from_slice(&arc.to_le_bytes());
+        }
+        for value in [0.0_f64, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 76]);
         payload
     }
 
     #[test]
     fn e5_width_coded_reference_widens_before_shifting() {
-        assert_eq!(e5_ref(&[0x10, 0xff], 0), Some((0xff00, 2)));
+        let mut at = 0;
+        assert_eq!(
+            crate::wire::tokens::object_ref(&[0x10, 0xff], &mut at, false),
+            Some(0xff00)
+        );
+        assert_eq!(at, 2);
     }
 
     #[test]
@@ -1071,6 +1123,39 @@ mod tests {
         assert!(e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
             .expect("decode the E5 surfaces")
             .is_empty());
+    }
+
+    #[test]
+    fn e7_nurbs_surface_abstains_on_unadmitted_limit_programs() {
+        let payload = nurbs_surface_payload(0);
+        let tail = payload.len() - super::E5_NURBS_SURFACE_TAIL_BYTES;
+        for (offset, bytes) in [
+            (0, vec![0, 0]),
+            (6, vec![2, 0]),
+            (8, 0.25_f64.to_le_bytes().to_vec()),
+            (16, f64::NAN.to_le_bytes().to_vec()),
+            (40, 2.0_f64.to_le_bytes().to_vec()),
+            (48, 0.5_f64.to_le_bytes().to_vec()),
+            (72, vec![1]),
+            (74, vec![1]),
+            (76, vec![1]),
+            (78, 0.5_f64.to_le_bytes().to_vec()),
+            (142, vec![1]),
+            (147, vec![1]),
+        ] {
+            let mut invalid = payload.clone();
+            invalid[tail + offset..tail + offset + bytes.len()].copy_from_slice(&bytes);
+            let mut bytes = Vec::new();
+            append_e5_record(&mut bytes, 0xe7, 116, &invalid);
+            assert!(
+                crate::test_support::with_service_context(|_ctx| e5_surfaces(
+                    &bytes,
+                    &mut crate::nurbs::LaneRefusals::new()
+                ))
+                .expect("service resource budget")
+                .is_empty()
+            );
+        }
     }
 
     #[test]

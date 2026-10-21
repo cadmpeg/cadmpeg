@@ -88,15 +88,28 @@ impl TryFrom<FeatureSymbolicThreadTextFrameWire> for FeatureSymbolicThreadTextFr
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::native) struct FeatureSymbolicThread {
     /// Globally unique symbolic-thread identity.
-    id: String,
+    pub(in crate::native) id: String,
     /// Owning `SYMBOLIC_THREAD` operation label.
-    operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Owning exact feature-operation record.
     operation_record: String,
     /// Ordered complete type-`03` text frames in the payload.
     text_frames: Vec<FeatureSymbolicThreadTextFrame>,
+    /// Checked coordinate witness adjoining the complete mode text frame.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_thread_construction"
+    )]
+    pub(in crate::native) construction: Option<super::symbolic_thread::SymbolicThreadConstruction>,
     /// Absolute file offset of the operation record's fixed header marker.
     source_offset: u64,
+}
+
+impl FeatureSymbolicThread {
+    pub(in crate::native) fn designation(&self) -> Option<&str> {
+        self.text_frames.get(1).map(|frame| frame.value.as_str())
+    }
 }
 
 /// Typed operation template carried by a hole payload string.
@@ -676,6 +689,7 @@ fn symbolic_thread_text_frames(
 
 fn owned_symbolic_thread(
     frames: Vec<crate::om::OperationPayloadTextFrame<'_>>,
+    construction: Option<super::symbolic_thread::SymbolicThreadConstruction>,
     section_key: &str,
     entry_offset: u64,
     operation_ordinal: usize,
@@ -720,6 +734,7 @@ fn owned_symbolic_thread(
         operation_label,
         operation_record,
         text_frames,
+        construction,
         source_offset: entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(record_offset))
             .ok_or_else(|| {
@@ -736,15 +751,28 @@ pub(in crate::native) fn feature_symbolic_threads(
     let mut failure = None;
     visit_feature_history_operation_records(
         container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
+        |section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
             let Some(frames) = symbolic_thread_text_frames(record.payload_view()) else {
                 return;
             };
+            let construction = match super::symbolic_thread::read_construction(
+                section,
+                record,
+                &frames,
+                entry_offset,
+            ) {
+                Ok(construction) => construction,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
             let thread = match owned_symbolic_thread(
                 frames,
+                construction,
                 section_key,
                 entry_offset,
                 operation_ordinal,
@@ -1343,4 +1371,10 @@ cadmpeg_core::named_optional_field!(
     deserialize_second_reference_prefix,
     cadmpeg_ir::native::bytes::NativeBytes<[u8; 8]>,
     "second_reference_prefix"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_thread_construction,
+    super::symbolic_thread::SymbolicThreadConstruction,
+    "construction"
 );

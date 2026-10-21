@@ -728,6 +728,10 @@ pub(crate) enum DesignHemParameterOwners {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignHemOperationWire", into = "DesignHemOperationWire")]
 pub(crate) struct DesignHemOperation {
+    /// Placement of the bend against the selected edge.
+    pub(crate) bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition,
+    /// Native Flip flag; false is forward, true is reverse.
+    pub(crate) flipped: bool,
     /// Selection-wrapper record for the hem edge.
     pub(crate) edge_wrapper_record_index: u32,
     /// Role-`0x08` operand-group record.
@@ -745,7 +749,10 @@ pub(crate) struct DesignHemOperation {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DesignHemOperationWire {
+    bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition,
+    flipped: bool,
     /// Selection-wrapper record for the hem edge.
     edge_wrapper_record_index: u32,
     /// Role-`0x08` operand-group record.
@@ -764,10 +771,6 @@ struct DesignHemOperationWire {
     bend_radius: f64,
     /// Byte offset of `bend_radius`.
     bend_radius_offset: u64,
-    form_code: u32,
-    direction_code: u32,
-    direction_reversal_byte: u8,
-    reference_side_code: u32,
 }
 
 impl DesignHemOperation {
@@ -783,17 +786,8 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
     type Error = String;
 
     fn try_from(wire: DesignHemOperationWire) -> Result<Self, Self::Error> {
-        if wire.form_code != 3 {
-            return Err("form_code must be 3".into());
-        }
-        if wire.direction_code != 1 {
-            return Err("direction_code must be 1".into());
-        }
-        if wire.direction_reversal_byte != 0 {
-            return Err("direction_reversal_byte must be 0".into());
-        }
-        if wire.reference_side_code != 4 {
-            return Err("reference_side_code must be 4".into());
+        if wire.bend_position != cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent {
+            return Err("unsupported native Hem bend position".into());
         }
         if Some(wire.edge_operand_record_index) != wire.edge_group_record_index.checked_add(3) {
             return Err("edge_operand_record_index must equal edge_group_record_index + 3".into());
@@ -806,6 +800,8 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
             );
         }
         Ok(Self {
+            bend_position: wire.bend_position,
+            flipped: wire.flipped,
             edge_wrapper_record_index: wire.edge_wrapper_record_index,
             edge_group_record_index: wire.edge_group_record_index.try_into()?,
             aggregate_group_record_index: wire.aggregate_group_record_index.try_into()?,
@@ -821,6 +817,8 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
 impl From<DesignHemOperation> for DesignHemOperationWire {
     fn from(record: DesignHemOperation) -> Self {
         Self {
+            bend_position: record.bend_position,
+            flipped: record.flipped,
             edge_wrapper_record_index: record.edge_wrapper_record_index,
             edge_group_record_index: record.edge_group_record_index.get(),
             edge_operand_record_index: record.edge_operand_record_index(),
@@ -830,10 +828,6 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
             settings_record_index: record.settings_record_index,
             bend_radius: record.bend_radius.get(),
             bend_radius_offset: record.bend_radius_offset,
-            form_code: 3,
-            direction_code: 1,
-            direction_reversal_byte: 0,
-            reference_side_code: 4,
         }
     }
 }

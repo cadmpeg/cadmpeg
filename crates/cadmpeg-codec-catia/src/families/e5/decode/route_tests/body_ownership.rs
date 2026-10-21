@@ -30,12 +30,20 @@ fn faces_sharing_an_edge_form_one_body_component() {
                 serialized_index: 0,
                 reversed: false,
             }]),
-            outer: Some(true),
-            orientation_hint: None,
+            outer: true,
+            absolute_orientation: crate::families::e5::graph::Sign::Positive,
         }],
     };
     let topology = E5Topology {
-        bodies: Vec::new(),
+        bodies: vec![crate::families::e5::graph::E5Body {
+            record_id: 500,
+            faces: [1, 2]
+                .map(|record_id| crate::families::e5::graph::E5BodyFace {
+                    record_id,
+                    orientation: crate::families::e5::graph::Sign::Positive,
+                })
+                .into(),
+        }],
         faces: vec![face(1), face(2)],
         edges: [(
             10,
@@ -45,7 +53,6 @@ fn faces_sharing_an_edge_form_one_body_component() {
                 end_vertex: 31,
                 parameter_start: 40,
                 parameter_end: 41,
-                tail: Vec::new(),
             },
         )]
         .into(),

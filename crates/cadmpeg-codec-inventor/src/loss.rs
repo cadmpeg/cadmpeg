@@ -108,6 +108,8 @@ pub(crate) enum InventorLossCode {
     KernelHeaderMetadataUnresolved,
     /// An optional kernel tolerance cannot enter document units.
     KernelHeaderToleranceUnresolved,
+    /// The compound container uses an admitted noncanonical encoding.
+    ContainerNoncanonical,
 }
 
 impl InventorLossCode {
@@ -153,6 +155,7 @@ impl InventorLossCode {
         Self::KernelCarrierUnparseable,
         Self::KernelHeaderMetadataUnresolved,
         Self::KernelHeaderToleranceUnresolved,
+        Self::ContainerNoncanonical,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -200,6 +203,7 @@ impl InventorLossCode {
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
             Self::KernelHeaderMetadataUnresolved => "source.kernel-header-metadata-unresolved",
             Self::KernelHeaderToleranceUnresolved => "source.kernel-header-tolerance-unresolved",
+            Self::ContainerNoncanonical => "container.noncanonical",
         }
     }
 
@@ -232,7 +236,9 @@ impl InventorLossCode {
             | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
-            Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::KernelHeaderMetadataUnresolved | Self::ContainerNoncanonical => {
+                LossTaxonomy::NoncanonicalSourceSyntax
+            }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
             | Self::FeatureStateUnresolved
@@ -517,6 +523,7 @@ mod tests {
                 "source.kernel-carrier-unparseable",
                 "source.kernel-header-metadata-unresolved",
                 "source.kernel-header-tolerance-unresolved",
+                "container.noncanonical",
             ]
         );
     }

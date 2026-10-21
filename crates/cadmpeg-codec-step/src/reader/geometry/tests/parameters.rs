@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::parse::Value;
 use crate::reader::geometry::{
-    curve_endpoint_seed, decode_pcurve_geometry, directrix_geometry_parameter_scale,
-    edge_parameter_range, nurbs_surface_parameter_domain, pcurve_trim_parameter, si_prefix,
+    conic_irreducible_offset, curve_endpoint_seed, decode_pcurve_geometry,
+    directrix_geometry_parameter_scale, edge_parameter_range, infer_edge_parameter_ranges,
+    nurbs_surface_parameter_domain, pcurve_trim_parameter, si_prefix,
     surface_parameter_scales_for_step, surface_periodic_domains, trimmed_curve_parameter_range,
     trimmed_pcurve_parameterization, unit_scale_mm, unit_scale_radians,
 };
@@ -102,7 +103,7 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
 fn parameter_inference_without_edges_keeps_the_model() {
     let mut ir = parameter_inference_ir(false);
     crate::test_support::with_service_context(b"", |_, ctx| {
-        super::super::infer_edge_parameter_ranges(&mut ir, ctx)
+        super::super::infer_edge_parameter_ranges(&mut ir, ctx, &mut Vec::new())
             .expect("no edge interval needs inference");
         assert_eq!(ir.model.points.len(), 2);
         assert_eq!(ir.model.vertices.len(), 2);
@@ -113,7 +114,8 @@ fn parameter_inference_without_edges_keeps_the_model() {
 fn streamed_parameter_inference_finds_the_stored_line_endpoints() {
     let mut ir = parameter_inference_ir(true);
     crate::test_support::with_service_context(b"", |_, ctx| {
-        super::super::infer_edge_parameter_ranges(&mut ir, ctx).expect("line interval");
+        super::super::infer_edge_parameter_ranges(&mut ir, ctx, &mut Vec::new())
+            .expect("line interval");
     });
     assert_eq!(
         ir.model.edges[0].param_range().expect("inferred interval"),
@@ -1068,4 +1070,277 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
         assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
     }
+}
+
+/// The offset a circle's parameter cannot remove is the AXIAL and RADIAL part.
+///
+/// The vertex sits exactly on the circle in plan -- its in-plane offset from the
+/// center is a 3-4-5 triangle scaled to the radius -- and 2.5e-3 BELOW the
+/// circle's plane, 250x a declared accuracy of 1e-5.
+#[test]
+fn conic_irreducible_offset_is_the_component_no_parameter_can_remove() {
+    let circle = solved_circle(
+        Point3::new(5.0, 0.0, -2.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(-1.0, 0.0, 0.0),
+        1.5,
+    );
+    let vertex = Point3::new(4.1, -1.2, -2.0025);
+    let offset = conic_irreducible_offset(&circle, vertex, 1.0e-5).expect("a vertex off the axis");
+    assert!(
+        (offset - 2.5e-3).abs() < 1.0e-12,
+        "offset {offset:e} is not the axial gap"
+    );
+    // The point of the repair: the same vertex ON the plane is admitted by the
+    // document tolerance alone, so the offset is the whole of what was rejected.
+    let on_plane = Point3::new(4.1, -1.2, -2.0);
+    let flat = conic_irreducible_offset(&circle, on_plane, 1.0e-5).expect("a vertex off the axis");
+    assert!(
+        flat < 1.0e-12,
+        "an on-plane vertex has no irreducible offset: {flat:e}"
+    );
+}
+
+fn solved_circle(
+    center: Point3,
+    axis: Vector3,
+    ref_direction: Vector3,
+    radius: f64,
+) -> SolvedCurveGeometry {
+    SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, axis, ref_direction, radius)
+            .expect("orthonormal frame, finite center, positive radius"),
+    )
+}
+
+/// On the axis there is no angle to derive, so the admission is NOT widened.
+///
+/// `atan2(0, 0)` returns a defined value that means nothing, and that is the one conic
+/// case the document tolerance was right to refuse. It stays refused.
+#[test]
+fn conic_irreducible_offset_declines_on_the_axis_where_no_angle_exists() {
+    let circle = solved_circle(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        2.0,
+    );
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(0.0, 0.0, 0.0), 1.0e-5),
+        None
+    );
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(0.0, 0.0, 7.5), 1.0e-5),
+        None
+    );
+    // A rounding error off the axis is still on it: the angle is noise.
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(1.0e-9, 0.0, 7.5), 1.0e-5),
+        None
+    );
+    // A degenerate carrier cannot be built at all, so no radius guard is needed here.
+    assert!(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        0.0,
+    )
+    .is_err());
+}
+
+/// A vertex a rounding error off the axis is refused, not given a noise angle.
+///
+/// Its in-plane projection is nonzero, so `atan2` returns a definite angle --
+/// here 3*pi/4 -- that rounding alone chose. Within the document tolerance of
+/// the axis there is no angle to derive, and the admission stays narrow.
+#[test]
+fn conic_irreducible_offset_declines_a_rounding_error_off_the_axis() {
+    let circle = solved_circle(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.5,
+    );
+    assert_eq!(
+        conic_irreducible_offset(&circle, Point3::new(-1.0e-13, 1.0e-13, 0.0), 1.0e-5),
+        None
+    );
+}
+
+/// Every other carrier keeps the document tolerance, which bounds the blast radius.
+///
+/// A line's parameter is a signed distance and its perpendicular offset is irreducible
+/// too, but a line with no range falls back to its vertices exactly, so nothing is lost
+/// by leaving it alone -- and a NURBS inversion is iterative, where the distance check
+/// is the only guard against converging on the wrong branch.
+#[test]
+fn conic_irreducible_offset_declines_for_every_non_circular_carrier() {
+    use cadmpeg_ir::geometry::analytic::{EllipseCurve, LineCurve};
+    let line = SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+            .expect("finite line"),
+    );
+    assert_eq!(
+        conic_irreducible_offset(&line, Point3::new(1.0, 0.5, 0.0), 1.0e-5),
+        None
+    );
+    let ellipse = SolvedCurveGeometry::Ellipse(
+        EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+        )
+        .expect("ordered radii on an orthonormal frame"),
+    );
+    assert_eq!(
+        conic_irreducible_offset(&ellipse, Point3::new(2.0, 0.0, 0.1), 1.0e-5),
+        None
+    );
+}
+
+/// Build one circular edge whose END vertex sits `axial` off the carrier's plane.
+///
+/// A 1.5 mm arc in a document declaring 1e-5 accuracy, with a vertex the exporter
+/// placed off the plane. Refusing the edge's range loses the whole body.
+fn off_carrier_edge_ir(axial: f64) -> CadIr {
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
+    let mut ir = CadIr::empty();
+    ir.tolerances.linear =
+        cadmpeg_ir::scalar::PositiveLength::new(1.0e-5).expect("positive tolerance");
+    ir.model.curves.push(Curve {
+        parameter_range: None,
+        id: CurveId::mint("step:test:curve#c0").expect("identity grammar"),
+        geometry: CurveGeometry::Solved(solved_circle(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.5,
+        )),
+        source_object: None,
+    });
+    for (id, position) in [
+        ("p0", Point3::new(1.5, 0.0, 0.0)),
+        ("p1", Point3::new(0.0, 1.5, axial)),
+    ] {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("step:test:point#{id}")).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
+            None,
+        ));
+    }
+    for (v, p) in [("v0", "p0"), ("v1", "p1")] {
+        ir.model.vertices.push(Vertex {
+            id: VertexId::mint(format!("step:test:vertex#{v}")).expect("identity grammar"),
+            point: PointId::mint(format!("step:test:point#{p}")).expect("identity grammar"),
+            tolerance: None,
+        });
+    }
+    ir.model.edges.push(Edge {
+        id: EdgeId::mint("step:test:edge#e0").expect("identity grammar"),
+        carrier: EdgeCarrier::unbounded(Some(
+            CurveId::mint("step:test:curve#c0").expect("identity grammar"),
+        )),
+        start: VertexId::mint("step:test:vertex#v0").expect("identity grammar"),
+        end: VertexId::mint("step:test:vertex#v1").expect("identity grammar"),
+        tolerance: None,
+    });
+    ir
+}
+
+/// The repair: the range is derived and the offset is
+/// REPORTED, where before both the range and the report were absent.
+#[test]
+fn infer_edge_parameter_ranges_admits_an_off_carrier_vertex_and_reports_it() {
+    // 250x the document's stated accuracy.
+    let mut ir = off_carrier_edge_ir(2.5e-3);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+
+    let range = ir.model.edges[0]
+        .param_range()
+        .expect("the arc's parameter range is derived from the carrier's closed form");
+    assert!(
+        (range[0]).abs() < 1.0e-12,
+        "start vertex sits at angle 0: {range:?}"
+    );
+    assert!(
+        (range[1] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-9,
+        "the quarter arc is recovered: {range:?}"
+    );
+
+    assert_eq!(losses.len(), 1, "one edge, one report");
+    assert_eq!(
+        losses[0].code,
+        crate::loss::StepLossCode::EdgeVertexOffCarrier.kind()
+    );
+    assert!(
+        losses[0].message.contains("2.500000e-3"),
+        "the MEASURED offset travels with the report: {}",
+        losses[0].message
+    );
+}
+
+/// The admitted edge carries the bound it was admitted at as its tolerance, so
+/// a consumer holding edges to their tolerance does not refuse the body for an
+/// offset the decoder measured and reported.
+#[test]
+fn infer_edge_parameter_ranges_gives_an_off_carrier_edge_its_admission_bound() {
+    let mut ir = off_carrier_edge_ir(2.5e-3);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+
+    let carried = ir.model.edges[0]
+        .tolerance
+        .expect("an off-carrier edge carries a tolerance")
+        .get();
+    // The document accuracy plus the measured offset: the bound the inversion used.
+    assert!(
+        (carried - (1.0e-5 + 2.5e-3)).abs() < 1.0e-12,
+        "the admission bound is the tolerance: {carried:e}"
+    );
+    assert!(
+        losses[0].message.contains("as its tolerance"),
+        "the report says the edge carries it: {}",
+        losses[0].message
+    );
+}
+
+/// A tolerance the source stated is never tightened by the admission bound.
+#[test]
+fn infer_edge_parameter_ranges_keeps_a_wider_stated_tolerance() {
+    let mut ir = off_carrier_edge_ir(2.5e-3);
+    let stated = cadmpeg_ir::scalar::PositiveReal::new(1.0e-2).expect("positive");
+    ir.model.edges[0].tolerance = Some(stated);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+    assert_eq!(ir.model.edges[0].tolerance, Some(stated));
+}
+
+/// An offset the document's own accuracy already covers is not a finding.
+#[test]
+fn infer_edge_parameter_ranges_reports_nothing_for_ordinary_precision() {
+    let mut ir = off_carrier_edge_ir(1.0e-9);
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
+    });
+    assert!(ir.model.edges[0].param_range().is_some());
+    assert_eq!(
+        ir.model.edges[0].tolerance, None,
+        "an edge within the document accuracy is held to it"
+    );
+    assert!(
+        losses.is_empty(),
+        "rounding is not a defect: {:?}",
+        losses.iter().map(|l| &l.message).collect::<Vec<_>>()
+    );
 }

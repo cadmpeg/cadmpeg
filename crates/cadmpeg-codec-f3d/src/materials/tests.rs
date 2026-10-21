@@ -88,8 +88,9 @@ fn resolved_body_binding(
     .unwrap()
 }
 
-#[test]
-fn protein_rejections_preserve_valid_records_and_report_notes() {
+/// `InstanceProperties.bin` with three appearance records: two of `KnownSchema`
+/// and, between them, one of a schema the archive does not define.
+fn three_record_instance() -> Vec<u8> {
     let mut instance = Vec::new();
     for (schema, guid) in [
         ("KnownSchema", "first-guid"),
@@ -114,6 +115,12 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
         page.resize(super::PAGE_SIZE, 0);
         instance.extend_from_slice(&page);
     }
+    instance
+}
+
+#[test]
+fn protein_rejections_preserve_valid_records_and_report_notes() {
+    let instance = three_record_instance();
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     archive
@@ -176,6 +183,95 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
     assert!(decoded.report().notes.iter().any(|note| note
         .contains("ProteinAsset.0.protein record 1 rejected")
         && note.contains("MissingSchema")));
+}
+
+/// A Protein ZIP whose members are Zstandard (method 93) is decoded and patched.
+///
+/// `zip` cannot expand or write method 93. The schema member is expanded by
+/// `cadmpeg-protein` on decode, and on patch both members, which the default edit
+/// leaves unchanged, are copied as stored.
+#[test]
+fn a_zstandard_protein_archive_decodes_and_patches() {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+    let schema = br#"<Schema><UID val="KnownSchema"/></Schema>"#;
+    let instance = three_record_instance();
+    let zstd = |name: &str, plain: &[u8]| {
+        RawEntry::compressed(
+            name,
+            zip_fixture::ZSTD,
+            &zip_fixture::zstd_stored_frame(plain),
+            plain,
+        )
+    };
+    let protein = zip_fixture::archive(&[
+        zstd("Schemas/KnownSchema.xml", schema),
+        zstd("AssetData/InstanceProperties.bin", &instance),
+    ]);
+
+    let edits = ["first-guid", "third-guid"]
+        .into_iter()
+        .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
+        .collect();
+    let mut notes = Vec::new();
+    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes)
+        .expect("patch a Zstandard Protein archive");
+    assert_eq!(
+        guids.into_iter().collect::<Vec<_>>(),
+        ["first-guid", "third-guid"]
+    );
+    assert!(
+        notes.iter().all(|note| !note.contains("Deflate")),
+        "an unchanged member was re-encoded: {notes:?}"
+    );
+    let stored = |archive: &[u8]| {
+        let mut archive = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
+        (0..archive.len())
+            .map(|index| {
+                let mut entry = archive.by_index_raw(index).unwrap();
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+                (
+                    entry.name().expect("entry name").into_owned(),
+                    entry.compression(),
+                    bytes,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let copied = stored(&patched);
+    assert!(copied
+        .iter()
+        .all(|(_, method, _)| *method == CompressionMethod::ZSTD));
+    assert_eq!(
+        copied,
+        stored(&protein),
+        "both members are copied as stored"
+    );
+
+    let stored_options = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut archive, stored_options);
+    archive
+        .start_file(
+            "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+            stored_options,
+        )
+        .unwrap();
+    archive.write_all(&protein).unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode an F3D carrying a Zstandard Protein archive");
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .map(|appearance| appearance.asset_guid.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("first-guid"), Some("third-guid")]
+    );
 }
 
 #[test]

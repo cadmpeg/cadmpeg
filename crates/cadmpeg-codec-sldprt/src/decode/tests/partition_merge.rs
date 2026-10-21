@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Partition/deltas merge, override, and topology-recovery decode tests.
+
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::EditableDecodeResult;
@@ -31,7 +32,13 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_merges_partition_and_deltas_records() {
-    let partition = triangle_body();
+    let mut partition = triangle_body();
+    let missing_point = world_point(60, [0.0, 0.0, 0.0]);
+    let point_start = partition
+        .windows(missing_point.len())
+        .position(|window| window == missing_point.as_slice())
+        .expect("partition point record");
+    drop(partition.drain(point_start..point_start + missing_point.len()));
     let deltas = world_point(60, [2.0, 0.0, 0.0]);
     let f = sldprt_with_partition_and_deltas(&partition, &deltas);
     let mut cur = Cursor::new(f);
@@ -389,7 +396,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
 }
 
 #[test]
-fn deltas_full_record_overrides_partition_record() {
+fn partition_point_coordinates_win_over_complete_deltas_records() {
     let partition = triangle_body();
     let deltas = world_point(60, [2.0, 0.0, 0.0]);
     let f = sldprt_with_partition_and_deltas(&partition, &deltas);
@@ -404,9 +411,9 @@ fn deltas_full_record_overrides_partition_record() {
         .points
         .iter()
         .find(|point| point.id.as_str().ends_with("#60"))
-        .expect("overridden point");
+        .expect("partition point");
 
-    assert_eq!(point.position().get().x, 2000.0);
+    assert_eq!(point.position().get().x, 0.0);
 }
 
 #[test]

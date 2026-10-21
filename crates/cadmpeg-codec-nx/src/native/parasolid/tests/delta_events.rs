@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::parasolid::Stream;
 
-use crate::deltas::inline_schema_fields::InlineSchemaFields;
+use crate::parasolid::Stream;
 
 fn deltas_type_45(xmt: u16) -> Vec<u8> {
     let mut bytes = 45u16.to_be_bytes().to_vec();
-    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
     bytes.extend_from_slice(&xmt.to_be_bytes());
     bytes.extend_from_slice(&1.25f64.to_be_bytes());
     bytes.extend_from_slice(&2.5f64.to_be_bytes());
@@ -24,11 +23,7 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     let revision_state_tail = [0xde, 0xad, 0xbe, 0xef];
     bytes.extend_from_slice(&revision_state_tail);
     let type_45_offset = bytes.len();
-    bytes.extend_from_slice(&45u16.to_be_bytes());
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&1.25f64.to_be_bytes());
-    bytes.extend_from_slice(&2.5f64.to_be_bytes());
+    bytes.extend(deltas_type_45(10));
     bytes.extend_from_slice(&[0xdd, 0xee]);
     let tombstone_offset = bytes.len();
     bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
@@ -101,7 +96,7 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
 }
 
 #[test]
-fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
+fn deltas_events_subtract_complete_limit_storage_from_residuals() {
     let mut bytes = [0xaa, 0xbb].to_vec();
     bytes.extend_from_slice(&41u16.to_be_bytes());
     bytes.extend_from_slice(&1u32.to_be_bytes());
@@ -111,8 +106,8 @@ fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
         bytes.extend_from_slice(&coordinate.to_be_bytes());
     }
     let tail_offset = bytes.len();
-    for ordinal in 0..8 {
-        bytes.extend_from_slice(&(f64::from(ordinal) + 0.5).to_be_bytes());
+    for value in [0.5_f64, 1.5, 2.5, 3.5, 1.0, 0.0, 0.0, 7.5] {
+        bytes.extend_from_slice(&value.to_be_bytes());
     }
     bytes.extend_from_slice(&[0xcc, 0xdd, 0xee]);
     let streams = [Stream {
@@ -127,16 +122,15 @@ fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.term_use_numeric_tails.len(), 1);
-    let tail = &events.term_use_numeric_tails[0];
-    assert_eq!(tail.term_use_xmt, 20);
-    assert_eq!(tail.values.term_use_count(), 1);
-    assert_eq!(tail.values.values().len(), 8);
-    assert_eq!(tail.values.byte_len(), 64);
-    assert_eq!(
-        tail.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(tail_offset)
-    );
+    let limits: Vec<_> = events
+        .records
+        .iter()
+        .filter(|r| r.family.kind() == 41)
+        .collect();
+    assert_eq!(limits.len(), 1);
+    assert_eq!(limits[0].xmt, 20);
+    assert_eq!(limits[0].inflated_offset, 2);
+    assert_eq!(limits[0].byte_len, 34 + 64);
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
     assert_eq!(
@@ -209,9 +203,7 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
         &(u32::try_from(schema.len()).expect("fixture value fits u32")).to_be_bytes(),
     );
     bytes.extend_from_slice(schema);
-    bytes.extend_from_slice(&[
-        0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff, 0x04, 0x27, 0x04, 0x28, 0, 0,
-    ]);
+    bytes.extend_from_slice(&[0, 0xe7, 0, 0, 0, 0]);
     let header_end = bytes.len();
     bytes.extend([0xaa, 0xbb]);
     let streams = [Stream {
@@ -234,7 +226,8 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
     assert_eq!(header.id, "nx:s0:deltas-transmit-header#0");
     assert_eq!(header.state.description().as_bytes(), description);
     assert_eq!(header.state.schema().as_bytes(), schema);
-    assert_eq!(header.state.references(), [1063, 1064]);
+    assert_eq!(header.state.maximum_node_type(), 231);
+    assert_eq!(header.state.user_field_size(), 0);
     assert_eq!(
         header.byte_len,
         cadmpeg_core::decode::u64_from_index(header_end)
@@ -320,7 +313,18 @@ fn deltas_events_subtract_reference_type_maps_from_residuals() {
         Vec::<(u32, u16)>::from(map.entries.clone()),
         [(40_000, 81), (3, 100)]
     );
-    assert_eq!(map.target_kind.map(std::num::NonZeroU16::get), Some(55));
+    assert_eq!(map.terminal_word.map(std::num::NonZeroU16::get), Some(55));
+    let wire = serde_json::to_value(map).unwrap();
+    assert_eq!(wire["terminal_word"], 55);
+    assert!(wire.get("target_kind").is_none());
+    let mut invalid = wire;
+    invalid["terminal_word"] = serde_json::json!(0);
+    let error =
+        serde_json::from_value::<crate::native::parasolid::ParasolidDeltasReferenceTypeMap>(
+            invalid,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("terminal_word: must be nonzero"));
     assert_eq!(map.byte_len, 20);
     assert_eq!(
         map.inflated_offset,
@@ -340,19 +344,12 @@ fn deltas_events_subtract_reference_type_maps_from_residuals() {
 }
 
 #[test]
-fn deltas_events_subtract_reference_state_packets_from_residuals() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
+fn deltas_events_subtract_pmark_packets_from_residuals() {
+    let mut bytes = crate::test_support::test_pmarks::prefix(40_000);
+    bytes.extend([0xaa, 0xbb]);
     bytes.extend(deltas_type_45(10));
     let packet_offset = bytes.len();
-    bytes.extend([0, 1, 0, 1, 0, 4]);
-    for reference in [2u16, 3, 4, 1] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    for word in [34u32, 6, 11, 22_362, 1] {
-        bytes.extend_from_slice(&word.to_be_bytes());
-    }
-    bytes.push(65);
+    bytes.extend(crate::test_support::test_pmarks::packet());
     let packet_end = bytes.len();
     bytes.extend(deltas_type_45(11));
     let suffix_offset = bytes.len();
@@ -369,18 +366,13 @@ fn deltas_events_subtract_reference_state_packets_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.reference_state_packets.len(), 1);
-    let packet = &events.reference_state_packets[0];
-    assert_eq!(
-        packet.frames.as_slice(),
-        [crate::deltas::state_frame::ReferenceStateFrame {
-            references: [2, 3, 4, 1].try_into().unwrap(),
-            state_words: [34, 6, 11, 22_362, 1],
-            state_byte: 65,
-        }]
-    );
+    assert_eq!(events.pmark_packets.len(), 1);
+    let packet = &events.pmark_packets[0];
+    assert_eq!(packet.nodes.as_slice().len(), 1);
+    assert_eq!(packet.nodes.as_slice()[0].xmt(), 40_000);
+    assert_eq!(packet.nodes.as_slice()[0].identifier(), 0x1234_5677);
     assert!(!packet.terminal);
-    assert_eq!(packet.byte_len, 37);
+    assert_eq!(packet.byte_len, 41);
     assert_eq!(
         packet.inflated_offset,
         cadmpeg_core::decode::u64_from_index(packet_offset)
@@ -399,35 +391,10 @@ fn deltas_events_subtract_reference_state_packets_from_residuals() {
 }
 
 #[test]
-fn deltas_events_retain_schema_reference_preambles() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    bytes.extend(deltas_type_45(10));
-    let preamble_offset = bytes.len();
-    bytes.extend_from_slice(&300u16.to_be_bytes());
-    bytes.extend_from_slice(&4u16.to_be_bytes());
-    bytes.push(0xff);
-    for reference in [2u16, 3, 1, 1, 1] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    for state_word in [2u32, 0, 1, 55] {
-        bytes.extend_from_slice(&state_word.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0, 0, 0]);
-    bytes.extend_from_slice(&300u16.to_be_bytes());
-    for reference in [1u16, 1] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&5u16.to_be_bytes());
-    for (kind, reference) in [(81u16, 4u16), (82, 5), (81, 6)] {
-        bytes.extend_from_slice(&kind.to_be_bytes());
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&82u16.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.extend_from_slice(&0u16.to_be_bytes());
-    bytes.extend_from_slice(&9u16.to_be_bytes());
-    let preamble_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
+fn deltas_events_retain_partition_prefixes() {
+    let bytes = crate::test_support::test_pmarks::prefix(1);
+    let prefix_offset = crate::test_support::test_pmarks::header().len();
+    let prefix_end = bytes.len();
     let streams = [Stream {
         file_offset: 0,
         consumed: 0,
@@ -440,26 +407,21 @@ fn deltas_events_retain_schema_reference_preambles() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.schema_reference_preambles.len(), 1);
-    let preamble = &events.schema_reference_preambles[0];
-    assert_eq!(preamble.state.identity(), 300);
-    assert_eq!(preamble.state.references(), [2, 3]);
-    assert_eq!(preamble.state.state_reference(), None);
-    assert_eq!(preamble.state.state_words(), [2, 0, 1, 55]);
-    assert_eq!(preamble.state.count(), 5);
-    assert_eq!(preamble.state.entries(), [(81, 4), (82, 5), (81, 6)]);
-    assert_eq!(preamble.state.terminal_value(), 9);
+    assert_eq!(events.partition_prefixes.len(), 1);
+    let prefix = &events.partition_prefixes[0];
+    assert_eq!(prefix.state.highest_id(), u32::MAX);
+    assert_eq!(prefix.state.current_pmark().identifier(), 0x1234_5678);
     assert_eq!(
-        preamble.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(preamble_offset)
+        prefix.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(prefix_offset)
     );
     assert_eq!(
-        preamble.byte_len,
-        cadmpeg_core::decode::u64_from_index(preamble_end - preamble_offset)
+        prefix.byte_len,
+        cadmpeg_core::decode::u64_from_index(prefix_end - prefix_offset)
     );
     assert_eq!(
-        preamble.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[preamble_offset..preamble_end])
+        prefix.sha256,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[prefix_offset..prefix_end])
     );
 }
 
@@ -508,7 +470,7 @@ fn deltas_events_subtract_reference_marker_packets_from_residuals() {
 }
 
 #[test]
-fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
+fn deltas_events_subtract_schema_nodes_from_residuals() {
     let mut bytes = [0xaa, 0xbb].to_vec();
     bytes.extend(deltas_type_45(10));
     let declaration_offset = bytes.len();
@@ -523,6 +485,12 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
         bytes.extend_from_slice(&reference.to_be_bytes());
         bytes.push(1);
     }
+    for reference in [10u16, 11] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(0);
+    }
+    bytes.push(b'S');
+    bytes.extend_from_slice(&[0, 3, 1]);
     let declaration_end = bytes.len();
     bytes.extend(deltas_type_45(11));
     let suffix_offset = bytes.len();
@@ -539,17 +507,30 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.inline_schema_declarations.len(), 1);
-    let declaration = &events.inline_schema_declarations[0];
+    assert_eq!(events.schema_nodes.len(), 1);
+    let declaration = &events.schema_nodes[0];
+    let fields = serde_json::to_value(&declaration.fields).unwrap();
+    assert_eq!(fields["definition"]["kind"], 19);
+    assert_eq!(fields["definition"]["fields"].as_array().unwrap().len(), 9);
+    assert_eq!(fields["schema_byte_len"], 33);
+    assert_eq!(fields["xmt"], 11);
     assert_eq!(
-        declaration.fields,
-        InlineSchemaFields::Region {
-            xmt: 11u32.try_into().unwrap(),
-            state_word: 5,
-            references: [1, 3, 1, 9],
-        }
+        fields["values"][0],
+        serde_json::json!([{"type":"integer","value":5}])
     );
-    assert_eq!(declaration.byte_len, 51);
+    assert_eq!(
+        fields["values"][6],
+        serde_json::json!([{"type":"pointer","value":{"target":11,"status":false}}])
+    );
+    assert_eq!(
+        fields["values"][7],
+        serde_json::json!([{"type":"char","value":83}])
+    );
+    assert_eq!(
+        fields["values"][8],
+        serde_json::json!([{"type":"pointer","value":{"target":3,"status":true}}])
+    );
+    assert_eq!(declaration.byte_len, 61);
     assert_eq!(
         declaration.inflated_offset,
         cadmpeg_core::decode::u64_from_index(declaration_offset)
@@ -568,7 +549,7 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
 }
 
 #[test]
-fn deltas_events_subtract_type_150_state_packets_from_residuals() {
+fn unowned_byte_150_shape_stays_in_fidelity_residuals() {
     let mut bytes = [0xaa, 0xbb].to_vec();
     bytes.extend(deltas_type_45(10));
     let packet_offset = bytes.len();
@@ -598,28 +579,37 @@ fn deltas_events_subtract_type_150_state_packets_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.type_150_state_packets.len(), 1);
-    let packet = &events.type_150_state_packets[0];
-    assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
-    assert_eq!(u8::from(packet.state.marker), 0x2b);
-    assert_eq!(packet.state.values(), values);
+    assert_eq!(events.residual_spans.len(), 3);
+    let residual = events
+        .residual_spans
+        .iter()
+        .find(|span| span.inflated_offset == cadmpeg_core::decode::u64_from_index(packet_offset))
+        .expect("the entire unowned shape is one retained residual");
     assert_eq!(
-        packet.inflated_offset,
+        residual.inflated_offset,
         cadmpeg_core::decode::u64_from_index(packet_offset)
     );
     assert_eq!(
-        packet.byte_len,
+        residual.byte_len,
         cadmpeg_core::decode::u64_from_index(packet_end - packet_offset)
     );
     assert_eq!(
-        packet.sha256,
+        residual.sha256,
         cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
     );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].byte_len, 2);
     assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(suffix_offset)
+        events
+            .residual_spans
+            .iter()
+            .map(|span| (span.inflated_offset, span.byte_len))
+            .collect::<std::collections::BTreeMap<_, _>>(),
+        std::collections::BTreeMap::from([
+            (0, 2),
+            (
+                cadmpeg_core::decode::u64_from_index(packet_offset),
+                cadmpeg_core::decode::u64_from_index(packet_end - packet_offset),
+            ),
+            (cadmpeg_core::decode::u64_from_index(suffix_offset), 2),
+        ])
     );
-    assert_eq!(events.residual_spans[1].byte_len, 2);
 }

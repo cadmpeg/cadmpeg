@@ -521,7 +521,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "unpaired_segments", &unpaired_segments)?;
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
-    let mut losses = Vec::new();
+    let mut losses = crate::container::deviation_losses(&container.snapshot);
     let mut untyped = cadmpeg_ir::ArenaClasses::default();
     if !ctx.container_only() {
         document_native_projection::project(

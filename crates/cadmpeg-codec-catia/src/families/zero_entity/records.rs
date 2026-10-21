@@ -1,15 +1,12 @@
-//! Zero-entity `a9 03` stream surface decoders.
+// SPDX-License-Identifier: Apache-2.0
 //!
 //! Decodes analytic (plane, cylinder, cone, torus) and inline non-rational
 //! NURBS surface carriers from a zero-entity record stream.
 
+/// Zero-entity `a9 03` stream surface decoders.
 use cadmpeg_core::decode::index_from_u32;
-
-use std::collections::{HashMap, HashSet};
-use std::num::NonZeroUsize;
-use std::ops::Range;
-
 use cadmpeg_core::decode::{DecodeContext, View};
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -21,6 +18,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::units::FinitePoint2;
+use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
+use std::ops::Range;
 
 use crate::analytic::signed_reference_frame;
 use crate::layout::a9_03_frame as a9_03;
@@ -81,9 +81,9 @@ pub(crate) struct ZeroEntitySupportRun {
 /// Terminal control byte following a zero-entity face allocation lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ZeroEntityFaceControl {
-    /// Control byte `0x03`.
+    /// Negative face-to-surface orientation, stored as `0x03`.
     Control03,
-    /// Control byte `0x05`.
+    /// Positive face-to-surface orientation, stored as `0x05`.
     Control05,
 }
 
@@ -224,8 +224,8 @@ pub(crate) struct ZeroEntityLoop {
     pub(crate) tag: [u8; 2],
     /// Nonterminal even-lane arithmetic run.
     pub(crate) members: ZeroEntityLoopMembers,
-    /// Odd-lane typed references in member order.
-    pub(crate) typed_references: Vec<u32>,
+    /// Backward distances from the loop to physical-edge stride records.
+    pub(crate) edge_stride_distances: Vec<u32>,
     /// Face-local support record ordinals selected by the logical members.
     pub(crate) support_record_ordinals: Vec<u32>,
     /// Stored loop-class byte.
@@ -245,22 +245,6 @@ pub(crate) struct ZeroEntityEdgeStride {
     pub(crate) record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub(crate) allocations: [u32; 5],
-}
-
-impl ZeroEntityEdgeStride {
-    /// Topology allocations in source order.
-    pub(crate) const fn topology_refs(&self) -> [u32; 3] {
-        [
-            self.allocations[0],
-            self.allocations[3],
-            self.allocations[4],
-        ]
-    }
-
-    /// Adjacent surface-support allocations in source order.
-    pub(crate) const fn surface_support_refs(&self) -> [u32; 2] {
-        [self.allocations[1], self.allocations[2]]
-    }
 }
 
 /// One positional `0638` oriented use.
@@ -961,14 +945,20 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let mut loop_roster_is_valid = flattened_terminals == loop_terminals;
     if loop_roster_is_valid {
         let mut loop_index = 0;
-        for terminals in &face_terminals {
+        for (face, terminals) in faces.iter().zip(&face_terminals) {
             let loop_end = loop_index + terminals.len();
             let face_loops = &loops[loop_index..loop_end];
             loop_index = loop_end;
             if !face_loops.first().is_some_and(|outer| {
                 matches!(
-                    outer.loop_class,
-                    ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
+                    (face.terminal_control, outer.loop_class),
+                    (
+                        ZeroEntityFaceControl::Control05,
+                        ZeroEntityLoopClass::Outer41
+                    ) | (
+                        ZeroEntityFaceControl::Control03,
+                        ZeroEntityLoopClass::ReversedC1
+                    )
                 ) && face_loops[1..]
                     .iter()
                     .all(|inner| inner.loop_class == ZeroEntityLoopClass::Bound50)
@@ -1200,15 +1190,14 @@ fn zero_entity_loops_from_records(
                 let value = tagged_u32(data, record.pos + 13 + index * 5)?;
                 references.push(value);
             }
-            let mut typed_references = Vec::new();
-
-            typed_references.extend(
+            let mut edge_stride_distances = Vec::new();
+            edge_stride_distances.extend(
                 references[1..reference_count - 1]
                     .iter()
                     .step_by(2)
                     .copied(),
             );
-            if typed_references.contains(&0) {
+            if edge_stride_distances.contains(&0) {
                 return None;
             }
             let terminal_id = references[reference_count - 1];
@@ -1256,7 +1245,7 @@ fn zero_entity_loops_from_records(
                 record_ordinal: record.ordinal,
                 tag: record.tag,
                 members,
-                typed_references,
+                edge_stride_distances,
                 support_record_ordinals: Vec::new(),
                 loop_class,
                 forward_senses,
@@ -3258,8 +3247,6 @@ mod tests {
         };
         assert_eq!(edge_stride.record_ordinal, 1);
         assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
-        assert_eq!(edge_stride.topology_refs(), [5, 4, 3]);
-        assert_eq!(edge_stride.surface_support_refs(), [7, 8]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
@@ -3458,12 +3445,34 @@ mod tests {
         assert_eq!(loop_record.record_ordinal, 4);
         assert_eq!(loop_record.tag, [0x62, 0x14]);
         assert_eq!(loop_record.members.member_ids().collect::<Vec<_>>(), [6]);
-        assert_eq!(loop_record.typed_references, [1]);
+        assert_eq!(loop_record.edge_stride_distances, [1]);
         assert_eq!(loop_record.members.terminal_id(), 7);
         assert_eq!(loop_record.members.gap(), 1);
         assert_eq!(loop_record.loop_class.as_byte(), 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());
+    }
+
+    #[test]
+    fn face_orientation_must_agree_with_outer_loop_class() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        let records = zero_entity_records(&stream);
+        let loop_record = records.iter().find(|r| r.tag[0] == 0x62).expect("loop");
+        let face_record = records.iter().find(|r| r.tag[0] == 0x5f).expect("face");
+        stream[face_record.end - 1] = 0x03;
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("retained face");
+        assert!(face.loops.is_none(), "contradictory orientation is unbound");
+        stream[loop_record.end - 3] = 0xc1;
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("retained negative face");
+        assert_eq!(face.terminal_control.as_byte(), 0x03);
+        assert_eq!(
+            face.loops.as_ref().expect("matching negative outer loop")[0]
+                .loop_class
+                .as_byte(),
+            0xc1
+        );
     }
 
     #[test]

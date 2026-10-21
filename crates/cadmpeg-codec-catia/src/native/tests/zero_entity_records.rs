@@ -8,22 +8,3 @@ fn zero_entity_scan_finds_one_a9_record() {
 
     assert_eq!(run().len(), 1);
 }
-
-#[test]
-fn zero_entity_endpoint_pairs_get_ordinal_ids_and_record_refs() {
-    use cadmpeg_ir::features::FinitePoint3;
-    use cadmpeg_ir::math::Point3;
-    let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite point");
-    let pair = crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate {
-        face_record_ordinals: [1, 2],
-        support_record_ordinals: [3, 4],
-        model_endpoints: [point, point],
-        model_midpoint: point,
-    };
-    let admitted = super::super::zero_entity_endpoint_pair_candidates(vec![pair]);
-    assert_eq!(
-        admitted[0].id,
-        "catia:zero-entity:endpoint-pair-candidate#0"
-    );
-    assert_eq!(admitted[0].face_records[0], "catia:zero-entity:record#1");
-}

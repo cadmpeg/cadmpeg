@@ -102,7 +102,6 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
                 end_vertex,
                 parameter_start: 0,
                 parameter_end: 0,
-                tail: Vec::new(),
             },
         );
         pcurves.insert(
@@ -128,8 +127,8 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
                 surface: 100,
                 members: e5_loop_members(&[1, 2], &[3, 4], &[false, false]),
                 oriented_members: None,
-                outer: Some(true),
-                orientation_hint: None,
+                outer: true,
+                absolute_orientation: crate::families::e5::graph::Sign::Positive,
             }],
         }],
         edges,
@@ -177,7 +176,6 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
                 end_vertex: u32::try_from(next).expect("fixture value fits u32"),
                 parameter_start: 0,
                 parameter_end: 0,
-                tail: Vec::new(),
             },
         );
         pcurves.insert(
@@ -204,8 +202,8 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
                 surface: 100,
                 members: e5_loop_members(&[0, 1, 2, 3], &[0, 1, 2, 3], &[false; 4]),
                 oriented_members: None,
-                outer: Some(true),
-                orientation_hint: None,
+                outer: true,
+                absolute_orientation: crate::families::e5::graph::Sign::Positive,
             }],
         }],
         edges,
@@ -317,8 +315,8 @@ fn e5_vertices_derive_from_line_pcurve_bounds_on_a_plane() {
                 surface: 100,
                 members: e5_loop_members(&[20], &[10], &[false]),
                 oriented_members: None,
-                outer: Some(true),
-                orientation_hint: None,
+                outer: true,
+                absolute_orientation: crate::families::e5::graph::Sign::Positive,
             }],
         }],
         edges: BTreeMap::from([(
@@ -329,7 +327,6 @@ fn e5_vertices_derive_from_line_pcurve_bounds_on_a_plane() {
                 end_vertex: 2,
                 parameter_start: 30,
                 parameter_end: 31,
-                tail: Vec::new(),
             },
         )]),
         pcurves: BTreeMap::from([(
@@ -348,7 +345,7 @@ fn e5_vertices_derive_from_line_pcurve_bounds_on_a_plane() {
                     entries: vec![E5BoundEntry {
                         representation: 20,
                         parameter: finite(0.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),
@@ -358,7 +355,7 @@ fn e5_vertices_derive_from_line_pcurve_bounds_on_a_plane() {
                     entries: vec![E5BoundEntry {
                         representation: 20,
                         parameter: finite(1.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),

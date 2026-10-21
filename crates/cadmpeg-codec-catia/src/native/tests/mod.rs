@@ -5,8 +5,8 @@
 
 mod consolidated;
 mod constraint;
+mod cylinder_headers;
 mod design;
-mod embedded_cylinders;
 mod entity;
 mod entity_suffix;
 mod entity_suffix_framing;
@@ -18,5 +18,3 @@ mod relation_expression;
 mod relation_program;
 mod wire_projection;
 mod zero_entity_records;
-
-mod locus_invariants;

@@ -12,9 +12,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::scalar::PositiveReal;
@@ -216,6 +216,29 @@ pub(in crate::families) fn copy_rolling_ball_definition(
         cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations)
             .map_err(CodecError::malformed)?,
     ))
+}
+
+#[cfg(test)]
+mod carrier_resource_tests {
+    use super::{surface_carrier, B5SurfaceCarrier};
+    use crate::families::b5::graph::B5Surface;
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn bilinear_nurbs_surface_maps_to_an_analytic_carrier() {
+        let surface = B5Surface::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
+                false,
+            )
+            .expect("valid bilinear surface"),
+        );
+        let admitted = surface_carrier(&surface);
+        assert!(matches!(admitted, B5SurfaceCarrier::Analytic(_)));
+    }
 }
 
 pub(super) fn revolution_surface(
@@ -734,6 +757,9 @@ pub(super) fn emit_surfaces(
         let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
             continue;
         };
+        if offset.carrier_kind == super::super::graph::B5OffsetCarrierKind::Cone {
+            continue;
+        }
         let (Some(surface), Some(support)) = (
             surface_ids.get(&object_id),
             surface_ids.get(&offset.source_surface),
@@ -791,72 +817,11 @@ fn emit_extrusion_procedure(
         CurveId::mint,
     )?;
     match extrusion.directrix {
-        super::ResolvedExtrusionDirectrix::Intersection {
-            supports,
-            cache_fit_tolerance,
-        } => {
-            let make_side = |side: super::ResolvedExtrusionSupport| IntcurveSupportSide {
-                surface: Some(surface_ids[&side.surface_object_id].clone()),
-                pcurve: Some(SupportPcurve::new(
-                    side.pcurve,
-                    (side.pcurve_parameter_range
-                        != extrusion.directrix_parameter_range.endpoints())
-                    .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                    .flatten(),
-                )),
-            };
-            let [first, second] = *supports;
-            let sides = [make_side(first), make_side(second)];
-            annotate(
-                annotations,
-                &directrix_id,
-                "object_stream_a8_03_25",
-                "two_support_directrix",
-                Exactness::Unknown,
-            )?;
-            admission.charge()?;
-            ir.model.curves.push(Curve {
-                parameter_range: None,
-                id: directrix_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
-            });
-            let procedure_id = crate::resource::compose_u32_id(
-                &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
-                extrusion.directrix_object_id,
-                ProceduralCurveId::mint,
-            )?;
-            annotate(
-                annotations,
-                &procedure_id,
-                "object_stream_a8_03_25",
-                "two_surface_pcurve_intersection",
-                Exactness::ByteExact,
-            )?;
-            let procedure = ProceduralCurve::new(
-                procedure_id,
-                ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext::over_interval(
-                        sides,
-                        extrusion.directrix_parameter_range,
-                    ),
-                    discontinuity_flag: false,
-                    cache: Some(cadmpeg_ir::geometry::LegacyCache::new(
-                        cadmpeg_ir::scalar::NonNegativeReal::from(cache_fit_tolerance).into(),
-                    )),
-                },
-            );
-
-            admission.charge()?;
-            let _attached = ir
-                .model
-                .add_procedural_curve(&directrix_id.clone(), procedure);
-        }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
                 annotations,
                 &directrix_id,
-                "object_stream_b5_03_24",
+                "object_stream_surface_curve",
                 "support_pcurve_lift",
                 Exactness::Derived,
             )?;
@@ -884,7 +849,7 @@ fn emit_extrusion_procedure(
             annotate(
                 annotations,
                 &source_id,
-                "object_stream_b5_03_24",
+                "object_stream_surface_curve",
                 "support_pcurve_lift",
                 Exactness::Derived,
             )?;
@@ -975,7 +940,6 @@ mod tests {
     use crate::families::b5::transfer::surfaces::revolve_nurbs;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -985,8 +949,7 @@ mod tests {
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
 
-    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
-    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::math::Vector3;
 
     use crate::families::b5::transfer::{
         ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
@@ -1015,7 +978,7 @@ mod tests {
     }
 
     #[test]
-    fn extrusion_emits_exact_two_support_intersection() {
+    fn extrusion_emits_exact_reference_lift_without_intersection() {
         let support_ids = HashMap::from([
             (
                 10,
@@ -1028,16 +991,6 @@ mod tests {
                     .expect("identity grammar"),
             ),
         ]);
-        let pcurve = |x| PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
-                None,
-                false,
-            )
-            .expect("valid support pcurve"),
-        };
         let extrusion = ResolvedExtrusionSurface {
             surface_object_id: 30,
             directrix_object_id: 40,
@@ -1047,38 +1000,25 @@ mod tests {
                 [-2.0, 3.0],
                 [0.0, 1.0],
             ]),
-            directrix: ResolvedExtrusionDirectrix::Intersection {
-                cache_fit_tolerance: crate::test_support::test_b5::positive(1e-5),
-                supports: Box::new([
-                    ResolvedExtrusionSupport {
-                        surface_object_id: 10,
-                        surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                                Vector3::new(1.0, 0.0, 0.0),
-                                Vector3::new(0.0, 1.0, 0.0),
-                            )
-                            .expect("valid PlaneSurface fixture"),
-                        )),
-                        pcurve: pcurve(0.0),
-                        pcurve_parameter_range: [0.0, 1.0],
-                        curve: None,
-                    },
-                    ResolvedExtrusionSupport {
-                        surface_object_id: 20,
-                        surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                                Vector3::new(0.0, 1.0, 0.0),
-                                Vector3::new(1.0, 0.0, 0.0),
-                            )
-                            .expect("valid PlaneSurface fixture"),
-                        )),
-                        pcurve: pcurve(1.0),
-                        pcurve_parameter_range: [0.25, 0.75],
-                        curve: None,
-                    },
-                ]),
+            directrix: ResolvedExtrusionDirectrix::SurfaceCurve {
+                support: ResolvedExtrusionSupport {
+                    surface_object_id: 10,
+                    surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            Vector3::new(0.0, 1.0, 0.0),
+                        )
+                        .expect("valid plane"),
+                    )),
+                },
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                    )
+                    .expect("exact reference lift"),
+                )),
             },
         };
         let mut ir = CadIr::empty();
@@ -1100,53 +1040,17 @@ mod tests {
                 extrusion,
                 &mut admission,
             )
-            .expect("emit extrusion procedure");
+            .expect("service limits admit the extrusion procedure");
         });
 
         assert!(matches!(
             &ir.model.curves[0].geometry,
-            CurveGeometry::Procedural { construction, cache: Some(cache) }
-                if *construction == ir.model.procedural_curves[0].id
-                    && matches!(cache, SolvedCurveGeometry::Unknown { record: None })
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
         ));
-        let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[0].definition()
-        else {
-            panic!("expected intersection directrix");
-        };
-        assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
-        assert_eq!(context.sides()[0].surface, Some(support_ids[&10].clone()));
-        assert_eq!(
-            context.sides()[0]
-                .pcurve_parameter_range()
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
-            None
-        );
-        assert_eq!(context.sides()[1].surface, Some(support_ids[&20].clone()));
-        assert_eq!(
-            context.sides()[1]
-                .pcurve_parameter_range()
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
-            Some([0.25, 0.75])
-        );
-        assert_eq!(
-            ir.model.procedural_curves[0]
-                .cache_fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
-            Some(1e-5)
-        );
+        assert!(ir.model.procedural_curves.is_empty());
         assert!(match ir.model.procedural_surfaces[0].definition() {
-            ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
-                (
-                    &matched_payload.parameter_interval().map(
-                        cadmpeg_ir::units::FiniteVector::get
-                    ),
-                    matched_payload.direction(),
-                    &matched_payload.native_position(),
-                ),
-                (Some([0.0, 1.0]), direction, None,)
-                    if *direction == Vector3::new(0.0, 0.0, 1.0)
-            ),
+            ProceduralSurfaceDefinition::Extrusion(matched_payload) =>
+                matches!((&matched_payload.parameter_interval().map(cadmpeg_ir::units::FiniteVector::get), matched_payload.direction(), &matched_payload.native_position(),), (Some([0.0, 1.0]), direction, None,) if *direction == Vector3::new(0.0, 0.0, 1.0)),
             _ => false,
         });
         assert_eq!(
@@ -1182,28 +1086,5 @@ mod tests {
         };
         let admitted = crate::test_support::with_service_context(run).expect("revolve NURBS");
         assert!(admitted.is_some());
-    }
-}
-
-#[cfg(test)]
-mod carrier_resource_tests {
-    use super::{surface_carrier, B5SurfaceCarrier};
-    use crate::families::b5::graph::B5Surface;
-    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    use cadmpeg_ir::math::Point3;
-
-    #[test]
-    fn bilinear_nurbs_surface_maps_to_an_analytic_carrier() {
-        let surface = B5Surface::Nurbs(
-            NurbsSurface::from_lanes(
-                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
-                false,
-            )
-            .expect("valid bilinear surface"),
-        );
-        let admitted = surface_carrier(&surface);
-        assert!(matches!(admitted, B5SurfaceCarrier::Analytic(_)));
     }
 }

@@ -1659,7 +1659,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
     let types_by_token =
         data.meta_types
             .iter()
-            .fold(HashMap::<&str, HashSet<u8>>::new(), |mut types, record| {
+            .fold(HashMap::<&str, HashSet<u32>>::new(), |mut types, record| {
                 types
                     .entry(record.token.as_str())
                     .or_default()
@@ -1692,7 +1692,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
                 *counts.entry(record.token.as_str()).or_default() += 1;
                 if !type_keys.contains(&(
                     record.token.as_str(),
-                    record.type_index(),
+                    u32::from(record.type_index()),
                     record.type_id.as_str(),
                 )) {
                     findings.push(finding(

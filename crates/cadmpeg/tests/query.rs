@@ -100,11 +100,28 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
         assert_eq!(report["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(report["command"], "query");
         for version in [
+            Some(serde_json::json!("36")),
+            Some(serde_json::json!("35")),
+            Some(serde_json::json!("34")),
+            Some(serde_json::json!("33")),
             None,
             Some(serde_json::Value::Null),
             Some(serde_json::json!(0)),
             Some(serde_json::json!(false)),
             Some(serde_json::json!("unsupported")),
+            Some(serde_json::json!("6")),
+            Some(serde_json::json!("13")),
+            Some(serde_json::json!("14")),
+            Some(serde_json::json!("18")),
+            Some(serde_json::json!("19")),
+            Some(serde_json::json!("23")),
+            Some(serde_json::json!("24")),
+            Some(serde_json::json!("30")),
+            Some(serde_json::json!("32")),
+            Some(serde_json::json!("9")),
+            Some(serde_json::json!("10")),
+            Some(serde_json::json!("11")),
+            Some(serde_json::json!("12")),
             Some(serde_json::json!({})),
         ] {
             let mut wire = valid.clone();

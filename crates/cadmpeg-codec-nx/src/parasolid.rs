@@ -7,6 +7,7 @@
 //! Legacy CFB parts use [`extract_legacy_streams`] to split the same prologue
 //! from clear `UG_PART/UG_PART` bytes. Other inflated payloads are classified
 //! as [`StreamKind::Preview`].
+
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -37,7 +38,6 @@ use entity_references::EntityReferences;
 use name_references::NameReferences;
 
 use crate::container::Container;
-use crate::framing::node_kind::NodeKind;
 use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use crate::grouping::group_pairs;
@@ -50,7 +50,8 @@ pub(crate) enum StreamKind {
     Partition,
     /// A Parasolid `(deltas)` edit overlay.
     Deltas,
-    /// A cached Parasolid body without a partition or deltas subtype.
+    /// A retained Parasolid body without a recognized partition or deltas label.
+    /// This summary kind does not select the CHART or LIMIT row layout.
     Plain,
     /// An inflated non-Parasolid payload, such as preview or metadata data.
     Preview,
@@ -80,15 +81,18 @@ pub(crate) enum ParasolidSubtype {
     Partition,
     /// Edit overlay.
     Deltas,
-    /// Body without a named subtype.
+    /// A recognized TRANSMIT body without a named subtype.
     Plain,
+    /// A retained Parasolid payload without a recognized transmit description.
+    Unresolved,
 }
 
 impl ParasolidSubtype {
-    pub(crate) fn chart_point_layout(self) -> crate::intersection::ChartPointLayout {
+    pub(crate) fn chart_point_layout(self) -> Option<crate::intersection::ChartPointLayout> {
         match self {
-            Self::Partition | Self::Plain => crate::intersection::ChartPointLayout::Xyz3,
-            Self::Deltas => crate::intersection::ChartPointLayout::Ext11,
+            Self::Partition | Self::Plain => Some(crate::intersection::ChartPointLayout::Xyz3),
+            Self::Deltas => Some(crate::intersection::ChartPointLayout::Ext11),
+            Self::Unresolved => None,
         }
     }
 }
@@ -119,7 +123,7 @@ impl StreamBody {
                 ..
             } => StreamKind::Deltas,
             Self::Parasolid {
-                subtype: ParasolidSubtype::Plain,
+                subtype: ParasolidSubtype::Plain | ParasolidSubtype::Unresolved,
                 ..
             } => StreamKind::Plain,
             Self::Preview => StreamKind::Preview,
@@ -282,11 +286,11 @@ enum ValueMultiplicity {
 
 fn referenced_value_offsets(bytes: &[u8], multiplicity: ValueMultiplicity) -> Vec<usize> {
     let references = referenced_value_xmts(bytes, multiplicity);
+    let candidates = value_records::value_record_candidates(bytes, &references);
     let mut offsets = Vec::new();
-    for (xmt, positions) in value_records::value_record_candidates(bytes) {
-        if !references.contains(&xmt)
-            || (multiplicity == ValueMultiplicity::UniqueSnapshot && positions.len() != 1)
-        {
+
+    for positions in candidates.into_values() {
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && positions.len() != 1 {
             continue;
         }
         offsets.extend(positions);
@@ -664,25 +668,68 @@ pub(crate) fn extract_streams<'a>(
 
     let mut streams = Vec::new();
     if container.segment_index().is_some() {
-        let mut seen = BTreeSet::new();
+        let mut seen = BTreeMap::new();
+
         for wrapper in container.segment_stream_wrappers() {
             let Some(offset) = wrapper.zlib_offset.checked_sub(start) else {
                 continue;
             };
-            if !seen.insert(offset)
-                || offset
-                    .checked_add(2)
-                    .and_then(|end| part.get(offset..end))
-                    .is_none_or(|header| !is_zlib_header(header[0], header[1]))
+            if offset
+                .checked_add(2)
+                .and_then(|end| part.get(offset..end))
+                .is_none_or(|header| !is_zlib_header(header[0], header[1]))
             {
                 continue;
             }
-            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset)? else {
+            if !match seen.entry(offset) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(wrapper.compressed_byte_len);
+                    true
+                }
+                std::collections::btree_map::Entry::Occupied(_) => false,
+            } {
+                if seen.get(&offset) != Some(&wrapper.compressed_byte_len) {
+                    return Err(CodecError::malformed(format_args!(
+                        "conflicting indexed NX member lengths at file offset {}",
+                        start + offset
+                    )));
+                }
+                continue;
+            }
+            let compressed_end =
+                offset
+                    .checked_add(wrapper.compressed_byte_len)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("indexed NX member extent overflows".into())
+                    })?;
+            let overlaps_preceding = seen
+                .range(..offset)
+                .next_back()
+                .is_some_and(|(&previous, &length)| length > offset - previous);
+            let overlaps_following = seen
+                .range(offset..)
+                .nth(1)
+                .is_some_and(|(&following, _)| following < compressed_end);
+            if overlaps_preceding || overlaps_following {
+                return Err(CodecError::Malformed(
+                    "overlapping indexed NX members".into(),
+                ));
+            }
+            let source = part_view.child(offset, compressed_end).ok_or_else(|| {
+                CodecError::Malformed("indexed NX member exceeds its part payload".into())
+            })?;
+            let Some((inflated, consumed)) = inflate_stream(ctx, source)? else {
                 return Err(CodecError::malformed(format_args!(
                     "invalid indexed zlib member at file offset {}",
                     start + offset
                 )));
             };
+            if consumed != cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len) {
+                return Err(CodecError::malformed(format_args!(
+                    "indexed zlib member length at file offset {} differs from its wrapper",
+                    start + offset
+                )));
+            }
             let body = classify(&inflated);
             ctx.charge_entities(1, "admit NX streams")?;
             streams.push(Stream {
@@ -692,10 +739,17 @@ pub(crate) fn extract_streams<'a>(
                 body,
             });
         }
-        if streams.iter().any(|stream| stream.kind().is_parasolid()) {
-            return Ok(streams);
-        }
+        let indexed_count = streams.len();
         append_unindexed_structural_streams(ctx, part_view, start, &mut streams)?;
+        for at in indexed_count..streams.len() {
+            let offset = streams[at].file_offset;
+            if let Some(insertion) = streams[..at]
+                .iter()
+                .position(|stream| stream.file_offset > offset)
+            {
+                streams[insertion..=at].rotate_right(1);
+            }
+        }
         return Ok(streams);
     }
 
@@ -711,18 +765,41 @@ fn append_all_zlib_streams<'a>(
     structural_only: bool,
 ) -> Result<(), CodecError> {
     let part = part_view.window();
-    let mut seen = streams
-        .iter()
-        .map(|stream| stream.file_offset)
-        .collect::<BTreeSet<_>>();
+    let mut seen = BTreeMap::new();
+
+    for stream in streams.iter() {
+        match seen.entry(stream.file_offset) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(stream.consumed);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        };
+    }
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
+            let file_offset = file_start + i;
+            let following = seen.range(file_offset..).next();
+            if let Some((&offset, &consumed)) =
+                following.filter(|(offset, _)| **offset == file_offset)
+            {
+                i += packed_member_advance(offset, consumed)?;
+                continue;
+            }
+            let source_end = following.map_or(part_view.end(), |(&offset, _)| offset - file_start);
+            let source = part_view.child(i, source_end).ok_or_else(|| {
+                CodecError::Malformed("NX member offset exceeds its part payload".into())
+            })?;
+            if let Some((inflated, consumed)) = inflate_stream(ctx, source)? {
                 let body = classify(&inflated);
-                let file_offset = file_start + i;
-                if seen.insert(file_offset)
-                    && (!structural_only || structural_stream_candidate(body.kind(), &inflated)?)
+                if match seen.entry(file_offset) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(consumed);
+                        true
+                    }
+                    std::collections::btree_map::Entry::Occupied(_) => false,
+                } && (!structural_only || structural_stream_candidate(body.kind(), &inflated)?)
                 {
                     ctx.charge_entities(1, "admit NX streams")?;
                     streams.push(Stream {
@@ -732,17 +809,6 @@ fn append_all_zlib_streams<'a>(
                         body,
                     });
                 }
-                // Resume past the bytes this member consumed, not at the next
-                // byte: a spurious `78 xx` zlib header inside the compressed
-                // body would otherwise inflate into a second stream whose source
-                // extent [file_offset, file_offset+consumed) overlaps this
-                // member's, double-attributing the same compressed bytes to two
-                // decompression origins. Skipping the consumed run keeps packed
-                // members' input extents disjoint.
-                //
-                // Plain `+`: `inflate_stream` reads only from `part[i..]`, so
-                // `inflate_zlib_member`'s report is at most the remaining
-                // length and the sum is a byte offset of `part`.
                 i += packed_member_advance(file_offset, consumed)?;
                 continue;
             }
@@ -765,26 +831,15 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> Result<bool
     if !kind.is_parasolid() {
         return Ok(false);
     }
+    if kind != StreamKind::Deltas {
+        return Ok(crate::records::PrimaryRecords::read(inflated)?
+            .is_some_and(|primary| !primary.records().is_empty()));
+    }
     let census = crate::deltas::census::walk(inflated)?;
     if !census.records.is_empty() || !census.tombstones.is_empty() {
         return Ok(true);
     }
-    if kind == StreamKind::Deltas {
-        return Ok(false);
-    }
-    let graph = crate::topology::Graph::parse(inflated);
-    Ok([
-        NodeKind::Body,
-        NodeKind::Shell,
-        NodeKind::Face,
-        NodeKind::Loop,
-        NodeKind::Edge,
-        NodeKind::Fin,
-        NodeKind::Vertex,
-        NodeKind::Region,
-    ]
-    .into_iter()
-    .any(|kind| graph.of_kind(kind).next().is_some()))
+    Ok(false)
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`
@@ -860,7 +915,6 @@ fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
     })
 }
 
-/// Inflate one complete zlib member.
 /// The shortest zlib member: the two-byte header, the two bytes a final empty
 /// deflate block needs, and the four-byte Adler-32 trailer.
 ///
@@ -892,12 +946,8 @@ fn packed_member_advance(file_offset: usize, consumed: u64) -> Result<usize, Cod
 
 fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
-    part_view: View<'a>,
-    offset: usize,
+    source: View<'a>,
 ) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
-    let Some(source) = part_view.child(offset, part_view.end()) else {
-        return Ok(None);
-    };
     let (view, consumed) = match inflate_zlib_member(ctx, source, ExpandSpec::Unknown) {
         Ok(result) => result,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -919,17 +969,32 @@ fn is_zlib_header(cmf: u8, flg: u8) -> bool {
 }
 
 /// Classify an inflated payload from its prologue text and read the schema token.
-fn classify(inflated: &[u8]) -> StreamBody {
+pub(crate) fn classify(inflated: &[u8]) -> StreamBody {
     if !inflated.starts_with(b"PS\x00\x00") {
         return StreamBody::Preview;
     }
     let window = &inflated[..inflated.len().min(512)];
-    let subtype = if contains(window, b"(partition)") {
+    let description = View::u32_be_at(inflated, 2)
+        .and_then(|count| usize::try_from(count).ok())
+        .and_then(|count| inflated.get(6..6usize.checked_add(count)?))
+        .filter(|description| {
+            description
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        });
+    let subtype = if description.is_some_and(crate::records::is_partition_description) {
         ParasolidSubtype::Partition
-    } else if contains(window, b"(deltas)") {
+    } else if description.is_some_and(|description| {
+        description == b": TRANSMIT FILE (deltas)"
+            || description.starts_with(b": TRANSMIT FILE (deltas) ")
+    }) {
         ParasolidSubtype::Deltas
-    } else {
+    } else if description
+        .is_some_and(|description| description.starts_with(b": TRANSMIT FILE created "))
+    {
         ParasolidSubtype::Plain
+    } else {
+        ParasolidSubtype::Unresolved
     };
     StreamBody::Parasolid {
         subtype,

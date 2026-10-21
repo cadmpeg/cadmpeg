@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reference-plane owner transfer tests.
 
+use crate::design_feature::tests::declared_object;
 use crate::design_feature::tests::design_object;
-use crate::design_feature::tests::native_operation_object;
 use crate::design_feature::tests::object_record;
 use crate::design_feature::transfer_design_features;
 use crate::native::CatiaNative;
@@ -20,7 +20,7 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
         ("GSMPlaneOffset", "plane-offset-entry"),
     ] {
         let parent = design_object("synthetic:test:object#parent-object", None);
-        let plane = native_operation_object(
+        let plane = declared_object(
             "synthetic:test:object#plane-object",
             Some("synthetic:test:object#parent-object"),
             21,
@@ -76,7 +76,6 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
             ir.model.features[0].native_ref.as_deref(),
             Some("synthetic:test:object#plane-object")
         );
-        assert!(transfer.native_operation_records.is_empty());
         assert_eq!(
             transfer.reference_plane_records,
             HashSet::from(["plane-record".to_string()])
