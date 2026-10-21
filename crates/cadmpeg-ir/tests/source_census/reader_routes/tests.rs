@@ -729,6 +729,17 @@ fn prefix_fixture() -> String {
 fn classify_prefix_fixture(source: &str) -> Result<HandReaderClass, String> {
     let parsed = syn::parse_file(source).map_err(|error| error.to_string())?;
     let mut index = SourceIndex::default();
+    // Match the real module ancestry used to resolve the proven wire's
+    // crate::document path after delegation from document::legacy.
+    let root = "mod document;";
+    let root_items = syn::parse_file(root).map_err(|error| error.to_string())?;
+    collect_source_items(
+        &root_items.items,
+        "crates/cadmpeg-ir/src/lib.rs",
+        root,
+        &[],
+        &mut index,
+    );
     collect_source_items(
         &parsed.items,
         "crates/cadmpeg-ir/src/document.rs",
