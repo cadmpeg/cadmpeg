@@ -16,7 +16,7 @@ use super::{
 fn forwarding_impl(item: &syn::ItemImpl) -> bool {
     item.trait_
         .as_ref()
-        .and_then(|(_, path, _)| path.segments.last())
+        .and_then(|(path, _)| path.segments.last())
         .is_some_and(|segment| {
             matches!(
                 segment.ident.to_string().as_str(),
@@ -111,7 +111,7 @@ fn implementation<'a>(
         let syn::Type::Path(ty) = item.self_ty.as_ref() else {
             return None;
         };
-        (ty.path.is_ident(target) && item.trait_.as_ref()?.1.segments.last()?.ident == trait_name)
+        (ty.path.is_ident(target) && item.trait_.as_ref()?.0.segments.last()?.ident == trait_name)
             .then_some(item)
     })
 }
@@ -264,7 +264,7 @@ pub(super) fn closed_route(resolved: &ResolvedPath, index: &SourceIndex) -> Opti
     if visitor
         .trait_
         .as_ref()?
-        .1
+        .0
         .segments
         .iter()
         .map(|segment| segment.ident.to_string())
