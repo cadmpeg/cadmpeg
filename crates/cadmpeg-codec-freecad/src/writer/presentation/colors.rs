@@ -52,6 +52,13 @@ fn material(
     appearance: &cadmpeg_ir::appearance::Appearance,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    if appearance.base_color.is_none() {
+        provider.properties.remove("ShapeMaterial");
+        losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+            "appearance {} has no diffuse color required by a native material; ShapeMaterial is omitted", appearance.id
+        )));
+        return Ok(());
+    }
     let scalar = |name: &str| {
         appearance
             .properties
@@ -391,14 +398,14 @@ mod tests {
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        material(&mut provider, &appearance).unwrap();
-        let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
-        let value = document
-            .descendants()
-            .find(|node| node.has_tag_name("PropertyMaterial"))
-            .unwrap();
-        assert!(value.attribute("diffuseColor").is_none());
-        assert!(value.attribute("shininess").is_none());
-        assert!(value.attribute("transparency").is_none());
+        let mut losses = Vec::new();
+        material(&mut provider, &appearance, &mut losses).unwrap();
+        assert!(!provider.properties.contains_key("ShapeMaterial"));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "appearance.not-transferred");
+        assert_eq!(
+            losses[0].message,
+            "appearance test:model:appearance#empty has no diffuse color required by a native material; ShapeMaterial is omitted"
+        );
     }
 }
