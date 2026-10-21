@@ -35,6 +35,33 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
     run(&ctx)
 }
 
+/// Keep each original serialized frame in its typed native source home.
+fn native_frame_history(features: &mut [cadmpeg_ir::features::Feature]) -> FeatureHistory {
+    let records = features
+        .iter_mut()
+        .map(|neutral| {
+            let mut source = feature(
+                neutral
+                    .native_ref
+                    .as_deref()
+                    .expect("native frame identity"),
+                None,
+                u32::try_from(neutral.ordinal).expect("fixture source ordinal"),
+            );
+            source.properties = std::mem::take(&mut neutral.source_properties);
+            source
+        })
+        .collect();
+    FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: records,
+    }
+}
+
 #[test]
 fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
@@ -227,7 +254,8 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
     principal.native_ref = Some("sldprt:history:feature#0:right".into());
 
     let mut features = vec![offset, principal];
-    bind_offset_plane_references(&mut features, &[]);
+    let history = native_frame_history(&mut features);
+    bind_offset_plane_references(&mut features, std::slice::from_ref(&history));
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -353,7 +381,8 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     );
 
     let mut features = vec![base, alias, offset];
-    bind_offset_plane_references(&mut features, &[]);
+    let history = native_frame_history(&mut features);
+    bind_offset_plane_references(&mut features, std::slice::from_ref(&history));
 
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -433,7 +462,8 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     reference.native_ref = Some("sldprt:history:feature#0:reference".into());
 
     let mut features = vec![offset, reference];
-    bind_offset_plane_references(&mut features, &[]);
+    let history = native_frame_history(&mut features);
+    bind_offset_plane_references(&mut features, std::slice::from_ref(&history));
 
     assert!(matches!(
         features[0].evaluation.definition(),

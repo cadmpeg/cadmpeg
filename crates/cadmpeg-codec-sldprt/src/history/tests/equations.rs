@@ -743,7 +743,7 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         .unwrap();
     assert_eq!(
         crate::test_support::history::rendered_parameter(regenerated.ir(), result),
-        "\"D1@Profile\" + \"D1@Sketch2\""
+        "D1@Profile + D1@Sketch2"
     );
     assert_eq!(
         result
