@@ -2456,7 +2456,7 @@ mod tests {
     #[test]
     fn class_role_wire_is_derived_from_name() {
         let wire = serde_json::json!({
-            "id": "class", "parent": "lane", "ordinal": 0, "offset": 0,
+            "id": "class", "parent": "lane", "ordinal": 0, "sequence": 0,
             "name": "sgEntHandle", "role": "sketch_entity"
         });
         let class: super::FeatureInputClass = serde_json::from_value(wire.clone()).unwrap();
@@ -2477,11 +2477,13 @@ mod tests {
         let wire = serde_json::json!({
             "entity_indices": [7],
             "operands": [
-                {"offset": 0, "reference_ref": "a", "kind": "d6", "entity_index": 7},
-                {"offset": 12, "reference_ref": "b", "kind": "e1", "entity_index": 9}
+                {"reference_ref": "a", "kind": "d6", "entity_index": 7},
+                {"reference_ref": "b", "kind": "e1", "entity_index": 9}
             ]
         });
-        let operands: Operands = serde_json::from_value(wire.clone()).unwrap();
+        let mut operands: Operands = serde_json::from_value(wire.clone()).unwrap();
+        operands.operands[0].offset = Some(0);
+        operands.operands[1].offset = Some(12);
         assert_eq!(serde_json::to_value(operands).unwrap(), wire);
         let mut inconsistent = wire;
         inconsistent["entity_indices"] = serde_json::json!([7, 9]);
@@ -2554,9 +2556,11 @@ mod tests {
             sketch_entities: vec![entity],
         };
         let wire = serde_json::to_value(&lane).expect("lane JSON");
+        let mut semantic_lane = lane.clone();
+        semantic_lane.sketch_entities[0].attach_source_position(None);
         assert_eq!(
             serde_json::from_value::<FeatureInputLane>(wire.clone()).expect("lane round trip"),
-            lane
+            semantic_lane
         );
         assert_eq!(wire["sketch_entities"][0]["link_selector"], 3);
         for missing in ["links", "link_selector"] {
@@ -2571,9 +2575,10 @@ mod tests {
         let mut empty = wire.clone();
         empty["sketch_entities"][0]["links"] = serde_json::json!([]);
         assert!(serde_json::from_value::<FeatureInputLane>(empty).is_err());
-        let mut moved = wire.clone();
-        moved["sketch_entities"][0]["offset"] = serde_json::json!(3);
-        let error = serde_json::from_value::<FeatureInputLane>(moved).unwrap_err();
+        let mut moved = lane.clone();
+        moved.sketch_entities[0].attach_source_position(Some(3));
+        let error = moved.sketch_entities[0]
+            .validate_against_payload(&lane.native_payload).unwrap_err();
         assert!(error
             .to_string()
             .contains("is not a marker in native_payload"));
@@ -2592,9 +2597,10 @@ mod tests {
             "an entity with no links round-trips with both keys absent"
         );
 
-        let mut renamed = wire;
-        renamed["sketch_entities"][0]["local_id"] = serde_json::json!(4_242);
-        let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();
+        let renamed = lane.sketch_entities[0].with_test_identity(
+            lane.sketch_entities[0].object_index(), Some(4_242),
+        );
+        let error = renamed.validate_against_payload(&lane.native_payload).unwrap_err();
         assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
     }
@@ -2638,7 +2644,7 @@ mod tests {
         assert_eq!(record["coordinates_m"], serde_json::json!([1.25, -2.5]));
         assert_eq!(
             record.to_string(),
-            r#"{"coordinates_m":[1.25,-2.5],"id":"marker","kind":"point","offset":0,"ordinal":0,"parent":"lane"}"#
+            r#"{"coordinates_m":[1.25,-2.5],"id":"marker","kind":"point","ordinal":0,"parent":"lane","sequence":0}"#
         );
         let restored: FeatureInputLane =
             serde_json::from_value(wire.clone()).expect("native JSON round trip");
