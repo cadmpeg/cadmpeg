@@ -332,8 +332,12 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     histories[0].features[0]
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
-    sync_feature_scalars(&histories, std::slice::from_mut(&mut lane))
-        .expect("explicit scalar owner is writable");
+    sync_feature_scalars(
+        &cadmpeg_ir::document::Model::default(),
+        &histories,
+        std::slice::from_mut(&mut lane),
+    )
+    .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
 }
