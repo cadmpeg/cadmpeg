@@ -196,3 +196,21 @@ fn settings_decoder_skips_unregistered_bulk_without_requesting_a_metastream() {
         assert!(super::decode_settings(scan).unwrap().is_empty());
     });
 }
+
+#[test]
+fn settings_name_every_linked_record_for_header_retention() {
+    let settings: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20", "record_index": 50,
+            "byte_offset": 20, "paired_byte_offset": 100, "mask": 4,
+            "inputs": {"version": "v2", "slots": [null, 55, null, null, null, null, null]},
+            "rule_record_index": 51, "presentation_record_index": 52, "owner_record_index": 53,
+            "context_record_index": 54,
+        }))
+        .unwrap();
+    let indices = super::linked_record_indices(&[settings]);
+    assert_eq!(
+        indices,
+        [50, 55, 51, 52, 53, 54].map(|index| ("f3d:Design1/BulkStream.dat".to_owned(), index))
+    );
+}

@@ -41,6 +41,25 @@ pub(super) fn has_supported_settings(meta: &crate::metastream::MetaStream) -> bo
     })
 }
 
+/// The stream and record index of every record a settings record links: the
+/// record itself, its present input slots, and its rule, presentation, owner
+/// and context records. Their headers are kept with the Design record
+/// headers.
+pub(crate) fn linked_record_indices(settings: &[DesignSheetMetalSettings]) -> Vec<(String, u32)> {
+    settings
+        .iter()
+        .flat_map(|settings| {
+            let stream = crate::ids::native_stream(settings.id())
+                .unwrap_or(crate::ids::DEFAULT_STREAM)
+                .to_owned();
+            settings
+                .record_references()
+                .filter_map(|index| u32::try_from(index).ok())
+                .map(move |index| (stream.clone(), index))
+        })
+        .collect()
+}
+
 pub(crate) fn decode_settings(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignSheetMetalSettings>, CodecError> {
