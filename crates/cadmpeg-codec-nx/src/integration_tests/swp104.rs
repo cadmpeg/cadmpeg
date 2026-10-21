@@ -71,7 +71,7 @@ fn canonical_swp104_checks_successor_order_and_operation_ownership() {
         .unwrap();
     let canonical_ir = result.ir();
     crate::test_support::with_decode_context(|ctx| {
-        assert!(crate::NxCodec::validate_native(ctx, canonical_ir)
+        assert!(<crate::NxCodec as cadmpeg_ir::Codec>::validate_native(ctx, canonical_ir)
             .unwrap()
             .is_empty());
         let records = &canonical_ir.native.namespace("nx").unwrap().arenas()
@@ -105,7 +105,7 @@ fn canonical_swp104_checks_successor_order_and_operation_ownership() {
                 .namespace_mut("nx")
                 .set_arena(ctx, "feature_swp104_leading_branches", &[value_record])
                 .unwrap();
-            let findings = crate::NxCodec::validate_native(ctx, &document).unwrap();
+            let findings = <crate::NxCodec as cadmpeg_ir::Codec>::validate_native(ctx, &document).unwrap();
             assert_eq!(findings.len(), 1, "{path}: {findings:?}");
             assert_eq!(
                 findings[0].check,
