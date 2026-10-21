@@ -28,10 +28,48 @@ fn placement_native_validator_rejects_matrix_that_disagrees_with_source_bytes() 
     assert!(crate::NxCodec::validate_native(&ctx, &ir)
         .unwrap()
         .is_empty());
+    assert!(
+        crate::native::source_validation_findings(&ctx, ir.native.namespace("nx").unwrap())
+            .unwrap()
+            .is_empty()
+    );
+    let canonical_wire = wire.clone();
     wire["matrix"][3] = serde_json::json!(1.0);
     ir.native
         .namespace_mut("nx")
         .set_arena(&ctx, "assembly_placements", &[&wire])
+        .unwrap();
+    let findings =
+        crate::native::source_validation_findings(&ctx, ir.native.namespace("nx").unwrap())
+            .unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
+    assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(findings[0].message.contains("fields must match"));
+
+    // Document matrix admission uses its current typed rotation, independently
+    // of exact-source equality. Retain a separate canonical negative control.
+    ir.native
+        .namespace_mut("nx")
+        .set_arena(&ctx, "assembly_placements", &[canonical_wire])
+        .unwrap();
+    crate::decode::source_layout::move_layout(&mut ir, &mut cadmpeg_ir::SourceFidelity::default())
+        .unwrap();
+    assert!(crate::NxCodec::validate_native(&ctx, &ir)
+        .unwrap()
+        .is_empty());
+    let mut malformed = serde_json::to_value(
+        &ir.native.namespace("nx").unwrap().arenas()["assembly_placements"][0],
+    )
+    .unwrap();
+    assert!(malformed.get("source_offset").is_none());
+    malformed["matrix"][0] = serde_json::json!(2.0);
+    ir.native
+        .namespace_mut("nx")
+        .set_arena(&ctx, "assembly_placements", &[malformed])
         .unwrap();
     let findings = crate::NxCodec::validate_native(&ctx, &ir).unwrap();
     assert_eq!(findings.len(), 1);
@@ -40,5 +78,5 @@ fn placement_native_validator_rejects_matrix_that_disagrees_with_source_bytes() 
         cadmpeg_ir::report::check::Check::NativeLinks
     );
     assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
-    assert!(findings[0].message.contains("fields must match"));
+    assert!(findings[0].message.contains("matrix"), "{findings:?}");
 }
