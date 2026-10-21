@@ -219,15 +219,22 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .iter()
                 .any(|after| after.id == before.id)
         })
-        .map(|curve| u64::from(curve.record_index))
+        .map(|curve| {
+            (
+                crate::ids::design_segment(&curve.id),
+                u64::from(curve.record_index),
+            )
+        })
         .collect::<std::collections::BTreeSet<_>>();
     for record in &mut native.design_types {
+        let segment = crate::ids::design_segment(record.id());
         let entities = record
             .entities
             .values()
             .copied()
             .filter(|id| {
-                !omitted_header_entities.contains(id) && !omitted_curve_indices.contains(id)
+                !omitted_header_entities.contains(id)
+                    && !omitted_curve_indices.contains(&(segment, *id))
             })
             .collect();
         record.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
