@@ -25,6 +25,9 @@ zip.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# Raw ZIP fixture assembly: `zip`'s writer cannot emit method 93 without its `zstd` feature
+# (see the workspace manifest).
+cadmpeg-test-support.workspace = true
 
 [lints]
 workspace = true

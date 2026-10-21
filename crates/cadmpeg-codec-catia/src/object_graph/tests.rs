@@ -1413,7 +1413,7 @@ fn object_graph_payload_keeps_3c_as_literal_when_no_bulk_extent_is_possible() {
 fn outer_surface_alias_parser_reads_fixed_core() {
     use crate::object_graph::AliasLead;
 
-    let rows = surface_aliases(&surface_alias_stream());
+    let rows = surface_aliases(&surface_alias_stream(), &[]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].lead(), AliasLead::SurfaceSupportStorage);
     assert_eq!(rows[0].tag(), 0x0012_3456);
@@ -1432,7 +1432,7 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
     ] {
         let mut bytes = surface_alias_stream();
         bytes[..4].copy_from_slice(&lead.to_le_bytes());
-        let [row] = surface_aliases(&bytes)
+        let [row] = surface_aliases(&bytes, &[])
             .try_into()
             .expect("one ordinal-linked alias row");
         assert_eq!(row.lead(), expected);
@@ -1441,16 +1441,10 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
 }
 
 #[test]
-fn outer_alias_parser_retains_exact_unclassified_0133_lead() {
-    use crate::object_graph::AliasLead;
-
+fn outer_alias_parser_rejects_0133_without_nullable_storage_framing() {
     let mut bytes = surface_alias_stream();
     bytes[..4].copy_from_slice(&0x0000_0133u32.to_le_bytes());
-    let [row] = surface_aliases(&bytes)
-        .try_into()
-        .expect("one unclassified alias row");
-    assert_eq!(row.lead(), AliasLead::Unclassified(0x0000_0133));
-    assert_eq!(row.entity_record_ordinal(), 7);
+    assert!(surface_aliases(&bytes, &[]).is_empty());
 }
 
 #[test]
@@ -1458,7 +1452,7 @@ fn outer_alias_parser_rejects_marker_literals_without_an_alias_lead() {
     for lead in [0u32, 0x15] {
         let mut bytes = surface_alias_stream();
         bytes[..4].copy_from_slice(&lead.to_le_bytes());
-        assert!(surface_aliases(&bytes).is_empty());
+        assert!(surface_aliases(&bytes, &[]).is_empty());
     }
 }
 
@@ -1472,7 +1466,7 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     alias[15..19].copy_from_slice(&0x0000_017bu32.to_le_bytes());
     bytes.extend(alias);
 
-    let [row] = surface_aliases(&bytes)
+    let [row] = surface_aliases(&bytes, &[])
         .try_into()
         .expect("one grouped alias row");
     let group = row.group.as_ref().expect("exact group header");
@@ -1483,7 +1477,7 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     assert_eq!(row.entity_record_ordinal(), 0x7b);
 
     bytes[10] = 1;
-    let [row] = surface_aliases(&bytes)
+    let [row] = surface_aliases(&bytes, &[])
         .try_into()
         .expect("one ungrouped alias row");
     assert!(row.group.is_none());
@@ -1507,7 +1501,7 @@ fn outer_alias_group_parser_accepts_each_bounded_storage_prefix() {
         alias[11..15].copy_from_slice(&0x0000_017du32.to_le_bytes());
         bytes.extend(alias);
 
-        let [row] = surface_aliases(&bytes)
+        let [row] = surface_aliases(&bytes, &[])
             .try_into()
             .expect("one grouped alias row");
         let group = row.group.expect("bounded group storage");
@@ -1521,7 +1515,7 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
     let mut bytes = surface_alias_stream();
     bytes[8..12].copy_from_slice(&0xab00_0000u32.to_le_bytes());
 
-    let rows = surface_aliases(&bytes);
+    let rows = surface_aliases(&bytes, &[]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].tag(), 0);
     assert_eq!(rows[0].tag_raw, 0xab00_0000);
@@ -1532,7 +1526,7 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
 #[test]
 fn outer_surface_alias_parser_requires_the_lead_word() {
     let bytes = surface_alias_stream();
-    assert!(surface_aliases(&bytes[4..]).is_empty());
+    assert!(surface_aliases(&bytes[4..], &[]).is_empty());
 }
 
 #[test]
@@ -1716,5 +1710,5 @@ fn grouped_alias_storage_yields_one_surface_alias() {
     bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
     bytes.extend(surface_alias_stream());
 
-    assert_eq!(surface_aliases(&bytes).len(), 1);
+    assert_eq!(surface_aliases(&bytes, &[]).len(), 1);
 }

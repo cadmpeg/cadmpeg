@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Signed Q1.55 scalars and their exact atom markers.
+//! Signed Q1.55 scalars used by datum-CSYS pairs.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Q155 {
@@ -43,35 +43,6 @@ impl Q155 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Q155Marker {
-    M30,
-    MB0,
-}
-
-impl Q155Marker {
-    pub(crate) fn read(byte: u8) -> Option<Self> {
-        match byte {
-            0x30 => Some(Self::M30),
-            0xb0 => Some(Self::MB0),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn byte(self) -> u8 {
-        match self {
-            Self::M30 => 0x30,
-            Self::MB0 => 0xb0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Q155Atom {
-    pub(crate) marker: Q155Marker,
-    pub(crate) scalar: Q155,
-}
-
 pub(crate) mod pair_wire {
     use super::Q155;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -102,23 +73,6 @@ pub(crate) mod pair_wire {
             a.map_err(serde::de::Error::custom)?,
             b.map_err(serde::de::Error::custom)?,
         ])
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Q155LaneFrame;
-
-impl Q155LaneFrame {
-    pub(super) const DISCRIMINATOR: [u8; 18] = [
-        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x01, 0x00,
-    ];
-}
-
-impl super::scalar_run::ScalarFrame for Q155LaneFrame {
-    type Atom = Q155Atom;
-    fn prefix_len(self) -> u64 {
-        cadmpeg_core::decode::u64_from_index(Self::DISCRIMINATOR.len())
     }
 }
 

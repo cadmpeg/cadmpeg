@@ -220,6 +220,8 @@ fn rolled_hem_frame() -> HemFrame {
     bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
     write_marked_reference(&mut bytes, common + 8, 708);
     write_marked_reference(&mut bytes, common + 19, 724);
+    bytes[common + 30..common + 34].copy_from_slice(&1u32.to_le_bytes());
+    bytes[common + 36..common + 40].copy_from_slice(&4u32.to_le_bytes());
     write_marked_reference(&mut bytes, common + 41, 788);
     write_marked_reference(&mut bytes, common + 54, 775);
     bytes[common + 71..common + 79].copy_from_slice(&0.25f64.to_le_bytes());
@@ -242,6 +244,8 @@ fn teardrop_hem_frame() -> HemFrame {
     bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
     write_marked_reference(&mut bytes, common + 8, 708);
     write_marked_reference(&mut bytes, common + 19, 724);
+    bytes[common + 30..common + 34].copy_from_slice(&1u32.to_le_bytes());
+    bytes[common + 36..common + 40].copy_from_slice(&4u32.to_le_bytes());
     write_marked_reference(&mut bytes, common + 42, 703);
     write_marked_reference(&mut bytes, common + 53, 706);
     write_marked_reference(&mut bytes, common + 64, 775);
@@ -252,5 +256,27 @@ fn teardrop_hem_frame() -> HemFrame {
         bytes,
         paired_at,
         bend_radius_offset: 170,
+    }
+}
+
+#[test]
+fn hem_common_controls_preserve_flip_and_refuse_unknown_lanes() {
+    for mut frame in [rolled_hem_frame(), teardrop_hem_frame()] {
+        let common = 89;
+        assert_eq!(
+            super::hem_common_controls(&frame.bytes, common),
+            Some(false)
+        );
+        frame.bytes[common + 40] = 1;
+        assert_eq!(super::hem_common_controls(&frame.bytes, common), Some(true));
+        for (offset, value) in [(0, 4), (30, 2), (34, 1), (35, 1), (36, 3), (40, 2)] {
+            let mut invalid = frame.bytes.clone();
+            invalid[common + offset] = value;
+            assert_eq!(super::hem_common_controls(&invalid, common), None);
+        }
+        assert_eq!(
+            super::hem_common_controls(&frame.bytes[..common + 40], common),
+            None
+        );
     }
 }

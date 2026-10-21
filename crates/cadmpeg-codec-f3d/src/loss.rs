@@ -78,6 +78,8 @@ pub(crate) enum F3dLossCode {
     FeatureScopePayloadUninterpreted,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,
+    /// Typed compact parameter frames match no parameter grammar.
+    ParameterRecordUnparsed,
     /// Design parameter owner bindings have no recognized feature scope.
     ParameterOwnerUnrecognized,
     /// Design parameters retain unit tokens without a settled quantity kind.
@@ -281,6 +283,7 @@ impl F3dLossCode {
         Self::FeatureScopeUnprojected,
         Self::FeatureScopePayloadUninterpreted,
         Self::ParameterUnprojected,
+        Self::ParameterRecordUnparsed,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterUnitUntyped,
         Self::MaterialDistanceUnitUntyped,
@@ -402,6 +405,7 @@ impl F3dLossCode {
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
+            Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
@@ -554,6 +558,7 @@ impl F3dLossCode {
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::ParameterUnprojected
+            | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
             | Self::MaterialDistanceUnitUntyped
@@ -631,6 +636,7 @@ impl F3dLossCode {
 
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
+            | Self::ParameterRecordUnparsed
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
             | Self::KernelCarrierUnparseable
@@ -1225,6 +1231,7 @@ mod tests {
                 "feature.scope-unprojected",
                 "feature.scope-payload-uninterpreted",
                 "parameter.unprojected",
+                "parameter.record-unparsed",
                 "parameter.owner-unrecognized",
                 "parameter.unit-untyped",
                 "material.distance-unit-untyped",

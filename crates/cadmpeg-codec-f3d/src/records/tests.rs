@@ -584,14 +584,20 @@ fn parameter_source_preserves_semantic_family_and_checks_ownership() {
                 )
                 .is_err()
             );
-            wire.as_object_mut().unwrap().remove("family_discriminator");
-            let result =
-                serde_json::from_value::<crate::records::parameters::DesignParameter>(wire.clone());
-            if owner.is_none() {
-                assert!(result.is_err());
-            } else {
-                assert_eq!(serde_json::to_value(result.unwrap()).unwrap(), wire);
-            }
+            let mut no_discriminator = wire;
+            no_discriminator
+                .as_object_mut()
+                .unwrap()
+                .remove("family_discriminator");
+            no_discriminator
+                .as_object_mut()
+                .unwrap()
+                .remove("family_discriminator_offset");
+            // Typed compact document parameters and compact owned parameters
+            // both store no family discriminator.
+            let parameter: crate::records::parameters::DesignParameter =
+                serde_json::from_value(no_discriminator.clone()).unwrap();
+            assert_eq!(serde_json::to_value(parameter).unwrap(), no_discriminator);
         }
     }
     assert!(

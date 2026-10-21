@@ -56,8 +56,15 @@ use cadmpeg_ir::geometry::{
 
 use super::NxCodec;
 
+mod assembly_placement;
+mod body_write;
+
 mod attachment_containment;
 mod dialect;
+mod enlarge;
+mod extract_face;
+mod swp104;
+mod symbolic_thread;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     EditableDecodeResult::from(

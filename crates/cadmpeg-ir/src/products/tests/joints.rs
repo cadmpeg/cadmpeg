@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::products::{AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind};
+use crate::products::{
+    AssemblyJoint, JointConnector, JointId, JointOperand, OperandContainer, PairedJointKind,
+    PlaneSense,
+};
 use crate::transform::Transform;
 
 fn connector() -> JointConnector {
@@ -20,7 +23,7 @@ fn joint_id() -> JointId {
 /// outside the family is refused by name rather than admitted and dropped.
 #[test]
 fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
-    let families: [(PairedJointKind, &[&str]); 14] = [
+    let families: [(PairedJointKind, &[&str]); 19] = [
         (
             PairedJointKind::Fixed {
                 angle: None,
@@ -87,6 +90,31 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
             &["distance", "distance2"],
         ),
         (
+            PairedJointKind::PlaneCoincidence {
+                sense: PlaneSense::Opposed,
+                offset: None,
+            },
+            &["offset"],
+        ),
+        (PairedJointKind::AxisCoincidence {}, &[]),
+        (
+            PairedJointKind::PointOnAxis { distance: None },
+            &["distance"],
+        ),
+        (
+            PairedJointKind::Insert {
+                sense: PlaneSense::Opposed,
+                offset: None,
+            },
+            &["offset"],
+        ),
+        (
+            PairedJointKind::Tangent {
+                contact: crate::products::TangentContact::Outside,
+            },
+            &[],
+        ),
+        (
             PairedJointKind::Native {
                 name: "application_joint".into(),
                 angle: None,
@@ -111,6 +139,7 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
         ("translation_offset", serde_json::json!([1.0, 2.0, 3.0])),
         ("distance", serde_json::json!(2.0)),
         ("distance2", serde_json::json!(3.0)),
+        ("offset", serde_json::json!(1.5)),
         (
             "angular_limits",
             serde_json::json!({"bounds": "range", "minimum": 0.0, "maximum": 1.0}),
@@ -218,5 +247,96 @@ fn a_nonfinite_joint_scalar_is_refused() {
             serde_json::from_str::<AssemblyJoint>(&candidate).is_err(),
             "{field}"
         );
+    }
+}
+
+/// A plane coincidence names its sense, an operand below a local occurrence
+/// names its nested occurrence path, and a joint names its driving parameter.
+#[test]
+fn a_plane_coincidence_keeps_its_sense_path_and_driving_parameter() {
+    let occurrence = crate::ids::OccurrenceId::mint("test:model:occurrence#4").unwrap();
+    let nested = JointConnector {
+        operand: JointOperand::nested_occurrence(
+            occurrence.clone(),
+            vec!["2".into(), "7".into()],
+            "part:object",
+            vec!["face:3".into()],
+        ),
+        frame: Transform::identity(),
+        detached: false,
+    };
+    let mut joint = AssemblyJoint::paired(
+        joint_id(),
+        PairedJointKind::PlaneCoincidence {
+            sense: PlaneSense::Aligned,
+            offset: Some(crate::scalar::FiniteReal::new(-2.5).unwrap()),
+        },
+        [connector(), nested],
+        None,
+    );
+    joint.driving_parameter =
+        Some(crate::features::ParameterId::mint("test:model:parameter#0").unwrap());
+    let wire = serde_json::to_value(&joint).unwrap();
+    assert_eq!(wire["operands"]["kind"]["sense"], "aligned");
+    assert_eq!(wire["operands"]["kind"]["offset"], -2.5);
+    assert_eq!(
+        wire["operands"]["connectors"][1]["operand"]["container"]["occurrence_path"],
+        serde_json::json!(["2", "7"])
+    );
+    assert_eq!(wire["driving_parameter"], "test:model:parameter#0");
+    assert_eq!(
+        serde_json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
+        joint
+    );
+
+    let mut missing_sense = wire.clone();
+    missing_sense["operands"]["kind"]
+        .as_object_mut()
+        .unwrap()
+        .remove("sense");
+    assert!(serde_json::from_value::<AssemblyJoint>(missing_sense).is_err());
+
+    let flat = JointOperand::occurrence(occurrence, "part:object", Vec::new());
+    let wire = serde_json::to_value(&flat).unwrap();
+    assert!(wire["container"].get("occurrence_path").is_none());
+    assert!(matches!(
+        serde_json::from_value::<JointOperand>(wire).unwrap().container,
+        OperandContainer::Occurrence { occurrence_path, .. } if occurrence_path.is_empty()
+    ));
+}
+
+/// Insert and tangent joints name their sense and contact side on the wire.
+#[test]
+fn insert_and_tangent_joints_keep_their_sense_and_contact() {
+    for (kind, key, value) in [
+        (
+            PairedJointKind::Insert {
+                sense: PlaneSense::Opposed,
+                offset: Some(crate::scalar::FiniteReal::new(2.0).unwrap()),
+            },
+            "sense",
+            "opposed",
+        ),
+        (
+            PairedJointKind::Tangent {
+                contact: crate::products::TangentContact::Inside,
+            },
+            "contact",
+            "inside",
+        ),
+    ] {
+        let joint = AssemblyJoint::paired(joint_id(), kind, [connector(), connector()], None);
+        let wire = serde_json::to_value(&joint).unwrap();
+        assert_eq!(wire["operands"]["kind"][key], value);
+        assert_eq!(
+            serde_json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
+            joint
+        );
+        let mut missing = wire;
+        missing["operands"]["kind"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert!(serde_json::from_value::<AssemblyJoint>(missing).is_err());
     }
 }

@@ -26,6 +26,7 @@ pub mod refusal;
 pub mod roundtrip;
 pub mod unknown_keys;
 pub mod wire;
+pub mod zip_fixture;
 
 /// A service-policy decode context for a test that creates native records
 /// without reading a source file.

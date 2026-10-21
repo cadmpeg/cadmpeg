@@ -26,8 +26,30 @@ fn operation_source_properties_require_unique_owned_structures() {
         sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"record-hash"),
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-hash"),
         stable_identity: None,
+        core: None,
+        linked_face_payload: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(100, 110, 10)
             .unwrap(),
+    };
+    let _common = crate::native::features::FeatureOperationCommonFrame {
+        id: "common".into(),
+        operation_record: record.id.clone(),
+        ordinal: 0,
+        frame: crate::om::common_frame::CommonFrame::<u64, Option<String>>::new(
+            crate::om::common_frame::CommonFramePrefix::from_wire(
+                [0, 351, 171],
+                &[vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
+                [1, 3, 2],
+            )
+            .unwrap(),
+            [1, 2, 1, 1, 1, 0, 0, 0],
+            crate::om::common_frame::CommonFrameSuffix::from_wire(41, &[0x29], Some(65), &[0x41])
+                .unwrap()
+                .with_target(None)
+                .unwrap(),
+            101,
+        )
+        .unwrap(),
     };
     let common = crate::native::features::FeatureOperationCommonFrame {
         id: "common".into(),

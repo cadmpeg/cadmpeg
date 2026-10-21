@@ -938,7 +938,13 @@ fn native_store_paths_cover_every_declared_arena() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::CATIA_FAMILIES.len(), 43);
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 47);
+    assert!(catalogue_names.contains("consolidated_chamfers"));
+    assert!(catalogue_names.contains("object_chamfers"));
+    assert!(catalogue_names.contains("consolidated_class60_records"));
+    assert!(!catalogue_names.contains("consolidated_groups"));
+    assert!(!catalogue_names.contains("consolidated_embedded_cylinders"));
+    assert!(!catalogue_names.contains("consolidated_cone_faces"));
     assert_eq!(
         catalogue_names,
         crate::native::ARENAS

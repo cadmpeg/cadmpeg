@@ -1,14 +1,17 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use crate::native::chamfer::{CatiaConsolidatedChamfer, CatiaObjectChamfer};
+use crate::native::class61::CatiaConsolidatedClass61Record;
+use crate::native::{resolved_range_interval, EntityIncidenceIndex, RelationDependencies};
 use cadmpeg_core::decode::u64_from_index;
 
 use super::test_consolidated::{
-    validate_consolidated_circles, validate_consolidated_class5b5c_records,
-    validate_consolidated_class61_records, validate_consolidated_cone_faces,
-    validate_consolidated_cones, validate_consolidated_cylinders,
-    validate_consolidated_embedded_cylinders, validate_consolidated_groups,
-    validate_consolidated_line_profiles, validate_consolidated_parameter_points,
-    validate_consolidated_pcurves, validate_consolidated_plane_carriers,
-    validate_consolidated_reference_lists, validate_consolidated_revolutions,
-    validate_consolidated_spheres, validate_consolidated_tori,
+    validate_consolidated_chamfers, validate_consolidated_circles,
+    validate_consolidated_class5b5c_records, validate_consolidated_cones,
+    validate_consolidated_cylinders, validate_consolidated_line_profiles,
+    validate_consolidated_parameter_points, validate_consolidated_pcurves,
+    validate_consolidated_plane_carriers, validate_consolidated_reference_lists,
+    validate_consolidated_revolutions, validate_consolidated_spheres, validate_consolidated_tori,
 };
 use super::test_legacy::{valid_entity_record_shape, validate_legacy_entity_runs};
 use super::test_links::{
@@ -16,7 +19,6 @@ use super::test_links::{
     ConsolidatedSupportArenas,
 };
 use super::test_zero_entity::{
-    validate_zero_entity_endpoint_locus_candidates, validate_zero_entity_endpoint_pair_candidates,
     validate_zero_entity_ownership_roots, validate_zero_entity_records,
     validate_zero_entity_support_runs, validate_zero_entity_topology_records,
 };
@@ -35,22 +37,18 @@ use crate::native::{
     definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
     design_objects, entity_class_index, entity_suffix_framing, entity_suffix_schema_selection,
     entity_suffix_value, entity_value_schema_selections, object_production, payload_references,
-    reference_signature, resolved_range_interval, semantic_entity_indices, store_projection,
-    terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
-    CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
-    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
-    CatiaConsolidatedEdgeRun, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
-    CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
-    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList,
-    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
-    CatiaConsolidatedVertexIdentity, CatiaDesignObject, CatiaEntityReferenceIndex,
-    CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
-    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
+    reference_signature, semantic_entity_indices, store_projection, terminal_null_entity_id,
+    value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog, CatiaCatalogEntry,
+    CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedCone, CatiaConsolidatedCylinder,
+    CatiaConsolidatedEdgeRun, CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket,
+    CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
+    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
+    CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity, CatiaDesignObject,
+    CatiaEntityReferenceIndex, CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun,
+    CatiaNative, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
     CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
-    CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
-    CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
-    CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
-    CatiaZeroEntityVertexIncidence, EntityIncidenceIndex, RelationDependencies,
+    CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
+    CatiaZeroEntityRecord, CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -65,12 +63,12 @@ impl CatiaNative {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
-        .expect("build the decode context");
-        let consolidated_records = crate::wire::records::consolidated_records(bytes);
-        Self::decode_with_records(
+        .expect("test source fits the service profile");
+        let sources = [vec![crate::wire::records::SourceExtent::whole(bytes)]];
+        Self::decode_with_record_sources(
             &ctx,
             bytes,
-            &consolidated_records,
+            &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("decode the records")
@@ -422,7 +420,7 @@ impl CatiaNative {
                             expected_storage.and_then(|target| target.design_object.as_deref()),
                         )
                     || record.inline_body.as_ref().is_some_and(|body| {
-                        (graph_entities.is_empty() && !object_graph::is_inline_body(body))
+                        (graph_entities.is_empty() && object_graph::inline::parse(body).is_none())
                             || body.first() != Some(&record.lead)
                             || !record.head.is_empty()
                             || record.owner.is_some()
@@ -521,6 +519,8 @@ impl CatiaNative {
             ));
         }
         let preview_images = expected_preview_images;
+        let inline_fields = namespace.arena_as("inline_fields")?;
+        let storage_property_members = namespace.arena_as("storage_property_members")?;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
         let mut consolidated_circles: Vec<CatiaConsolidatedCircle> =
             namespace.arena_as("consolidated_circles")?;
@@ -528,16 +528,20 @@ impl CatiaNative {
         validate_consolidated_circles(&consolidated_circles)?;
         let mut consolidated_class61_records: Vec<CatiaConsolidatedClass61Record> =
             namespace.arena_as("consolidated_class61_records")?;
-        consolidated_class61_records.sort_by_key(|record| record.byte_offset);
-        validate_consolidated_class61_records(&consolidated_class61_records)?;
+        consolidated_class61_records
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        crate::native::class61::validate(&consolidated_class61_records)?;
         let mut consolidated_class5b5c_records: Vec<CatiaConsolidatedClass5b5cRecord> =
             namespace.arena_as("consolidated_class5b5c_records")?;
         consolidated_class5b5c_records
             .sort_by_key(|record| (record.source_index, record.source_offset));
         validate_consolidated_class5b5c_records(&consolidated_class5b5c_records)?;
-        let mut consolidated_cone_faces: Vec<CatiaConsolidatedConeFace> =
-            namespace.arena_as("consolidated_cone_faces")?;
-        consolidated_cone_faces.sort_by_key(|face| face.byte_offset);
+        let mut consolidated_chamfers: Vec<CatiaConsolidatedChamfer> =
+            namespace.arena_as("consolidated_chamfers")?;
+        consolidated_chamfers.sort_by_key(|face| face.byte_offset);
+        let mut object_chamfers: Vec<CatiaObjectChamfer> = namespace.arena_as("object_chamfers")?;
+        object_chamfers.sort_by_key(|row| row.byte_offset);
+        super::test_consolidated::validate_object_chamfers(&object_chamfers)?;
         let mut consolidated_cones: Vec<CatiaConsolidatedCone> =
             namespace.arena_as("consolidated_cones")?;
         consolidated_cones.sort_by_key(|cone| cone.byte_offset);
@@ -546,30 +550,25 @@ impl CatiaNative {
             namespace.arena_as("consolidated_cylinders")?;
         consolidated_cylinders.sort_by_key(|cylinder| cylinder.byte_offset);
         validate_consolidated_cylinders(&consolidated_cylinders)?;
-        let mut consolidated_groups: Vec<CatiaConsolidatedGroup> =
-            namespace.arena_as("consolidated_groups")?;
-        consolidated_groups.sort_by_key(|group| group.byte_offset);
-        validate_consolidated_groups(&consolidated_groups)?;
-        let mut consolidated_embedded_cylinders: Vec<CatiaConsolidatedEmbeddedCylinder> =
-            namespace.arena_as("consolidated_embedded_cylinders")?;
-        consolidated_embedded_cylinders.sort_by_key(|cylinder| cylinder.byte_offset);
-        validate_consolidated_embedded_cylinders(
-            &consolidated_embedded_cylinders,
-            &consolidated_groups,
-        )?;
+        let mut consolidated_class60_records: Vec<
+            crate::native::class60::CatiaConsolidatedClass60Record,
+        > = namespace.arena_as("consolidated_class60_records")?;
+        consolidated_class60_records
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        crate::native::class60::validate(&consolidated_class60_records)?;
         let mut consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile> =
             namespace.arena_as("consolidated_line_profiles")?;
         consolidated_line_profiles.sort_by_key(|line| line.byte_offset);
         validate_consolidated_line_profiles(&consolidated_line_profiles)?;
         let mut consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket> =
             namespace.arena_as("consolidated_owner_packets")?;
-        consolidated_owner_packets.sort_by_key(|packet| packet.byte_offset);
+        consolidated_owner_packets.sort_by_key(|packet| packet.frame.pos);
         validate_consolidated_owner_packets(&consolidated_owner_packets)?;
         let mut consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint> =
             namespace.arena_as("consolidated_parameter_points")?;
         consolidated_parameter_points.sort_by_key(|point| point.byte_offset);
         validate_consolidated_parameter_points(&consolidated_parameter_points)?;
-        validate_consolidated_cone_faces(&consolidated_cone_faces, &consolidated_parameter_points)?;
+        validate_consolidated_chamfers(&consolidated_chamfers, &consolidated_parameter_points)?;
         let mut consolidated_plane_carriers: Vec<CatiaConsolidatedPlaneCarrier> =
             namespace.arena_as("consolidated_plane_carriers")?;
         consolidated_plane_carriers.sort_by_key(|carrier| carrier.byte_offset);
@@ -607,6 +606,7 @@ impl CatiaNative {
         )
         .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
         consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
+        let zero_entity_allocation_edges = namespace.arena_as("zero_entity_allocation_edges")?;
         let mut zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride> =
             namespace.arena_as("zero_entity_edge_strides")?;
         zero_entity_edge_strides.sort_by_key(|record| record.byte_offset);
@@ -615,8 +615,6 @@ impl CatiaNative {
         zero_entity_oriented_use_pairs.sort_by_key(|pair| pair.header_byte_offset);
         let zero_entity_ownership_roots: Vec<CatiaZeroEntityOwnershipRoot> =
             namespace.arena_as("zero_entity_ownership_roots")?;
-        let zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate> =
-            namespace.arena_as("zero_entity_endpoint_pair_candidates")?;
         let mut zero_entity_records: Vec<CatiaZeroEntityRecord> =
             namespace.arena_as("zero_entity_records")?;
         zero_entity_records.sort_by_key(|record| record.record_ordinal);
@@ -630,16 +628,6 @@ impl CatiaNative {
             &zero_entity_support_runs,
             &zero_entity_records,
         )?;
-        let zero_entity_endpoint_locus_candidates: Vec<CatiaZeroEntityEndpointLocusCandidate> =
-            namespace.arena_as("zero_entity_endpoint_locus_candidates")?;
-        validate_zero_entity_endpoint_pair_candidates(
-            &zero_entity_endpoint_pair_candidates,
-            &zero_entity_support_runs,
-        )?;
-        validate_zero_entity_endpoint_locus_candidates(
-            &zero_entity_endpoint_locus_candidates,
-            &zero_entity_support_runs,
-        )?;
         let mut zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence> =
             namespace.arena_as("zero_entity_vertex_incidences")?;
         zero_entity_vertex_incidences.sort_by_key(|record| record.byte_offset);
@@ -649,6 +637,14 @@ impl CatiaNative {
             &zero_entity_vertex_incidences,
             &zero_entity_records,
         )?;
+        crate::native::zero_entity_allocation::validate(
+            &zero_entity_allocation_edges,
+            &zero_entity_records,
+            &zero_entity_edge_strides,
+            &zero_entity_oriented_use_pairs,
+            &zero_entity_vertex_incidences,
+            &zero_entity_support_runs,
+        )?;
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
             &consolidated_pcurves,
@@ -656,8 +652,6 @@ impl CatiaNative {
                 circles: &consolidated_circles,
                 cones: &consolidated_cones,
                 cylinders: &consolidated_cylinders,
-                embedded_cylinders: &consolidated_embedded_cylinders,
-                groups: &consolidated_groups,
                 planes: &consolidated_plane_carriers,
                 spheres: &consolidated_spheres,
                 tori: &consolidated_tori,
@@ -674,20 +668,48 @@ impl CatiaNative {
         )?;
         validate_alias_surface_tags(&alias_rows)?;
         validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
+        let e5_curve_supports = namespace.arena_as("e5_curve_supports")?;
+        let mut consolidated_domain_relations: Vec<
+            crate::native::domain_relation::CatiaConsolidatedDomainRelation,
+        > = namespace.arena_as("consolidated_domain_relations")?;
+        consolidated_domain_relations
+            .sort_by_key(|relation| (relation.source_index, relation.source_offset));
+        for (index, relation) in consolidated_domain_relations.iter().enumerate() {
+            if relation.id != format!("catia:consolidated:domain-relation#{index:00}") {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "invalid consolidated domain relation identity".to_owned(),
+                ));
+            }
+        }
+        let mut sampled_parameter_maps: Vec<
+            crate::native::parameter_map::CatiaSampledParameterMap,
+        > = namespace.arena_as("sampled_parameter_maps")?;
+        sampled_parameter_maps.sort_by_key(|map| (map.source_index, map.source_offset));
+        for (index, map) in sampled_parameter_maps.iter().enumerate() {
+            if map.id != format!("catia:a8:sampled-parameter-map#{index:00}") {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "invalid sampled parameter map identity".to_owned(),
+                ));
+            }
+        }
         Ok(Self {
             display_colors: namespace.arena_as("display_colors")?,
+            sampled_parameter_maps,
             alias_rows,
+            inline_fields,
+            storage_property_members,
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
             consolidated_class5b5c_records,
-            consolidated_cone_faces,
+            consolidated_chamfers,
+            object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
-            consolidated_embedded_cylinders,
+            consolidated_domain_relations,
             consolidated_edge_nodes,
             consolidated_edge_runs,
-            consolidated_groups,
+            consolidated_class60_records,
             consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,
@@ -699,6 +721,7 @@ impl CatiaNative {
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
+            e5_curve_supports,
             entity_records,
             external_references,
             finjpl_segments,
@@ -708,13 +731,12 @@ impl CatiaNative {
             reference_signature_cohorts,
             schema_configuration_row_chains,
             value_blocks,
+            zero_entity_allocation_edges,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
             zero_entity_ownership_roots,
-            zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
-            zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
         })
     }

@@ -16,8 +16,8 @@
 //! (u16) and, for most families, an `ordinal`/`seq` (u32). The magic
 //! `c2 bc 92 8f 99 6e 00 00` anchors the bridge, edge-use, and vertex-use
 //! parses. Records are keyed by `attr` within each stream. Same-site merges
-//! preserve partition topology, add missing subordinate deltas records and
-//! typed-FACE-selected bridges, and apply deltas point updates. The decoder
+//! preserve partition records and add missing subordinate deltas records and
+//! typed-FACE-selected bridges. The decoder
 //! merges all admitted sites. It keeps the active site's primary identities
 //! and qualifies the other sites' identities; without an active site, it
 //! qualifies every site's identities.
@@ -495,9 +495,7 @@ impl Tables {
         merge_missing(&mut self.edge_uses, deltas.edge_uses);
         merge_missing(&mut self.coedges, deltas.coedges);
         merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
-        for (attr, record) in deltas.points.drain() {
-            self.points.insert(attr, record);
-        }
+        merge_missing(&mut self.points, deltas.points);
     }
 }
 

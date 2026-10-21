@@ -20,14 +20,15 @@ use crate::test_support::test_a5_bound::{
 };
 use crate::test_support::test_a5a8::{a5_native_edge_identity_stream, a5_pcurve_stream};
 use crate::test_support::test_b2::{
-    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream, b2_circle_stream,
-    b2_class5b5c_stream, b2_cone_face_parameter_point_stream, b2_cone_face_stream, b2_cone_stream,
-    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
-    b2_fixed_owner_boundary_cycle_stream, b2_fixed_owner_boundary_face_node_cycle_stream,
-    b2_group_stream, b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
-    b2_owner_chart_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
-    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_sphere_stream, b2_torus_stream, b2_width_coded_owner_with_allocation_stream,
+    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
+    b2_chamfer_contact_stream, b2_chamfer_stream, b2_circle_stream, b2_class5b5c_stream,
+    b2_class60_reference_stream, b2_cone_stream, b2_counted_61_stream, b2_cylinder_stream,
+    b2_edge_node_stream, b2_fixed_owner_boundary_cycle_stream,
+    b2_fixed_owner_boundary_face_node_cycle_stream, b2_implicit_axis_cylinder_stream,
+    b2_line_profile_stream, b2_owner_chart_stream, b2_parameter_point_stream, b2_pcurve_stream,
+    b2_plane_carrier_stream, b2_range_origin_cylinder_stream, b2_reference_list_stream,
+    b2_resolved_revolution_stream, b2_sphere_stream, b2_torus_stream,
+    b2_width_coded_owner_with_allocation_stream, class61_false_long_stream,
 };
 use crate::test_support::test_bytes::{be32, le_f64};
 use crate::test_support::test_container::{
@@ -76,81 +77,82 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 }
 
 #[test]
-fn native_namespace_retains_typed_consolidated_groups() {
-    let native = crate::native::CatiaNative::decode(&b2_group_stream());
-    let [group] = native.consolidated_groups.as_slice() else {
-        panic!("one consolidated group")
+fn native_namespace_retains_counted_class60_references() {
+    let native = crate::native::CatiaNative::decode(&b2_class60_reference_stream());
+    let [record] = native.consolidated_class60_records.as_slice() else {
+        panic!("one counted class-0x60 record")
     };
-    assert_eq!(group.byte_offset, 9);
-    assert_eq!(group.group_type, 3);
+    assert_eq!(record.frame.pos, 9);
+    assert_eq!(record.source_offset, 9);
+    assert_eq!(record.references[0].value, 3);
+    assert_eq!(
+        record.references[0].encoding,
+        crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
-        .expect("store CATIA consolidated groups");
+        .expect("store CATIA class-0x60 records");
     assert_eq!(
-        crate::native::CatiaNative::load(&namespace).expect("load CATIA consolidated groups"),
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x60 records"),
         native
     );
 
     let mut invalid = native;
-    invalid.consolidated_groups[0].id.push_str("-changed");
+    invalid.consolidated_class60_records[0]
+        .id
+        .push_str("-changed");
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA consolidated group for load validation");
+        .expect("store invalid class-0x60 record for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
 #[test]
-fn native_namespace_retains_consolidated_class61_records() {
+fn native_namespace_retains_counted_class61_members_and_refuses_false_long_fixture() {
     let mut stream = b2_counted_61_stream();
-    stream.extend_from_slice(&b2_long_61_stream());
+    stream.extend_from_slice(&class61_false_long_stream());
     let native = crate::native::CatiaNative::decode(&stream);
-    let [counted, long] = native.consolidated_class61_records.as_slice() else {
-        panic!("two consolidated class-0x61 records")
+    let [counted] = native.consolidated_class61_records.as_slice() else {
+        panic!("one complete counted roster; the manufactured long fixture does not close")
     };
-    let crate::native::CatiaConsolidatedClass61Payload::Counted { references, tail } =
-        &counted.payload
-    else {
-        panic!("counted class-0x61 record")
-    };
-    assert_eq!(references, &[1300, 1294, 30, 74]);
-    assert_eq!(tail, &[0x41, 0x03]);
-    let crate::native::CatiaConsolidatedClass61Payload::Long {
-        prefix,
-        members,
-        references,
-        scalar,
-    } = &long.payload
-    else {
-        panic!("long class-0x61 record")
-    };
-    assert_eq!(prefix, &[0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]);
-    assert_eq!(members, &[0x064a, 0x0650, 0x0656]);
-    assert_eq!(references, &[0x0100, 0x0103, 0x0106, 0x0109, 0x010c]);
-    assert_eq!(*scalar, crate::test_support::test_b5::finite(42.5));
-
+    assert_eq!(
+        counted
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [1300, 1294, 30, 74]
+    );
+    assert_eq!(
+        &counted.frame.payload[counted.frame.payload.len() - 2..],
+        &[0x41, 0x03]
+    );
+    assert_eq!(counted.roster_control, 1);
+    assert_eq!(
+        counted
+            .members
+            .iter()
+            .map(|member| member.orientation_bit)
+            .collect::<Vec<_>>(),
+        [false, false, true, false]
+    );
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
-        .expect("store CATIA class-0x61 records");
+        .expect("store CATIA counted roster");
     assert_eq!(
-        crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x61 records"),
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA counted roster"),
         native
     );
-
     let mut invalid = native;
-    let crate::native::CatiaConsolidatedClass61Payload::Long { members, .. } =
-        &mut invalid.consolidated_class61_records[1].payload
-    else {
-        panic!("long class-0x61 record")
-    };
-    members.swap(0, 1);
+    invalid.consolidated_class61_records[0].members[0].orientation_bit = true;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA class-0x61 record for load validation");
+        .expect("store invalid occurrence bit for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
@@ -189,39 +191,36 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
 #[test]
 fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
-    let [uv, station_uv, five_scalars, station_uv_last] =
+    let [two_scalars, three_scalars, five_scalars, last_three_scalars] =
         native.consolidated_parameter_points.as_slice()
     else {
         panic!("four consolidated parameter points")
     };
     assert_eq!(
         [
-            uv.prefix.as_u8(),
-            station_uv.prefix.as_u8(),
-            five_scalars.prefix.as_u8(),
-            station_uv_last.prefix.as_u8()
+            two_scalars.operand.value(),
+            three_scalars.operand.value(),
+            five_scalars.operand.value(),
+            last_three_scalars.operand.value()
         ],
-        [0x05, 0x09, 0x0d, 0x11]
+        [1, 2, 3, 4]
     );
-    assert_eq!(uv.payload.layout(), 0x12);
-    assert_eq!(uv.control, 0x12);
+    assert_eq!(two_scalars.payload.byte_len(two_scalars.operand), 0x12);
+    assert_eq!(two_scalars.control, 0x12);
     assert!(matches!(
-        &uv.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
+        &two_scalars.payload,
+        crate::families::b2::records::B2ParameterPointPayload::TwoScalars { values } if *values == [2.0, 3.0]
     ));
-    assert_eq!(station_uv.payload.layout(), 0x1a);
+    assert_eq!(three_scalars.payload.byte_len(three_scalars.operand), 0x1a);
     assert!(matches!(
-        &station_uv.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::StationUv {
-            station,
-            uv,
-        } if station.get() == 11.0 && *uv == [4.0, 5.0]
+        &three_scalars.payload,
+        crate::families::b2::records::B2ParameterPointPayload::ThreeScalars { values } if *values == [11.0, 4.0, 5.0]
     ));
-    assert_eq!(five_scalars.payload.layout(), 0x2a);
+    assert_eq!(five_scalars.payload.byte_len(five_scalars.operand), 0x2a);
     assert!(matches!(
         &five_scalars.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::FiveScalars { values }
-            if *values == [1.0, 2.0, 3.0, 4.0, 5.0]
+        crate::families::b2::records::B2ParameterPointPayload::FiveScalars { values }
+            if *values == [-1.0, 2.0, 3.0, 0.6, 0.8]
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -231,6 +230,65 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA parameter points"),
         native
+    );
+}
+
+#[test]
+fn consolidated_parameter_point_wire_rejects_contradictory_controls() {
+    let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
+    for (index, control) in [(0, 0x01), (1, 0x08), (2, 0x48)] {
+        let mut wire = serde_json::to_value(&native.consolidated_parameter_points[index])
+            .expect("serialize parameter point");
+        wire["control"] = serde_json::json!(control);
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
+        );
+    }
+    let mut wire = serde_json::to_value(&native.consolidated_parameter_points[2])
+        .expect("serialize explicit line");
+    wire["payload"]["values"][3] = serde_json::json!(2.0);
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
+    );
+}
+
+#[test]
+fn parameter_operand_native_round_trip_preserves_all_compact_widths() {
+    let native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_b2::b2_compact_parameter_operand_stream(),
+    );
+    assert_eq!(
+        native
+            .consolidated_parameter_points
+            .iter()
+            .map(|p| p.operand.value())
+            .collect::<Vec<_>>(),
+        [220, 65_390, 1_727_824, u32::MAX, 1]
+    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store compact parameter operands");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load compact parameter operands"),
+        native
+    );
+    for (encoding, invalid) in [
+        ("inline", 64),
+        ("u8", 256),
+        ("u16", 65536),
+        ("u24", 0x0100_0000),
+    ] {
+        let mut wire = serde_json::to_value(&native.consolidated_parameter_points[0]).unwrap();
+        wire["operand"] = serde_json::json!({"value":invalid,"encoding":encoding});
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
+        );
+    }
+    let mut wire = serde_json::to_value(&native.consolidated_parameter_points[0]).unwrap();
+    wire["byte_len"] = serde_json::json!(5);
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
     );
 }
 
@@ -249,31 +307,18 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
         ],
         [0xe4, 0xc4, 0xec]
     );
-    assert!(matches!(
-        &direction2.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-            point,
-            direction: [1.0, 0.0],
-            tail,
-        } if *point == [10.0, 20.0] && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &direction3.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-            point,
-            direction,
-            tail,
-        } if *point == [10.0, 20.0]
-            && direction.get() == [1.0, 0.0, 0.0]
-            && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &tail.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointTail {
-            point,
-            tail,
-        } if *point == [10.0, 20.0] && *tail == [-2.0, 5.0, -2.0, 3.0]
-    ));
+    for (carrier, u_bounds) in [
+        (direction2, [0.0, 5.0]),
+        (direction3, [0.0, 5.0]),
+        (tail, [-2.0, 5.0]),
+    ] {
+        assert!(
+            matches!(&carrier.payload, crate::families::b2::records::B2PlaneCarrierPayload::Plane {
+            point, direction, u_range, v_range, ..
+        } if *point == [10.0,20.0] && direction.get() == [1.0,0.0,0.0]
+            && u_range.endpoints() == u_bounds && v_range.endpoints() == [-2.0,3.0])
+        );
+    }
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -324,7 +369,7 @@ fn native_namespace_retains_unclassified_consolidated_plane_carrier_lanes() {
     assert_eq!(carrier.payload.selector(), 0x40);
     assert!(matches!(
         &carrier.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values: lane, .. }
+        crate::families::b2::records::B2PlaneCarrierPayload::ScalarLane { values: lane, .. }
             if cadmpeg_ir::scalar::FiniteReal::raw_lane(lane) == values
     ));
 
@@ -724,19 +769,27 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
 }
 
 #[test]
-fn native_namespace_retains_consolidated_cone_face_charts() {
-    let native = crate::native::CatiaNative::decode(&b2_cone_face_parameter_point_stream());
-    let [face] = native.consolidated_cone_faces.as_slice() else {
-        panic!("one consolidated cone-face chart")
+fn native_namespace_retains_two_support_chamfers() {
+    let native = crate::native::CatiaNative::decode(&b2_chamfer_contact_stream());
+    let [face] = native.consolidated_chamfers.as_slice() else {
+        panic!("one compact chamfer")
     };
-    assert_eq!(face.program.len(), 16);
     assert_eq!(
-        face.angular_scale,
-        crate::test_support::test_b5::finite(1.5)
+        face.support_surfaces
+            .map(crate::wire::compact_unsigned::CompactUnsigned::value),
+        [1407, 788]
     );
     assert_eq!(
-        face.half_angle,
-        crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4)
+        face.support_pcurves
+            .map(crate::wire::compact_unsigned::CompactUnsigned::value),
+        [57, 55]
+    );
+    assert_eq!(
+        face.parameters.result_kind,
+        crate::families::chamfer::ChamferResultKind::Cone
+    );
+    assert!(
+        matches!(face.parameters.definition, crate::families::chamfer::ChamferDefinition::LengthAngle { length1, .. } if length1.get() == 1.5)
     );
     assert_eq!(
         face.parameter_points,
@@ -749,55 +802,51 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
     );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut namespace)
-        .expect("store CATIA cone-face chart");
+    native.store(&mut namespace).expect("store CATIA chamfer");
     assert_eq!(
-        crate::native::CatiaNative::load(&namespace).expect("load CATIA cone-face chart"),
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA chamfer"),
         native
     );
 
     let mut invalid = native.clone();
-    invalid.consolidated_cone_faces[0].program.clear();
+    invalid.consolidated_chamfers[0].byte_len += 1;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA cone-face chart");
+        .expect("store invalid CATIA chamfer");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = native.clone();
-    invalid.consolidated_cone_faces[0]
-        .parameter_points
-        .swap(0, 1);
+    invalid.consolidated_chamfers[0].parameter_points.swap(0, 1);
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA cone-face parameter run");
+        .expect("store invalid CATIA chamfer contact run");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
-    let mut mixed = b2_cone_face_parameter_point_stream();
+    let mut mixed = b2_chamfer_contact_stream();
     mixed.extend_from_slice(&[0xb2, 0x03, 0x18, 0x02, 0x05, 0x99, 0x99]);
     let mixed = crate::native::CatiaNative::decode(&mixed);
-    assert!(mixed.consolidated_cone_faces[0].parameter_points.is_empty());
+    assert_eq!(mixed.consolidated_chamfers[0].parameter_points.len(), 4);
 
     let mut file = standard_catpart();
-    file.splice(16..16, b2_cone_face_parameter_point_stream());
+    file.splice(16..16, b2_chamfer_contact_stream());
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
     file[8..12].copy_from_slice(&be32(file_len));
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
-        .expect("decode CATIA cone-face chart");
+        .expect("decode CATIA chamfer");
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT.as_str()
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT.as_str()
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT.as_str()
         ),
         4
     );
@@ -827,9 +876,9 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     };
     assert_eq!(
         revolution.reference_token,
-        crate::native::CatiaRevolutionReferenceToken::Wide
+        crate::native::CatiaRevolutionReferenceToken::Lead0a
     );
-    assert_eq!(revolution.profile_allocation_id, 0x1234);
+    assert_eq!(revolution.profile_reference, 0x1234);
     assert_eq!(
         revolution.origin,
         crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
@@ -914,6 +963,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .expect("transferred revolution construction");
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         decoded.ir().model.procedural_surface_owner(&revolution.id) == Some(&surface.id)
+            && surface.source_object.is_none()
             && matches!(surface.geometry.solved_cache(), Some(SolvedSurfaceGeometry::Torus(torus_surface))
                     if {
                         let center = torus_surface.center();
@@ -1141,8 +1191,8 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
         numeric_tail.bounds(),
         [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]
     );
-    let face_node = packet.face_node.expect("face-node relation");
-    assert_eq!(face_node.byte_len, 11);
+    let face_node = packet.face_node.as_ref().expect("face-node relation");
+    assert_eq!(packet.source_offset - face_node.source_offset, 11);
     assert_eq!(
         face_node.target_encoding,
         crate::native::CatiaFaceNodeTargetEncoding::Compact
@@ -1181,7 +1231,7 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
         panic!("one consolidated owner packet")
     };
 
-    assert_eq!(packet.byte_offset, u64_from_index(owner_pos));
+    assert_eq!(packet.frame.pos, u64_from_index(owner_pos));
     assert_eq!(packet.source_index, 0);
     assert_eq!(
         packet
@@ -1213,7 +1263,7 @@ fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
         panic!("one consolidated owner packet")
     };
 
-    assert_eq!(packet.byte_offset, u64_from_index(owner_pos));
+    assert_eq!(packet.frame.pos, u64_from_index(owner_pos));
     let cycle = packet
         .boundary_cycle()
         .expect("closed fixed-owner boundary cycle");
@@ -1245,9 +1295,9 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
         .face_node
         .as_ref()
         .expect("source-scoped boundary face node");
-    assert_eq!(face_node.byte_offset, u64_from_index(face_node_pos));
+    assert_eq!(face_node.frame.pos, u64_from_index(face_node_pos));
     assert_eq!(
-        face_node.byte_len,
+        packet.source_offset - face_node.source_offset,
         cadmpeg_core::decode::u64_from_index(owner_pos - face_node_pos)
     );
     assert_eq!(face_node.target, 1014);
@@ -1331,7 +1381,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
         .into_inner();
     assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
     assert_eq!(construction_radius.get(), 1.0);
-    assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
+    assert!(chart.parameter_point_byte_offsets[3] < packet.frame.pos);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -1467,13 +1517,29 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
-    let crate::native::CatiaOwnerPacketPayload::Counted { references, tail } = &packet.payload
+    let crate::native::CatiaOwnerPacketPayload::Counted {
+        references,
+        reference_encodings,
+        tail,
+    } = &packet.payload
     else {
         panic!("count-framed owner payload")
     };
     assert_eq!(references, &[911, 7, 263, 258, 281, 276, 917]);
+    assert_eq!(
+        reference_encodings,
+        &[
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::BackwardDistance,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+        ]
+    );
     assert_eq!(tail.as_slice(), &[0x83, 0x41, 0x92, 0x00, 0x01]);
-    let face_node = packet.face_node.expect("face-node relation");
+    let face_node = packet.face_node.as_ref().expect("face-node relation");
     assert_eq!(face_node.target, 916);
     assert_eq!(
         face_node.target + 1,
@@ -1802,9 +1868,29 @@ fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() 
 mod admission;
 
 #[test]
+fn plane_wire_rejects_selector_direction_and_range_contradictions() {
+    let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
+    let original =
+        serde_json::to_value(&native.consolidated_plane_carriers[0]).expect("plane wire");
+    for (field, value) in [
+        ("layout", serde_json::json!(0xdc)),
+        ("direction", serde_json::json!([0.0, 1.0, 0.0])),
+        ("u_range", serde_json::json!([5.0, 0.0])),
+        ("v_range", serde_json::json!([3.0, -2.0])),
+    ] {
+        let mut wire = original.clone();
+        wire["payload"][field] = value;
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(wire).is_err()
+        );
+    }
+}
+
+#[test]
 fn b2_owner_packet_stream_projects_one_owner_packet() {
     let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let packets = super::super::projection::consolidated_owner_packets(&bytes, &records);
+    let packets = super::super::projection::consolidated_owner_packets(&bytes, &records)
+        .expect("valid source fixture");
     assert_eq!(packets.len(), 1);
 }

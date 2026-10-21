@@ -167,25 +167,21 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
 
 #[test]
 fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusal() {
-    use std::io::Write as _;
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file(
-        "Document.xml",
-        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
-    )
-    .expect("start entry");
-    zip.write_all(document.as_bytes()).expect("write entry");
-    zip.start_file(
-        "thumbnails/Thumbnail.png",
-        SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Zstd)
-            .compression_level(Some(22)),
-    )
-    .expect("start entry");
-    zip.write_all(b"thumbnail").expect("write entry");
-    let bytes = zip.finish().expect("finish ZIP").into_inner();
+    // The thumbnail is a streamed frame as a level-22 encoder writes it: a
+    // 128 MiB window and no content size. Laid out by `zip_fixture`: `zip` is
+    // built without its `zstd` feature.
+    let bytes = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", document.as_bytes()),
+        RawEntry::compressed(
+            "thumbnails/Thumbnail.png",
+            zip_fixture::ZSTD,
+            &zip_fixture::zstd_streamed_frame(27, b"thumbnail"),
+            b"thumbnail",
+        ),
+    ]);
 
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();

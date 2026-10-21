@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
@@ -20,7 +21,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::NxLossCode;
 use crate::topology::{
-    intersection_data_curves, FaceLoopFailure, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
+    declared_composite_curves, FaceLoopFailure, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
 };
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
@@ -684,6 +685,68 @@ fn topology_rejects_overlapping_candidates_without_ranking() {
 }
 
 #[test]
+fn topology_admits_disjoint_bounded_records_in_one_overlap_cluster() {
+    let mut member = record(91, 20);
+    put_ref(&mut member, 2, 30);
+    put_ref(&mut member, 8, 31);
+    put_ref(&mut member, 10, 4);
+    for at in [12, 14, 16, 18] {
+        put_ref(&mut member, at, 1);
+    }
+    let mut stream = vec![0xaa; 39];
+    stream.extend(member);
+    stream.extend([0xaa; 39]);
+    let face = |xmt, pos| NodeCandidate {
+        kind: NodeKind::Face,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+        pos,
+        shift: 0,
+        end: pos + 39,
+    };
+    let spanning = NodeCandidate {
+        kind: NodeKind::Edge,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(40).unwrap(),
+        pos: 20,
+        shift: 0,
+        end: 70,
+    };
+
+    let selected =
+        Graph::select_non_overlapping_candidates(&stream, vec![face(4, 0), spanning, face(5, 59)]);
+    assert_eq!(
+        selected.iter().map(|node| node.xmt()).collect::<Vec<_>>(),
+        [4, 5]
+    );
+}
+
+#[test]
+fn topology_bounds_a_record_at_the_type_38_schema_header() {
+    let mut stream = vec![0xaa; 91];
+    stream.extend_from_slice(TYPE_38_SCHEMA_HEADER);
+    stream.extend([0xaa; 8]);
+    let plane = NodeCandidate {
+        kind: NodeKind::Plane,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(6).unwrap(),
+        pos: 0,
+        shift: 0,
+        end: 91,
+    };
+    let embedded = NodeCandidate {
+        kind: NodeKind::Vertex,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(19).unwrap(),
+        pos: 11,
+        shift: 0,
+        end: 39,
+    };
+
+    let selected = Graph::select_non_overlapping_candidates(&stream, vec![plane, embedded]);
+    assert_eq!(
+        selected.iter().map(|node| node.xmt()).collect::<Vec<_>>(),
+        [6]
+    );
+}
+
+#[test]
 fn topology_ownership_candidate_cannot_suppress_typed_candidate() {
     let mut face = record(14, 39);
     put_ref(&mut face, 2, 4);
@@ -764,29 +827,48 @@ fn topology_rejects_status_framed_delta_as_fixed_record() {
 }
 
 #[test]
-fn intersection_data_requires_complete_schema_header() {
-    let source = deltas_intersection_curve_stream();
-    let header_start = source
-        .windows(TYPE_38_SCHEMA_HEADER.len())
-        .position(|window| window == TYPE_38_SCHEMA_HEADER)
-        .expect("schema header");
-    let after_header = header_start + TYPE_38_SCHEMA_HEADER.len();
-    let record_start = source[after_header..]
-        .iter()
-        .position(|byte| *byte == 0x5a)
-        .map(|offset| after_header + offset)
-        .expect("standalone intersection-data record");
-
-    let mut incomplete_header =
-        source[header_start..header_start + TYPE_38_SCHEMA_HEADER.len() - 1].to_vec();
-    incomplete_header.push(0xfe);
-    incomplete_header.extend_from_slice(&source[record_start..]);
-    assert!(intersection_data_curves(&incomplete_header).is_empty());
-    assert!(crate::deltas::census::walk(&incomplete_header)
-        .unwrap()
-        .records
-        .iter()
-        .all(|record| record.kind() != 90));
+fn declared_intersection_requires_its_own_complete_schema() {
+    // Compact first instance: XMT12, node7, five common references, sense,
+    // then six construction references. Z terminates the declaration.
+    let mut instance = Vec::new();
+    instance.extend_from_slice(&12u16.to_be_bytes());
+    instance.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        instance.extend_from_slice(&reference.to_be_bytes());
+    }
+    instance.push(b'+');
+    for reference in [6u16, 7, 20, 21, 22, 23] {
+        instance.extend_from_slice(&reference.to_be_bytes());
+    }
+    let mut source = TYPE_38_SCHEMA_HEADER.to_vec();
+    source.extend_from_slice(&instance);
+    // A later compact-shaped Z is not a second record.
+    source.extend_from_slice(&[0xa5; 100]);
+    source.push(b'Z');
+    source.extend_from_slice(&instance);
+    let curves =
+        crate::test_support::with_decode_context(|_ctx| declared_composite_curves(&source));
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].pos, 0);
+    assert_eq!(curves[0].xmt, 12);
+    assert_eq!(
+        curves[0]
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+        [6, 7, 20, 21, 22, 23]
+    );
+    for at in [16, TYPE_38_SCHEMA_HEADER.len() - 1] {
+        let mut mutated = source.clone();
+        mutated[at] = 0xfe;
+        assert!(crate::test_support::with_decode_context(|_ctx| {
+            declared_composite_curves(&mutated)
+        })
+        .is_empty());
+    }
+    assert!(crate::test_support::with_decode_context(|_ctx| {
+        declared_composite_curves(&deltas_intersection_curve_stream())
+    })
+    .is_empty());
 }
 
 #[test]
@@ -1136,5 +1218,55 @@ fn identical_domain_selection_materializes_node_payloads_once() {
     assert_eq!(graph.kind_count(NodeKind::Point), 100);
     for xmt in 100..200 {
         assert!(graph.get(NodeKind::Point, xmt).is_some());
+    }
+}
+
+#[test]
+fn edge_endpoint_witness_uses_partner_and_only_null_falls_back() {
+    use cadmpeg_ir::math::Point3;
+
+    for (partner, point, expected_end) in [
+        (20, 22, Some(Point3::new(40.0, 50.0, 60.0))),
+        (1, 22, Some(Point3::new(10.0, 20.0, 30.0))),
+        (0, 22, None),
+        (99, 22, None),
+        (20, 99, None),
+    ] {
+        let mut stream = topology_partition_stream();
+        let first_fin = stream.windows(4).position(|w| w == [0, 17, 0, 7]).unwrap();
+        put_ref(&mut stream, first_fin + 14, partner);
+        let mut fin = record(17, 23);
+        put_ref(&mut fin, 2, 20);
+        put_ref(&mut fin, 6, 1); // dummy partner has no loop
+        put_ref(&mut fin, 8, 20);
+        put_ref(&mut fin, 10, 20);
+        put_ref(&mut fin, 12, 21);
+        put_ref(&mut fin, 14, 7);
+        put_ref(&mut fin, 16, 8);
+        put_ref(&mut fin, 18, 9);
+        fin[22] = b'-';
+        stream.extend(fin);
+        let mut vertex = record(18, 28);
+        put_ref(&mut vertex, 2, 21);
+        put_ref(&mut vertex, 16, point);
+        put_f64(&mut vertex, 18, 0.000_1);
+        stream.extend(vertex);
+        let mut position = record(29, 40);
+        put_ref(&mut position, 2, 22);
+        put_ref(&mut position, 10, 21);
+        put_vec3(&mut position, 16, [0.04, 0.05, 0.06]);
+        stream.extend(position);
+        crate::test_support::with_decode_context(|_ctx| {
+            let graph = Graph::parse(&stream);
+            let witness = graph.unique_curve_edge_witness(9);
+            assert_eq!(
+                witness.map(|w| w.endpoints[1].get()),
+                expected_end,
+                "partner={partner}, point={point}"
+            );
+            if let Some(witness) = witness {
+                assert_eq!(witness.endpoints[0].get(), Point3::new(10.0, 20.0, 30.0));
+            }
+        });
     }
 }

@@ -12,6 +12,21 @@ use flate2::Compression;
 
 pub(crate) const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
+/// Build the counted description and schema fields of a transmit header.
+pub(crate) fn transmit_preamble(description: &str, schema: &str) -> Vec<u8> {
+    let mut bytes = b"PS".to_vec();
+    for field in [description, schema] {
+        bytes.extend_from_slice(
+            &u32::try_from(field.len())
+                .expect("fixture field fits u32")
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(field.as_bytes());
+    }
+    bytes.push(0);
+    bytes
+}
+
 pub(crate) fn shifted_f64_bytes(value: f64) -> [u8; 8] {
     let mut bytes = value.to_be_bytes();
     bytes[0] -= 0x10;

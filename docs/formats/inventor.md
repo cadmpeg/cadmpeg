@@ -8,19 +8,21 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 An IPT or IAM document is a Compound File Binary container. The container follows the CFB sector, FAT, DIFAT, mini-FAT, directory, and sibling-tree rules. The directory contains the `RSeStorage` storage. A positive format identification also requires a structurally reached `RSeStorage/RSeSegInfo` stream or a stream at `RSeStorage/V<n>/RSeDb`, where `<n>` is one or more decimal digits.
 
+The last DIFAT sector's next-sector link is ENDOFCHAIN (`0xfffffffe`). Some Inventor documents store FREESECT (`0xffffffff`) in that link instead. That link is a chain terminator only when the header DIFAT count equals `ceil((fat_count - 109) / (sector_size / 4 - 1))`, the walk visits exactly that many DIFAT sectors, and the walk collects exactly `fat_count` FAT sector identifiers. Such a document decodes and reports `inventor/container.noncanonical` ("CFB DIFAT chain ended with FREESECT instead of ENDOFCHAIN"). A FREESECT link under any other count, an empty DIFAT whose start is not ENDOFCHAIN, and a FREESECT terminator on any FAT chain are malformed.
+
 The database storage-band number `<n>` and the database schema are independent values. An `M<token>` metadata stream and a `B<token>` bulk stream are one segment pair only when both are direct children of `RSeStorage` and their nonempty `<token>` suffixes are byte-equal.
 
 ## 2. RSe database and indexes
 
 An `RSeDb` stream starts with a 16-byte database identifier, a u32 schema, an 8-byte creation-version tuple, a u64 creation FILETIME, an 8-byte save-version tuple, a u64 save FILETIME, and a u32-counted UTF-16LE note. A version tuple contains `revision`, `minor`, `major`, and five state bytes. Schema 31 selects the supported registry grammar. The stream ends after the note.
 
-`RSeStorage/RSeSegInfo` starts with a u32 segment count. Each registry entry contains counted UTF-16LE display and type names, segment and revision identifiers, state words, an 8-byte version tuple, object records, and node records. A segment metadata identifier resolves to exactly one registry entry. The registry type name selects the segment family.
+`RSeStorage/RSeSegInfo` starts with a u32 segment count. Each registry entry contains counted UTF-16LE display and type names, segment and revision identifiers, state words, an 8-byte version tuple, object records, and node records. The last object record's u32 node count stores the number of node records plus one; a stored zero, like an entry without object records, is followed by no node records. A segment metadata identifier resolves to exactly one registry entry. The registry type name selects the segment family.
 
 `RSeStorage/RSeDbRevisionInfo` starts with u32 version 3 and a u32 record count. Each record contains a 16-byte identifier, u32 flags, and a u16 kind. Kind `0xffff` is followed by a one-byte selector and an 8-byte value when the selector is nonzero or a 16-byte value when it is zero. Other kinds have no value payload. The stream ends after the declared records.
 
 ## 3. RSe metadata stream
 
-An `M<token>` stream starts with a u32 byte count and that many UTF-8 marker bytes. The supported marker is `RSe Meta Stream Version 8`. It is followed by u16 version 8, eight u16 header values, a u32-counted UTF-16LE display name, a 16-byte segment identifier, three u32 state words, two u32-counted UTF-8 timestamp strings, and a one-byte body form. One exact zlib member occupies the remainder of the stream.
+An `M<token>` stream starts with a u32 byte count and that many UTF-8 marker bytes. The supported marker is `RSe Meta Stream Version 8`. It is followed by u16 version 8, eight u16 header values, a u32-counted UTF-16LE display name, a 16-byte segment identifier, three u32 state words, two u32-counted UTF-8 timestamp strings, and a one-byte body form. The body form selects compression: method 1 is zlib and method 2 is Zstandard. Other methods are invalid. The compressed body occupies the remainder of the stream. Method 1 contains one complete zlib member with no trailing bytes. Method 2 contains one complete Zstandard frame with no trailing bytes. Concatenated frames and skippable frames are invalid. Truncated frames are invalid.
 
 The inflated body starts with seven u16 values and contains 11 sections plus a terminal 16-byte identifier. Sections 1 through 4 use a forward counted frame:
 
@@ -30,13 +32,13 @@ items[count]
 span u32
 ```
 
-`span` equals `4 + count * item_size`. Section 1 items are 4-byte block descriptors. Bit 31 states that the corresponding bulk block is stored; bits 0 through 30 give its payload length. Section 2 items are 10 bytes. Section 3 items are 28 bytes. Section 4 items are 28-byte type descriptors and the count does not exceed 256. A type descriptor contains a 16-byte type identifier and two `(u16, u32)` field pairs.
+`span` equals `4 + count * item_size`. Section 1 items are 4-byte block descriptors. Bit 31 states that the corresponding bulk block is stored; bits 0 through 30 give its payload length. Section 2 items are 10 bytes. Section 3 items are 28 bytes. Section 4 items are 28-byte type descriptors. A type descriptor contains a 16-byte type identifier and two `(u16, u32)` field pairs. The section 4 count is not limited to 256; descriptors at index 256 and later have no record selector that addresses them.
 
 Sections 5 through 11 use backward framing. The eight bytes before a section payload contain a u32 span to the previous payload and a u32 discriminator. The section chain joins the section 4 footer exactly. Section 11 has a 72-byte payload. The 16-byte terminal identifier follows section 11.
 
 ## 4. RSe bulk stream and records
 
-A `B<token>` stream starts with a 16-byte prefix and a u16 form. One exact zlib member occupies the remainder. The prefix and form are retained as envelope values; they do not select a segment by themselves.
+A `B<token>` stream starts with a 16-byte prefix and a u16 form. The low byte at offset 16 is the envelope value. The high byte at offset 17 is the compression method: 1 is zlib and 2 is Zstandard. Other methods are invalid. The compressed body starts at offset 18 and occupies the remainder. Its compression framing follows section 3. The prefix and full u16 form are retained as envelope values; they do not select a segment by themselves.
 
 Each stored section-1 block descriptor frames one record in block order. A record contains:
 
@@ -47,7 +49,7 @@ trailing_payload_len u32
 versioned_trailer bytes[]
 ```
 
-The selector low byte indexes the section 4 type table. `trailing_payload_len` is zero or equals `block.payload_len`. Segment major versions above 18 have an extended trailer. Its presence byte selects an empty trailer or a typed property and reference list. After all records, the expanded stream has a u32 `0xffffffff` marker and a retained trailer. The stream is exhausted exactly.
+The selector low byte indexes the section 4 type table, so a record selects one of the first 256 type descriptors. `trailing_payload_len` is zero or equals `block.payload_len`. Segment major versions above 18 have an extended trailer. Its presence byte selects an empty trailer or a typed property and reference list. After all records, the expanded stream has a u32 `0xffffffff` marker and a retained trailer. The stream is exhausted exactly.
 
 ## 5. Active part kernel carrier
 

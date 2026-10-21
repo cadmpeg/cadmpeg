@@ -4,10 +4,6 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
-// Records omitted because the table declares a contradiction.
-//
-// - `e5_record_frame` (size_mismatch): The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
-
 /// Tag constants from the table inventory.
 pub(crate) mod token {
     /// `named stream block` (`FINJPL  `). Spec §4.
@@ -82,8 +78,8 @@ pub(crate) mod extent_struct {
     pub(crate) const LOG_LEN: usize = 8;
     /// Offset of `log_off` (`u32`, big-endian). Spec §3.4.
     pub(crate) const LOG_OFF: usize = 12;
-    /// Offset of `flags` (`u32`, big-endian). Spec §3.4.
-    pub(crate) const FLAGS: usize = 16;
+    /// Offset of `trailing_word` (`u32`, big-endian). Spec §3.4.
+    pub(crate) const TRAILING_WORD: usize = 16;
 }
 
 /// Byte offsets for the `vertex_roster_row` record.
@@ -127,7 +123,7 @@ pub(crate) mod freeform_surface_core {
 /// Spec §5.8. Record length 49 B.
 ///
 /// ```text
-/// Record start is `marker_pos − 5`. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
+/// Record start is `marker_pos − 5`. Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
 /// ```
 pub(crate) mod analytic_surface_plane {
     /// Record length in bytes. Spec §5.8.
@@ -143,7 +139,7 @@ pub(crate) mod analytic_surface_plane {
 /// Spec §5.8. Record length 73 B.
 ///
 /// ```text
-/// Cylinder and cone share prebyte and length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
+/// Cylinder and cone share the parameter-length word and record length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
 /// ```
 pub(crate) mod analytic_surface_cylinder {
     /// Record length in bytes. Spec §5.8.
@@ -187,7 +183,7 @@ pub(crate) mod analytic_surface_torus {
 /// Spec §6. Record length 7 B.
 ///
 /// ```text
-/// Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The header token is a small repeating type code, not a per-record object id.
+/// Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The canonical header token is retained independently of the class-specific payload; it does not supply a per-record object id.
 /// ```
 pub(crate) mod a_family_frame {
     /// Record length in bytes. Spec §6.
@@ -338,4 +334,180 @@ pub(crate) mod fbb_face_row {
     pub(crate) const GREEN: usize = 6;
     /// Offset of `red` (`u8`). Spec §7.4.
     pub(crate) const RED: usize = 7;
+}
+
+/// Byte offsets for the `storage_member_core` record.
+///
+/// Spec §7.6. Record length 20 B.
+pub(crate) mod storage_member_core {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `tag` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const TAG: usize = 4;
+    /// Offset of `flag` (`u8`). Spec §7.6.
+    pub(crate) const FLAG: usize = 8;
+    /// Offset of `prefix` (`bytes[2]`). Spec §7.6.
+    pub(crate) const PREFIX: usize = 9;
+    /// Offset of `slot` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const SLOT: usize = 11;
+    /// Offset of `tail` (`bytes[5]`). Spec §7.6.
+    pub(crate) const TAIL: usize = 15;
+}
+
+/// Byte offsets for the `storage_member_direct_prefix` record.
+///
+/// Spec §7.6. Record length 4 B.
+pub(crate) mod storage_member_direct_prefix {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 4;
+    /// Offset of `lead` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const LEAD: usize = 0;
+}
+
+/// Byte offsets for the `storage_member_nullable_prefix` record.
+///
+/// Spec §7.6. Record length 8 B.
+pub(crate) mod storage_member_nullable_prefix {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `state` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const STATE: usize = 0;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const DISCRIMINATOR: usize = 4;
+}
+
+/// Byte offsets for the `storage_member_number_prefix` record.
+///
+/// Spec §7.6. Record length 6 B.
+pub(crate) mod storage_member_number_prefix {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `inclusive_length` (`u16`, little-endian). Spec §7.6.
+    pub(crate) const INCLUSIVE_LENGTH: usize = 0;
+    /// Offset of `digit_count` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const DIGIT_COUNT: usize = 2;
+}
+
+/// Byte offsets for the `inline_schema_words` record.
+///
+/// Spec §7.3. Record length 12 B.
+pub(crate) mod inline_schema_words {
+    /// Record length in bytes. Spec §7.3.
+    pub(crate) const LEN: usize = 12;
+    /// Offset of `open_count` (`u8`). Spec §7.3.
+    pub(crate) const OPEN_COUNT: usize = 0;
+    /// Offset of `outer_marker` (`u8`). Spec §7.3.
+    pub(crate) const OUTER_MARKER: usize = 1;
+    /// Offset of `outer_selector` (`u32`, little-endian). Spec §7.3.
+    pub(crate) const OUTER_SELECTOR: usize = 2;
+    /// Offset of `field_marker` (`u8`). Spec §7.3.
+    pub(crate) const FIELD_MARKER: usize = 6;
+    /// Offset of `field_selector` (`u32`, little-endian). Spec §7.3.
+    pub(crate) const FIELD_SELECTOR: usize = 7;
+    /// Offset of `close_count` (`u8`). Spec §7.3.
+    pub(crate) const CLOSE_COUNT: usize = 11;
+}
+
+/// Byte offsets for the `b5_loop_numeric_terminal` record.
+///
+/// Spec §6.7. Record length 62 B.
+///
+/// ```text
+/// Terminal-relative offsets; all six compact controls use the canonical one-byte form.
+/// ```
+pub(crate) mod b5_loop_numeric_terminal {
+    /// Record length in bytes. Spec §6.7.
+    pub(crate) const LEN: usize = 62;
+    /// Offset of `lead` (`u8`). Spec §6.7.
+    pub(crate) const LEAD: usize = 0;
+    /// Offset of `scalars` (`f64[4]`, little-endian). Spec §6.7.
+    pub(crate) const SCALARS: usize = 1;
+    /// Offset of `trailing_controls` (`u8[5]`). Spec §6.7.
+    pub(crate) const TRAILING_CONTROLS: usize = 33;
+    /// Offset of `bounds` (`f32[6]`, little-endian). Spec §6.7.
+    pub(crate) const BOUNDS: usize = 38;
+}
+
+/// Byte offsets for the `surface_terminal_span_tail` record.
+///
+/// Spec §6.6. Record length 141 B.
+///
+/// ```text
+/// Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+/// ```
+pub(crate) mod surface_terminal_span_tail {
+    /// Record length in bytes. Spec §6.6.
+    pub(crate) const LEN: usize = 141;
+    /// Offset of `controls` (`bytes[4]`). Spec §6.6.
+    pub(crate) const CONTROLS: usize = 0;
+    /// Offset of `parameters` (`bytes[64]`). Spec §6.6.
+    pub(crate) const PARAMETERS: usize = 4;
+    /// Offset of `flags` (`bytes[3]`). Spec §6.6.
+    pub(crate) const FLAGS: usize = 68;
+    /// Offset of `continuation` (`bytes[64]`). Spec §6.6.
+    pub(crate) const CONTINUATION: usize = 71;
+    /// Offset of `suffix` (`bytes[6]`). Spec §6.6.
+    pub(crate) const SUFFIX: usize = 135;
+}
+
+/// Byte offsets for the `b5_cone_payload` record.
+///
+/// Spec §6.7. Record length 185 B.
+pub(crate) mod b5_cone_payload {
+    /// Record length in bytes. Spec §6.7.
+    pub(crate) const LEN: usize = 185;
+    /// Offset of `lead` (`u8`). Spec §6.7.
+    pub(crate) const LEAD: usize = 0;
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const ORIGIN: usize = 1;
+    /// Offset of `direction_x` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const DIRECTION_X: usize = 25;
+    /// Offset of `direction_y` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const DIRECTION_Y: usize = 49;
+    /// Offset of `axis` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const AXIS: usize = 73;
+    /// Offset of `radial_angle` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const RADIAL_ANGLE: usize = 97;
+    /// Offset of `reference_radius` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const REFERENCE_RADIUS: usize = 105;
+    /// Offset of `angular_range` (`f64[2]`, little-endian). Spec §6.7.
+    pub(crate) const ANGULAR_RANGE: usize = 113;
+    /// Offset of `slant_range` (`f64[2]`, little-endian). Spec §6.7.
+    pub(crate) const SLANT_RANGE: usize = 129;
+    /// Offset of `angular_scale` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const ANGULAR_SCALE: usize = 145;
+    /// Offset of `parameter_scale` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const PARAMETER_SCALE: usize = 153;
+    /// Offset of `parameter_shift` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const PARAMETER_SHIFT: usize = 161;
+    /// Offset of `angular_domain` (`f64[2]`, little-endian). Spec §6.7.
+    pub(crate) const ANGULAR_DOMAIN: usize = 169;
+}
+
+/// Byte offsets for the `rolling_ball_tail_prefix` record.
+///
+/// Spec §6.2. Record length 57 B.
+pub(crate) mod rolling_ball_tail_prefix {
+    /// Record length in bytes. Spec §6.2.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `parameters` (`f64[5]`, little-endian). Spec §6.2.
+    pub(crate) const PARAMETERS: usize = 0;
+    /// Offset of `control` (`u8`). Spec §6.2.
+    pub(crate) const CONTROL: usize = 40;
+    /// Offset of `maximal_v` (`f64[2]`, little-endian). Spec §6.2.
+    pub(crate) const MAXIMAL_V: usize = 41;
+}
+
+/// Byte offsets for the `rolling_ball_tail_unmapped_suffix` record.
+///
+/// Spec §6.2. Record length 22 B.
+pub(crate) mod rolling_ball_tail_unmapped_suffix {
+    /// Record length in bytes. Spec §6.2.
+    pub(crate) const LEN: usize = 22;
+    /// Offset of `branch` (`bytes[6]`). Spec §6.2.
+    pub(crate) const BRANCH: usize = 0;
+    /// Stated value of `branch` (`bytes[6]`). Spec §6.2.
+    pub(crate) const BRANCH_VALUE: [u8; 6] = [0x05, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `maximal_u` (`f64[2]`, little-endian). Spec §6.2.
+    pub(crate) const MAXIMAL_U: usize = 6;
 }

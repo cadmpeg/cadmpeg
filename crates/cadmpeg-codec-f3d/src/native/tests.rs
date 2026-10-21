@@ -1,14 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::if_not_else,
-    clippy::needless_pass_by_value,
-    clippy::range_plus_one,
-    clippy::semicolon_if_nothing_returned,
-    clippy::trivially_copy_pass_by_ref
-)]
 
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -135,7 +125,9 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 77);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 78);
+    assert!(catalogue_names.contains("asm_face_boundaries"));
+    assert!(catalogue_names.contains("design_sheet_metal_settings"));
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES

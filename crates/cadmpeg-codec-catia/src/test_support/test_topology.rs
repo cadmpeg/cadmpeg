@@ -141,8 +141,10 @@ pub(crate) fn fbb_only_quad_unmatched_edge_topology_stream() -> Vec<u8> {
 
 pub(super) fn fbb_only_quad_surface_stream() -> Vec<u8> {
     let mut bytes = vec![0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
-    bytes.resize(49, 0);
-    bytes[48] = 0x01;
+    for value in [0.5f32, 0.5, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes.push(0x01);
     for (tag, center) in [
         (1u8, [0.5f32, 0.0]),
         (2, [1.0, 0.5]),
@@ -154,10 +156,6 @@ pub(super) fn fbb_only_quad_surface_stream() -> Vec<u8> {
             bytes.extend_from_slice(&be_f32(value));
         }
         bytes.extend_from_slice(&[0, 0]);
-    }
-    bytes.extend_from_slice(&[0xff, 0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32]);
-    for value in [0.5f32, 0.5, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0] {
-        bytes.extend_from_slice(&le_f32(value));
     }
     bytes
 }

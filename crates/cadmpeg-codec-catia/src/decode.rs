@@ -10,8 +10,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use std::collections::HashSet;
-
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
@@ -48,11 +46,8 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
 ///
-/// When [`DecodeOptions::depth`] is [`DecodeDepth::Container`], the result
-/// contains source metadata and container diagnostics without entity decoding.
-///
-/// [`DecodeOptions::depth`]: cadmpeg_ir::DecodeOptions::depth
-/// [`DecodeDepth::Container`]: cadmpeg_core::decode::DecodeDepth::Container
+/// When [`DecodeOptions::container_only`] is set, the result contains source
+/// metadata and container diagnostics without entity decoding.
 ///
 /// Otherwise each route in [`crate::families::ROUTES`] whose applicability
 /// predicate accepts the scanned variant is tried in table order; the first to
@@ -246,7 +241,7 @@ fn finish_decode(
     // The fall-through statements say which route refused and where the decode
     // went next.
     for statement in fell_through {
-        let message = statement.to_owned();
+        let message = (statement).to_owned();
         report
             .losses
             .push(CatiaLossCode::SourceRouteFellThrough.note({
@@ -277,29 +272,22 @@ fn finish_decode(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
     );
-    let modeling_object_records = native
+    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
+    let modeling_object_records = (native
         .object_graphs
         .iter()
         .filter(|graph| modeling_graph_scope.contains(graph.id.as_str()))
-        .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str()))
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
+        .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str())))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
-    let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
-        ctx,
+    sketch::frame::transfer(
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
-    )?;
-    let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
-        ctx,
-        &mut ir,
-        &native,
-        &design_feature_transfer,
-        &modeling_graph_scope,
-    )?;
+    );
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         ctx,
         &mut ir,
@@ -324,7 +312,6 @@ fn finish_decode(
     report
         .losses
         .extend(formula_transfer.tokenization_losses.iter().cloned());
-    design_feature_transfer.assign_parameter_owners(&mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
         ctx,
         &mut ir,
@@ -561,15 +548,19 @@ fn finish_decode(
         .legacy_entity_runs
         .iter()
         .map(|run| {
-            let evaluation_keys: HashSet<(u32, u64)> =
-                crate::native::legacy_evaluation_roles(&run.role_selectors)
-                    .map(|(entity_id, value_offset, _)| (entity_id, value_offset))
-                    .collect();
+            let evaluation_name_bound = |entity_id, value_offset| {
+                run.role_selectors.iter().any(|role| {
+                    role.entity_id == entity_id
+                        && role.field_code == Some(0x17c4)
+                        && role.end_offset().and_then(|offset| offset.checked_add(6))
+                            == Some(value_offset)
+                })
+            };
             run.scalar_values
                 .iter()
                 .filter(|value| {
                     value.name.is_some()
-                        && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
+                        && evaluation_name_bound(value.entity_id, value.byte_offset)
                 })
                 .count()
                 + run
@@ -577,7 +568,7 @@ fn finish_decode(
                     .iter()
                     .filter(|value| {
                         value.name.is_some()
-                            && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
+                            && evaluation_name_bound(value.entity_id, value.byte_offset)
                     })
                     .count()
                 + run
@@ -585,7 +576,7 @@ fn finish_decode(
                     .iter()
                     .filter(|value| {
                         value.name.is_some()
-                            && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
+                            && evaluation_name_bound(value.entity_id, value.byte_offset)
                     })
                     .count()
         })
@@ -752,7 +743,14 @@ fn finish_decode(
     let mut e9_scalar_entity_value_packet_count = 0;
     for record in &native.entity_records {
         let fields = record.value_fields();
-        entity_value_field_count += fields.len();
+        entity_value_field_count = entity_value_field_count
+            .checked_add(fields.len())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "catia_entity_value_field_count"
+                ))
+            })?;
         for packet in record.value_packets(&fields) {
             match packet {
                 entity_table::EntityValuePacket::Compact { .. } => {
@@ -878,7 +876,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_expression())
-        .fold(
+        .try_fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, placeholder, parser, boolean, opened, typed), expression| {
                 let (placeholder, parser, boolean, opened) = match expression.framing {
@@ -895,16 +893,16 @@ fn finish_decode(
                         ..
                     } => (placeholder, parser, boolean, opened + 1),
                 };
-                (
+                Ok::<_, CodecError>((
                     total + 1,
                     placeholder,
                     parser,
                     boolean,
                     opened,
                     typed + usize::from(expression.signature().is_some()),
-                )
+                ))
             },
-        );
+        )?;
     let parameter_value_count = native
         .entity_records
         .iter()
@@ -1049,11 +1047,11 @@ fn finish_decode(
         .iter()
         .map(|object| object.definition_values.len())
         .sum::<usize>();
-    let owned_definition_value_ids = native
+    let owned_definition_value_ids = (native
         .design_objects
         .iter()
-        .flat_map(|object| object.definition_values.iter().map(String::as_str))
-        .collect::<std::collections::HashSet<_>>();
+        .flat_map(|object| object.definition_values.iter().map(String::as_str)))
+    .collect::<std::collections::HashSet<_>>();
     let unowned_definition_value_count = native
         .entity_records
         .iter()
@@ -1367,22 +1365,22 @@ fn finish_decode(
         .filter_map(|instance| instance.inputs.as_ref())
         .map(Vec::len)
         .sum::<usize>();
-    let distinct_relation_program_input_entity_count = native
+    let distinct_relation_program_input_entity_count = (native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.inputs.as_ref())
         .flatten()
-        .filter_map(|input| input.entity.entity())
-        .collect::<std::collections::HashSet<_>>()
-        .len();
-    let instanced_relation_expression_count = native
+        .filter_map(|input| input.entity.entity()))
+    .collect::<std::collections::HashSet<_>>()
+    .len();
+    let instanced_relation_expression_count = (native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.relation_expression.as_deref())
-        .collect::<std::collections::HashSet<_>>()
-        .len();
+        .filter_map(|instance| instance.relation_expression.as_deref()))
+    .collect::<std::collections::HashSet<_>>()
+    .len();
     let relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
@@ -1505,12 +1503,12 @@ fn finish_decode(
                 .all(|link| link.intervening_entities.is_some())
         })
         .count();
-    let schema_configuration_entities = native
+    let schema_configuration_entities = (native
         .entity_records
         .iter()
         .filter(|entity| entity.schema_configuration_record().is_some())
-        .map(|entity| entity.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
+        .map(|entity| entity.id.as_str()))
+    .collect::<std::collections::HashSet<_>>();
     let schema_configuration_row_intervening_schema_configuration_count = native
         .schema_configuration_row_chains
         .iter()
@@ -1520,22 +1518,22 @@ fn finish_decode(
         .filter_map(|reference| reference.entity())
         .filter(|entity| schema_configuration_entities.contains(entity))
         .count();
-    let formula_referenced_relation_expressions = native
+    let formula_referenced_relation_expressions = (native
         .entity_records
         .iter()
         .filter_map(|record| record.formula_relation())
-        .filter_map(|formula| formula.expression_entity.reference.entity())
-        .collect::<std::collections::HashSet<_>>();
-    let program_referenced_relation_expressions = native
+        .filter_map(|formula| formula.expression_entity.reference.entity()))
+    .collect::<std::collections::HashSet<_>>();
+    let program_referenced_relation_expressions = (native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.relation_expression.as_deref())
-        .collect::<std::collections::HashSet<_>>();
-    let referenced_relation_expressions = formula_referenced_relation_expressions
+        .filter_map(|instance| instance.relation_expression.as_deref()))
+    .collect::<std::collections::HashSet<_>>();
+    let referenced_relation_expressions = (formula_referenced_relation_expressions
         .union(&program_referenced_relation_expressions)
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
+        .copied())
+    .collect::<std::collections::HashSet<_>>();
     let formula_referenced_relation_expression_count =
         formula_referenced_relation_expressions.len();
     let program_referenced_relation_expression_count =
@@ -1755,35 +1753,35 @@ fn finish_decode(
         .iter()
         .filter(|object| object.owner_record.is_none())
         .count();
-    let object_records_by_id = native
+    let object_records_by_id = (native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record))
-        .collect::<std::collections::HashMap<_, _>>();
+        .map(|record| (record.id.as_str(), record)))
+    .collect::<std::collections::HashMap<_, _>>();
     let unassigned_owner_slot_count = object_records_by_id
         .values()
         .filter(|record| record.has_unassigned_owner())
         .count();
-    let structurally_owned_records = native
+    let structurally_owned_records = (native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
-        .flat_map(|object| object.fields.iter().map(String::as_str))
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
+        .flat_map(|object| object.fields.iter().map(String::as_str)))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
     let structurally_owned_definition_chain_value_count = native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
         .map(|object| object.definition_chain_values.len())
         .sum::<usize>();
-    let structurally_owned_definition_chain_value_ids = native
+    let structurally_owned_definition_chain_value_ids = (native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
-        .flat_map(|object| object.definition_chain_values.iter().map(String::as_str))
-        .collect::<std::collections::HashSet<_>>();
+        .flat_map(|object| object.definition_chain_values.iter().map(String::as_str)))
+    .collect::<std::collections::HashSet<_>>();
     let unowned_definition_chain_value_count = native
         .entity_records
         .iter()
@@ -1840,34 +1838,30 @@ fn finish_decode(
                 .is_some_and(|record| record.has_unassigned_owner())
         })
         .count();
-    let transferred_formula_design_records = formula_transfer
+    let transferred_formula_design_records = (formula_transfer
         .consumed_object_records
         .intersection(&structurally_owned_records)
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
-    let transferred_principal_plane_records = design_feature_transfer
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
+    let transferred_principal_plane_records = (design_feature_transfer
         .principal_plane_records
         .intersection(&structurally_owned_records)
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
-    let transferred_design_feature_records = design_feature_transfer
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
+    let transferred_design_feature_records = (design_feature_transfer
         .consumed_records()
         .filter(|record| structurally_owned_records.contains(*record))
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
-    let transferred_design_records = transferred_formula_design_records
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
+    let transferred_design_records = (transferred_formula_design_records
         .union(&transferred_design_feature_records)
-        .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
-        .chain(
-            transferred_native_sketch_constraint_records.intersection(&structurally_owned_records),
-        )
         .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
-        .map(String::as_str)
-        .map(str::to_owned)
-        .collect::<std::collections::HashSet<String>>();
+        .map(String::as_str))
+    .map(str::to_owned)
+    .collect::<std::collections::HashSet<String>>();
     let unresolved_object_record_count = modeling_object_records
         .difference(&transferred_design_records)
         .count();
@@ -1882,11 +1876,17 @@ fn finish_decode(
                 .any(|field| !transferred_design_records.contains(field))
         })
         .count();
-    let value_field_count = native
-        .value_blocks
-        .iter()
-        .map(|block| crate::value_block::tokenize(&block.payload).len())
-        .sum::<usize>();
+    let mut value_field_count = 0usize;
+    for block in &native.value_blocks {
+        value_field_count = value_field_count
+            .checked_add(crate::value_block::tokenize(&block.payload).len())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} exceeds its local bound",
+                    "catia_value_field_count"
+                ))
+            })?;
+    }
     let value_selection_count = native
         .value_blocks
         .iter()
@@ -1901,40 +1901,6 @@ fn finish_decode(
                 .id
                 .as_str()
                 .starts_with("catia:consolidated:line-profile-curve#")
-        })
-        .count();
-    let transferred_native_sketch_entity_count = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| {
-            matches!(
-                entity.geometry.definition(),
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .count();
-    let mut native_operation_feature_ids = HashSet::new();
-    for feature in ir.model.features.iter().filter(|feature| {
-        feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
-    }) {
-        if !native_operation_feature_ids.contains(&feature.id) {
-            let id = feature.id.clone();
-            native_operation_feature_ids.insert(id);
-        }
-    }
-    let transferred_native_operation_parameter_count = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            parameter
-                .owner
-                .as_ref()
-                .is_some_and(|owner| native_operation_feature_ids.contains(owner))
         })
         .count();
     for (key, count) in [
@@ -1963,13 +1929,13 @@ fn finish_decode(
             native.consolidated_class61_records.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT,
-            native.consolidated_cone_faces.len(),
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_COUNT,
+            native.consolidated_chamfers.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT,
             native
-                .consolidated_cone_faces
+                .consolidated_chamfers
                 .iter()
                 .map(|face| face.parameter_points.len())
                 .sum(),
@@ -1983,8 +1949,8 @@ fn finish_decode(
             native.consolidated_cylinders.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_GROUP_COUNT,
-            native.consolidated_groups.len(),
+            crate::coverage::DECODED_CONSOLIDATED_CLASS60_RECORD_COUNT,
+            native.consolidated_class60_records.len(),
         ),
         (
             crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT,
@@ -2076,19 +2042,19 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_DISTANCE_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
-                .map(|stride| stride.topology_refs.len())
+                .map(|stride| stride.allocations[3..].len() + 1)
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_VERTEX_OWNER_DISTANCE_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
-                .map(|stride| stride.surface_support_refs.len())
+                .map(|stride| stride.allocations[1..3].len())
                 .sum(),
         ),
         (
@@ -2218,13 +2184,13 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_BOUND_EDGE_STRIDE_RECORD_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
                 .filter_map(|run| run.face.as_ref())
                 .flat_map(|face| &face.loops)
-                .map(|loop_record| loop_record.typed_records.len())
+                .map(|loop_record| loop_record.edge_stride_records.len())
                 .sum(),
         ),
         (
@@ -2249,12 +2215,8 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
-            native.zero_entity_endpoint_pair_candidates.len(),
-        ),
-        (
-            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT,
-            native.zero_entity_endpoint_locus_candidates.len(),
+            crate::coverage::DECODED_ZERO_ENTITY_ALLOCATION_EDGE_COUNT,
+            native.zero_entity_allocation_edges.len(),
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT,
@@ -3375,26 +3337,6 @@ fn finish_decode(
             transferred_principal_plane_records.len(),
         ),
         (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_COUNT,
-            design_feature_transfer.native_operation_records.len(),
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
-            design_feature_transfer.native_operation_definition_value_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
-            design_feature_transfer.native_operation_definition_chain_value_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
-            design_feature_transfer.native_operation_range_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
-            transferred_native_operation_parameter_count,
-        ),
-        (
             crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT,
             unresolved_object_record_count,
         ),
@@ -3402,10 +3344,6 @@ fn finish_decode(
         (
             crate::coverage::TRANSFERRED_SKETCH_ENTITY_COUNT,
             ir.model.sketch_entities.len(),
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT,
-            transferred_native_sketch_entity_count,
         ),
         (
             crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT,
@@ -3431,7 +3369,7 @@ fn finish_decode(
         .map_or(0, |count| count);
     if untransferred_line_profile_count > 0 {
         report.losses.push(
-            CatiaLossCode::GeometryLineProfileNotTransferred.note(format!(
+            (CatiaLossCode::GeometryLineProfileNotTransferred).note(format!(
                 "{untransferred_line_profile_count} consolidated line-profile record(s) retain \
              exact line geometry but were not transferred by the active geometry route."
             )),
@@ -3521,12 +3459,12 @@ fn finish_decode(
             .flat_map(|face| &face.loops)
             .map(|loop_record| loop_record.support_record_ordinals.len())
             .sum::<usize>();
-        let bound_typed_loop_reference_count = native
+        let bound_edge_stride_record_count = native
             .zero_entity_support_runs
             .iter()
             .filter_map(|run| run.face.as_ref())
             .flat_map(|face| &face.loops)
-            .map(|loop_record| loop_record.typed_records.len())
+            .map(|loop_record| loop_record.edge_stride_records.len())
             .sum::<usize>();
         let vertex_owner_binding_count = native
             .zero_entity_vertex_incidences
@@ -3537,8 +3475,7 @@ fn finish_decode(
             .zero_entity_ownership_roots
             .first()
             .map_or(0, |root| root.face_slots.len());
-        report.losses.push(
-            CatiaLossCode::TopologyZeroEntitySupportsRetained.note(format!(
+        report.losses.push((CatiaLossCode::TopologyZeroEntitySupportsRetained).note(format!(
                 "{} zero-entity surface-support run(s) retain {support_count} face-local \
                  occurrence(s), including {support_pcurve_count} complete parameter-space \
                  curve(s), {support_model_curve_count} with exact model-space carriers, \
@@ -3551,26 +3488,21 @@ fn finish_decode(
                  {oriented_loop_member_count} stored member sense(s), including \
                  {oriented_model_endpoint_count} sense-oriented model-space endpoint pair(s), \
                  {bound_support_member_count} member(s) bound to face-local support records and \
-                 {bound_typed_loop_reference_count} typed reference(s) bound to global records; {} \
+                 {bound_edge_stride_record_count} backward distance(s) bound to physical-edge records; {} \
                  edge-stride allocation tuple(s) remain separate, and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
                  adjacent vertex owner; {} ownership root(s) bind {ownership_face_count} face \
-                 allocation(s) through a shell and body; {} radial occurrence endpoint-pair \
-                 candidate(s) and {} \
-                 complete endpoint-locus candidate(s) are established from matching bounded \
-                 model-space endpoint and midpoint witnesses; curve coincidence, loop-to-use, \
-                 use-to-incidence, physical \
-                 endpoint identity remain unresolved; {} oriented-use \
-                 pair(s) remain separate.",
+                 allocation(s) through a shell and body; {} physical edge(s) have complete \
+                 source edge/use/support/incidence/vertex bindings; {} oriented-use pair(s) \
+                 remain retained. Geometry transfer requires complete carriers and validated \
+                 source endpoint coordinates.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_vertex_incidences.len(),
                 native.zero_entity_ownership_roots.len(),
-                native.zero_entity_endpoint_pair_candidates.len(),
-                native.zero_entity_endpoint_locus_candidates.len(),
+                native.zero_entity_allocation_edges.len(),
                 native.zero_entity_oriented_use_pairs.len(),
-            )),
-        );
+            )));
     }
     if modeling_scope_is_unresolved {
         report
@@ -3766,7 +3698,7 @@ fn finish_decode(
     }
     if unresolved_dimension_quantity_count != 0 {
         report.losses.push(
-            CatiaLossCode::AttributesDimensionQuantityUnresolved.note(format!(
+            (CatiaLossCode::AttributesDimensionQuantityUnresolved).note(format!(
                 "{unresolved_dimension_quantity_count} finite `Range`/`CstAttr_Dimension` \
                  scalar production(s) remain native because the admitted selectors, suffix \
                  framing, interval, and owner incidences do not assign a physical quantity."

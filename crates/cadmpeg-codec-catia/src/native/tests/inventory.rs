@@ -246,7 +246,13 @@ fn native_design_inventory_excludes_alias_rows_inside_catalog_entries() {
         &entry,
     ]);
 
-    assert_eq!(crate::object_graph::surface_aliases(&bytes).len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|_ctx| {
+            crate::object_graph::surface_aliases(&bytes, &[])
+        })
+        .len(),
+        1
+    );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.catalogs.len(), 1);
     assert!(native.alias_rows.is_empty());
@@ -662,12 +668,12 @@ fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
     let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
     bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
 
-    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes, &[]);
     assert_eq!(tags.get(&0x1234), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
 
     bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
-    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes, &[]);
     assert_eq!(tags.get(&0x1234), Some(&None));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x9abc), Some(&Some(0x9abc)));
@@ -794,6 +800,61 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
             .expect_err("alias-row view disagreeing with its source bytes");
         assert!(error.to_string().contains(field), "{error}");
     }
+}
+
+#[test]
+fn storage_property_members_do_not_enter_the_surface_alias_inventory() {
+    use crate::storage_property::MemberState;
+    let mut bytes = b"FINJPL  ".to_vec();
+    bytes.extend(0x8e_u32.to_be_bytes());
+    bytes.extend([0; 8]);
+    for (label, state, slot) in [
+        (b'1', 0x0001_0001_u32, 25_u32),
+        (b'2', 0x0001_0000, 281),
+        (b'3', 1, 25),
+    ] {
+        bytes.extend([5, 0, 1, 0, 0, 0, label, 0, 0]);
+        bytes.extend(state.to_le_bytes());
+        if state != 1 {
+            bytes.extend(0x133_u32.to_le_bytes());
+        }
+        bytes.extend([1, 0, 4, 0]);
+        bytes.extend(0x69ab_u32.to_le_bytes());
+        bytes.extend([0, 3, 0]);
+        bytes.extend(slot.to_le_bytes());
+        bytes.extend([0x21, 0, 0, 0, 0x17]);
+    }
+    bytes.extend([8, 0, 4, 0, 0, 0, b'G', b'C', b'.', b'3']);
+    bytes.extend([1, 0, 0, 1, 0, 4, 0]);
+    bytes.extend(0x40add_u32.to_le_bytes());
+    bytes.extend([0, 3, 0]);
+    bytes.extend(25_u32.to_le_bytes());
+    bytes.extend([0x1f, 0, 0, 0, 0xda]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert!(
+        native.alias_rows.is_empty(),
+        "storage membership is not a surface alias or a history-record ordinal"
+    );
+    assert_eq!(native.storage_property_members.len(), 3);
+    assert_eq!(
+        native
+            .storage_property_members
+            .iter()
+            .map(|m| (m.state, m.slot, m.label.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (MemberState::Present, 25, Some("1")),
+            (MemberState::Absent, 281, Some("2")),
+            (MemberState::Direct, 25, Some("3"))
+        ]
+    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store storage members");
+    let loaded = crate::native::CatiaNative::load(&namespace).expect("load storage members");
+    assert_eq!(
+        loaded.storage_property_members,
+        native.storage_property_members
+    );
 }
 
 #[test]

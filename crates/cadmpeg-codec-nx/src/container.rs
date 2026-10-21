@@ -33,6 +33,10 @@ use crate::layout::directory_entry as dir_entry;
 use crate::layout::directory_file_payload as file_payload;
 use crate::layout::extrefstream_handle_set_record as handle_set;
 use crate::layout::legacy_ugii_payload_prefix;
+use crate::layout::segment_stream_wrapper as stream_wrapper;
+use crate::layout::segment_stream_wrapper_a0 as wrapper_a0;
+use crate::layout::segment_stream_wrapper_c0_33 as wrapper_c0_33;
+use crate::layout::segment_stream_wrapper_c0_45 as wrapper_c0_45;
 use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
@@ -217,6 +221,7 @@ pub(crate) struct SegmentStreamWrapper {
     pub(crate) wrapper_byte_len: usize,
     /// Absolute file offset of the candidate zlib member.
     pub(crate) zlib_offset: usize,
+    pub(crate) compressed_byte_len: usize,
 }
 
 /// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
@@ -369,21 +374,70 @@ impl<'a> Container<'a> {
                             .filter_map(move |(word_ordinal, relative)| {
                                 let relative = usize::try_from(relative).ok()?;
                                 let wrapper = payload.get(relative..)?;
-                                let wrapper_word = View::u32_le_at(wrapper, 0)?;
+                                let wrapper_word =
+                                    View::u32_le_at(wrapper, stream_wrapper::MARKER)?;
                                 let extension = usize::try_from(wrapper_word & 0x3fff_ffff).ok()?;
-                                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
-                                    0x8000_0000 => 8usize.checked_add(extension),
-                                    0xc000_0000 => 33usize.checked_add(extension),
-                                    _ => None,
-                                }?;
+                                let compressed_word =
+                                    View::u32_le_at(wrapper, stream_wrapper::COMPRESSED_BYTE_LEN)?;
+                                let compressed_byte_len = usize::try_from(compressed_word).ok()?;
+                                let wrapper_byte_len = if wrapper_word == 0xa000_0000 {
+                                    (View::u32_le_at(wrapper, wrapper_a0::DUPLICATE_BYTE_LEN)?
+                                        == compressed_word
+                                        && View::u32_le_at(wrapper, wrapper_a0::ZERO)?
+                                            == wrapper_a0::ZERO_VALUE)
+                                        .then_some(wrapper_a0::LEN)?
+                                } else {
+                                    match wrapper_word & 0xc000_0000 {
+                                        0x8000_0000 => {
+                                            stream_wrapper::LEN.checked_add(extension)?
+                                        }
+                                        0xc000_0000 => {
+                                            let fixed = match (
+                                                View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_33::HEADER_CODE,
+                                                )?,
+                                                View::u16_le_at(wrapper, wrapper_c0_33::VERSION)?,
+                                            ) {
+                                                (
+                                                    wrapper_c0_33::HEADER_CODE_VALUE,
+                                                    wrapper_c0_33::VERSION_VALUE,
+                                                ) if View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_33::ZERO,
+                                                )? == wrapper_c0_33::ZERO_VALUE =>
+                                                {
+                                                    wrapper_c0_33::LEN
+                                                }
+                                                (
+                                                    wrapper_c0_45::HEADER_CODE_VALUE,
+                                                    wrapper_c0_45::VERSION_VALUE,
+                                                ) if View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_45::DUPLICATE_BYTE_LEN,
+                                                )? == compressed_word =>
+                                                {
+                                                    wrapper_c0_45::LEN
+                                                }
+                                                _ => return None,
+                                            };
+                                            fixed.checked_add(extension)?
+                                        }
+                                        _ => return None,
+                                    }
+                                };
                                 let zlib_relative = relative.checked_add(wrapper_byte_len)?;
-                                (zlib_relative < payload.len()).then_some(SegmentStreamWrapper {
-                                    row_ordinal,
-                                    word_ordinal,
-                                    wrapper_offset: entry_start.checked_add(relative)?,
-                                    wrapper_byte_len,
-                                    zlib_offset: entry_start.checked_add(zlib_relative)?,
-                                })
+                                let compressed_end =
+                                    zlib_relative.checked_add(compressed_byte_len)?;
+                                (compressed_byte_len >= 2 && compressed_end <= payload.len())
+                                    .then_some(SegmentStreamWrapper {
+                                        row_ordinal,
+                                        word_ordinal,
+                                        wrapper_offset: entry_start.checked_add(relative)?,
+                                        wrapper_byte_len,
+                                        zlib_offset: entry_start.checked_add(zlib_relative)?,
+                                        compressed_byte_len,
+                                    })
                             })
                     })
             })
@@ -948,16 +1002,24 @@ pub(crate) enum ContainerLayout {
         version: u8,
         /// File-specific 24-bit little-endian value at offset 9.
         file_tag: u32,
-        /// `FOOTER` region offset.
-        footer_offset: u64,
-        /// Exact four-byte value following the counted FOOTER directory.
-        footer_fingerprint: [u8; 4],
+        /// `FOOTER` region, absent when the HEADER directory is the complete
+        /// directory.
+        footer: Option<Footer>,
     },
     /// Legacy Compound File Binary envelope.
     LegacyCfb {
         /// Version byte in the UGII payload.
         version: u8,
     },
+}
+
+/// The `FOOTER` region of a modern container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Footer {
+    /// `FOOTER` region offset.
+    pub(crate) offset: u64,
+    /// Exact four-byte value following the counted FOOTER directory.
+    pub(crate) fingerprint: [u8; 4],
 }
 
 impl ContainerLayout {
@@ -974,8 +1036,10 @@ pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
     ContainerLayout::Modern {
         version,
         file_tag: 0,
-        footer_offset: 0,
-        footer_fingerprint: [0; 4],
+        footer: Some(Footer {
+            offset: 0,
+            fingerprint: [0; 4],
+        }),
     }
 }
 
@@ -1200,6 +1264,53 @@ pub(crate) fn scan_bytes<'a>(
     }
     let file_tag = u24_le(&data, splmsstr::FILE_TAG);
     let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
+    let (entries, footer) = if footer_offset == ABSENT_FOOTER_OFFSET {
+        (header_directory(&data)?, None)
+    } else {
+        let (entries, footer) = header_and_footer_directories(&data, footer_offset)?;
+        (entries, Some(footer))
+    };
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
+
+    let mut container = Container {
+        data,
+        physical_size,
+        layout: ContainerLayout::Modern {
+            version,
+            file_tag,
+            footer,
+        },
+        entries,
+        fastload_table: None,
+        indexed_section_layouts: OnceLock::new(),
+        om_section_cache: OnceLock::new(),
+    };
+    container.fastload_table = container.parse_rmfastload_object_id_table()?;
+    Ok(container)
+}
+
+/// FOOTER offset value of a container whose HEADER directory is the complete
+/// directory.
+const ABSENT_FOOTER_OFFSET: u64 = 0xffff_ffff_ffff;
+
+/// Read the complete directory of a container that has no FOOTER region.
+fn header_directory(data: &[u8]) -> Result<Vec<DirEntry>, CodecError> {
+    let (entries, _) = directory_region(
+        data,
+        splmsstr::HEADER_MARKER,
+        *b"HEADER",
+        Region::Header,
+        data.len(),
+    )?;
+    Ok(entries)
+}
+
+/// Read the HEADER and FOOTER directories and the terminal fingerprint of a
+/// container whose FOOTER region begins at `footer_offset`.
+fn header_and_footer_directories(
+    data: &[u8],
+    footer_offset: u64,
+) -> Result<(Vec<DirEntry>, Footer), CodecError> {
     let fo = usize::try_from(footer_offset)
         .map_err(|_| CodecError::Malformed("FOOTER offset exceeds address space".to_string()))?;
     if fo > data.len() {
@@ -1213,14 +1324,14 @@ pub(crate) fn scan_bytes<'a>(
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
     let (mut entries, header_end) = directory_region(
-        &data,
+        data,
         splmsstr::HEADER_MARKER,
         *b"HEADER",
         Region::Header,
         fo,
     )?;
     let (footer_entries, footer_end) =
-        directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
+        directory_region(data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
     entries.extend(footer_entries);
     if header_end > fo {
         return Err(CodecError::Malformed(
@@ -1254,24 +1365,13 @@ pub(crate) fn scan_bytes<'a>(
             "counted FOOTER directory is not followed by exactly four bytes".to_string(),
         ));
     };
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
-
-    let mut container = Container {
-        data,
-        physical_size,
-        layout: ContainerLayout::Modern {
-            version,
-            file_tag,
-            footer_offset,
-            footer_fingerprint,
-        },
+    Ok((
         entries,
-        fastload_table: None,
-        indexed_section_layouts: OnceLock::new(),
-        om_section_cache: OnceLock::new(),
-    };
-    container.fastload_table = container.parse_rmfastload_object_id_table()?;
-    Ok(container)
+        Footer {
+            offset: footer_offset,
+            fingerprint: footer_fingerprint,
+        },
+    ))
 }
 
 /// Open the legacy NX `UG_PART/UG_PART` stream from a validated CFB source.
@@ -1280,6 +1380,7 @@ pub(crate) fn scan_legacy<'a>(
     root: View<'a>,
 ) -> Result<(Container<'a>, View<'a>), CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
+    snapshot.require_canonical()?;
     let part = snapshot
         .stream("UG_PART/UG_PART")
         .ok_or_else(|| CodecError::WrongFormat("missing legacy UG_PART/UG_PART stream".into()))?;

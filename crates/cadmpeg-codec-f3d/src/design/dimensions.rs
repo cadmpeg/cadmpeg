@@ -1720,7 +1720,8 @@ fn preceding_incident_angular_dimension_definition(
             native_stream(&curve.id) == Some(scope)
                 && parameter
                     .byte_offset()
-                    .is_some_and(|offset| curve.byte_offset < offset)
+                    .zip(curve.byte_offset)
+                    .is_some_and(|(parameter_offset, curve_offset)| curve_offset < parameter_offset)
                 && curve.record_index == record
         })
     };

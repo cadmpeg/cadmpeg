@@ -14,10 +14,10 @@ fn parameter(owned: bool) -> DesignParameter {
         DesignParameterSource::new("Feature Dimension".into(), Some(4), None).unwrap()
     } else {
         DesignParameterSource::User {
-            family_discriminator: Located {
+            family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
                 offset: Some(122),
-            },
+            }),
         }
     };
     DesignParameter::try_from(DesignParameterDraft {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Consolidated record framing and edge-resolution vocabulary.
 //!
 //! Inventories length-closed A/B-family records, groups consolidated edge runs
@@ -5,14 +6,15 @@
 //! against typed analytic and NURBS charts.
 
 use crate::math::{distance_at_most, distance_below};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::features::FinitePoint3;
 #[cfg(test)]
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -22,17 +24,15 @@ use crate::families::b2::records::{
     b2_adjacent_face_counted_owners_from_records, b2_circles_from_records,
     b2_class25_descriptors_from_records, b2_closed_owner_boundary_edges, b2_cone_point,
     b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
-    b2_edge_nodes_from_records, b2_edge_parameters_from_records,
-    b2_embedded_cylinders_from_records, b2_face_nodes_5f_from_records,
+    b2_edge_nodes_from_records, b2_edge_parameters_from_records, b2_face_nodes_5f_from_records,
     b2_owner_identity_targets_from_records, b2_owner_packets_from_records,
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records,
     b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, B2Circle,
-    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder,
-    B2FaceNode5f, B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
+    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2FaceNode5f,
+    B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
-    allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
-    AllocationReferenceEncoding,
+    compact_int, persistent_ref, read_f64_array, AllocationReferenceEncoding,
 };
 #[cfg(test)]
 use crate::wire::records::consolidated_records;
@@ -90,10 +90,10 @@ pub(crate) struct ConsolidatedClass25EdgeRun {
     pub(crate) node: B2EdgeNode,
 }
 
-/// Two adjacent oriented uses and their terminal native edge node.
+/// A native edge node and its two adjacent oriented uses.
 #[derive(Debug, Clone)]
 pub(crate) struct ConsolidatedEdgeUseRun {
-    /// Immediately preceding edge-definition frame in classes `0x23..=0x25`.
+    /// Adjacent source-closed edge-definition frame in classes `0x23..=0x25`.
     pub(crate) definition: Option<ConsolidatedEdgeDefinition>,
     /// The two serialized edge uses, in side order.
     pub(crate) uses: [B2UseMetadata; 2],
@@ -184,173 +184,32 @@ impl ConsolidatedEdgeDefinition {
     }
 }
 
-/// Persistent operand encoding in a class-25 definition.
+/// The two serialized local-slot orders of a class-23 parameter map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Option<u8>", into = "Option<u8>")]
-pub(crate) enum Class25PersistentLead {
-    Compact,
-    Lead0a,
-    Lead0b,
-}
-impl TryFrom<Option<u8>> for Class25PersistentLead {
-    type Error = String;
-    fn try_from(value: Option<u8>) -> Result<Self, Self::Error> {
-        match value {
-            None => Ok(Self::Compact),
-            Some(0x0a) => Ok(Self::Lead0a),
-            Some(0x0b) => Ok(Self::Lead0b),
-            _ => Err("persistent_lead must be null, 10, or 11".into()),
-        }
-    }
-}
-impl From<Class25PersistentLead> for Option<u8> {
-    fn from(value: Class25PersistentLead) -> Self {
-        match value {
-            Class25PersistentLead::Compact => None,
-            Class25PersistentLead::Lead0a => Some(0x0a),
-            Class25PersistentLead::Lead0b => Some(0x0b),
-        }
-    }
-}
-/// Boundary marker in a class-25 scalar lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-enum Class25ScalarMarker {
-    M82,
-    M83,
-    M89,
-    M8b,
-}
-impl TryFrom<u8> for Class25ScalarMarker {
-    type Error = String;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x82 => Ok(Self::M82),
-            0x83 => Ok(Self::M83),
-            0x89 => Ok(Self::M89),
-            0x8b => Ok(Self::M8b),
-            _ => Err(format!("marker {value:#x} is not a class-25 scalar marker")),
-        }
-    }
-}
-impl From<Class25ScalarMarker> for u8 {
-    fn from(value: Class25ScalarMarker) -> Self {
-        match value {
-            Class25ScalarMarker::M82 => 0x82,
-            Class25ScalarMarker::M83 => 0x83,
-            Class25ScalarMarker::M89 => 0x89,
-            Class25ScalarMarker::M8b => 0x8b,
-        }
-    }
-}
-/// Scalar tail with the arity selected by its marker.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "Class25ScalarSegmentWire")]
-pub(crate) enum Class25ScalarSegment {
-    M82Five(Box<[FiniteReal; 5]>),
-    M82Six(Box<[FiniteReal; 6]>),
-    M82Seven(Box<[FiniteReal; 7]>),
-    M83Eight(Box<[FiniteReal; 8]>),
-    M83Nine(Box<[FiniteReal; 9]>),
-    M89(Box<[FiniteReal; 20]>),
-    M8b(Box<[FiniteReal; 24]>),
-}
-#[derive(Serialize, Deserialize)]
-struct Class25ScalarSegmentWire {
-    marker: Class25ScalarMarker,
-    trailing: Vec<FiniteReal>,
-}
-#[derive(Serialize)]
-struct Class25ScalarSegmentWireRef<'a> {
-    marker: Class25ScalarMarker,
-    trailing: &'a [FiniteReal],
+#[serde(try_from = "[u32; 2]", into = "[u32; 2]")]
+pub(crate) enum Class23Slots {
+    OneTwo,
+    TwoOne,
 }
 
-impl Serialize for Class25ScalarSegment {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (marker, trailing): (_, &[FiniteReal]) = match self {
-            Self::M82Five(lane) => (Class25ScalarMarker::M82, &lane[..]),
-            Self::M82Six(lane) => (Class25ScalarMarker::M82, &lane[..]),
-            Self::M82Seven(lane) => (Class25ScalarMarker::M82, &lane[..]),
-            Self::M83Eight(lane) => (Class25ScalarMarker::M83, &lane[..]),
-            Self::M83Nine(lane) => (Class25ScalarMarker::M83, &lane[..]),
-            Self::M89(lane) => (Class25ScalarMarker::M89, &lane[..]),
-            Self::M8b(lane) => (Class25ScalarMarker::M8b, &lane[..]),
-        };
-        Class25ScalarSegmentWireRef { marker, trailing }.serialize(serializer)
-    }
-}
-impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
-    type Error = String;
-    fn try_from(wire: Class25ScalarSegmentWire) -> Result<Self, Self::Error> {
-        fn with_arity<const N: usize>(
-            lane: Vec<FiniteReal>,
-            constructor: fn(Box<[FiniteReal; N]>) -> Class25ScalarSegment,
-        ) -> Option<Class25ScalarSegment> {
-            Some(constructor(lane.into_boxed_slice().try_into().ok()?))
-        }
-
-        match (wire.marker, wire.trailing.len()) {
-            (Class25ScalarMarker::M82, 5) => with_arity(wire.trailing, Self::M82Five),
-            (Class25ScalarMarker::M82, 6) => with_arity(wire.trailing, Self::M82Six),
-            (Class25ScalarMarker::M82, 7) => with_arity(wire.trailing, Self::M82Seven),
-            (Class25ScalarMarker::M83, 8) => with_arity(wire.trailing, Self::M83Eight),
-            (Class25ScalarMarker::M83, 9) => with_arity(wire.trailing, Self::M83Nine),
-            (Class25ScalarMarker::M89, 20) => with_arity(wire.trailing, Self::M89),
-            (Class25ScalarMarker::M8b, 24) => with_arity(wire.trailing, Self::M8b),
-            _ => None,
-        }
-        .ok_or_else(|| "trailing arity does not match marker".to_owned())
-    }
-}
-#[cfg(test)]
-impl From<Class25ScalarSegment> for Class25ScalarSegmentWire {
-    fn from(value: Class25ScalarSegment) -> Self {
-        fn into_vec<const N: usize>(lane: Box<[FiniteReal; N]>) -> Vec<FiniteReal> {
-            let lane: Box<[FiniteReal]> = lane;
-            lane.into_vec()
-        }
-        let (marker, trailing) = match value {
-            Class25ScalarSegment::M82Five(lane) => (Class25ScalarMarker::M82, into_vec(lane)),
-            Class25ScalarSegment::M82Six(lane) => (Class25ScalarMarker::M82, into_vec(lane)),
-            Class25ScalarSegment::M82Seven(lane) => (Class25ScalarMarker::M82, into_vec(lane)),
-            Class25ScalarSegment::M83Eight(lane) => (Class25ScalarMarker::M83, into_vec(lane)),
-            Class25ScalarSegment::M83Nine(lane) => (Class25ScalarMarker::M83, into_vec(lane)),
-            Class25ScalarSegment::M89(lane) => (Class25ScalarMarker::M89, into_vec(lane)),
-            Class25ScalarSegment::M8b(lane) => (Class25ScalarMarker::M8b, into_vec(lane)),
-        };
-        Self { marker, trailing }
-    }
-}
-/// A finite scalar lane with an admitted serialized arity.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(transparent)]
-pub(crate) struct ScalarLane<const LOWER: usize, const UPPER: usize>(Vec<FiniteReal>);
-
-impl<const LOWER: usize, const UPPER: usize> TryFrom<Vec<FiniteReal>> for ScalarLane<LOWER, UPPER> {
+impl TryFrom<[u32; 2]> for Class23Slots {
     type Error = &'static str;
-    fn try_from(values: Vec<FiniteReal>) -> Result<Self, Self::Error> {
-        if !(LOWER..=UPPER).contains(&values.len()) {
-            return Err("edge-definition scalar arity is outside its grammar");
+
+    fn try_from(slots: [u32; 2]) -> Result<Self, Self::Error> {
+        match slots {
+            [1, 2] => Ok(Self::OneTwo),
+            [2, 1] => Ok(Self::TwoOne),
+            _ => Err("class-23 local slots must be [1,2] or [2,1]"),
         }
-        Ok(Self(values))
     }
 }
 
-impl<const LOWER: usize, const UPPER: usize> std::ops::Deref for ScalarLane<LOWER, UPPER> {
-    type Target = [FiniteReal];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'de, const LOWER: usize, const UPPER: usize> Deserialize<'de> for ScalarLane<LOWER, UPPER> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<FiniteReal>::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
+impl From<Class23Slots> for [u32; 2] {
+    fn from(slots: Class23Slots) -> Self {
+        match slots {
+            Class23Slots::OneTwo => [1, 2],
+            Class23Slots::TwoOne => [2, 1],
+        }
     }
 }
 
@@ -363,88 +222,62 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Width-coded operand.
         operand: u32,
     },
-    /// Three operand references followed by eight or nine scalar lanes.
-    Scalar {
+    /// Eight-scalar class-`0x23` affine parameter map.
+    Affine23 {
+        /// Ordered local representation slots.
+        slots: Class23Slots,
+        /// Target representation's parameter interval.
+        target_range: IncreasingParameterInterval,
+        /// Source representation's parameter interval.
+        source_range: IncreasingParameterInterval,
+        /// Positive, repeated endpoint residual bound.
+        tolerance: PositiveReal,
+        /// Positive source-to-target multiplier.
+        scale: PositiveReal,
+        /// Source-to-target translation.
+        offset: FiniteReal,
+    },
+    /// Class-`0x24` parameter-domain relation.
+    Domain24 {
+        #[serde(flatten)]
+        relation: class24::Class24DomainRelation,
+    },
+    /// Nine class-`0x23` scalar lanes comprising three equal triples.
+    Scalar23 {
         /// Two compact operands followed by one persistent operand.
         operands: [u32; 3],
         /// Complete finite scalar lane.
-        values: ScalarLane<8, 9>,
+        values: [FiniteReal; 9],
     },
-    /// Class-`0x25` three-operand form with one uninterrupted scalar lane.
-    Scalar25 {
-        /// Two mixed-width allocation operands followed by one persistent operand.
-        operands: [u32; 3],
-        /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
-        persistent_lead: Class25PersistentLead,
-        /// Complete finite scalar lane.
-        values: ScalarLane<7, 10>,
-    },
-    /// Class-`0x25` three-operand form with a tagged scalar-lane boundary.
-    SegmentedScalar25 {
-        /// Two mixed-width allocation operands followed by one persistent operand.
-        operands: [u32; 3],
-        /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
-        persistent_lead: Class25PersistentLead,
-        /// Five finite scalars preceding the segment marker.
-        leading: [FiniteReal; 5],
-        /// Marker and its scalar tail.
+    /// Class-`0x25` affine or sampled parameter map.
+    Domain25 {
         #[serde(flatten)]
-        segment: Class25ScalarSegment,
+        relation: class25::Class25ParameterMap,
     },
 }
 
-/// Decode a complete class-specific edge-definition payload without inferring
-/// geometric meanings for its operand or scalar lanes.
+/// Decode a complete class-specific edge-definition payload with fixed storage.
 #[must_use]
 pub(crate) fn consolidated_edge_definition_data(
     class: u8,
     payload: &[u8],
 ) -> Option<ConsolidatedEdgeDefinitionData> {
     if class == 0x24 && payload.first() == Some(&0x81) {
-        let mut at = 1;
-        let operand = compact_int(payload, &mut at)?;
-        return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
-            .then_some(ConsolidatedEdgeDefinitionData::Compact24 { operand });
-    }
-    if class == 0x25 && payload.first() == Some(&0x82) {
-        let mut at = 1;
-        let first = allocation_ref(payload, &mut at)?;
-        let second = allocation_ref(payload, &mut at)?;
-        let (third, persistent_lead) = class25_persistent_ref(payload, &mut at)?;
-        let operands = [first, second, third];
-        let scalar_bytes = payload.get(at..)?;
-        if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
-            let values = finite_f64_lane(scalar_bytes)?;
-            return Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-                operands,
-                persistent_lead,
-                values: values.try_into().ok()?,
-            });
-        }
-        let leading = read_f64_array::<5>(scalar_bytes, 0)?;
-        let marker = *scalar_bytes.get(40)?;
-        let tail = scalar_bytes.get(41..)?;
-        let marker = Class25ScalarMarker::try_from(marker).ok()?;
-        if !matches!(
-            (marker, tail.len()),
-            (Class25ScalarMarker::M82, 40 | 48 | 56)
-                | (Class25ScalarMarker::M83, 64 | 72)
-                | (Class25ScalarMarker::M89, 160)
-                | (Class25ScalarMarker::M8b, 192)
-        ) {
-            return None;
-        }
-        let trailing = finite_f64_lane(tail)?;
-        let segment =
-            Class25ScalarSegment::try_from(Class25ScalarSegmentWire { marker, trailing }).ok()?;
-        return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            operands,
-            persistent_lead,
-            leading,
-            segment,
+        return Some(ConsolidatedEdgeDefinitionData::Compact24 {
+            operand: class24_compact_operand(payload)?,
         });
     }
-    if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
+    if class == 0x24 {
+        return Some(ConsolidatedEdgeDefinitionData::Domain24 {
+            relation: class24::parse(payload)?,
+        });
+    }
+    if class == 0x25 {
+        return Some(ConsolidatedEdgeDefinitionData::Domain25 {
+            relation: class25::parse(payload)?,
+        });
+    }
+    if class != 0x23 || payload.first() != Some(&0x82) {
         return None;
     }
     let mut at = 1;
@@ -454,106 +287,76 @@ pub(crate) fn consolidated_edge_definition_data(
         persistent_ref(payload, &mut at)?,
     ];
     let scalar_bytes = payload.get(at..)?;
-    if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
+    if !matches!(scalar_bytes.len(), 64 | 72) {
         return None;
     }
-    let values = finite_f64_lane(scalar_bytes)?;
-    if values[2] != *values.last()? {
-        return None;
+    if scalar_bytes.len() == 64 {
+        return class23_affine_map_payload(payload);
     }
-    if values.len() == 9
-        && !(values[0] == values[3]
-            && values[0] == values[6]
-            && values[1] == values[4]
-            && values[1] == values[7]
-            && values[2] == values[5]
-            && values[5].get() == 1.0)
+    let values = read_f64_array::<9>(scalar_bytes, 0)?;
+    if !(values[0] == values[3]
+        && values[0] == values[6]
+        && values[1] == values[4]
+        && values[1] == values[7]
+        && values[2] == values[5]
+        && values[2] == values[8]
+        && values[5].get() == 1.0)
     {
         return None;
     }
-    Some(ConsolidatedEdgeDefinitionData::Scalar {
-        operands,
-        values: values.try_into().ok()?,
+    Some(ConsolidatedEdgeDefinitionData::Scalar23 { operands, values })
+}
+
+fn class24_compact_operand(payload: &[u8]) -> Option<u32> {
+    if payload.first() != Some(&0x81) {
+        return None;
+    }
+    let mut at = 1;
+    let operand = compact_int(payload, &mut at)?;
+    (payload.get(at..) == Some(&[0x0f, 0x87][..])).then_some(operand)
+}
+
+fn class23_affine_map_payload(payload: &[u8]) -> Option<ConsolidatedEdgeDefinitionData> {
+    if payload.len() != 70 {
+        return None;
+    }
+    let slots = match payload.get(..6)? {
+        [0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d] => Class23Slots::OneTwo,
+        [0x82, 0x09, 0x05, 0x0a, 0x87, 0x0d] => Class23Slots::TwoOne,
+        _ => return None,
+    };
+    let values = read_f64_array::<8>(payload, 6)?;
+    if values[2] != values[7] {
+        return None;
+    }
+    let target_range = IncreasingParameterInterval::between(values[0], values[1])?;
+    let source_range = IncreasingParameterInterval::between(values[3], values[4])?;
+    let tolerance = PositiveReal::new(values[2].get())?;
+    let scale = PositiveReal::new(values[5].get())?;
+    let offset = values[6];
+    if slots == Class23Slots::TwoOne
+        && (target_range != source_range || scale.get() != 1.0 || offset.get() != 0.0)
+    {
+        return None;
+    }
+    if !source_range
+        .endpoints()
+        .into_iter()
+        .zip(target_range.endpoints())
+        .all(|(source, target)| {
+            (scale.get() * source + offset.get() - target).abs() <= tolerance.get()
+        })
+    {
+        return None;
+    }
+    Some(ConsolidatedEdgeDefinitionData::Affine23 {
+        slots,
+        target_range,
+        source_range,
+        tolerance,
+        scale,
+        offset,
     })
-}
-
-fn edge_definition_is_scalar_eight(definition: &ConsolidatedEdgeDefinition) -> bool {
-    if !matches!(
-        definition.class,
-        ConsolidatedEdgeDefinitionClass::Class23 | ConsolidatedEdgeDefinitionClass::Class24
-    ) || definition.frame.payload.first() != Some(&0x82)
-    {
-        return false;
-    }
-    let payload = &definition.frame.payload;
-    let mut at = 1;
-    let parsed = (|| {
-        compact_int(payload, &mut at)?;
-        compact_int(payload, &mut at)?;
-        persistent_ref(payload, &mut at)?;
-        let scalar_bytes = payload.get(at..)?;
-        if scalar_bytes.len() != 64 {
-            return None;
-        }
-        let values = read_f64_array::<8>(scalar_bytes, 0)?;
-        Some(values[2] == values[7])
-    })();
-    parsed == Some(true)
-}
-
-fn edge_definition_is_typed_class25(definition: &ConsolidatedEdgeDefinition) -> bool {
-    fn finite_lane(bytes: &[u8]) -> bool {
-        if !bytes.len().is_multiple_of(8) {
-            return false;
-        }
-        let mut view = View::over_retained(bytes);
-        while !view.is_empty() {
-            if view.f64_le().and_then(FiniteReal::new).is_none() {
-                return false;
-            }
-        }
-        true
-    }
-    if definition.class != ConsolidatedEdgeDefinitionClass::Class25
-        || definition.frame.payload.first() != Some(&0x82)
-    {
-        return false;
-    }
-    let payload = &definition.frame.payload;
-    let mut at = 1;
-    let parsed = (|| {
-        allocation_ref(payload, &mut at)?;
-        allocation_ref(payload, &mut at)?;
-        class25_persistent_ref(payload, &mut at)?;
-        let scalar_bytes = payload.get(at..)?;
-        if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
-            return Some(finite_lane(scalar_bytes));
-        }
-        read_f64_array::<5>(scalar_bytes, 0)?;
-        let marker = *scalar_bytes.get(40)?;
-        let trailing = scalar_bytes.get(41..)?;
-        let count = trailing.len() / 8;
-        let valid_arity = match marker {
-            0x82 => matches!(count, 5..=7),
-            0x83 => matches!(count, 8 | 9),
-            0x89 => count == 20,
-            0x8b => count == 24,
-            _ => false,
-        };
-        Some(valid_arity && finite_lane(trailing))
-    })();
-    parsed == Some(true)
-}
-
-fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Class25PersistentLead)> {
-    match *bytes.get(*at)? {
-        lead @ (0x0a | 0x0b) => {
-            let value = u32::from(View::u16_le_at(bytes, *at + 1)?);
-            *at += 3;
-            Some((value, Class25PersistentLead::try_from(Some(lead)).ok()?))
-        }
-        _ => Some((compact_int(bytes, at)?, Class25PersistentLead::Compact)),
-    }
 }
 
 /// Native endpoint-incidence graph of complete consolidated edge runs.
@@ -584,13 +387,6 @@ pub(crate) enum ConsolidatedSupportBinding {
     Cylinder {
         /// Carrier record byte offset.
         pos: usize,
-    },
-    /// Cylinder frame embedded in a `b2 03 60` wrapper.
-    EmbeddedCylinder {
-        /// Embedded frame byte offset.
-        pos: usize,
-        /// Enclosing wrapper byte offset.
-        wrapper_pos: usize,
     },
     /// `b2 03 19` circle selected by constant-V and exact arc range.
     Circle {
@@ -643,7 +439,6 @@ pub(crate) struct ResolvedConsolidatedEdgeBlock {
 
 struct ConsolidatedCarriers<'a> {
     cylinders: &'a [B2Cylinder],
-    embedded_cylinders: &'a [B2EmbeddedCylinder],
     circles: &'a [B2Circle],
     cones: &'a [B2Cone],
     spheres: &'a [B2Sphere],
@@ -815,11 +610,23 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             }
             let use_run = use_runs.get(&use0.byte_offset())?;
             let definition = use_run.definition.as_ref()?;
-            edge_definition_is_scalar_eight(definition).then_some((
-                parameter,
-                circles.get(&circle.byte_offset())?,
-                use_run,
-            ))
+            let ConsolidatedEdgeDefinitionData::Affine23 {
+                slots: Class23Slots::OneTwo,
+                target_range,
+                ..
+            } = class23_affine_map_payload(&definition.frame.payload)?
+            else {
+                return None;
+            };
+            if use_run.uses[0].references() != Some(&[1, 2][..])
+                || use_run.uses[1].references() != Some(&[2, 3][..])
+            {
+                return None;
+            }
+            let circle = circles.get(&circle.byte_offset())?;
+            (target_range.endpoints().map(f64::to_bits)
+                == circle.range.endpoints().map(f64::to_bits))
+            .then_some((parameter, circle, use_run))
         })();
         let Some((parameter, circle, use_run)) = candidate else {
             continue;
@@ -901,7 +708,9 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             }
             let use_run = use_runs.get(&use0.byte_offset())?;
             let definition = use_run.definition.as_ref()?;
-            if !edge_definition_is_typed_class25(definition) {
+            if definition.frame.flag != crate::wire::records::ConsolidatedFrameFlag::Flag03
+                || class25::parse(&definition.frame.payload).is_none()
+            {
                 return None;
             }
             Some((descriptors.get(&descriptor.byte_offset())?, use_run.node))
@@ -982,6 +791,21 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         && record.family() == ConsolidatedFamily::B
                         && matches!(record.class(), 0x23..=0x25)
                 });
+            if let Some(operand) = definition
+                .filter(|record| record.class() == 0x24)
+                .and_then(ConsolidatedRecord::payload)
+                .and_then(|payload| class24_compact_operand(&data[payload]))
+            {
+                let first = operand.checked_add(1)?;
+                let second = operand.checked_add(2)?;
+                if uses[0].references() != Some(&[1, first][..])
+                    || uses[1].references() != Some(&[2, second][..])
+                    || uses[0].sense() != Some(crate::families::b2::records::B2UseSense::Sense88)
+                    || uses[1].sense() != Some(crate::families::b2::records::B2UseSense::Sense84)
+                {
+                    return None;
+                }
+            }
             identity_chain_consistent.then_some((definition, node))
         })();
         let Some((definition_record, node)) = candidate else {
@@ -1039,14 +863,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             };
             let uses = [first, second];
             let payload = &data[definition_record.payload()?];
-            if payload.first() != Some(&0x81) {
-                return None;
-            }
-            let mut at = 1;
-            let operand = compact_int(payload, &mut at)?;
-            if payload.get(at..) != Some(&[0x0f, 0x87][..]) {
-                return None;
-            }
+            let operand = class24_compact_operand(payload)?;
             let identity_chain_consistent = operand
                 .checked_add(1)
                 .zip(operand.checked_add(2))
@@ -1054,7 +871,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                     uses[0].references() == Some(&[node.start_parameter_ref, first][..])
                         && uses[1].references() == Some(&[node.end_parameter_ref, second][..])
                 })
-                && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2];
+                && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2]
+                && uses[0].sense() == Some(crate::families::b2::records::B2UseSense::Sense88)
+                && uses[1].sense() == Some(crate::families::b2::records::B2UseSense::Sense84);
             if !identity_chain_consistent {
                 return None;
             }
@@ -1469,16 +1288,14 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let surfaces = a5_surfaces_from_records(data, records, refusal)?;
     let points = object_stream_vertices_from_records(data, records);
-    let embedded = b2_embedded_cylinders_from_records(data, records).collect::<Vec<_>>();
-    let standalone = b2_cylinders_from_records(data, records).collect::<Vec<_>>();
-    let circles = b2_circles_from_records(data, records).collect::<Vec<_>>();
-    let cones = b2_cones_from_records(data, records).collect::<Vec<_>>();
-    let spheres = b2_spheres_from_records(data, records).collect::<Vec<_>>();
-    let tori = b2_tori_from_records(data, records).collect::<Vec<_>>();
+    let standalone = (b2_cylinders_from_records(data, records)).collect::<Vec<_>>();
+    let circles = (b2_circles_from_records(data, records)).collect::<Vec<_>>();
+    let cones = (b2_cones_from_records(data, records)).collect::<Vec<_>>();
+    let spheres = (b2_spheres_from_records(data, records)).collect::<Vec<_>>();
+    let tori = (b2_tori_from_records(data, records)).collect::<Vec<_>>();
     let planes = b2_plane_carriers_from_records(data, records);
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
-        embedded_cylinders: &embedded,
         circles: &circles,
         cones: &cones,
         spheres: &spheres,
@@ -1557,11 +1374,13 @@ fn resolve_side_support(
         .circles
         .iter()
         .filter(|circle| circle.record_id == pcurve.support_id);
-    let embedded = carriers
-        .embedded_cylinders
-        .iter()
-        .filter(|value| value.object_id == pcurve.support_id);
-    let identity_count = circles.clone().count() + embedded.clone().count();
+    let identified_cylinders = carriers.cylinders.iter().filter(|value| {
+        value
+            .header
+            .compact_operand()
+            .is_some_and(|operand| operand.value() == pcurve.support_id)
+    });
+    let identity_count = circles.clone().count() + identified_cylinders.clone().count();
     if identity_count > 1 {
         return Ok(None);
     }
@@ -1569,29 +1388,16 @@ fn resolve_side_support(
         return Ok(pcurve_matches_circle(pcurve, circle)
             .then_some(ConsolidatedSupportBinding::Circle { pos: circle.pos }));
     }
-    if let Some(value) = embedded.clone().next() {
-        return Ok(pcurve_endpoints_match(pcurve, points, |uv| {
-            Ok(b2_cylinder_point(&value.cylinder, uv))
-        })?
-        .then_some(ConsolidatedSupportBinding::EmbeddedCylinder {
-            pos: value.pos,
-            wrapper_pos: value.wrapper_pos,
-        }));
+    if let Some(value) = identified_cylinders.clone().next() {
+        return Ok(
+            pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cylinder_point(value, uv)))?
+                .then_some(ConsolidatedSupportBinding::Cylinder { pos: value.pos }),
+        );
     }
     let mut winners = Vec::new();
     for cylinder in carriers.cylinders {
         if pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cylinder_point(cylinder, uv)))? {
             winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
-        }
-    }
-    for value in carriers.embedded_cylinders {
-        if pcurve_endpoints_match(pcurve, points, |uv| {
-            Ok(b2_cylinder_point(&value.cylinder, uv))
-        })? {
-            winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
-                pos: value.pos,
-                wrapper_pos: value.wrapper_pos,
-            });
         }
     }
     for circle in carriers.circles {
@@ -1751,7 +1557,104 @@ fn support_points(
     pcurve: &ConsolidatedPcurve,
     carriers: &ConsolidatedCarriers<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    support_points_at(ctx, binding, &pcurve.sites, carriers)
+    let points = match binding {
+        ConsolidatedSupportBinding::Cylinder { pos } => {
+            let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            (pcurve
+                .sites
+                .iter()
+                .map(|site| b2_cylinder_point(carrier, site.point.get())))
+            .collect::<Option<Vec<_>>>()
+        }
+        ConsolidatedSupportBinding::Cone { pos } => {
+            let Some(carrier) = carriers.cones.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            (pcurve
+                .sites
+                .iter()
+                .map(|site| b2_cone_point(carrier, site.point.get())))
+            .collect::<Option<Vec<_>>>()
+        }
+        ConsolidatedSupportBinding::Sphere { pos } => {
+            let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            (pcurve.sites.iter().map(|site| {
+                let [u, v] = site.point.get();
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(
+                        ctx,
+                        &b2_sphere_geometry(carrier),
+                        u,
+                        v,
+                    ),
+                )? {
+                    Ok(point) => Ok(Some(point.get())),
+                    Err(failure) => failure.non_finite(),
+                }
+            }))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::Torus { pos } => {
+            let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            (pcurve
+                .sites
+                .iter()
+                .map(|site| b2_torus_point(ctx, carrier, site.point.get())))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::Plane { pos } => {
+            let Some(carrier) = carriers.planes.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            let Some(geometry) = b2_plane_geometry(carrier) else {
+                return Ok(None);
+            };
+            (pcurve.sites.iter().map(|site| {
+                let [u, v] = site.point.get();
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                )? {
+                    Ok(point) => Ok(Some(point.get())),
+                    Err(failure) => failure.non_finite(),
+                }
+            }))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
+            let Some(surface) = carriers
+                .nurbs_surfaces
+                .iter()
+                .find(|surface| surface.pos == *pos)
+                .map(|surface| &surface.geometry)
+            else {
+                return Ok(None);
+            };
+            (pcurve.sites.iter().map(|site| {
+                let [u, v] = site.point.get();
+                let partials = match nurbs_surface_partials(ctx, surface, u, v) {
+                    Ok(partials) => partials,
+                    Err(failure) => return failure.non_finite(),
+                };
+                let Some(normal) = partials.du.cross(partials.dv.get()).unit() else {
+                    return Ok(None);
+                };
+                Ok(Some(Point3::new(
+                    partials.point.x + offset.get() * normal.x,
+                    partials.point.y + offset.get() * normal.y,
+                    partials.point.z + offset.get() * normal.z,
+                )))
+            }))
+            .collect::<Result<Option<Vec<_>>, _>>()?
+        }
+        ConsolidatedSupportBinding::Circle { .. } => None,
+    };
+    Ok(points)
 }
 
 /// The points of `binding` at `sites`, in site order.
@@ -1764,20 +1667,6 @@ fn support_points_at(
     let points = match binding {
         ConsolidatedSupportBinding::Cylinder { pos } => {
             let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
-                return Ok(None);
-            };
-            sites
-                .iter()
-                .map(|site| b2_cylinder_point(carrier, site.point.get()))
-                .collect::<Option<Vec<_>>>()
-        }
-        ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
-            let Some(carrier) = carriers
-                .embedded_cylinders
-                .iter()
-                .find(|value| value.pos == *pos)
-                .map(|value| &value.cylinder)
-            else {
                 return Ok(None);
             };
             sites
@@ -2076,63 +1965,7 @@ mod tests {
     use crate::families::b2::records::B2Circle;
     use crate::wire::records::ConsolidatedPcurve;
 
-    use super::{nurbs_carrier_offset, pcurve_matches_circle, ConsolidatedEdgeDefinitionData};
-
-    fn scalar_segment() -> super::Class25ScalarSegment {
-        let value = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar");
-        super::Class25ScalarSegment::M82Five(Box::new([value; 5]))
-    }
-
-    #[test]
-    fn class25_scalar_segment_borrowed_wire_preserves_json_bytes() {
-        let value = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar");
-        for segment in [
-            scalar_segment(),
-            super::Class25ScalarSegment::M82Six(Box::new([value; 6])),
-            super::Class25ScalarSegment::M82Seven(Box::new([value; 7])),
-            super::Class25ScalarSegment::M83Eight(Box::new([value; 8])),
-            super::Class25ScalarSegment::M83Nine(Box::new([value; 9])),
-            super::Class25ScalarSegment::M89(Box::new([value; 20])),
-            super::Class25ScalarSegment::M8b(Box::new([value; 24])),
-        ] {
-            let owned: super::Class25ScalarSegmentWire = segment.clone().into();
-            assert_eq!(
-                serde_json::to_vec(&segment).expect("borrowed segment JSON"),
-                serde_json::to_vec(&owned).expect("owned segment JSON")
-            );
-        }
-    }
-
-    #[test]
-    fn class25_scalar_segment_retained_limit_refuses_json_record() {
-        #[derive(serde::Serialize)]
-        struct Record<'a> {
-            id: &'static str,
-            #[serde(flatten)]
-            segment: &'a super::Class25ScalarSegment,
-        }
-        let segment = scalar_segment();
-
-        let record = Record {
-            id: "catia:test:segment#0",
-            segment: &segment,
-        };
-        let arena_name = "scalar_segments";
-        let json_len = serde_json::to_vec(&record).expect("segment JSON").len();
-        let limit = u64::try_from(json_len - 1).expect("small JSON");
-        let refused = crate::test_support::with_retained_limit(limit, |ctx| {
-            let mut namespace = cadmpeg_ir::NativeNamespace::default();
-            namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
-        });
-        let error = refused.expect_err("segment exceeds retained-byte limit");
-        assert!(error.to_string().contains("RetainedBytes"), "{error}");
-        crate::test_support::with_service_context(|ctx| {
-            let mut namespace = cadmpeg_ir::NativeNamespace::default();
-            namespace
-                .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-                .expect("store the native arena");
-        });
-    }
+    use super::{nurbs_carrier_offset, pcurve_matches_circle};
 
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
@@ -2274,15 +2107,14 @@ mod tests {
             width: crate::wire::records::ConsolidatedFrameWidth::One,
             flag: crate::wire::records::ConsolidatedFrameFlag::Flag03,
             header_token: 0,
-            payload: crate::families::b2::records::B2PlaneCarrierPayload::PointDirection2 {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
+            payload: crate::families::b2::records::B2PlaneCarrierPayload::Plane {
+                layout: crate::families::b2::records::B2PlaneCarrierLayout::ImplicitX,
+                point: cadmpeg_ir::units::FiniteVector::new([f64::MAX, 0.0])
                     .expect("finite origin"),
-                frame: cadmpeg_ir::units::OrthonormalFrame3::new(
-                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("orthonormal frame"),
-                tail: cadmpeg_ir::units::FiniteVector::new([0.0; 3]).expect("finite tail"),
+                direction: crate::checked::ExactHypotUnitVector3::new([1.0, 0.0, 0.0])
+                    .expect("unit direction"),
+                u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+                v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
             },
         };
         let pcurve = |points: [[f64; 2]; 2]| ConsolidatedPcurve {
@@ -2323,7 +2155,6 @@ mod tests {
         let planes = [plane];
         let carriers = super::ConsolidatedCarriers {
             cylinders: &[],
-            embedded_cylinders: &[],
             circles: &[],
             cones: &[],
             spheres: &[],
@@ -2355,51 +2186,6 @@ mod tests {
     }
 
     #[test]
-    fn class25_wire_rejects_unknown_marker_and_wrong_arity() {
-        for (marker, count) in [(0x99, 0), (0x82, 0), (0x83, 7), (0x89, 19), (0x8b, 25)] {
-            let wire = serde_json::json!({
-                "kind": "segmented_scalar25", "operands": [1, 2, 3],
-                "persistent_lead": null, "leading": [0.0, 0.0, 0.0, 0.0, 0.0],
-                "marker": marker, "trailing": vec![0.0; count]
-            });
-            assert!(serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire).is_err());
-        }
-    }
-    #[test]
-    fn class25_wire_preserves_marker_tail_and_lead() {
-        for (marker, count) in [
-            (0x82, 5),
-            (0x82, 6),
-            (0x82, 7),
-            (0x83, 8),
-            (0x83, 9),
-            (0x89, 20),
-            (0x8b, 24),
-        ] {
-            for lead in [None, Some(10), Some(11)] {
-                let wire = serde_json::json!({
-                    "kind": "segmented_scalar25", "operands": [1, 2, 3],
-                    "persistent_lead": lead, "leading": [0.0, 0.0, 0.0, 0.0, 0.0],
-                    "marker": marker, "trailing": vec![0.0; count]
-                });
-                let record: ConsolidatedEdgeDefinitionData = serde_json::from_value(wire.clone())
-                    .expect("admitted class-25 marker and tail");
-                assert_eq!(
-                    serde_json::to_value(record).expect("serialize class-25 record"),
-                    wire
-                );
-            }
-        }
-        let wire = serde_json::json!({"kind": "scalar25", "operands": [1, 2, 3], "persistent_lead": 12, "values": []});
-        assert!(
-            serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire)
-                .expect_err("unknown persistent lead must fail admission")
-                .to_string()
-                .contains("persistent_lead")
-        );
-    }
-
-    #[test]
     fn pcurve_on_its_cylinder_resolves_and_lifts_to_the_same_points() {
         let pcurve_bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let pcurve_records = crate::wire::records::consolidated_records(&pcurve_bytes);
@@ -2418,7 +2204,7 @@ mod tests {
         .collect();
         let carriers = super::ConsolidatedCarriers {
             cylinders: &cylinders,
-            embedded_cylinders: &[],
+
             circles: &[],
             cones: &[],
             spheres: &[],
@@ -2533,7 +2319,7 @@ mod tests {
             assert_eq!(carriers_found.len(), surfaces.len());
             let carriers = super::ConsolidatedCarriers {
                 cylinders: &[],
-                embedded_cylinders: &[],
+
                 circles: &[],
                 cones: &[],
                 spheres: &[],
@@ -2558,3 +2344,10 @@ mod tests {
 
 #[cfg(test)]
 mod decoder_tests;
+
+#[cfg(test)]
+mod parameter_maps;
+
+pub(crate) mod class24;
+pub(crate) mod class25;
+pub(crate) mod parameter_relation;

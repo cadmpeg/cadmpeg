@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::CatiaAllocationReferenceEncoding;
 
-/// Parameter axis held constant by selectors `0x05` and `0x09` in a
+/// Parameter axis held constant by operands 1 and 2 in a
 /// consolidated owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -454,7 +454,7 @@ pub(crate) struct CatiaOwnerChartRelation {
     pub(super) carrier: CatiaOwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
     pub(super) bridge: CatiaOwnerChartBridge,
-    /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
+    /// Byte offsets of the records with operands 1, 2, 3, and 4.
     pub(super) parameter_point_byte_offsets: [u64; 4],
 }
 

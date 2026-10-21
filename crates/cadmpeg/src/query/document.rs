@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn indexes_model_and_native_arenas_and_skips_non_arrays() {
         let mut doc = CadirDocument::from_value(json!({
-            "ir_version": "4",
+            "ir_version": cadmpeg_ir::IR_VERSION,
             "model": {
                 "faces": [{"id": "f1"}, {"id": "f2"}],
                 "empty": [],

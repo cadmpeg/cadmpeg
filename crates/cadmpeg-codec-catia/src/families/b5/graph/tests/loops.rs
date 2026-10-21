@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::families::b5::graph::controls::{B5FramingControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::tests::extended_loop_metadata;
 use crate::families::b5::graph::tests::test_pcurve;
@@ -6,10 +8,10 @@ use crate::families::b5::graph::typed_loop_records_from_records;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
     canonical_point, canonical_surface_id, counted_references, distance_squared,
-    edge_support_pcurve_references, face_surface_references, incidence_vertex_coordinates,
-    loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
-    loop_references_and_metadata, parameter_incidence, parse_face_record, parse_loop,
-    pcurve_parameter_domain, sphere_great_circle_point, B5FaceRecord, B5IncidenceLane,
+    edge_pcurve_parameter_values, edge_support_pcurve_references, face_surface_references,
+    incidence_vertex_coordinates, loop_chain_closes, loop_metadata as parse_loop_metadata,
+    loop_references, loop_references_and_metadata, parameter_incidence, parse_face_record,
+    parse_loop, pcurve_parameter_domain, sphere_great_circle_point, B5FaceRecord, B5IncidenceLane,
     B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
     B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
     B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
@@ -18,6 +20,52 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+#[test]
+fn endpoint_parameter_duplicates_require_the_same_arc_and_local_parameter() {
+    let start = crate::test_support::test_b5::finite(0.25);
+    let end = crate::test_support::test_b5::finite(0.75);
+    let lane = B5IncidenceLane {
+        curve: 2,
+        parameter: start,
+        control: 6,
+    };
+    let edge_incidences = BTreeMap::from([(3, [20, 21])]);
+    let mut incidences = BTreeMap::from([
+        (
+            20,
+            B5ParameterIncidence {
+                object_id: 20,
+                lanes: vec![lane, lane],
+            },
+        ),
+        (
+            21,
+            B5ParameterIncidence {
+                object_id: 21,
+                lanes: vec![B5IncidenceLane {
+                    parameter: end,
+                    ..lane
+                }],
+            },
+        ),
+    ]);
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        Some([start, end])
+    );
+    incidences.get_mut(&20).expect("start incidence").lanes[1].control = 7;
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        None
+    );
+    incidences.get_mut(&20).expect("start incidence").lanes[1] = lane;
+    incidences.get_mut(&20).expect("start incidence").lanes[1].parameter = end;
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        None
+    );
+}
 
 use super::super::parse_face;
 
@@ -164,8 +212,8 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
                     crate::test_support::test_b5::finite(3.5),
                     crate::test_support::test_b5::finite(4.25)
                 ],
-                control: metadata_control,
-                floats: [1.0, -2.0, 3.5, 4.25, 5.5, -6.75],
+                controls: [0x0d, 0x05, 0x05, metadata_control, 0x05, 0x01],
+                floats: [-2.0, 1.0, 3.5, 4.25, -6.75, 5.5],
             })
         );
     }
@@ -223,7 +271,7 @@ fn loop_metadata_rejects_every_malformed_boundary_and_numeric_domain() {
     )
     .is_none());
 
-    for metadata_control in [0x00, 0x04, 0x20, 0x70] {
+    for metadata_control in [0x00, 0x03, 0x04, 0x07, 0x20, 0x70, 0xff] {
         assert!(parse_loop_metadata(&extended_loop_metadata(metadata_control), 1).is_none());
     }
 
@@ -234,6 +282,94 @@ fn loop_metadata_rejects_every_malformed_boundary_and_numeric_domain() {
     let mut non_finite_float = extended_loop_metadata(0x05);
     non_finite_float[47..51].copy_from_slice(&f32::INFINITY.to_le_bytes());
     assert!(parse_loop_metadata(&non_finite_float, 1).is_none());
+}
+
+#[test]
+fn loop_numeric_terminal_retains_all_six_canonical_controls() {
+    for controls in [
+        [0x0d, 0x05, 0x05, 0x09, 0x09, 0x01],
+        [0x05, 0x05, 0x05, 0x05, 0x05, 0x01],
+        [0x01, 0x15, 0x09, 0xfd, 0x21, 0x01],
+    ] {
+        let mut bytes = extended_loop_metadata(0x05);
+        let positions = [9, 42, 43, 44, 45, 46];
+        for (position, control) in positions.into_iter().zip(controls) {
+            bytes[position] = control;
+        }
+        let (metadata, edge_controls) =
+            parse_loop_metadata(&bytes, 1).expect("complete numeric terminal");
+        assert_eq!(
+            metadata.extension.expect("numeric terminal").controls,
+            controls
+        );
+        assert_eq!(edge_controls, [[1, -1, 1]]);
+        for position in positions {
+            for invalid in [0, 2, 3, 4, 255] {
+                let mut malformed = bytes.clone();
+                malformed[position] = invalid;
+                assert!(parse_loop_metadata(&malformed, 1).is_none());
+            }
+        }
+        let mut truncated = bytes.clone();
+        truncated.pop();
+        assert!(parse_loop_metadata(&truncated, 1).is_none());
+        bytes.push(0x01);
+        assert!(parse_loop_metadata(&bytes, 1).is_none());
+    }
+}
+
+#[test]
+fn loop_numeric_terminal_orders_patch_coordinates_and_cartesian_axis_pairs() {
+    let mut bytes = extended_loop_metadata(0x09);
+    bytes[10..18].copy_from_slice(&4.0_f64.to_le_bytes());
+    bytes[26..34].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_some(),
+        "later U patch permits local reset"
+    );
+    bytes[44] = 0x05;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "same U patch rejects local reset"
+    );
+    bytes[42] = 0x09;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "U patch must not decrease"
+    );
+
+    let mut bytes = extended_loop_metadata(0x05);
+    bytes[18..26].copy_from_slice(&5.0_f64.to_le_bytes());
+    bytes[34..42].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "same V patch rejects local reset"
+    );
+    bytes[45] = 0x09;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_some(),
+        "later V patch permits local reset"
+    );
+    bytes[43] = 0x0d;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "V patch must not decrease"
+    );
+
+    for offset in [47, 55, 63] {
+        let mut bytes = extended_loop_metadata(0x05);
+        bytes[offset..offset + 4].copy_from_slice(&10.0_f32.to_le_bytes());
+        assert!(
+            parse_loop_metadata(&bytes, 1).is_none(),
+            "Cartesian low exceeds high"
+        );
+    }
+    let mut bytes = extended_loop_metadata(0x05);
+    bytes[46] = 0x05;
+    assert!(
+        parse_loop_metadata(&bytes, 1).is_none(),
+        "terminal compact value must be zero"
+    );
 }
 
 #[test]
@@ -579,11 +715,11 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         payload.push(0x18);
         payload.extend_from_slice(&reference.to_le_bytes());
     }
-    payload.extend_from_slice(&[0x01, 0x02]);
+    payload.extend_from_slice(&[0x11, 0x05]);
     payload.extend_from_slice(&2.0f64.to_le_bytes());
-    payload.extend_from_slice(&[0x03, 0x04]);
+    payload.extend_from_slice(&[0x03, 0x05]);
     payload.extend_from_slice(&0.0f64.to_le_bytes());
-    payload.extend_from_slice(&[0x05, 0x06]);
+    payload.extend_from_slice(&[0x05, 0x05]);
     let record = B5Record {
         offset: 0,
         family: 0xb5,
@@ -591,7 +727,7 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         object_id: 10,
         payload,
     };
-    let records = HashMap::from([(10, Some(record))]);
+    let mut records = HashMap::from([(10, Some(record))]);
     let rolling = HashMap::from([(
         1,
         Some(B5Surface::RollingBall {
@@ -605,6 +741,15 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
     assert_eq!(
         resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
         rolling.get(&1).cloned().flatten()
+    );
+    let record = records
+        .get_mut(&10)
+        .and_then(Option::as_mut)
+        .expect("construction");
+    record.payload[16] = 0x05; // Cylinder selector contradicts the rolling-ball carrier.
+    assert_eq!(
+        resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
+        None
     );
 }
 
@@ -896,39 +1041,6 @@ fn counted_face_references_reject_unknown_terminal_controls() {
     assert_eq!(parse_face_record(&empty), None);
     empty.payload.extend_from_slice(&[0x80, 0x03]);
     assert_eq!(parse_face_record(&empty), None);
-}
-
-#[test]
-fn face_references_can_repeat_one_carrier_through_an_alias() {
-    let plane = B5Surface::Plane {
-        origin: crate::test_support::test_b5::point([0.0; 3]),
-        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
-        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-    };
-    let record = B5FaceRecord {
-        object_id: 30,
-        references: vec![10, 11, 20],
-        terminal_control: Some(B5FramingControl::Control05),
-    };
-    let loops = BTreeMap::from([(
-        20,
-        B5Loop {
-            object_id: 20,
-            members: Vec::new(),
-            metadata: test_loop_metadata(),
-            surface: 10,
-        },
-    )]);
-    let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
-    let aliases = BTreeMap::from([(11, 10)]);
-
-    let face = parse_face(&record, &loops, &surfaces, &aliases).expect("aliased face");
-    assert_eq!(face.surface, 10);
-    assert_eq!(face.loops, vec![20]);
-
-    assert!(parse_face(&record, &loops, &surfaces, &BTreeMap::new()).is_none());
 }
 
 #[test]
@@ -1381,4 +1493,41 @@ fn typed_face_records_index_faces_by_object_id() {
         parsed.get(&3).map(|face| face.references.as_slice()),
         Some([1, 2].as_slice())
     );
+}
+
+#[test]
+fn face_reference_slots_after_the_carrier_require_loops() {
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+    let mut record = B5FaceRecord {
+        object_id: 30,
+        references: vec![10, 11, 20],
+        terminal_control: Some(B5FramingControl::Control05),
+    };
+    let mut loops = BTreeMap::from([(
+        20,
+        B5Loop {
+            object_id: 20,
+            members: Vec::new(),
+            metadata: test_loop_metadata(),
+            surface: 10,
+        },
+    )]);
+    let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
+    let aliases = BTreeMap::from([(11, 10)]);
+
+    assert!(parse_face(&record, &loops, &surfaces, &aliases).is_none());
+    assert!(parse_face(&record, &loops, &surfaces, &BTreeMap::new()).is_none());
+
+    record.references = vec![10, 20];
+    let face = parse_face(&record, &loops, &surfaces, &aliases).expect("one carrier and loop");
+    assert_eq!(face.surface, 10);
+    assert_eq!(face.loops, vec![20]);
+    loops.get_mut(&20).expect("owned loop").surface = 11;
+    assert!(parse_face(&record, &loops, &surfaces, &aliases).is_none());
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::framing::xmt_reference::XmtTarget;
 use crate::native::parasolid::ParasolidOffsetSurfaceRecord;
 use crate::test_support::test_bytes::put_ref;
@@ -336,7 +338,6 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .arena_as::<super::super::ParasolidIntersectionRecord>("parasolid_intersection_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert!(!records[0].delta_twin);
     assert_eq!(records[0].header_references[0], 1);
     assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
     assert_eq!(
@@ -366,44 +367,31 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
 }
 
 #[test]
-fn decode_preserves_deltas_intersection_data_curve() {
+fn decode_does_not_materialize_unanchored_delta_intersection_payload() {
     let mut partition = topology_partition_stream();
     for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
         let marker = [0, tag, 0, xmt];
         let record = partition
             .windows(marker.len())
             .position(|window| window == marker)
-            .expect("topology record");
+            .unwrap();
         put_ref(&mut partition, record + offset, 12);
     }
     let deltas = deltas_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
-    let result = NxCodec
-        .decode(&mut cur, &DecodeOptions::default())
-        .expect("required invariant");
-
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert!(result.ir().model.procedural_curves.is_empty());
     let records = result
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .unwrap()
         .arena_as::<super::super::ParasolidIntersectionRecord>("parasolid_intersection_records")
-        .expect("required invariant");
-    assert_eq!(records.len(), 1);
-    assert!(records[0].delta_twin);
-    assert_eq!(records[0].header_references[0], 1);
-    assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
-    assert_eq!(
-        result.ir().model.edges[0].curve(),
-        result
-            .ir()
-            .model
-            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
-    );
+        .unwrap();
+    assert!(records.is_empty());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
+            .unwrap()
             .is_ok()
     );
 }
@@ -426,8 +414,8 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(terms.len(), 2);
     assert_eq!(terms[0].form.count(), 1);
     assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
-    assert_eq!(terms[0].point.get(), [0.0, 0.0, 0.0]);
-    assert_eq!(terms[1].point.get(), [10.0, 0.0, 0.0]);
+    assert_eq!(terms[0].data.point().get(), [0.0, 0.0, 0.0]);
+    assert_eq!(terms[1].data.point().get(), [10.0, 0.0, 0.0]);
     assert!(terms
         .iter()
         .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));

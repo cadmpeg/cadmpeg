@@ -37,10 +37,10 @@ pub(crate) const DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT: Coverage
     CoverageKey::new("decoded_complete_schema_configuration_row_chain_count");
 pub(crate) const DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey::new("decoded_complex_constraint_range_count");
-pub(crate) const DECODED_CONSOLIDATED_CONE_FACE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_consolidated_cone_face_count");
-pub(crate) const DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT: CoverageKey =
-    CoverageKey::new("decoded_consolidated_cone_face_parameter_point_count");
+pub(crate) const DECODED_CONSOLIDATED_CHAMFER_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_chamfer_count");
+pub(crate) const DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_chamfer_parameter_point_count");
 pub(crate) const DECODED_CONSOLIDATED_EDGE_RUN_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_edge_run_count");
 pub(crate) const DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT: CoverageKey =
@@ -334,10 +334,10 @@ pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_edge_stride_allocation_count");
 pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_edge_stride_count");
-pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_edge_stride_surface_support_ref_count");
-pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_edge_stride_topology_ref_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_VERTEX_OWNER_DISTANCE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_edge_stride_vertex_owner_distance_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_DISTANCE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_edge_stride_topology_distance_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_face_bound_support_run_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT: CoverageKey =
@@ -468,16 +468,6 @@ pub(crate) const TRANSFERRED_LEGACY_PARAMETER_COUNT: CoverageKey =
     CoverageKey::new("transferred_legacy_parameter_count");
 pub(crate) const TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT: CoverageKey =
     CoverageKey::new("transferred_legacy_selector_parameter_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_definition_chain_value_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_definition_value_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_range_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_parameter_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_FACE_COUNT: CoverageKey =
     CoverageKey::new("transferred_object_stream_face_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_LOOP_COUNT: CoverageKey =
@@ -697,8 +687,8 @@ pub(crate) const DECODED_CONSOLIDATED_CONE_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_cone_count");
 pub(crate) const DECODED_CONSOLIDATED_CYLINDER_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_cylinder_count");
-pub(crate) const DECODED_CONSOLIDATED_GROUP_COUNT: CoverageKey =
-    CoverageKey::new("decoded_consolidated_group_count");
+pub(crate) const DECODED_CONSOLIDATED_CLASS60_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_class60_record_count");
 pub(crate) const DECODED_CONSOLIDATED_PARAMETER_POINT_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_parameter_point_count");
 pub(crate) const DECODED_CONSOLIDATED_PCURVE_COUNT: CoverageKey =
@@ -799,14 +789,12 @@ pub(crate) const DECODED_VALUE_FIELD_COUNT: CoverageKey =
     CoverageKey::new("decoded_value_field_count");
 pub(crate) const DECODED_VALUE_SCHEMA_SELECTION_COUNT: CoverageKey =
     CoverageKey::new("decoded_value_schema_selection_count");
+pub(crate) const DECODED_ZERO_ENTITY_ALLOCATION_EDGE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_allocation_edge_count");
 pub(crate) const DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_bound_support_member_count");
-pub(crate) const DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_bound_typed_loop_reference_count");
-pub(crate) const DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_endpoint_locus_candidate_count");
-pub(crate) const DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_endpoint_pair_candidate_count");
+pub(crate) const DECODED_ZERO_ENTITY_BOUND_EDGE_STRIDE_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_bound_edge_stride_record_count");
 pub(crate) const DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_model_endpoint_pair_count");
 pub(crate) const DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT: CoverageKey =
@@ -815,8 +803,6 @@ pub(crate) const TRANSFERRED_APPEARANCE_ASSET_COUNT: CoverageKey =
     CoverageKey::new("transferred_appearance_asset_count");
 pub(crate) const TRANSFERRED_APPEARANCE_BINDING_COUNT: CoverageKey =
     CoverageKey::new("transferred_appearance_binding_count");
-pub(crate) const TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_sketch_entity_count");
 pub(crate) const TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT: CoverageKey =
     CoverageKey::new("transferred_principal_plane_record_count");
 pub(crate) const TRANSFERRED_SKETCH_ENTITY_COUNT: CoverageKey =
@@ -947,7 +933,7 @@ const ALL: &[CoverageKey] = &[
     DECODED_CONSOLIDATED_CLASS61_RECORD_COUNT,
     DECODED_CONSOLIDATED_CONE_COUNT,
     DECODED_CONSOLIDATED_CYLINDER_COUNT,
-    DECODED_CONSOLIDATED_GROUP_COUNT,
+    DECODED_CONSOLIDATED_CLASS60_RECORD_COUNT,
     DECODED_CONSOLIDATED_PARAMETER_POINT_COUNT,
     DECODED_CONSOLIDATED_PCURVE_COUNT,
     DECODED_CONSOLIDATED_REFERENCE_LIST_COUNT,
@@ -998,15 +984,13 @@ const ALL: &[CoverageKey] = &[
     DECODED_VALUE_BLOCK_COUNT,
     DECODED_VALUE_FIELD_COUNT,
     DECODED_VALUE_SCHEMA_SELECTION_COUNT,
+    DECODED_ZERO_ENTITY_ALLOCATION_EDGE_COUNT,
     DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT,
-    DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
-    DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT,
-    DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
+    DECODED_ZERO_ENTITY_BOUND_EDGE_STRIDE_RECORD_COUNT,
     DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT,
     DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT,
     TRANSFERRED_APPEARANCE_ASSET_COUNT,
     TRANSFERRED_APPEARANCE_BINDING_COUNT,
-    TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT,
     TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT,
     TRANSFERRED_SKETCH_ENTITY_COUNT,
     UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
@@ -1059,8 +1043,8 @@ const ALL: &[CoverageKey] = &[
     DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
     DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT,
     DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT,
-    DECODED_CONSOLIDATED_CONE_FACE_COUNT,
-    DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
+    DECODED_CONSOLIDATED_CHAMFER_COUNT,
+    DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT,
@@ -1271,11 +1255,6 @@ const ALL: &[CoverageKey] = &[
     TRANSFERRED_LEGACY_FORMULA_COUNT,
     TRANSFERRED_LEGACY_PARAMETER_COUNT,
     TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
     TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
     TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
     TRANSFERRED_PARAMETER_COUNT,

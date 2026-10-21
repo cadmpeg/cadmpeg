@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Siemens NX PRT seed builders.
 
+
+
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
@@ -43,9 +45,7 @@ pub fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
 /// surfaces and the line carry the `+` sense byte at +18.
 fn partition_stream() -> Result<Vec<u8>, CodecError> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
-    s.extend_from_slice(b"SCH_TEST_1_9999\x00");
+    s.extend_from_slice(b"PS\x00\x00\x00?: TRANSMIT FILE (partition) created by modeller version 3400176\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     let mut pt = record(0x1d, 40)?;
     put_ref(&mut pt, 2, 2);

@@ -126,6 +126,30 @@ pub(crate) mod design_parameter_legacy_287_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 41;
 }
 
+/// Byte offsets for the `design_parameter_typed_compact_owned_prefix` record.
+///
+/// Spec §3.1. Record length 85 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header of an owned typed compact parameter through its expression length. The frame ends with the 52-byte typed parameter tail.
+/// ```
+pub(crate) mod design_parameter_typed_compact_owned_prefix {
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 11;
+    /// Offset of `source_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_ORDINAL: usize = 26;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 30;
+    /// Offset of `owner_type_guid_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_TYPE_GUID_LENGTH: usize = 39;
+    /// Stated value of `owner_type_guid_length` (`u32`). Spec §3.1.
+    pub(crate) const OWNER_TYPE_GUID_LENGTH_VALUE: u32 = 0x0000_0024;
+    /// Offset of `owner_type_guid` (`bytes[36]`). Spec §3.1.
+    pub(crate) const OWNER_TYPE_GUID: usize = 43;
+    /// Offset of `expression_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXPRESSION_LENGTH: usize = 81;
+}
+
 /// Byte offsets for the `design_parameter_legacy_287_tail` record.
 ///
 /// Spec §3.1. Record length 12 B.
@@ -4750,6 +4774,40 @@ pub(crate) mod derived_instance_relation_310_57 {
     pub(crate) const SCOPE_MARKER_VALUE: u8 = 1;
     /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
     pub(crate) const SCOPE_RECORD_INDEX: usize = 47;
+}
+
+/// Byte offsets for the `hem_common_controls` record.
+///
+/// Spec §3.1. Record length 41 B.
+///
+/// ```text
+/// Offsets are relative to C = 85 + S, shared by gap-and-length, rolled and teardrop Hem frames.
+/// ```
+pub(crate) mod hem_common_controls {
+    /// Offset of `bend_position` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BEND_POSITION: usize = 0;
+    /// Offset of `compatibility_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPATIBILITY_ONE: usize = 30;
+    /// Offset of `legacy_references` (`bytes[2]`). Spec §3.1.
+    pub(crate) const LEGACY_REFERENCES: usize = 34;
+    /// Offset of `compatibility_four` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPATIBILITY_FOUR: usize = 36;
+    /// Offset of `flip` (`u8`). Spec §3.1.
+    pub(crate) const FLIP: usize = 40;
+}
+
+/// Byte offsets for the `sheet_metal_settings_prefix` record.
+///
+/// Spec §3.1. Record length 14 B.
+///
+/// ```text
+/// Offsets are relative to the end of the variable-length primary indexed header. Versioned optional references follow this prefix.
+/// ```
+pub(crate) mod sheet_metal_settings_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 14;
+    /// Offset of `override_mask` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OVERRIDE_MASK: usize = 10;
 }
 
 /// Byte offsets for the `local_component_occurrence_prefix` record.

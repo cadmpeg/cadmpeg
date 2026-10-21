@@ -6,6 +6,7 @@
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 
 use crate::container::{self, BrepFacts, ContainerScan};
+use crate::design::decode::parameters::UnparsedParameterRecords;
 use crate::native::F3dNative;
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyMember},
@@ -25,6 +26,9 @@ pub(super) struct ProductPrereqs {
     pub(super) design_material_assignments: Vec<DesignMaterialAssignment>,
     pub(super) design_types: Vec<SegmentType>,
     pub(super) design_parameters: Vec<DesignParameter>,
+    /// Per-stream counts of typed parameter frames that match no parameter
+    /// grammar; the session reports them as losses.
+    pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
     pub(super) design_entity_headers: Vec<DesignEntityHeader>,
     /// Headers of the records that entity headers index. Sketch relations
     /// decode from this set only.
@@ -78,6 +82,7 @@ impl ProductPrereqs {
             design_material_assignments,
             design_types,
             design_parameters,
+            design_parameter_unparsed: _,
             design_entity_headers,
             design_record_headers,
             design_owner_record_headers,
@@ -133,7 +138,10 @@ pub(super) fn decode(
     let construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
     let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
     let design_types = crate::design::decode::meta::decode_types(scan)?;
-    let design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
+    let crate::design::decode::parameters::DecodedParameters {
+        parameters: design_parameters,
+        unparsed: design_parameter_unparsed,
+    } = crate::design::decode::parameters::decode_parameters(scan)?;
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     let design_record_headers =
         crate::design::decode::sketch::decode_record_headers(scan, &design_entity_headers)?;
@@ -186,6 +194,7 @@ pub(super) fn decode(
         design_material_assignments,
         design_types,
         design_parameters,
+        design_parameter_unparsed,
         design_entity_headers,
         design_record_headers,
         design_owner_record_headers,

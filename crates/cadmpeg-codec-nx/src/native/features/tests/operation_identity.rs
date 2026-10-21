@@ -87,7 +87,7 @@ fn assert_body_segment_join_admits(route: BodySegmentJoinRoute) {
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
-            crate::om::body_write::BodyImageTag::Form12,
+            std::num::NonZeroU8::new(12).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
             0,
         )
@@ -141,7 +141,7 @@ fn body_partition_join_admits_fixture() {
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
-            crate::om::body_write::BodyImageTag::Form12,
+            std::num::NonZeroU8::new(12).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
             0,
         )
@@ -400,6 +400,30 @@ fn operation_header_identity_requires_unique_resolved_blocks() {
     let mut labels = vec![label(0, [Some(55), Some(56), None, None])];
     assign_operation_header_identities(&mut labels, &block_identities);
     assert!(labels[0].stable_identity.is_none());
+}
+
+#[test]
+fn operation_body_write_requires_the_complete_owning_class_registry() {
+    for (class_index, count) in [(0, 0), (1, 0), (16, 1), (17, 0), (255, 0)] {
+        let frame = vec![1, 2, 11, 49, 0x97, 0x75, 1, 2, class_index, 65, 255];
+        let payload = composed_feature_history_payload(&[(&[255; 4], "SHELL", frame)], &[]);
+        let container = crate::test_support::with_decode_context(|_ctx| {
+            crate::container::scan_bytes(prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                payload,
+            )]))
+        })
+        .unwrap();
+        let writes = crate::test_support::with_decode_context(|_ctx| {
+            feature_operation_body_writes(&container)
+        })
+        .unwrap();
+        assert_eq!(writes.len(), count, "class index {class_index}");
+        if let Some(write) = writes.first() {
+            assert_eq!(write.frame.endpoint_class_index().get(), 16);
+            assert_eq!(write.ordinal, 0);
+        }
+    }
 }
 
 #[test]
@@ -723,7 +747,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
-            crate::om::body_write::BodyImageTag::Form12,
+            std::num::NonZeroU8::new(0x12).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(1519, &[0x85, 0xef]).unwrap(),
             0,
         )
@@ -818,12 +842,13 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
             origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
                 stream_ordinal: partition_stream_ordinal + 1,
                 partition_stream_ordinal: Some(partition_stream_ordinal),
+
+                linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
             },
             xmt: 10,
             node_id: writes[0].frame.group_node().value(),
             references: [3, 4, 5, 6, 7],
-            selector: crate::deltas::group::GroupSelector::Form4,
-            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+            selector: crate::records::group::GroupSelector::Edge,
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -880,7 +905,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).unwrap(),
-            crate::om::body_write::BodyImageTag::Form10,
+            std::num::NonZeroU8::new(0x10).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).unwrap(),
             9,
         )
@@ -893,12 +918,13 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
             origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
                 stream_ordinal: partition_stream_ordinal + 1,
                 partition_stream_ordinal: Some(partition_stream_ordinal),
+
+                linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
             },
             xmt: 10,
             node_id: 99,
             references: [3, 4, 5, 6, 7],
-            selector: crate::deltas::group::GroupSelector::Form4,
-            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+            selector: crate::records::group::GroupSelector::Edge,
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -913,6 +939,38 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     assert_eq!(uses[0].body_identity, 11);
     assert_eq!(uses[0].partition_stream_ordinal, 2);
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
+
+    let mut plain = group("plain", 8);
+    plain.origin = crate::native::parasolid::group_record::GroupOrigin::Plain { stream_ordinal: 8 };
+    let with_plain = body_group_partition_uses_for_test(
+        &[],
+        std::slice::from_ref(&unlabeled),
+        &[group("owned", 2), plain.clone()],
+        &[],
+    );
+    assert_eq!(with_plain.len(), 1);
+    assert_eq!(with_plain[0].parasolid_group_records, ["owned"]);
+    assert!(body_group_partition_uses_for_test(
+        &[],
+        std::slice::from_ref(&unlabeled),
+        &[plain],
+        &[]
+    )
+    .is_empty());
+    let mut unpaired = group("unpaired", 2);
+    unpaired.origin = crate::native::parasolid::group_record::GroupOrigin::Deltas {
+        stream_ordinal: 3,
+        partition_stream_ordinal: None,
+
+        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+    };
+    assert!(body_group_partition_uses_for_test(
+        &[],
+        std::slice::from_ref(&unlabeled),
+        &[group("owned", 2), unpaired],
+        &[],
+    )
+    .is_empty());
 
     assert!(body_group_partition_uses_for_test(
         &[],
@@ -933,7 +991,7 @@ fn body_group_partition_admits_fixture() {
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).expect("group token"),
-            crate::om::body_write::BodyImageTag::Form10,
+            std::num::NonZeroU8::new(10).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).expect("image token"),
             9,
         )
@@ -945,12 +1003,13 @@ fn body_group_partition_admits_fixture() {
         origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
             stream_ordinal: 3,
             partition_stream_ordinal: Some(2),
+            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
         },
         xmt: 10,
         node_id: 99,
         references: [3, 4, 5, 6, 7],
-        selector: crate::deltas::group::GroupSelector::Form4,
-        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+        selector: crate::records::group::GroupSelector::Edge,
+
         byte_len: 20,
         inflated_offset: 0,
     };
@@ -980,7 +1039,7 @@ fn indexed_body_write(index: u32, body_identity: u8, group_node: u32) -> Feature
             body_identity,
             crate::om::body_write::BodyWriteIndex::from_wire(group_node, &group_raw)
                 .expect("group token"),
-            crate::om::body_write::BodyImageTag::Form12,
+            std::num::NonZeroU8::new(12).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
             0,
         )
@@ -1065,12 +1124,13 @@ fn body_group_partition_uses_match_the_pairwise_join_over_many_writes() {
             origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
                 stream_ordinal: 3,
                 partition_stream_ordinal: Some(partition),
+                linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
             },
             xmt: 10,
             node_id,
             references: [3, 4, 5, 6, 7],
-            selector: crate::deltas::group::GroupSelector::Form4,
-            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+            selector: crate::records::group::GroupSelector::Edge,
+
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -1092,13 +1152,17 @@ fn body_group_partition_uses_match_the_pairwise_join_over_many_writes() {
     let members = (0..3072_u32)
         .map(|index| crate::native::parasolid::ParasolidGroupMember {
             id: format!("member#{index}"),
-            partition_stream_ordinal: index % 5,
+            primary_stream_ordinal: index % 5,
             group_xmt: 10,
             group_node_id: 200 + index % 768,
             ordinal: 0,
             list_record_xmt: 20,
             member_xmt: 30,
-            target: crate::native::parasolid::group_member::GroupMemberTarget::Fin,
+            target: crate::native::parasolid::group_member::GroupMemberTarget {
+                family: crate::native::parasolid::group_member::GroupNodeFamily::Edge,
+                node_id: 30,
+                current_xmt: None,
+            },
         })
         .collect::<Vec<_>>();
 
@@ -1128,8 +1192,7 @@ fn body_group_partition_uses_match_the_pairwise_join_over_many_writes() {
             members
                 .iter()
                 .filter(|member| {
-                    member.partition_stream_ordinal == partition
-                        && member.group_node_id == group_node
+                    member.primary_stream_ordinal == partition && member.group_node_id == group_node
                 })
                 .map(|member| member.id.clone())
                 .collect::<Vec<_>>(),
@@ -1248,7 +1311,7 @@ fn pairwise_body_partition_uses(
             parasolid_group_members: members
                 .iter()
                 .filter(|member| {
-                    member.partition_stream_ordinal == partition_stream_ordinal
+                    member.primary_stream_ordinal == partition_stream_ordinal
                         && member.group_node_id == group_node
                 })
                 .map(|member| member.id.clone())
@@ -1354,8 +1417,8 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
         xmt: 10,
         node_id: 200 + index % 30,
         references: [3, 4, 5, 6, 7],
-        selector: crate::deltas::group::GroupSelector::Form4,
-        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+        selector: crate::records::group::GroupSelector::Edge,
+
         byte_len: 20,
         inflated_offset: 0,
     };
@@ -1371,10 +1434,12 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
                     1 => crate::native::parasolid::group_record::GroupOrigin::Deltas {
                         stream_ordinal: partition + 1,
                         partition_stream_ordinal: Some(partition),
+                        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
                     },
                     _ => crate::native::parasolid::group_record::GroupOrigin::Deltas {
                         stream_ordinal: partition + 1,
                         partition_stream_ordinal: (index % 2 == 0).then_some(partition),
+                        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
                     },
                 },
             )
@@ -1383,13 +1448,17 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
     let members = (0..3000_u32)
         .map(|index| crate::native::parasolid::ParasolidGroupMember {
             id: format!("member#{index}"),
-            partition_stream_ordinal: index % 256,
+            primary_stream_ordinal: index % 256,
             group_xmt: 10,
             group_node_id: 200 + index % 26,
             ordinal: 0,
             list_record_xmt: 20,
             member_xmt: 30,
-            target: crate::native::parasolid::group_member::GroupMemberTarget::Fin,
+            target: crate::native::parasolid::group_member::GroupMemberTarget {
+                family: crate::native::parasolid::group_member::GroupNodeFamily::Edge,
+                node_id: 30,
+                current_xmt: None,
+            },
         })
         .collect::<Vec<_>>();
 
@@ -1454,6 +1523,8 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"record-sha256"),
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-sha256"),
         stable_identity: None,
+        core: None,
+        linked_face_payload: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
             .unwrap(),
     }

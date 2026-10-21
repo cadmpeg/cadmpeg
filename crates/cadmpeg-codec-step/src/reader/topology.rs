@@ -194,18 +194,119 @@ pub(super) fn representation_bodies(
     Ok(bodies)
 }
 
+/// Which representation of an assembly placement is the PARENT's and which the CHILD's.
+///
+/// Taken from STEP's own structure, not from argument order:
+/// `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(rel, pds)` says *`rel` places the component named by
+/// `pds`*; `pds` wraps the `NEXT_ASSEMBLY_USAGE_OCCURRENCE`, whose relating and related product
+/// definitions are the parent and the child; and `SHAPE_DEFINITION_REPRESENTATION` maps each
+/// definition to its representation.
+///
+/// Argument order is not the discriminator: writers disagree about it. Some name the assembly's
+/// representation first and others the component's.
+///
+/// The map holds every relationship a `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` names: `Some` with
+/// the parent and child representations when the chain resolves, `None` when it does not.
+fn assembly_placement_orientation(exchange: &Exchange) -> BTreeMap<u64, Option<(u64, u64)>> {
+    let mut definition_representation = BTreeMap::<u64, u64>::new();
+    for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
+        let Some(shape) = named_reference(record, "SHAPE_DEFINITION_REPRESENTATION", 0, 0) else {
+            continue;
+        };
+        let Some(representation) = named_reference(record, "SHAPE_DEFINITION_REPRESENTATION", 1, 1)
+        else {
+            continue;
+        };
+        let Some(shape_record) = exchange.records().get(&shape) else {
+            continue;
+        };
+        let Some(definition) = named_reference(shape_record, "PRODUCT_DEFINITION_SHAPE", 2, 0)
+        else {
+            continue;
+        };
+        definition_representation.insert(definition, representation);
+    }
+
+    let mut oriented = BTreeMap::<u64, Option<(u64, u64)>>::new();
+    for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
+        let Some(relationship) =
+            named_reference(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0, 0)
+        else {
+            continue;
+        };
+        let placement = oriented.entry(relationship).or_insert(None);
+        if placement.is_some() {
+            continue;
+        }
+        let Some(shape) = named_reference(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1, 1)
+        else {
+            continue;
+        };
+        let Some(shape_record) = exchange.records().get(&shape) else {
+            continue;
+        };
+        let Some(usage) = named_reference(shape_record, "PRODUCT_DEFINITION_SHAPE", 2, 0) else {
+            continue;
+        };
+        let Some(usage_record) = exchange.records().get(&usage) else {
+            continue;
+        };
+        let Some(parent) = named_reference(usage_record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3, 0)
+        else {
+            continue;
+        };
+        let Some(child) = named_reference(usage_record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4, 1)
+        else {
+            continue;
+        };
+        let (Some(&parent), Some(&child)) = (
+            definition_representation.get(&parent),
+            definition_representation.get(&child),
+        ) else {
+            continue;
+        };
+        *placement = Some((parent, child));
+    }
+    oriented
+}
+
 /// A product shape can use a placement-only `SHAPE_REPRESENTATION` and link
 /// it to the body-producing representation with `SHAPE_REPRESENTATION_RELATIONSHIP`.
-/// The relationship is undirected for body reachability; retain both endpoints
+/// Such a link is undirected for body reachability; retain both endpoints
 /// in one indexed graph so resolution does not rescan the exchange per call.
+///
+/// An assembly component's placement is a `SHAPE_REPRESENTATION_RELATIONSHIP` too: the complex
+/// entity with `REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION` that a
+/// `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` names. Kept undirected, it lets a component reach the
+/// bodies of the assembly that places it. Such a placement is a one-way edge from the parent's
+/// representation to the child's, oriented by [`assembly_placement_orientation`]; one whose
+/// structure does not resolve is left out. The edge joins the two definitions' representations,
+/// not the relationship's own endpoints: an endpoint no definition owns directly can be the
+/// component's geometry, and an edge into it would list the component's body as the assembly's. A transformed relationship that no
+/// `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` names is not an assembly placement and stays
+/// undirected.
 fn shape_representation_relationships(
     exchange: &Exchange,
 ) -> std::collections::BTreeMap<u64, std::vec::Vec<u64>> {
+    let oriented = assembly_placement_orientation(exchange);
     let mut related = BTreeMap::<u64, Vec<u64>>::new();
-    for record in exchange.records().values() {
+    for (record_id, record) in exchange.records() {
         let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
             continue;
         };
+        if record
+            .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+            .is_some()
+        {
+            match oriented.get(record_id) {
+                Some(Some((parent, child))) => {
+                    related.entry(*parent).or_default().push(*child);
+                    continue;
+                }
+                Some(None) => continue,
+                None => {}
+            }
+        }
         let mut references = relationship
             .parameters
             .iter()

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
+
+use crate::test_support::test_prt::prt_with_partition;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -11,11 +14,104 @@ use crate::test_support::test_om::segment_stream_payload;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::single_part_prt;
 use crate::test_support::test_streams::parasolid_entity_records_stream;
-use crate::test_support::test_streams::parasolid_group_partition_stream;
 use crate::test_support::test_streams::partition_stream;
+use crate::test_support::test_streams::primary_point_stream;
 
 fn token(text: &str) -> cadmpeg_parasolid::OwnedSchemaToken {
     cadmpeg_parasolid::OwnedSchemaToken::try_from(text).expect("the fixture text is a schema token")
+}
+
+#[test]
+fn chart_layout_requires_a_recognized_counted_transmit_description() {
+    use super::ParasolidSubtype;
+    use crate::intersection::ChartPointLayout;
+
+    for (description, expected) in [
+        (
+            ": TRANSMIT FILE (partition) created by test",
+            Some(ChartPointLayout::Xyz3),
+        ),
+        (
+            ": TRANSMIT FILE (deltas) created by test",
+            Some(ChartPointLayout::Ext11),
+        ),
+        (
+            ": TRANSMIT FILE created by test",
+            Some(ChartPointLayout::Xyz3),
+        ),
+        (": MESH FILE created by test", None),
+        (": UNKNOWN (deltas) created by test", None),
+        (": TRANSMIT FILE (deltas)unknown", None),
+    ] {
+        let mut bytes = b"PS".to_vec();
+        bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+        bytes.extend_from_slice(description.as_bytes());
+        bytes.extend_from_slice(b"\0\0\0\x0fSCH_TEST_1_9999\0 (partition) (deltas)");
+        let super::StreamBody::Parasolid { subtype, .. } = super::classify(&bytes) else {
+            panic!("retained Parasolid payload");
+        };
+        assert_eq!(subtype.chart_point_layout(), expected, "{description}");
+        let truncated_count = u32::try_from(bytes.len() + 1).unwrap().to_be_bytes();
+        bytes[2..6].copy_from_slice(&truncated_count);
+        assert!(matches!(
+            super::classify(&bytes),
+            super::StreamBody::Parasolid {
+                subtype: ParasolidSubtype::Unresolved,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn unresolved_chart_descriptions_preserve_bytes_without_admitting_hvecs() {
+    let original =
+        crate::test_support::test_streams::two_support_charted_intersection_curve_stream();
+    let description_end =
+        6 + usize::try_from(cadmpeg_core::decode::View::u32_be_at(&original, 2).unwrap()).unwrap();
+    for description in [": MESH FILE created by test", ": UNKNOWN created by test"] {
+        let mut stream = b"PS".to_vec();
+        stream.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+        stream.extend_from_slice(description.as_bytes());
+        stream.extend_from_slice(&original[description_end..]);
+        let bytes = prt_with_partition(&stream);
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let decoded =
+                    crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                        .unwrap();
+                let ir = serde_json::to_value(&decoded.ir).unwrap();
+                assert!(ir["native"]["nx"].is_object());
+                for arena in ["parasolid_chart_records", "parasolid_term_use_records"] {
+                    assert!(
+                        ir["native"]["nx"][arena]
+                            .as_array()
+                            .is_none_or(Vec::is_empty),
+                        "{description}: {arena}"
+                    );
+                }
+                assert!(!decoded
+                    .ir
+                    .model
+                    .procedural_curves
+                    .iter()
+                    .any(|curve| matches!(
+                        curve.definition(),
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+                    )));
+                assert_eq!(
+                    decoded
+                        .source_fidelity
+                        .retained_record("nx:container:parasolid#0")
+                        .unwrap()
+                        .data(),
+                    Some(stream.as_slice())
+                );
+            },
+        );
+    }
 }
 
 #[test]
@@ -241,7 +337,10 @@ fn partition_values_require_a_unique_entity_reference() {
     {
         let mut bytes = parasolid_entity_records_stream();
         let owned = crate::parasolid::referenced_value_record_offsets(&bytes);
-        let candidates = super::value_records::value_record_candidates(&bytes);
+        let candidates = super::value_records::value_record_candidates(
+            &bytes,
+            &[100, 101, 102].into_iter().collect(),
+        );
         assert_eq!(candidates.len(), 3);
         assert!(
             owned.is_empty(),
@@ -403,9 +502,10 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     let decoy = zlib_compress(
         b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed payload with more than sixty-four inflated bytes........",
     );
-    let real = zlib_compress(
-        b"PS\0\0 (deltas) SCH_REAL_1_9999 indexed payload with more than sixty-four inflated bytes..........",
-    );
+    let real = zlib_compress(&crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (deltas) created by test indexed payload",
+        "SCH_REAL_1_9999",
+    ));
     let mut payload = Vec::new();
     for word in [0_u32, 9, 11, 1, 1, 24] {
         payload.extend_from_slice(&word.to_le_bytes());
@@ -418,7 +518,7 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
             .to_le_bytes(),
     );
     payload.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
-    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(real.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&real);
 
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
@@ -428,12 +528,387 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     assert_eq!(streams[0].schema_token(), Some(&token("SCH_REAL_1_9999")));
 }
 
+fn indexed_member_payload(header: &[u8], member: &[u8]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [32_u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(header);
+    payload.extend_from_slice(member);
+    payload
+}
+
 #[test]
-fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_parasolid() {
+fn partial_indexes_retain_structural_members_without_reordering_indexed_members() {
+    let structural = zlib_compress(&primary_point_stream());
+    let decoy = zlib_compress(b"PS\0\0 (partition) SCH_DECOY text without owned records");
+    let indexed = zlib_compress(&crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (deltas) created by partial index test",
+        "SCH_INDEXED_1_13006",
+    ));
+    for reverse_index in [false, true] {
+        let mut payload = vec![0; 24];
+        for (at, word) in [(12, 1_u32), (16, 1), (20, 24)] {
+            payload[at..at + 4].copy_from_slice(&word.to_le_bytes());
+        }
+        let mut physical_offsets = Vec::new();
+        let mut wrapper_offsets = Vec::new();
+        for ordinal in 0..5 {
+            if ordinal % 2 == 0 {
+                physical_offsets.push(payload.len());
+                payload.extend_from_slice(&structural);
+            } else {
+                wrapper_offsets.push(payload.len());
+                payload.extend_from_slice(&0xa000_0000_u32.to_le_bytes());
+                for _ in 0..2 {
+                    payload.extend_from_slice(&u32::try_from(indexed.len()).unwrap().to_le_bytes());
+                }
+                payload.extend_from_slice(&0_u32.to_le_bytes());
+                physical_offsets.push(payload.len());
+                payload.extend_from_slice(&indexed);
+            }
+            payload.extend_from_slice(&decoy);
+        }
+        if reverse_index {
+            wrapper_offsets.reverse();
+        }
+        for (word, offset) in wrapper_offsets.into_iter().enumerate() {
+            payload[word * 4..word * 4 + 4]
+                .copy_from_slice(&u32::try_from(offset).unwrap().to_le_bytes());
+        }
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let container =
+            crate::test_support::with_decode_context(|_ctx| container::scan_bytes(file.clone()))
+                .unwrap();
+        let (part_start, _) = container
+            .entries
+            .iter()
+            .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
+            .unwrap()
+            .file_span()
+            .unwrap();
+        let offsets = extract_streams(&file)
+            .iter()
+            .map(|stream| stream.file_offset - usize::try_from(part_start).unwrap())
+            .collect::<Vec<_>>();
+        let expected = if reverse_index {
+            [0, 2, 3, 1, 4]
+                .map(|ordinal| physical_offsets[ordinal])
+                .to_vec()
+        } else {
+            physical_offsets
+        };
+        assert_eq!(offsets, expected, "reverse_index={reverse_index}");
+    }
+}
+
+#[test]
+fn indexed_wrapper_families_bound_the_exact_compressed_member() {
+    let inflated = crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (deltas) created by indexed wrapper test",
+        "SCH_TEST_1_13006",
+    );
+    let member = zlib_compress(&inflated);
+    let member_len = u32::try_from(member.len()).unwrap();
+    for (marker, fixed_len, extension, code, version) in [
+        (0x8000_0003_u32, 8, 3, 0_u32, 0_u16),
+        (0xa000_0000, 16, 0, 0, 0),
+        (0xc000_0005, 33, 5, 37, 4),
+        (0xc000_0007, 45, 7, 45, 5),
+    ] {
+        let mut header = vec![0; fixed_len + extension];
+        header[..4].copy_from_slice(&marker.to_le_bytes());
+        header[4..8].copy_from_slice(&member_len.to_le_bytes());
+        if fixed_len == 16 {
+            header[8..12].copy_from_slice(&member_len.to_le_bytes());
+        } else if fixed_len >= 33 {
+            header[8..12].copy_from_slice(&code.to_le_bytes());
+            header[12..14].copy_from_slice(&version.to_le_bytes());
+            if fixed_len == 45 {
+                header[14..18].copy_from_slice(&member_len.to_le_bytes());
+            }
+            header[18..fixed_len].fill(0xa5);
+        }
+        header[fixed_len..].fill(0x78);
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            indexed_member_payload(&header, &member),
+        )]);
+        let container =
+            crate::test_support::with_decode_context(|_ctx| container::scan_bytes(file.clone()))
+                .unwrap();
+        let wrappers = container.segment_stream_wrappers().collect::<Vec<_>>();
+        assert_eq!(wrappers.len(), 1, "{marker:x}");
+        assert_eq!(wrappers[0].wrapper_byte_len, fixed_len + extension);
+        assert_eq!(wrappers[0].compressed_byte_len, member.len());
+        let streams = extract_streams(&file);
+        assert_eq!(streams.len(), 1, "{marker:x}");
+        assert_eq!(streams[0].file_offset, wrappers[0].zlib_offset);
+        assert_eq!(streams[0].consumed, u64::from(member_len));
+        assert_eq!(streams[0].inflated, inflated);
+    }
+}
+
+#[test]
+fn duplicate_indexed_starts_require_one_compressed_extent_in_either_order() {
+    let member = zlib_compress(b"indexed preview");
+    for difference in [-1_i32, 0, 1] {
+        for reverse in [false, true] {
+            let actual = u32::try_from(member.len()).unwrap();
+            let other = actual.checked_add_signed(difference).unwrap();
+            let mut header = vec![0; 24];
+            header[..4].copy_from_slice(&0x8000_0010_u32.to_le_bytes());
+            header[4..8].copy_from_slice(&actual.to_le_bytes());
+            header[16..20].copy_from_slice(&0x8000_0000_u32.to_le_bytes());
+            header[20..24].copy_from_slice(&other.to_le_bytes());
+            let mut payload = indexed_member_payload(&header, &member);
+            let offsets = if reverse { [48_u32, 32] } else { [32_u32, 48] };
+            for (word, offset) in offsets.into_iter().enumerate() {
+                payload[word * 4..word * 4 + 4].copy_from_slice(&offset.to_le_bytes());
+            }
+            payload.push(0);
+            let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+            crate::test_support::with_decode_context_over(
+                &file,
+                |_| {},
+                |ctx| {
+                    let container = container::scan_bytes(file.clone()).unwrap();
+                    assert_eq!(container.segment_stream_wrappers().count(), 2);
+                    let result = parasolid::extract_streams(
+                        ctx,
+                        cadmpeg_core::decode::View::over_retained(&file),
+                        &container,
+                    );
+                    if difference == 0 {
+                        assert_eq!(result.unwrap().len(), 1);
+                    } else {
+                        assert!(
+                            matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))),
+                            "difference={difference}, reverse={reverse}"
+                        );
+                    }
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn overlapping_indexed_members_are_rejected_in_either_order() {
+    use std::io::Write;
+
+    let inner = zlib_compress(&primary_point_stream());
+    let mut inner_header = 0x8000_0000_u32.to_le_bytes().to_vec();
+    inner_header.extend_from_slice(&u32::try_from(inner.len()).unwrap().to_le_bytes());
+    let mut literal = primary_point_stream();
+    literal.extend_from_slice(&inner_header);
+    literal.extend_from_slice(&inner);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::none());
+    encoder.write_all(&literal).unwrap();
+    let outer = encoder.finish().unwrap();
+    let inner_at = outer
+        .windows(inner_header.len())
+        .position(|bytes| bytes == inner_header)
+        .unwrap();
+    assert_eq!(
+        &outer[inner_at + inner_header.len()..][..inner.len()],
+        inner
+    );
+    let mut outer_header = 0x8000_0000_u32.to_le_bytes().to_vec();
+    outer_header.extend_from_slice(&u32::try_from(outer.len()).unwrap().to_le_bytes());
+    for reverse in [false, true] {
+        let mut payload = indexed_member_payload(&outer_header, &outer);
+        let mut offsets = [32_u32, u32::try_from(40 + inner_at).unwrap()];
+        if reverse {
+            offsets.reverse();
+        }
+        for (word, offset) in offsets.into_iter().enumerate() {
+            payload[word * 4..word * 4 + 4].copy_from_slice(&offset.to_le_bytes());
+        }
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |ctx| {
+                let container = container::scan_bytes(file.clone()).unwrap();
+                assert_eq!(container.segment_stream_wrappers().count(), 2);
+                let result = parasolid::extract_streams(
+                    ctx,
+                    cadmpeg_core::decode::View::over_retained(&file),
+                    &container,
+                );
+                assert!(
+                    matches!(result, Err(cadmpeg_core::CodecError::Malformed(message))
+                if message.contains("overlapping indexed NX members"))
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn supplemental_members_cannot_enclose_an_indexed_member() {
+    use std::io::Write;
+
+    let inner_bytes = primary_point_stream();
+    let inner = zlib_compress(&inner_bytes);
+    let mut inner_header = 0x8000_0000_u32.to_le_bytes().to_vec();
+    inner_header.extend_from_slice(&u32::try_from(inner.len()).unwrap().to_le_bytes());
+    let mut outer_bytes = primary_point_stream();
+    outer_bytes.extend_from_slice(&inner_header);
+    outer_bytes.extend_from_slice(&inner);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::none());
+    encoder.write_all(&outer_bytes).unwrap();
+    let outer = encoder.finish().unwrap();
+    let inner_wrapper = outer
+        .windows(inner_header.len())
+        .position(|bytes| bytes == inner_header)
+        .unwrap();
+    let mut payload = vec![0; 24];
+    for (at, word) in [
+        (0, u32::try_from(24 + inner_wrapper).unwrap()),
+        (12, 1),
+        (16, 1),
+        (20, 24),
+    ] {
+        payload[at..at + 4].copy_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&outer);
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let streams = extract_streams(&file);
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].inflated, inner_bytes);
+    assert_eq!(streams[0].consumed, u64::try_from(inner.len()).unwrap());
+}
+
+#[test]
+fn unresolved_index_targets_do_not_address_nearby_structural_members() {
+    let expanded = primary_point_stream();
+    let member = zlib_compress(&expanded);
+    let length = u32::try_from(member.len()).unwrap();
+    for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5)] {
+        let mut header = vec![0; fixed_len];
+        header[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+        header[4..8].copy_from_slice(&length.to_le_bytes());
+        header[8..12].copy_from_slice(&code.to_le_bytes());
+        header[12..14].copy_from_slice(&version.to_le_bytes());
+        if fixed_len == 45 {
+            header[14..18].copy_from_slice(&length.to_le_bytes());
+        }
+        header.extend_from_slice(&[0; 4]);
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            indexed_member_payload(&header, &member),
+        )]);
+        let container =
+            crate::test_support::with_decode_context(|_ctx| container::scan_bytes(file.clone()))
+                .unwrap();
+        let wrapper = container.segment_stream_wrappers().next().unwrap();
+        let streams = extract_streams(&file);
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].file_offset, wrapper.zlib_offset + 4);
+        assert_eq!(streams[0].inflated, expanded);
+    }
+}
+
+#[test]
+fn indexed_member_length_must_equal_the_checksum_validated_extent() {
+    let member = zlib_compress(b"an indexed preview with a declared compressed extent");
+    for (marker, fixed_len, code, version) in [
+        (0x8000_0000_u32, 8, 0_u32, 0_u16),
+        (0xa000_0000, 16, 0, 0),
+        (0xc000_0000, 33, 37, 4),
+        (0xc000_0000, 45, 45, 5),
+    ] {
+        for declared_len in [member.len() - 1, member.len() + 1] {
+            let length = u32::try_from(declared_len).unwrap().to_le_bytes();
+            let mut header = vec![0; fixed_len];
+            header[..4].copy_from_slice(&marker.to_le_bytes());
+            header[4..8].copy_from_slice(&length);
+            if fixed_len == 16 {
+                header[8..12].copy_from_slice(&length);
+            } else if fixed_len >= 33 {
+                header[8..12].copy_from_slice(&code.to_le_bytes());
+                header[12..14].copy_from_slice(&version.to_le_bytes());
+                if fixed_len == 45 {
+                    header[14..18].copy_from_slice(&length);
+                }
+            }
+            let mut payload = indexed_member_payload(&header, &member);
+            payload.push(0);
+            let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+            crate::test_support::with_decode_context_over(
+                &file,
+                |_| {},
+                |ctx| {
+                    let container = container::scan_bytes(file.clone()).unwrap();
+                    let root = cadmpeg_core::decode::View::over_retained(&file);
+                    assert!(matches!(
+                        parasolid::extract_streams(ctx, root, &container),
+                        Err(cadmpeg_core::CodecError::Malformed(_))
+                    ));
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn indexed_wrapper_headers_reject_inconsistent_lengths_versions_and_truncation() {
+    let member = zlib_compress(b"indexed member");
+    let member_len = u32::try_from(member.len()).unwrap();
+    let mut a0 = vec![0; 16];
+    a0[..4].copy_from_slice(&0xa000_0000_u32.to_le_bytes());
+    a0[4..8].copy_from_slice(&member_len.to_le_bytes());
+    a0[8..12].copy_from_slice(&member_len.to_le_bytes());
+    let mut c0 = vec![0; 45];
+    c0[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+    c0[4..8].copy_from_slice(&member_len.to_le_bytes());
+    c0[8..12].copy_from_slice(&45_u32.to_le_bytes());
+    c0[12..14].copy_from_slice(&5_u16.to_le_bytes());
+    c0[14..18].copy_from_slice(&member_len.to_le_bytes());
+    let mut c0_33 = vec![0; 33];
+    c0_33[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+    c0_33[4..8].copy_from_slice(&member_len.to_le_bytes());
+    c0_33[8..12].copy_from_slice(&37_u32.to_le_bytes());
+    c0_33[12..14].copy_from_slice(&4_u16.to_le_bytes());
+    for (valid, bad_offsets) in [
+        (&a0, &[8, 12][..]),
+        (&c0, &[8, 12, 14][..]),
+        (&c0_33, &[8, 12, 14][..]),
+    ] {
+        for &offset in bad_offsets {
+            let mut header = valid.clone();
+            header[offset] ^= 1;
+            let file = prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                indexed_member_payload(&header, &member),
+            )]);
+            let container =
+                crate::test_support::with_decode_context(|_ctx| container::scan_bytes(file))
+                    .unwrap();
+            assert_eq!(container.segment_stream_wrappers().count(), 0);
+        }
+        for end in 0..valid.len() {
+            let file = prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                indexed_member_payload(&valid[..end], &[]),
+            )]);
+            let container =
+                crate::test_support::with_decode_context(|_ctx| container::scan_bytes(file))
+                    .unwrap();
+            assert_eq!(container.segment_stream_wrappers().count(), 0);
+        }
+    }
+}
+
+#[test]
+fn extraction_falls_back_to_unindexed_primary_geometry_when_index_has_no_parasolid() {
     let decoy = zlib_compress(
         b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed text without structural records",
     );
-    let real = zlib_compress(&parasolid_group_partition_stream());
+    let real = zlib_compress(&primary_point_stream());
     let indexed_preview = zlib_compress(b"preview payload");
     let mut payload = Vec::new();
     for word in [0_u32, 9, 11, 1, 1, 24] {
@@ -448,7 +923,7 @@ fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_paras
             .to_le_bytes(),
     );
     payload.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
-    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(indexed_preview.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&indexed_preview);
 
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
@@ -457,11 +932,34 @@ fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_paras
     assert_eq!(streams.len(), 2);
     assert!(streams.iter().any(|stream| {
         stream.kind() == StreamKind::Partition
-            && stream.schema_token() == Some(&token("SCH_TEST_1_9999"))
+            && stream.schema_token() == Some(&token("SCH_TEST_13006"))
     }));
     assert!(streams
         .iter()
         .all(|stream| { stream.schema_token() != Some(&token("SCH_DECOY_1_9999")) }));
+}
+
+#[test]
+fn unindexed_primary_candidates_require_schema_owned_records() {
+    crate::test_support::with_decode_context(|_ctx| {
+        let bytes = primary_point_stream();
+        assert!(super::structural_stream_candidate(StreamKind::Partition, &bytes).unwrap());
+        let mut unknown = bytes.clone();
+        let version = unknown
+            .windows(5)
+            .position(|window| window == b"13006")
+            .unwrap();
+        unknown[version..version + 5].copy_from_slice(b"99999");
+        assert!(!super::structural_stream_candidate(StreamKind::Partition, &unknown).unwrap());
+        let point = bytes
+            .windows(2)
+            .position(|window| window == [0, 29])
+            .unwrap();
+        assert!(
+            !super::structural_stream_candidate(StreamKind::Partition, &bytes[..point + 39])
+                .unwrap()
+        );
+    });
 }
 
 #[test]
@@ -474,16 +972,6 @@ fn legal_owner_flags_carry_binary_values_and_exact_layout_length() {
     assert_eq!(&flags.padded()[14..], &[0; 2]);
     assert!(LegalOwnerFlags::try_from(&[0; 15][..]).is_err());
     assert!(LegalOwnerFlags::try_from(&[2; 16][..]).is_err());
-}
-
-#[test]
-fn counted_value_identities_require_nonempty_payloads() {
-    for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
-        let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
-        assert!(
-            crate::parasolid::value_records::entity_value_record_identity_at(&bytes, 0).is_none()
-        );
-    }
 }
 
 #[test]
@@ -545,6 +1033,32 @@ fn structural_entity_references_do_not_own_value_records() {
     bytes[24..26].copy_from_slice(&3_u16.to_be_bytes());
     let owned = super::referenced_value_offsets(&bytes, super::ValueMultiplicity::UniqueSnapshot);
     assert!(owned.contains(&value_offset));
+}
+
+#[test]
+fn unresolved_index_targets_do_not_probe_for_nonstructural_members() {
+    let member = zlib_compress(b"PS\0\0 (partition) SCH_DECOY text without owned records");
+    let length = u32::try_from(member.len()).unwrap();
+    for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5)] {
+        let mut header = vec![0; fixed_len];
+        header[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+        header[4..8].copy_from_slice(&length.to_le_bytes());
+        header[8..12].copy_from_slice(&code.to_le_bytes());
+        header[12..14].copy_from_slice(&version.to_le_bytes());
+        if fixed_len == 45 {
+            header[14..18].copy_from_slice(&length.to_le_bytes());
+        }
+        header.extend_from_slice(&[0; 4]);
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            indexed_member_payload(&header, &member),
+        )]);
+        let container =
+            crate::test_support::with_decode_context(|_ctx| container::scan_bytes(file.clone()))
+                .unwrap();
+        assert_eq!(container.segment_stream_wrappers().count(), 1);
+        assert!(extract_streams(&file).is_empty(), "fixed_len={fixed_len}");
+    }
 }
 
 #[test]

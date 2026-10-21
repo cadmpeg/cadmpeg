@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Generic CATIA record-walking and wire-shape record decoding.
 //!
 //! The family-independent scan layer: length-closed A/B record framing
@@ -347,10 +348,34 @@ impl TryFrom<u8> for ConsolidatedFrameFlag {
 }
 
 /// A token that fits its declared one-, two-, or three-byte width.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "WidthCodedTokenWire", into = "WidthCodedTokenWire")]
 pub(crate) struct WidthCodedToken {
     width: ConsolidatedFrameWidth,
     value: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WidthCodedTokenWire {
+    width: ConsolidatedFrameWidth,
+    header_token: u32,
+}
+
+impl TryFrom<WidthCodedTokenWire> for WidthCodedToken {
+    type Error = &'static str;
+    fn try_from(wire: WidthCodedTokenWire) -> Result<Self, Self::Error> {
+        Self::new(wire.width, wire.header_token)
+    }
+}
+
+impl From<WidthCodedToken> for WidthCodedTokenWire {
+    fn from(value: WidthCodedToken) -> Self {
+        Self {
+            width: value.width,
+            header_token: value.value,
+        }
+    }
 }
 
 impl WidthCodedToken {
@@ -364,6 +389,13 @@ impl WidthCodedToken {
             return Err("header token does not fit its declared width");
         }
         Ok(Self { width, value })
+    }
+    pub(crate) fn compact_operand(self) -> Option<crate::wire::compact_unsigned::CompactUnsigned> {
+        let bytes = self.value.to_le_bytes();
+        let bytes = bytes.get(..usize::from(u8::from(self.width)))?;
+        let mut at = 0;
+        let operand = crate::wire::compact_unsigned::CompactUnsigned::read(bytes, &mut at)?;
+        (at == bytes.len()).then_some(operand)
     }
     pub(crate) fn width(self) -> ConsolidatedFrameWidth {
         self.width
@@ -883,7 +915,7 @@ fn parse_spanning_consolidated_record(
     })
 }
 
-fn parse_consolidated_record(
+pub(crate) fn parse_consolidated_record(
     data: &[u8],
     pos: usize,
     source_end: usize,

@@ -1302,10 +1302,10 @@ fn validation_accepts_user_design_parameter_frame() {
             record_index: 900,
             source_ordinal: 0,
             source: crate::records::parameters::DesignParameterSource::User {
-                family_discriminator: crate::records::identity::Located {
+                family_discriminator: Some(crate::records::identity::Located {
                     value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 122,
-                },
+                }),
             },
             expression: "60 mm".into(),
             expression_offset: 136,

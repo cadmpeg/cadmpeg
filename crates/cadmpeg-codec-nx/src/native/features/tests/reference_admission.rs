@@ -9,18 +9,17 @@ use crate::native::features::construction_records::feature_operation_body_11_con
 use crate::native::features::construction_records::feature_operation_body_members;
 use crate::native::features::construction_records::feature_operation_body_reference_lanes;
 use crate::native::features::construction_records::feature_operation_body_scalar_triples;
-use crate::native::features::construction_records::feature_operation_terminal_discriminators;
 use crate::native::features::construction_records::feature_point_construction_headers;
 use crate::native::features::construction_records::feature_point_construction_scalar_lanes;
 use crate::native::features::construction_records::feature_projected_curve_construction_payloads;
 use crate::native::features::construction_records::feature_projected_curve_construction_strings;
 use crate::native::features::construction_records::feature_projected_curve_references;
-use crate::native::features::construction_records::feature_surface_construction_payloads;
+use crate::native::features::construction_records::feature_studio_post_branch_references;
 use crate::native::features::construction_records::feature_surface_construction_references;
 use crate::native::features::construction_records::feature_swp104_leading_branches;
 use crate::native::features::construction_records::feature_thru_curve_construction_envelopes;
 use crate::native::features::draft::feature_draft_construction_binary32_lanes;
-use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_binary64_lanes;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
 use crate::native::features::draft::feature_draft_construction_graph_strings;
 use crate::native::features::draft::feature_draft_construction_identity_frames;
@@ -32,6 +31,7 @@ use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
 use crate::native::features::draft::FeatureDraftConstructionIndexLane;
 use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::feature_operation_labels;
+use crate::native::features::surface_allocation::feature_surface_construction_payloads;
 use crate::native::features::FeatureExtrudeProfileReference;
 
 /// A container whose feature-history links exceed what the stable sort sorts
@@ -50,9 +50,7 @@ fn reference_container(
 }
 
 fn projected_curve_container() -> crate::container::Container<'static> {
-    let payload =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
-            .to_vec();
+    let payload = crate::test_support::test_om::projected_curve_payload();
     reference_container("CPROJ", payload)
 }
 
@@ -92,7 +90,7 @@ fn swp104_container() -> crate::container::Container<'static> {
     for _ in 0..4 {
         payload.extend([47, 164, 122, 225, 71, 174, 20, 123]);
     }
-    payload.extend([35, 1, 2, 240, 1]);
+    payload.extend([35, 1, 2, 240, 255]);
     payload.extend([0; 5]);
     payload.extend([255, 1, 2, 241, 1, 0, 0]);
     reference_container("SWP104", payload)
@@ -151,7 +149,6 @@ fn block_reference_admits_fixture() {
 
 #[derive(Clone, Copy)]
 enum OperationLaneRoute {
-    Terminal,
     ScalarTriple,
     BodyMember,
     Continuation,
@@ -161,8 +158,6 @@ enum OperationLaneRoute {
 
 fn assert_operation_lane_admits(route: OperationLaneRoute) {
     let (label, bytes, expected) = match route {
-        OperationLaneRoute::Terminal => ("EXTRUDE",
-            b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00".as_slice(), 1),
         OperationLaneRoute::ScalarTriple => ("TRIM BODY",
             b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00".as_slice(), 2),
         OperationLaneRoute::BodyMember => ("SEW",
@@ -176,9 +171,6 @@ fn assert_operation_lane_admits(route: OperationLaneRoute) {
     };
     let container = reference_container(label, bytes.to_vec());
     let decode = || match route {
-        OperationLaneRoute::Terminal => {
-            feature_operation_terminal_discriminators(&container).map(|rows| rows.len())
-        }
         OperationLaneRoute::ScalarTriple => {
             feature_operation_body_scalar_triples(&container).map(|rows| rows.len())
         }
@@ -204,10 +196,6 @@ macro_rules! operation_lane_admit_test {
     };
 }
 
-operation_lane_admit_test!(
-    operation_terminal_admits_fixture,
-    OperationLaneRoute::Terminal
-);
 operation_lane_admit_test!(
     operation_scalar_triple_admits_fixture,
     OperationLaneRoute::ScalarTriple
@@ -288,9 +276,7 @@ fn point_header_admits_fixture() {
 }
 
 fn projected_curve_payload_container() -> crate::container::Container<'static> {
-    let payload =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
-            .to_vec();
+    let payload = crate::test_support::test_om::projected_curve_payload();
     let mut store = (0..715).map(|_| b"A".as_slice()).collect::<Vec<_>>();
     store[712] = b"\x66\x32\x03\x05ABC\0";
     let part = crate::test_support::test_om::composed_feature_history_payload(
@@ -341,14 +327,9 @@ pub(super) fn surface_payload_bytes() -> Vec<u8> {
 }
 
 fn surface_payload_container() -> crate::container::Container<'static> {
-    let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
-    let part = crate::test_support::test_om::composed_feature_history_payload(
-        &[(&[0xff; 4], "SKIN", surface_payload_bytes())],
-        &store,
-    );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::container::scan_bytes(file).expect("synthetic surface payload container")
+    let file = crate::test_support::studio_surface::prt();
+    crate::test_support::with_decode_context(move |_ctx| crate::container::scan_bytes(file))
+        .expect("synthetic surface payload container")
 }
 
 fn draft_container() -> crate::container::Container<'static> {
@@ -439,8 +420,23 @@ fn surface_payload_route_admits_fixture() {
     let references =
         feature_surface_construction_references(&container).expect("admitted surface references");
     assert_eq!(references.len(), 14);
-    let payloads = feature_surface_construction_payloads(&container, &references)
-        .expect("admitted surface payload");
+    let payloads = feature_surface_construction_payloads(
+        &cadmpeg_test_support::service_decode_context(),
+        &container,
+        &references,
+        &feature_operation_labels(&container).expect("operation labels"),
+        &super::super::surface_branches::feature_surface_construction_branches(
+            &cadmpeg_test_support::service_decode_context(),
+            &container,
+        )
+        .expect("branches"),
+        &feature_studio_post_branch_references(
+            &cadmpeg_test_support::service_decode_context(),
+            &container,
+        )
+        .expect("post references"),
+    )
+    .expect("admitted surface payload");
     assert_eq!(payloads.len(), 1);
 }
 
@@ -516,8 +512,12 @@ fn draft_fixed_bytes() -> Vec<u8> {
 #[test]
 fn draft_fixed_route_admits_fixture() {
     let (container, payload) = draft_graph_fixture_with_content(&draft_fixed_bytes());
-    let lanes = feature_draft_construction_fixed_lanes(&container, std::slice::from_ref(&payload))
-        .expect("admitted draft fixed lane");
+    let lanes = feature_draft_construction_binary64_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        &container,
+        std::slice::from_ref(&payload),
+    )
+    .expect("admitted draft fixed lane");
     assert_eq!(lanes.len(), 1);
 }
 

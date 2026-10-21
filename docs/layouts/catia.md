@@ -89,7 +89,7 @@ Spec §3.4 · layout: byte offsets · size: 20 B
 | 4 | 4 | `phys_len` | `u32` | big | spec | phys_len u32be |
 | 8 | 4 | `log_len` | `u32` | big | spec | log_len u32be |
 | 12 | 4 | `log_off` | `u32` | big | spec | log_off u32be |
-| 16 | 4 | `flags` | `u32` | big | spec | flags u32be |
+| 16 | 4 | `trailing_word` | `u32` | big | spec | trailing_word u32be |
 
 Cross-checked against code:
 
@@ -124,15 +124,14 @@ Spec §3.5 · layout: byte offsets · size: 47 B
 
 Spec §5.8 · layout: byte offsets · size: 49 B
 
-Record start is `marker_pos − 5`. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
+Record start is `marker_pos − 5`. Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`. |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| plane \| `0x32` \| `0x02` \| 49 \| start+48 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| plane \| `0x32` \| `0x02` \| 49 \| start+48 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`. |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| plane \| `0x32` \| `0x0002` \| 49 \| start+48 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| plane \| `0x32` \| `0x0002` \| 49 \| start+48 \| |
 | 48 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -142,21 +141,20 @@ Unstated regions:
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser maps the plane marker to its analytic surface kind.
-- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-prebyte map matches the spec table row for the plane.
+- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-length low-byte map matches the spec table row for the plane.
 
 ## `analytic_surface_cylinder`
 
 Spec §5.8 · layout: byte offsets · size: 73 B
 
-Cylinder and cone share prebyte and length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
+Cylinder and cone share the parameter-length word and record length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| cylinder \| `0x33` \| `0x1a` \| 73 \| start+72 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| cylinder \| `0x33` \| `0x1a` \| 73 \| start+72 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| cylinder \| `0x33` \| `0x001a` \| 73 \| start+72 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| cylinder \| `0x33` \| `0x001a` \| 73 \| start+72 \| |
 | 72 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -166,7 +164,7 @@ Unstated regions:
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser maps the cylinder marker to its analytic surface kind.
-- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-prebyte map matches the shared cylinder/cone row.
+- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-length low-byte map matches the shared cylinder/cone row.
 
 ## `analytic_surface_cone`
 
@@ -174,11 +172,10 @@ Spec §5.8 · layout: byte offsets · size: 73 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| cone \| `0x34` \| `0x1a` \| 73 \| start+72 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| cone \| `0x34` \| `0x1a` \| 73 \| start+72 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| cone \| `0x34` \| `0x001a` \| 73 \| start+72 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| cone \| `0x34` \| `0x001a` \| 73 \| start+72 \| |
 | 72 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -191,11 +188,10 @@ Spec §5.8 · layout: byte offsets · size: 65 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| sphere \| `0x35` \| `0x12` \| 65 \| start+64 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| sphere \| `0x35` \| `0x12` \| 65 \| start+64 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| sphere \| `0x35` \| `0x0012` \| 65 \| start+64 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| sphere \| `0x35` \| `0x0012` \| 65 \| start+64 \| |
 | 64 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -208,22 +204,35 @@ Spec §5.8 · layout: byte offsets · size: 77 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| torus \| `0x38` \| `0x1e` \| 77 \| start+76 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| torus \| `0x38` \| `0x1e` \| 77 \| start+76 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| torus \| `0x38` \| `0x001e` \| 77 \| start+76 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| torus \| `0x38` \| `0x001e` \| 77 \| start+76 \| |
 | 76 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
 
 - `8..76` (68 B): Parameter payload `[cx cy cz ax ay major minor]` as BE f32, plus the LE-f32 witness point at marker-relative +31; §5.8 states the slot order but no per-slot offsets.
 
+## `standard_spline_support_row_u8`
+
+Spec §5.5 · layout: byte offsets · size: 9 B
+
+Both face references use the one-byte production. Widened face references change the row length; this fixed layout applies only to the one-byte form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | marker `60` at `+0` |
+| 1 | 3 | `allocation_tag` | `u24` | little | spec | allocation tag at `+1` through `+3` |
+| 4 | 3 | `discriminator` | `bytes[3]` | little | spec | discriminator `00 00 00` at `+4` through `+6` |
+| 7 | 1 | `face_ref_0` | `u8` | little | spec | the references occupy `+7` and `+8` |
+| 8 | 1 | `face_ref_1` | `u8` | little | spec | the references occupy `+7` and `+8` |
+
 ## `a_family_frame`
 
 Spec §6 · layout: byte offsets · size: 7 B
 
-Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The header token is a small repeating type code, not a per-record object id.
+Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The canonical header token is retained independently of the class-specific payload; it does not supply a per-record object id.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -265,21 +274,26 @@ Spec §6.6 · layout: byte offsets · size: 11 B
 
 ## `surface_of_revolution_b2_03_2d`
 
-Spec §5.15 · layout: byte offsets · size: 174 B
+Spec §5.15 · layout: byte offsets · size: 179 B
 
 Three normalized relations hold to f64 bit-equality: `angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, and `mean/scale==π+0.5`.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 5 | 1 | `reference_token` | `u8` | little | spec | `+5` reference token (`08` or `0a`) |
-| 6 | 2 | `profile_allocation_identity` | `u16` | little | spec | `+6` profile allocation identity (u16le) |
+| 5 | 1 | `reference_token` | `u8` | little | spec | `+5` reference lead (`08` or `0a`) |
+| 6 | 2 | `profile_reference` | `u16` | little | spec | `+6` nonzero profile reference (u16le) |
 | 8 | 96 | `frame` | `f64[12]` | little | spec | `+8` 12×f64le (axis origin XYZ + three basis vectors) |
-| 104 | 32 | `bounds` | `f64[4]` | little | spec | `+104` 4×f64le angular/profile bounds, then scale/flag tail |
+| 104 | 32 | `bounds` | `f64[4]` | little | spec | `+104` 4×f64le angular/profile bounds |
+| 136 | 2 | `controls` | `u8[2]` | little | spec | `+136` controls `05 05` |
+| 138 | 8 | `angular_scale` | `f64` | little | spec | `+138` positive angular scale (f64le) |
+| 146 | 16 | `unit_scalars` | `f64[2]` | little | spec | `+146` fixed unit scalars `1,1` (2×f64le) |
+| 162 | 8 | `zero` | `f64` | little | spec | `+162` fixed zero (f64le) |
+| 170 | 1 | `terminal` | `u8` | little | spec | `+170` terminal `01` |
+| 171 | 8 | `mean` | `f64` | little | spec | `+171` mean angular parameter (f64le) |
 
 Unstated regions:
 
-- `0..5` (5 B): `b2 03 2d` family, class, and length bytes; the spec's offsets are stated from the record start.
-- `136..174` (38 B): Scale and flag tail. The spec names it but states no field offsets; the parser asserts constants inside it at payload-relative +131..133, +141, +149, +157, +165, and +166.
+- `0..5` (5 B): Four-byte B-family prefix and one-byte header token; offsets are stated from the record start.
 
 ## `a9_03_frame`
 
@@ -378,7 +392,7 @@ Cross-checked against code:
 
 Spec §9 · layout: byte offsets · size: 13 B
 
-Declared size is the spec's stated stride base. The enumerated fields sum to 14 bytes, one more than the stated stride base; the mismatch is recorded below.
+The 13-byte header precedes the counted payload; an initial payload reference-count byte is separate from the header.
 
 Parsed by:
 - `crates/cadmpeg-codec-catia/src/families/e5/records.rs`
@@ -387,14 +401,64 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 3 | `marker` | `bytes[3]` | little | spec | Framing `E5 0D 03 <cls> <sub> · value `[229, 13, 3]` |
 | 3 | 1 | `class` | `u8` | little | spec | `E5 0D 03 <cls> <sub> <payload_size_u16le> |
-| 4 | 1 | `sub` | `u8` | little | spec | <cls> <sub> <payload_size_u16le> 00 00 00 |
-| 5 | 2 | `payload_size` | `u16` | little | spec | <payload_size_u16le> 00 00 00 <record_id_u32le> |
-| 7 | 3 | `zero_run` | `bytes[3]` | little | spec | <payload_size_u16le> 00 00 00 <record_id_u32le> <payload> |
-| 10 | 4 | `record_id` | `u32` | little | spec | <record_id_u32le> <payload>`, stride `payload_size + 13` |
+| 4 | 1 | `sub` | `u8` | little | spec | <cls> <sub> <payload_size_u16le> 00 00 |
+| 5 | 2 | `payload_size` | `u16` | little | spec | <payload_size_u16le> 00 00 <record_id_u32le> |
+| 7 | 2 | `zero_run` | `bytes[2]` | little | spec | <payload_size_u16le> 00 00 <record_id_u32le> <payload> |
+| 9 | 4 | `record_id` | `u32` | little | spec | <record_id_u32le> <payload>`, stride `payload_size + 13` |
 
-**Discrepancies:**
+## `numeric_pair_prefix`
 
-- The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
+Spec §7.3 · layout: byte offsets · size: 8 B
+
+Each prefix atom is one byte. Slot zero follows at offset eight; nullable slots change subsequent offsets.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `prefix_atoms` | `bytes[2]` | little | spec | the two prefix atoms at offsets zero and one |
+| 2 | 1 | `type_marker` | `u8` | little | spec | `E8` at two · value `232` |
+| 3 | 2 | `type_atom` | `bytes[2]` | little | spec | `E4 07` at three |
+| 5 | 1 | `separator` | `u8` | little | spec | `37` at five · value `55` |
+| 6 | 1 | `layout_atom` | `u8` | little | spec | `83` at six · value `131` |
+| 7 | 1 | `value_atom` | `u8` | little | spec | `81` at seven · value `129` |
+
+## `numeric_pair_binary64`
+
+Spec §7.3 · layout: byte offsets · size: 28 B
+
+Both slots are binary64. Nullable slots use the variable-width production instead of this layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | The prefix has eight bytes |
+| 8 | 1 | `slot0_marker` | `u8` | little | spec | `E6` at eight and seventeen · value `230` |
+| 9 | 8 | `slot0_bits` | `u64` | little | spec | the two `u64le` bit fields at nine and eighteen |
+| 17 | 1 | `slot1_marker` | `u8` | little | spec | `E6` at eight and seventeen · value `230` |
+| 18 | 8 | `slot1_bits` | `u64` | little | spec | the two `u64le` bit fields at nine and eighteen |
+| 26 | 2 | `terminators` | `bytes[2]` | little | spec | `FE FE` at twenty-six |
+
+## `sketch_owner_list_prefix`
+
+Spec §7.3 · layout: byte offsets · size: 1 B
+
+The count atom starts at payload offset one. Its variable width and the declared reference count determine the remaining list extent.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `list_marker` | `u8` | little | spec | Its first byte is `3B`; the count atom follows at payload offset one. · value `59` |
+
+## `sketch_placement_controls`
+
+Spec §7.3 · layout: byte offsets · size: 18 B
+
+Token-selected program. E7 denotes one and E8 denotes zero. Components encode horizontal axis, vertical axis, and origin; origin is in millimetres.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | Its complete token production is `82 86 E8 E0 07 37 8A 81 |
+| 8 | 3 | `horizontal` | `bytes[3]` | little | spec | The nine components start at program offset eight |
+| 11 | 3 | `vertical` | `bytes[3]` | little | spec | They encode the horizontal axis, vertical axis, and origin, in that order. |
+| 14 | 3 | `origin` | `bytes[3]` | little | spec | They encode the horizontal axis, vertical axis, and origin, in that order. |
+| 17 | 1 | `terminator` | `u8` | little | spec | the terminator is at offset seventeen. · value `254` |
 
 ## `value_block_7c0b`
 
@@ -448,6 +512,619 @@ Parsed by:
 | 6 | 1 | `green` | `u8` | little | spec | `marker[4] A B G R` |
 | 7 | 1 | `red` | `u8` | little | spec | `marker[4] A B G R` |
 
+## `gsmproject_range_frame_program`
+
+Spec §7.3 · layout: byte offsets · size: 19 B
+
+Complete R-selected frame program; the two compact context atoms do not assign coordinates.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `initial_terminator` | `u8` | little | spec | 19 bytes, with canonical one-byte atoms at offsets one and ten. · value `254` |
+| 1 | 1 | `first_context_atom` | `u8` | little | spec | 19 bytes, with canonical one-byte atoms at offsets one and ten. |
+| 2 | 8 | `first_program` | `bytes[8]` | little | spec | DC 72 E8 D4 08 37 82 FE |
+| 10 | 1 | `second_context_atom` | `u8` | little | spec | 19 bytes, with canonical one-byte atoms at offsets one and ten. |
+| 11 | 8 | `second_program` | `bytes[8]` | little | spec | E2 E5 E8 C0 1C 37 82 FE |
+
+## `gsmproject_range_frame_references`
+
+Spec §7.3 · layout: byte offsets · size: 86 B
+
+14 ordered fixed-width reference fields, followed by the exact terminal pair.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 18 | `origin_references` | `bytes[18]` | little | spec | The first three identities supply the frame origin in millimetres |
+| 18 | 54 | `matrix_references` | `bytes[54]` | little | spec | the next nine supply a row-major orthonormal matrix |
+| 72 | 12 | `support_references` | `bytes[12]` | little | spec | The final two identities retain support incidences. |
+| 84 | 2 | `terminal_pair` | `bytes[2]` | little | spec | 86 bytes, with 14 distinct source-ordered identities. |
+
+## `storage_member_core`
+
+Spec §7.6 · layout: byte offsets · size: 20 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `bytes[4]` | little | spec | The marker is at core offset zero |
+| 4 | 4 | `tag` | `u32` | little | spec | the stored tag at offset four |
+| 8 | 1 | `flag` | `u8` | little | spec | flag at offset eight |
+| 9 | 2 | `prefix` | `bytes[2]` | little | spec | retained prefix at offset nine |
+| 11 | 4 | `slot` | `u32` | little | spec | slot at offset eleven |
+| 15 | 5 | `tail` | `bytes[5]` | little | spec | retained tail at offset fifteen |
+
+## `storage_member_direct_prefix`
+
+Spec §7.6 · layout: byte offsets · size: 4 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `lead` | `u32` | little | spec | A direct numbered member has prefix `01 00 00 00` |
+
+## `storage_member_nullable_prefix`
+
+Spec §7.6 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `u32` | little | spec | with state at prefix offset zero |
+| 4 | 4 | `discriminator` | `u32` | little | spec | discriminator at offset four |
+
+## `storage_member_number_prefix`
+
+Spec §7.6 · layout: byte offsets · size: 6 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `inclusive_length` | `u16` | little | spec | the inclusive `u16le` length is at offset zero |
+| 2 | 4 | `digit_count` | `u32` | little | spec | the `u32le` digit count is at offset two |
+
+## `inline_schema_words`
+
+Spec §7.3 · layout: byte offsets · size: 12 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `open_count` | `u8` | little | spec | opening count at offset zero |
+| 1 | 1 | `outer_marker` | `u8` | little | spec | outer selector marker `32` at offset one |
+| 2 | 4 | `outer_selector` | `u32` | little | spec | outer selector `u32le` at offset two |
+| 6 | 1 | `field_marker` | `u8` | little | spec | field selector marker `32` at offset six |
+| 7 | 4 | `field_selector` | `u32` | little | spec | field selector `u32le` at offset seven |
+| 11 | 1 | `close_count` | `u8` | little | spec | closing count at offset eleven |
+
+## `e5_bound_parameter`
+
+Spec §9 · layout: byte offsets · size: 12 B
+
+Each tuple belongs to the representation at the same position in the counted reference lane. Repeated identities remain separate entries.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `local_parameter` | `f64` | little | spec | the local parameter occupies bytes `0..8` |
+| 8 | 4 | `arc_number_bits` | `u32` | little | spec | the arc-number bits occupy bytes `8..12` |
+
+## `e5_nurbs_pcurve_limits`
+
+Spec §9 · layout: byte offsets · size: 37 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `lower_arc` | `u16` | little | spec | \| `+0` \| `u16le` \| lower arc number \| |
+| 2 | 2 | `upper_arc` | `u16` | little | spec | \| `+2` \| `u16le` \| upper arc number \| |
+| 4 | 8 | `lower_local` | `f64` | little | spec | \| `+4` \| `f64le` \| lower arc-local parameter \| |
+| 12 | 8 | `upper_local` | `f64` | little | spec | \| `+12` \| `f64le` \| upper arc-local parameter \| |
+| 20 | 8 | `coefficient` | `f64` | little | spec | \| `+20` \| `f64le` \| original-to-active coefficient \| |
+| 28 | 8 | `shift` | `f64` | little | spec | \| `+28` \| `f64le` \| original-to-active shift \| |
+| 36 | 1 | `extrapolation` | `u8` | little | spec | \| `+36` \| `u8` \| extrapolation control \| |
+
+## `e5_nurbs_surface_limits`
+
+Spec §9 · layout: byte offsets · size: 148 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `lower_u_patch` | `u16` | little | spec | \| `+0` \| `u16le` \| lower U patch number \| |
+| 2 | 2 | `upper_u_patch` | `u16` | little | spec | \| `+2` \| `u16le` \| upper U patch number \| |
+| 4 | 2 | `lower_v_patch` | `u16` | little | spec | \| `+4` \| `u16le` \| lower V patch number \| |
+| 6 | 2 | `upper_v_patch` | `u16` | little | spec | \| `+6` \| `u16le` \| upper V patch number \| |
+| 8 | 8 | `lower_u_local` | `f64` | little | spec | \| `+8` \| `f64le` \| lower U patch-local parameter \| |
+| 16 | 8 | `upper_u_local` | `f64` | little | spec | \| `+16` \| `f64le` \| upper U patch-local parameter \| |
+| 24 | 8 | `lower_v_local` | `f64` | little | spec | \| `+24` \| `f64le` \| lower V patch-local parameter \| |
+| 32 | 8 | `upper_v_local` | `f64` | little | spec | \| `+32` \| `f64le` \| upper V patch-local parameter \| |
+| 40 | 8 | `u_coefficient` | `f64` | little | spec | \| `+40` \| `f64le` \| U original-to-active coefficient \| |
+| 48 | 8 | `u_shift` | `f64` | little | spec | \| `+48` \| `f64le` \| U original-to-active shift \| |
+| 56 | 8 | `v_coefficient` | `f64` | little | spec | \| `+56` \| `f64le` \| V original-to-active coefficient \| |
+| 64 | 8 | `v_shift` | `f64` | little | spec | \| `+64` \| `f64le` \| V original-to-active shift \| |
+| 72 | 6 | `extrapolation_flags` | `u16[3]` | little | spec | \| `+72` \| `3×u16le` \| extrapolation flags \| |
+| 78 | 64 | `extrapolation_continuation` | `f64[8]` | little | spec | \| `+78` \| `8×f64le` \| extrapolation continuation scalars \| |
+| 142 | 6 | `extrapolation_suffix` | `u8[6]` | little | spec | \| `+142` \| `6×u8` \| extrapolation suffix controls \| |
+
+## `e5_affine_support_tail`
+
+Spec §9 · layout: byte offsets · size: 68 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `map_accuracy` | `f64` | little | spec | \| `+0` \| `f64le` \| map accuracy in millimetres \| |
+| 8 | 16 | `co_limits` | `f64[2]` | little | spec | \| `+8` \| `2×f64le` \| useful co-facet limits \| |
+| 24 | 8 | `scale` | `f64` | little | spec | \| `+24` \| `f64le` \| co-to-reference scale \| |
+| 32 | 8 | `offset` | `f64` | little | spec | \| `+32` \| `f64le` \| co-to-reference offset \| |
+| 40 | 16 | `active_reference_limits` | `f64[2]` | little | spec | \| `+40` \| `2×f64le` \| active reference limits \| |
+| 56 | 8 | `fit_tolerance` | `f64` | little | spec | \| `+56` \| `f64le` \| fit tolerance in millimetres \| |
+| 64 | 4 | `terminal` | `u32` | little | spec | \| `+64` \| `u32le` \| zero terminal \| |
+
+## `e5_boundary_support_tail`
+
+Spec §9 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `zero_tolerance` | `f64` | little | spec | \| `+0` \| `f64le` \| zero boundary tolerance \| |
+| 8 | 4 | `terminal` | `u32` | little | spec | \| `+8` \| `u32le` \| zero boundary terminal \| |
+
+## `e5_sampled_support_prefix`
+
+Spec §9 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `map_accuracy` | `f64` | little | spec | \| `+0` \| `f64le` \| sampled map accuracy \| |
+| 8 | 16 | `co_limits` | `f64[2]` | little | spec | \| `+8` \| `2×f64le` \| sampled co-facet limits \| |
+| 24 | 1 | `count` | `u8` | little | spec | \| `+24` \| `u8` \| sample count encoded as `80+n` \| |
+
+## `e5_sampled_support_suffix`
+
+Spec §9 · layout: byte offsets · size: 28 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `active_reference_limits` | `f64[2]` | little | spec | \| `+0` \| `2×f64le` \| sampled active reference limits \| |
+| 16 | 8 | `fit_tolerance` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled fit tolerance \| |
+| 24 | 4 | `terminal` | `u32` | little | spec | \| `+24` \| `u32le` \| zero sampled terminal \| |
+
+## `b5_loop_numeric_terminal`
+
+Spec §6.7 · layout: byte offsets · size: 62 B
+
+Terminal-relative offsets; all six compact controls use the canonical one-byte form.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | \| `+0` \| `u8` \| compact lead control \| |
+| 1 | 32 | `scalars` | `f64[4]` | little | spec | \| `+1` \| `4×f64le` \| local coordinates U0, V0, U1, V1 \| |
+| 33 | 5 | `trailing_controls` | `u8[5]` | little | spec | \| `+33` \| `5×u8` \| patch IDs U0, V0, U1, V1, then compact zero \| |
+| 38 | 24 | `bounds` | `f32[6]` | little | spec | \| `+38` \| `6×f32le` \| Cartesian X low/high, Y low/high, Z low/high \| |
+
+## `surface_terminal_span_tail`
+
+Spec §6.6 · layout: byte offsets · size: 141 B
+
+Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `controls` | `bytes[4]` | little | spec | 4*(K_U-1)+1 |
+| 4 | 64 | `parameters` | `bytes[64]` | little | spec | U[-1]-U[-2] |
+| 68 | 3 | `flags` | `bytes[3]` | little | spec | Preserve the fixed flag, continuation and suffix bytes. |
+| 71 | 64 | `continuation` | `bytes[64]` | little | spec | eight zero `f64le` values |
+| 135 | 6 | `suffix` | `bytes[6]` | little | spec | 01 00 01 00 07 07 |
+
+## `b5_cone_payload`
+
+Spec §6.7 · layout: byte offsets · size: 185 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | \| `+0` \| `u8` \| lead `80` \| |
+| 1 | 24 | `origin` | `f64[3]` | little | spec | \| `+1` \| `3f64le` \| reference cross-section origin \| |
+| 25 | 24 | `direction_x` | `f64[3]` | little | spec | \| `+25` \| `3f64le` \| first radial direction \| |
+| 49 | 24 | `direction_y` | `f64[3]` | little | spec | \| `+49` \| `3f64le` \| second radial direction \| |
+| 73 | 24 | `axis` | `f64[3]` | little | spec | \| `+73` \| `3f64le` \| axis direction \| |
+| 97 | 8 | `radial_angle` | `f64` | little | spec | \| `+97` \| `f64le` \| radial-plane generator angle \| |
+| 105 | 8 | `reference_radius` | `f64` | little | spec | \| `+105` \| `f64le` \| reference radius \| |
+| 113 | 16 | `angular_range` | `f64[2]` | little | spec | \| `+113` \| `2f64le` \| active angular interval \| |
+| 129 | 16 | `slant_range` | `f64[2]` | little | spec | \| `+129` \| `2f64le` \| active slant interval \| |
+| 145 | 8 | `angular_scale` | `f64` | little | spec | \| `+145` \| `f64le` \| angular divisor \| |
+| 153 | 8 | `parameter_scale` | `f64` | little | spec | \| `+153` \| `f64le` \| parameter-map coefficient \| |
+| 161 | 8 | `parameter_shift` | `f64` | little | spec | \| `+161` \| `f64le` \| parameter-map shift \| |
+| 169 | 16 | `angular_domain` | `f64[2]` | little | spec | \| `+169` \| `2f64le` \| full-turn angular domain \| |
+
+## `rolling_ball_tail_prefix`
+
+Spec §6.2 · layout: byte offsets · size: 57 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 40 | `parameters` | `f64[5]` | little | spec | \| `+0` \| `f64le[5]` \| current U limits, current V limits, reference scalar \| |
+| 40 | 1 | `control` | `u8` | little | spec | \| `+40` \| `u8` \| retained control `03` or `05` \| |
+| 41 | 16 | `maximal_v` | `f64[2]` | little | spec | \| `+41` \| `f64le[2]` \| maximal V limits \| |
+
+## `rolling_ball_tail_unmapped_suffix`
+
+Spec §6.2 · layout: byte offsets · size: 22 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `branch` | `bytes[6]` | little | spec | \| `+0` \| `bytes[6]` \| absent scalar jet: `05 00 00 00 00 00` \| · value `[5, 0, 0, 0, 0, 0]` |
+| 6 | 16 | `maximal_u` | `f64[2]` | little | spec | \| `+6` \| `f64le[2]` \| maximal U limits \| |
+
+## `consolidated_parameter_point_inline_prefix`
+
+Spec §6.4 · layout: byte offsets · size: 10 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b2/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `inline_operand` | `u8` | little | spec | \| `+0` \| `u8` \| inline compact representation operand \| |
+| 1 | 1 | `control` | `u8` | little | spec | \| `+1` \| `u8` \| scalar control \| |
+| 2 | 8 | `first_scalar` | `f64` | little | spec | \| `+2` \| `f64le` \| first stored scalar \| |
+
+## `class23_affine_map`
+
+Spec §6.3 · layout: byte offsets · size: 70 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| map marker `82` \| · value `130` |
+| 1 | 2 | `local_slots` | `u8[2]` | little | spec | \| `+1` \| `u8[2]` \| ordered local slots `05 09` or `09 05` \| |
+| 3 | 3 | `fixed_operand` | `bytes[3]` | little | spec | \| `+3` \| `bytes[3]` \| fixed operand `0a 87 0d`, value 3463 \| · value `[10, 135, 13]` |
+| 6 | 16 | `target_range` | `f64[2]` | little | spec | \| `+6` \| `f64le[2]` \| target parameter interval \| |
+| 22 | 8 | `tolerance` | `f64` | little | spec | \| `+22` \| `f64le` \| positive endpoint tolerance \| |
+| 30 | 16 | `source_range` | `f64[2]` | little | spec | \| `+30` \| `f64le[2]` \| source parameter interval \| |
+| 46 | 8 | `scale` | `f64` | little | spec | \| `+46` \| `f64le` \| positive parameter scale \| |
+| 54 | 8 | `offset` | `f64` | little | spec | \| `+54` \| `f64le` \| parameter offset \| |
+| 62 | 8 | `repeated_tolerance` | `f64` | little | spec | \| `+62` \| `f64le` \| repeated endpoint tolerance \| |
+
+## `class24_scalar_prefix`
+
+Spec §6.3 · layout: byte offsets · size: 1 B
+
+Two variable-width compact operands and a three-byte selector follow this marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class24.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| domain-relation marker `82` \| · value `130` |
+
+## `class24_target_domain`
+
+Spec §6.3 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the first scalar after the selector; the selector determines the remaining scalar words.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class24.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `lower` | `f64` | little | spec | \| `+0` \| `f64le` \| target lower parameter \| |
+| 8 | 8 | `upper` | `f64` | little | spec | \| `+8` \| `f64le` \| target upper parameter \| |
+| 16 | 8 | `signed_accuracy` | `f64` | little | spec | \| `+16` \| `f64le` \| signed accuracy \| |
+
+## `class25_scalar_prefix`
+
+Spec §6.3 · layout: byte offsets · size: 1 B
+
+Two allocation operands and a three-byte selector follow the marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| parameter-map marker `82` \| · value `130` |
+
+## `class25_target_domain`
+
+Spec §6.3 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the first scalar after the selector.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `lower` | `f64` | little | spec | \| `+0` \| `f64le` \| target lower parameter \| |
+| 8 | 8 | `upper` | `f64` | little | spec | \| `+8` \| `f64le` \| target upper parameter \| |
+| 16 | 8 | `signed_accuracy` | `f64` | little | spec | \| `+16` \| `f64le` \| signed accuracy \| |
+
+## `class25_affine_source`
+
+Spec §6.3 · layout: byte offsets · size: 56 B
+
+Offsets are relative to the first target scalar; the first 24 bytes contain the target interval and signed accuracy.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `source_lower` | `f64` | little | spec | \| `+24` \| `f64le` \| source lower parameter \| |
+| 32 | 8 | `source_upper` | `f64` | little | spec | \| `+32` \| `f64le` \| source upper parameter \| |
+| 40 | 8 | `scale` | `f64` | little | spec | \| `+40` \| `f64le` \| source-to-target scale \| |
+| 48 | 8 | `offset` | `f64` | little | spec | \| `+48` \| `f64le` \| source-to-target offset \| |
+
+Unstated regions:
+
+- `0..24` (24 B): The class25_target_domain table defines the target interval and signed accuracy at these offsets.
+
+## `class25_sampled_source`
+
+Spec §6.3 · layout: byte offsets · size: 41 B
+
+Offsets are relative to the first target scalar. The count selects both subsequent sample arrays.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `source_lower` | `f64` | little | spec | \| `+24` \| `f64le` \| sampled source lower parameter \| |
+| 32 | 8 | `source_upper` | `f64` | little | spec | \| `+32` \| `f64le` \| sampled source upper parameter \| |
+| 40 | 1 | `sample_count` | `u8` | little | spec | \| `+40` \| `u8` \| paired-sample count `80+n` \| |
+
+Unstated regions:
+
+- `0..24` (24 B): The class25_target_domain table defines the target interval and signed accuracy at these offsets.
+
+## `a8_sampled_map_domains`
+
+Spec §6.7 · layout: byte offsets · size: 40 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/parameter_map.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `reference_lower` | `f64` | little | spec | \| `+0` \| `f64le` \| sampled reference lower parameter \| |
+| 8 | 8 | `reference_upper` | `f64` | little | spec | \| `+8` \| `f64le` \| sampled reference upper parameter \| |
+| 16 | 8 | `fit_tolerance` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled map fit tolerance \| |
+| 24 | 8 | `co_lower` | `f64` | little | spec | \| `+24` \| `f64le` \| sampled co-curve lower parameter \| |
+| 32 | 8 | `co_upper` | `f64` | little | spec | \| `+32` \| `f64le` \| sampled co-curve upper parameter \| |
+
+## `a8_sampled_map_tail`
+
+Spec §6.7 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/parameter_map.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `active_reference_lower` | `f64` | little | spec | \| `+0` \| `f64le` \| sampled map active reference lower \| |
+| 8 | 8 | `active_reference_upper` | `f64` | little | spec | \| `+8` \| `f64le` \| sampled map active reference upper \| |
+| 16 | 8 | `repeated_fit` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled map repeated fit tolerance \| |
+| 24 | 1 | `terminal` | `u8` | little | spec | \| `+24` \| `u8` \| sampled map terminal `01` \| |
+
+## `consolidated_cylinder_range_origin`
+
+Spec §5.11 · layout: byte offsets · size: 98 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b2/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `origin` | `f64[3]` | little | spec | \| `+0` \| `f64le[3]` \| cylinder origin \| |
+| 24 | 1 | `frame_token` | `u8` | little | spec | \| `+24` \| `u8` \| cylinder frame token `0e` \| |
+| 25 | 16 | `stored_vector` | `f64[2]` | little | spec | \| `+25` \| `f64le[2]` \| cylinder stored unit vector \| |
+| 41 | 8 | `one` | `f64` | little | spec | \| `+41` \| `f64le` \| cylinder fixed unit scalar \| |
+| 49 | 8 | `radius` | `f64` | little | spec | \| `+49` \| `f64le` \| cylinder radius \| |
+| 57 | 16 | `u_range` | `f64[2]` | little | spec | \| `+57` \| `f64le[2]` \| cylinder U limits \| |
+| 73 | 16 | `v_range` | `f64[2]` | little | spec | \| `+73` \| `f64le[2]` \| cylinder V limits \| |
+| 89 | 1 | `terminal` | `u8` | little | spec | \| `+89` \| `u8` \| cylinder terminal `03` \| |
+| 90 | 8 | `range_origin` | `f64` | little | spec | \| `+90` \| `f64le` \| cylinder redundant range origin \| |
+
+## `standard_curve_support_header`
+
+Spec §5.5 · layout: byte offsets · size: 6 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | edge_support_row := 60 <tag:u24le> <curve_body> <face_ref> <face_ref> |
+| 1 | 3 | `allocation_tag` | `u24` | little | spec | edge_support_row := 60 <tag:u24le> <curve_body> <face_ref> <face_ref> |
+| 4 | 2 | `parameter_length` | `u16` | big | spec | At row-relative `+4`, a `u16be` parameter-length word |
+
+## `fixed_nine_owner_numeric_tail`
+
+Spec §6.4 · layout: byte offsets · size: 62 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b2/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `header` | `bytes[5]` | little | spec | \| `+0` \| `bytes[5]` \| owner numeric header \| |
+| 5 | 16 | `lower` | `f64[2]` | little | spec | \| `+5` \| `f64le[2]` \| owner lower U/V corner \| |
+| 21 | 16 | `upper` | `f64[2]` | little | spec | \| `+21` \| `f64le[2]` \| owner upper U/V corner \| |
+| 37 | 1 | `marker` | `u8` | little | spec | \| `+37` \| `u8` \| owner numeric marker `01` \| |
+| 38 | 8 | `x_bounds` | `f32[2]` | little | spec | \| `+38` \| `f32le[2]` \| owner Cartesian X bounds \| |
+| 46 | 8 | `y_bounds` | `f32[2]` | little | spec | \| `+46` \| `f32le[2]` \| owner Cartesian Y bounds \| |
+| 54 | 8 | `z_bounds` | `f32[2]` | little | spec | \| `+54` \| `f32le[2]` \| owner Cartesian Z bounds \| |
+
+## `eight_reference_construction_tail`
+
+Spec §6.4 · layout: byte offsets · size: 14 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `controls` | `bytes[4]` | little | spec | \| `+0` \| `bytes[4]` \| construction controls `11 09 03 03` or `11 09 05 05` \| |
+| 4 | 8 | `zeros` | `bytes[8]` | little | spec | \| `+4` \| `bytes[8]` \| construction zero lane \| |
+| 12 | 2 | `terminal` | `bytes[2]` | little | spec | \| `+12` \| `bytes[2]` \| construction terminal `01 05` \| |
+
+## `chamfer_control_scalar_tail`
+
+Spec §6.7 · layout: byte offsets · size: 22 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/chamfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `result_kind` | `u8` | little | spec | \| `+0` \| `u8` \| result kind: `05` cone, `09` plane \| |
+| 1 | 1 | `contact_order` | `u8` | little | spec | \| `+1` \| `u8` \| support contact order: `01` lower/upper, `05` upper/lower \| |
+| 2 | 1 | `fixed_literal` | `u8` | little | spec | \| `+2` \| `u8` \| fixed literal `01` \| · value `1` |
+| 3 | 1 | `support0_side` | `u8` | little | spec | \| `+3` \| `u8` \| support-0 inward halfspace: `03` negative, `05` positive \| |
+| 4 | 1 | `support1_side` | `u8` | little | spec | \| `+4` \| `u8` \| support-1 inward halfspace: `03` negative, `05` positive \| |
+| 5 | 1 | `definition_mode` | `u8` | little | spec | \| `+5` \| `u8` \| definition mode: `0d` two lengths, `11` length and angle \| |
+| 6 | 8 | `length1` | `f64` | little | spec | \| `+6` \| `f64le` \| positive support-0 setback Length1 \| |
+| 14 | 8 | `length2_or_angle` | `f64` | little | spec | \| `+14` \| `f64le` \| positive support-1 setback Length2 for `0d`, acute result/support-0 angle for `11` \| |
+
+## `consolidated_class60_count_prefix`
+
+Spec §6.5 · layout: byte offsets · size: 1 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/native/class60.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| reference count prefix `80+n` \| |
+
+## `consolidated_class61_count_prefix`
+
+Spec §6.4 · layout: byte offsets · size: 1 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/native/class61.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| nonzero reference count prefix `80+n` \| |
+
+## `consolidated_plane_implicit_axis_payload`
+
+Spec §6.3 · layout: byte offsets · size: 50 B
+
+Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
+| 18 | 32 | `bounds` | `f64[4]` | little | spec | The 50-byte implicit-axis payload has bounds at `+18` |
+
+## `consolidated_plane_one_component_payload`
+
+Spec §6.3 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
+| 18 | 8 | `direction_component` | `f64` | little | spec | `+18` direction component (`f64le`) |
+| 26 | 32 | `bounds` | `f64[4]` | little | spec | the 58-byte one-component direction payload has bounds at `+26` |
+
+## `consolidated_plane_two_component_payload`
+
+Spec §6.3 · layout: byte offsets · size: 66 B
+
+Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
+| 18 | 16 | `direction_xy` | `f64[2]` | little | spec | `+18` direction XY (`2×f64le`) |
+| 34 | 32 | `bounds` | `f64[4]` | little | spec | the 66-byte two-component direction payload has bounds at `+34` |
+
+## `consolidated_class5b_interval_prefix`
+
+Spec §6.4 · layout: byte offsets · size: 28 B
+
+Fixed payload prefix only; the complete B-family frame retains a separate suffix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `controls` | `u8[4]` | little | spec | `81 03 05 01` at payload `+0` |
+| 4 | 8 | `interval0` | `f32[2]` | little | spec | three finite closed binary32 intervals at `+4`, `+12`, and `+20` |
+| 12 | 8 | `interval1` | `f32[2]` | little | spec | three finite closed binary32 intervals at `+4`, `+12`, and `+20` |
+| 20 | 8 | `interval2` | `f32[2]` | little | spec | three finite closed binary32 intervals at `+4`, `+12`, and `+20` |
+
+## `consolidated_nine_reference_short_tail`
+
+Spec §6.4 · layout: byte offsets · size: 5 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header` | `u8[4]` | little | spec | `<header:u8[4]> 01`, exactly five bytes |
+| 4 | 1 | `length_control` | `u8` | little | spec | Tail byte `+4` selects these two lengths |
+
+## `consolidated_nine_reference_six_byte_tail`
+
+Spec §6.4 · layout: byte offsets · size: 6 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header` | `u8[4]` | little | spec | `<header:u8[4]> 00 <residue:u8>` |
+| 4 | 1 | `length_control` | `u8` | little | spec | Tail byte `+4` selects these two lengths |
+| 5 | 1 | `residue` | `u8` | little | spec | `<header:u8[4]> 00 <residue:u8>` |
+
+## `fillet_control_scalar_tail`
+
+Spec §6.7 · layout: byte offsets · size: 22 B
+
+Tail-relative offsets after five variable-width object references.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `result_selector` | `u8` | little | spec | \| `+0` \| `u8` \| result selector: |
+| 1 | 1 | `sentinel` | `u8` | little | spec | \| `+1` \| `u8` \| fixed literal `05` \| |
+| 2 | 8 | `radius` | `f64` | little | spec | \| `+2` \| `f64le` \| positive construction radius R \| |
+| 10 | 1 | `support0_side` | `u8` | little | spec | \| `+10` \| `u8` \| support-0 normal side: |
+| 11 | 1 | `support1_side` | `u8` | little | spec | \| `+11` \| `u8` \| support-1 normal side: |
+| 12 | 8 | `zero` | `f64` | little | spec | \| `+12` \| `f64le` \| bit-exact positive zero \| |
+| 20 | 1 | `contact_order` | `u8` | little | spec | \| `+20` \| `u8` \| support contact order: |
+| 21 | 1 | `closure` | `u8` | little | spec | \| `+21` \| `u8` \| sphere pole closure, or `05` for a non-sphere result \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
@@ -456,4 +1133,4 @@ Parsed by:
 | Trim records and the standard spine (§5.2, §5.3) | §5.3 | Every count in a trim packet is a variable-width `count()` atom and the spine tables are count-driven, so no field sits at a fixed offset. The stride-8 FBB row and the 15-byte vertex record are the exceptions and are tabled. |
 | Analytic payload slots of `b2 03 19/28/29/2a/2b` (§5.9-§5.14) | §5.9 | These records state a total payload length and an ordered f64 slot list, but no per-slot byte offsets, and the leading compact record id has variable width in the circle case. They are slot layouts rather than byte layouts. |
 | `7C09` inline object records and `7C0A` atom payloads (§7.3) | §7.3 | Reference tokens are one or two bytes depending on value, and the head forms vary in arity, so every later field position depends on preceding values. |
-| Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2) | §6.1 | Knot counts and pole grids drive every later position. The two fixed tails the spec states (141 bytes for an `a8 03 34` elided-pole record and 59 bytes for an `a8 03 32` jet) sit at count-dependent offsets. |
+| Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2) | §6.1 | Knot counts and pole grids drive every later position. The tail starts at a count-dependent offset. The fixed 141-byte surface tail and the A-family rolling-ball tail prefix and absent-jet suffix have separate relative layouts; the 59-byte `a8 03 32` jet tail starts after the variable jet grid. |

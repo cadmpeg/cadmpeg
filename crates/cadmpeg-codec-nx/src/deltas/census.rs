@@ -2,17 +2,15 @@
 //! Admitted deltas events and their source-byte census.
 
 use super::record_kind::RecordKind;
-use super::tails::{TermUseNumericTail, TerminalNullReferences};
+use super::tails::TerminalNullReferences;
 use super::{
     body_revision_prefix, compact_tombstone, consume_fixed, consume_intersection_auxiliary,
     consume_shared_record, consume_variable, first_complete_record, fixed_signature,
-    inline_body_states, inline_schema_declaration, inline_schema_declarations, is_value_family,
-    merged_event_spans, reference_marker_packets, reference_state_packets, reference_type_map,
-    reference_type_maps, schema_reference_preamble, schema_reference_preambles,
-    tagged_reference_lanes, term_use_numeric_tails, transmit_header, type_150_state_packets,
-    uncovered_spans, BodyRevision, InlineBodyState, InlineSchemaDeclaration, Record,
-    ReferenceMarkerPacket, ReferenceStatePacket, ReferenceTypeMap, ReferenceTypeMapLimit,
-    SchemaReferencePreamble, TaggedReferenceLane, Tombstone, TransmitHeader, Type150StatePacket,
+    inline_schema_node, is_value_family, merged_event_spans, reference_marker_packets,
+    reference_type_map, reference_type_maps, tagged_reference_lanes, transmit_header,
+    uncovered_spans, BodyRevision, PartitionPrefix, PartitionPrefixState, PmarkPacket, Record,
+    ReferenceMarkerPacket, ReferenceTypeMap, ReferenceTypeMapLimit, SchemaNodeEvent,
+    TaggedReferenceLane, Tombstone, TransmitHeader,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -38,24 +36,18 @@ pub(crate) struct CensusEvents {
     pub(crate) tombstones: Vec<Tombstone>,
     /// BODY revision envelopes in source order.
     pub(crate) body_revisions: Vec<BodyRevision>,
-    /// Complete count-selected numeric tails following `term_use` records.
-    pub(crate) term_use_numeric_tails: Vec<TermUseNumericTail>,
     /// Maximal event gaps composed entirely of typed stream-local references.
     pub(crate) tagged_reference_lanes: Vec<TaggedReferenceLane>,
     /// Complete framed reference/type maps in source order.
     pub(crate) reference_type_maps: Vec<ReferenceTypeMap>,
-    /// Complete four-reference state packets in source order.
-    pub(crate) reference_state_packets: Vec<ReferenceStatePacket>,
-    /// Complete schema reference preambles in source order.
-    pub(crate) schema_reference_preambles: Vec<SchemaReferencePreamble>,
+    /// Partition-owned PMARK packets in source order.
+    pub(crate) pmark_packets: Vec<PmarkPacket>,
+    /// Leading ordinary PARTITION and current PMARK nodes.
+    pub(crate) partition_prefix: Option<PartitionPrefix>,
     /// Complete reference-marker packets in source order.
     pub(crate) reference_marker_packets: Vec<ReferenceMarkerPacket>,
-    /// Complete single-byte type-150 state packets in source order.
-    pub(crate) type_150_state_packets: Vec<Type150StatePacket>,
     /// Complete inline schema declarations in source order.
-    pub(crate) inline_schema_declarations: Vec<InlineSchemaDeclaration>,
-    /// Complete schema-bound type-12 BODY states in source order.
-    pub(crate) inline_body_states: Vec<InlineBodyState>,
+    pub(crate) schema_nodes: Vec<SchemaNodeEvent>,
 }
 
 impl std::ops::Deref for Census {
@@ -95,53 +87,93 @@ impl Census {
 
     /// Return the sorted disjoint union of every admitted event byte span.
     pub(crate) fn covered_spans(&self) -> Vec<(usize, usize)> {
-        merged_event_spans(self, true)
+        merged_event_spans(self)
     }
 }
 
-/// Walk all accepted records, revisions, tombstones, and numeric tails in an
+/// Walk all accepted records, revisions, tombstones, and null trailers in an
 /// inflated deltas stream.
 pub(crate) fn walk(stream: &[u8]) -> Result<Census, CodecError> {
     let transmit_header = transmit_header(stream);
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
-    let terminal_null_references = TerminalNullReferences::at_end(stream);
-    let trailer_byte_len = terminal_null_references
+    let partition_prefix = transmit_header.as_ref().and_then(|header| {
+        let schema = header.state.schema();
+        (schema.split('_').count() == 4
+            && schema.ends_with("_13006")
+            && header.state.maximum_node_type() >= 4
+            && header.state.user_field_size() == 0)
+            .then_some(())?;
+        let (state, end) = PartitionPrefixState::read(stream, header.end)?;
+        Some(PartitionPrefix {
+            state,
+            offset: header.end,
+            end,
+        })
+    });
+    let prefix_byte_len = partition_prefix
         .as_ref()
-        .map_or(0, |trailer| trailer.end() - trailer.offset());
+        .map_or(0, |prefix| prefix.end - prefix.offset);
     let mut census = Census {
         events: CensusEvents {
             transmit_header,
-            terminal_null_references,
+            partition_prefix,
             ..CensusEvents::default()
         },
-        bytes_decoded: header_byte_len + trailer_byte_len,
+        bytes_decoded: header_byte_len + prefix_byte_len,
     };
     let mut offset = census
-        .transmit_header
+        .partition_prefix
         .as_ref()
-        .map_or(0, |header| header.end);
+        .map_or(header_byte_len, |prefix| prefix.end);
     let mut value_boundary = true;
     let mut referenced_value_offsets = None::<BTreeSet<usize>>;
-    let mut intersection_schema_anchor_seen = false;
+
+    let mut world_layout = None;
+    let mut schema_seen = [false; 102];
+    let supported_base = census
+        .transmit_header
+        .as_ref()
+        .is_none_or(|header| header.state.schema().ends_with("_13006"));
+    let mut intersection_layout = if !supported_base {
+        super::intersection::IntersectionLayout::Unsupported
+    } else if census.transmit_header.is_some() {
+        super::intersection::IntersectionLayout::Base
+    } else {
+        super::intersection::IntersectionLayout::WithData
+    };
     while offset + 4 <= stream.len() {
-        intersection_schema_anchor_seen |=
-            crate::topology::intersection_data_schema_header_at(stream, offset);
-        if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
-            census.bytes_decoded += preamble.end - preamble.offset;
-            offset = preamble.end;
-            value_boundary = true;
-            census.events.schema_reference_preambles.push(preamble);
-            continue;
+        if let Some(prefix) = census.partition_prefix.as_ref() {
+            if let Some(packet) = super::pmark_packets::at(stream, offset, prefix) {
+                // The walk reaches this head only after complete preceding
+                // records have consumed their entire counted storage.
+                offset = packet.end;
+                value_boundary = true;
+                census.events.pmark_packets.push(packet);
+                continue;
+            }
         }
-        if let Some(declaration) = inline_schema_declaration(stream, offset, stream.len()) {
+        let declaration = if supported_base {
+            inline_schema_node(stream, offset, stream.len(), &mut schema_seen)?
+        } else {
+            None
+        };
+        if let Some(declaration) = declaration {
+            if declaration.fields.kind() == 38 {
+                intersection_layout = super::intersection::IntersectionLayout::from_schema(
+                    declaration.fields.definition(),
+                );
+            }
+            if declaration.fields.kind() == 101 {
+                world_layout = super::WorldLayout::from_schema(declaration.fields.definition());
+            }
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
-            census.events.inline_schema_declarations.push(declaration);
+            census.events.schema_nodes.push(declaration);
             continue;
         }
         if let Some(map) =
-            reference_type_map(stream, offset, ReferenceTypeMapLimit::TargetTerminated)
+            reference_type_map(stream, offset, ReferenceTypeMapLimit::WithTerminalWord)
         {
             census.bytes_decoded += map.end - map.offset;
             offset = map.end;
@@ -149,11 +181,36 @@ pub(crate) fn walk(stream: &[u8]) -> Result<Census, CodecError> {
             census.events.reference_type_maps.push(map);
             continue;
         }
+        let shared_head = census.records.last().and_then(|previous| {
+            (previous.end == offset && super::has_shareable_terminal(stream, previous))
+                .then(|| offset.checked_sub(1))
+                .flatten()
+        });
+        let ambiguous_prefix_end = shared_head
+            .into_iter()
+            .chain(std::iter::once(offset))
+            .find_map(|head| {
+                let kind = View::u16_be_at(stream, head)?;
+                let signature = fixed_signature(kind, intersection_layout)?;
+                match super::fixed_envelope(stream, head, kind, signature) {
+                    super::FixedEnvelope::Ambiguous { prefix_end } => Some(prefix_end),
+                    super::FixedEnvelope::Absent | super::FixedEnvelope::Unique(_) => None,
+                }
+            });
+        if let Some(prefix_end) = ambiguous_prefix_end {
+            // Both readings claim these bytes as fields. Their shared prefix
+            // stays opaque; scanning inside it would invent new record heads.
+            // The shorter extent does not select either reading's identity.
+            offset = prefix_end;
+            value_boundary = false;
+            continue;
+        }
         let shared_record = consume_shared_record(
             stream,
             offset,
             &census.records,
-            intersection_schema_anchor_seen,
+            world_layout,
+            intersection_layout,
         )?;
         let complete_record = if shared_record.is_some() {
             shared_record
@@ -163,7 +220,7 @@ pub(crate) fn walk(stream: &[u8]) -> Result<Census, CodecError> {
         let complete_record = if complete_record.is_some() {
             complete_record
         } else {
-            first_complete_record(stream, offset, intersection_schema_anchor_seen, true)
+            first_complete_record(stream, offset, true, world_layout)
         };
         if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;
@@ -212,8 +269,8 @@ pub(crate) fn walk(stream: &[u8]) -> Result<Census, CodecError> {
                 }
             }
         }
-        let fixed = if let Some(signature) = fixed_signature(kind) {
-            consume_fixed(stream, offset, kind, signature)?
+        let fixed = if let Some(signature) = fixed_signature(kind, intersection_layout) {
+            consume_fixed(stream, offset, kind, signature, world_layout)?
         } else {
             None
         };
@@ -248,21 +305,46 @@ pub(crate) fn walk(stream: &[u8]) -> Result<Census, CodecError> {
         offset += 1;
         value_boundary = false;
     }
-    census.events.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
+    if let Some(prefix) = census.partition_prefix.as_ref() {
+        if !super::pmark_packets::admit(&census.pmark_packets, prefix.state) {
+            census.events.pmark_packets.clear();
+        }
+    }
     census.bytes_decoded += census
-        .term_use_numeric_tails
+        .pmark_packets
         .iter()
-        .map(|tail| tail.values().byte_len())
+        .map(|packet| packet.end - packet.offset)
         .sum::<usize>();
-    census.bytes_decoded += populate_gap_events(stream, &mut census);
+    // A PMARK scalar with null-reference-shaped bytes remains scalar storage.
+    // Existing record reference tails can still share the stream trailer.
+    census.events.terminal_null_references =
+        TerminalNullReferences::at_end(stream).filter(|tail| {
+            census
+                .partition_prefix
+                .as_ref()
+                .is_none_or(|prefix| prefix.end <= tail.offset())
+                && census
+                    .pmark_packets
+                    .iter()
+                    .all(|packet| packet.end <= tail.offset() || packet.offset >= tail.end())
+        });
+    census.bytes_decoded += census
+        .terminal_null_references
+        .as_ref()
+        .map_or(0, |tail| tail.end() - tail.offset());
+    census.bytes_decoded += populate_gap_events(stream, &mut census, supported_base)?;
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     Ok(census)
 }
 
-fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
+fn populate_gap_events(
+    stream: &[u8],
+    census: &mut Census,
+    supported_base: bool,
+) -> Result<usize, CodecError> {
     let mut admitted_bytes = 0;
-    let mut covered = merged_event_spans(census, true);
+    let mut covered = merged_event_spans(census);
     loop {
         let covered_before = covered
             .iter()
@@ -284,36 +366,16 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
         );
         census.events.reference_type_maps.extend(maps);
 
-        let state_packets = reference_state_packets(stream, &covered);
-        extend_covered_spans(
-            &mut covered,
-            state_packets.iter().map(|event| (event.offset, event.end)),
-        );
-        census.events.reference_state_packets.extend(state_packets);
-
-        let preambles = schema_reference_preambles(stream, &covered);
-        extend_covered_spans(
-            &mut covered,
-            preambles.iter().map(|event| (event.offset, event.end)),
-        );
-        census.events.schema_reference_preambles.extend(preambles);
-
-        let declarations = inline_schema_declarations(stream, &covered);
+        let declarations = if supported_base {
+            super::inline_schema_nodes(stream, &covered, &census.schema_nodes)?
+        } else {
+            Vec::new()
+        };
         extend_covered_spans(
             &mut covered,
             declarations.iter().map(|event| (event.offset, event.end)),
         );
-        census
-            .events
-            .inline_schema_declarations
-            .extend(declarations);
-
-        let body_states = inline_body_states(stream, census, &covered);
-        extend_covered_spans(
-            &mut covered,
-            body_states.iter().map(|event| (event.offset, event.end)),
-        );
-        census.events.inline_body_states.extend(body_states);
+        census.events.schema_nodes.extend(declarations);
 
         let marker_packets = reference_marker_packets(stream, &covered);
         extend_covered_spans(
@@ -324,18 +386,6 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
             .events
             .reference_marker_packets
             .extend(marker_packets);
-
-        let type_150_packets = type_150_state_packets(stream, &covered);
-        extend_covered_spans(
-            &mut covered,
-            type_150_packets
-                .iter()
-                .map(|event| (event.offset, event.end)),
-        );
-        census
-            .events
-            .type_150_state_packets
-            .extend(type_150_packets);
 
         let covered_after = covered
             .iter()
@@ -359,29 +409,13 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
         .sort_unstable_by_key(|event| event.offset);
     census
         .events
-        .reference_state_packets
-        .sort_unstable_by_key(|event| event.offset);
-    census
-        .events
-        .schema_reference_preambles
-        .sort_unstable_by_key(|event| event.offset);
-    census
-        .events
-        .inline_schema_declarations
-        .sort_unstable_by_key(|event| event.offset);
-    census
-        .events
-        .inline_body_states
-        .sort_unstable_by_key(|event| event.offset);
+        .schema_nodes
+        .sort_unstable_by_key(|left| left.offset);
     census
         .events
         .reference_marker_packets
-        .sort_unstable_by_key(|event| event.offset);
-    census
-        .events
-        .type_150_state_packets
-        .sort_unstable_by_key(|event| event.offset);
-    admitted_bytes
+        .sort_unstable_by_key(|left| left.offset);
+    Ok(admitted_bytes)
 }
 
 fn value_is_owned(
@@ -401,7 +435,7 @@ fn populate_body_revision_state_tails(stream: &[u8], census: &mut Census) -> usi
         return 0;
     }
     let mut byte_len = 0;
-    let covered = merged_event_spans(census, true);
+    let covered = merged_event_spans(census);
     for (start, end) in uncovered_spans(stream.len(), &covered) {
         if let Some(revision) = census
             .events

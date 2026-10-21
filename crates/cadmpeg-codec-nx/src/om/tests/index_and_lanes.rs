@@ -7,12 +7,10 @@ use crate::om::construction_payload_scalar_fields;
 fn data_block_object_frames(bytes: &[u8]) -> Vec<crate::om::compact::LocatedCompactIndex> {
     crate::om::data_block_object_frames(bytes)
 }
-
 use crate::om::datum_csys_descriptor_block;
 fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<crate::om::DatumCsysPayloadFixedPair> {
     crate::om::datum_csys_payload_fixed_pairs(bytes)
 }
-
 use crate::om::datum_plane_descriptor_block;
 fn draft_construction_binary32_lanes(
     bytes: &[u8],
@@ -20,12 +18,16 @@ fn draft_construction_binary32_lanes(
 {
     crate::om::draft_construction_binary32_lanes(bytes)
 }
-fn draft_construction_fixed_lanes(
+fn draft_construction_binary64_lanes(
     bytes: &[u8],
-) -> Vec<crate::om::scalar_run::FramedScalarRun<crate::om::fixed::Q155LaneFrame, ()>> {
-    crate::om::draft_construction_fixed_lanes(bytes)
+) -> Vec<
+    crate::om::scalar_run::FramedScalarRun<
+        crate::om::discriminators::ConstructionBinary64Frame,
+        (),
+    >,
+> {
+    crate::test_support::with_decode_context(|_ctx| crate::om::construction_binary64_lanes(bytes))
 }
-
 use crate::om::draft_construction_identity_frames;
 
 fn draft_construction_identity_frames_test(
@@ -55,7 +57,6 @@ fn operation_body_references(
 ) -> Vec<crate::om::OperationBodyReference> {
     crate::om::operation_body_references(record)
 }
-
 use crate::om::sections;
 use crate::om::DataBlockObjectReference;
 use crate::om::OperationBodyReference;
@@ -855,7 +856,7 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
 }
 
 #[test]
-fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
+fn om_draft_binary64_lanes_require_complete_discriminator_atoms_and_terminator() {
     let discriminator = [
         0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
         0x00, 0x01, 0x00,
@@ -865,20 +866,20 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
     bytes.extend_from_slice(&[0xb0, 0xc0, 0, 0, 0, 0, 0, 0]);
     bytes.push(0);
-    let lanes = draft_construction_fixed_lanes(&bytes);
+    let lanes = draft_construction_binary64_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset(), 1);
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, atom, ())| atom.scalar.value())
+            .map(|(_, atom, ())| atom.value().get())
             .collect::<Vec<_>>(),
-        [0.5, -0.5]
+        [32.0, -8192.0]
     );
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, atom, ())| atom.marker.byte())
+            .map(|(_, atom, ())| atom.raw()[0])
             .collect::<Vec<_>>(),
         [0x30, 0xb0]
     );
@@ -891,10 +892,30 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     );
 
     bytes.pop();
-    assert!(draft_construction_fixed_lanes(&bytes).is_empty());
+    assert!(draft_construction_binary64_lanes(&bytes).is_empty());
     bytes.truncate(22);
-    assert!(draft_construction_fixed_lanes(&bytes).is_empty());
-    assert!(draft_construction_fixed_lanes(&discriminator).is_empty());
+    assert!(draft_construction_binary64_lanes(&bytes).is_empty());
+    assert!(draft_construction_binary64_lanes(&discriminator).is_empty());
+}
+
+#[test]
+fn construction_binary64_sign_is_part_of_the_complete_atom() {
+    let mut bytes = crate::om::discriminators::ConstructionBinary64Frame::DISCRIMINATOR.to_vec();
+    // The decoded IEEE encodings are 404000... and c04000...: +32 and -32.
+    bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xb0, 0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0);
+    let lanes = draft_construction_binary64_lanes(&bytes);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(
+        lanes[0]
+            .iter()
+            .map(|(_, atom, ())| atom.value().get())
+            .collect::<Vec<_>>(),
+        [32.0, -32.0]
+    );
+    bytes[18] = 0x31;
+    assert!(draft_construction_binary64_lanes(&bytes).is_empty());
 }
 
 #[test]
@@ -1000,7 +1021,7 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
                 0x0b,
                 crate::om::body_write::BodyWriteIndex::from_wire(0x66a4, &[0xa0, 0x66, 0xa4])
                     .unwrap(),
-                crate::om::body_write::BodyImageTag::try_from(0x10).unwrap(),
+                std::num::NonZeroU8::new(0x10).unwrap(),
                 crate::om::body_write::BodyWriteIndex::from_wire(0x43, &[0x43]).unwrap(),
                 100,
             )
@@ -1012,10 +1033,10 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
         }]
     );
 
-    let mut invalid_endpoint_tag = bytes;
-    invalid_endpoint_tag[10] = 0x11;
+    let mut invalid_endpoint_class_index = bytes;
+    invalid_endpoint_class_index[10] = 0x11;
     let nested_record = crate::om::operation_record::OperationBodyInput::new(
-        &invalid_endpoint_tag,
+        &invalid_endpoint_class_index,
         record.offset(),
         record.payload_start(),
         record.name(),
@@ -1038,7 +1059,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
             let frame = crate::om::body_write::BodyWriteFrame::<usize>::new(
                 0x17,
                 crate::om::body_write::BodyWriteIndex::from_wire(0x123, &[0x81, 0x23]).unwrap(),
-                crate::om::body_write::BodyImageTag::try_from(0x10).unwrap(),
+                std::num::NonZeroU8::new(0x10).unwrap(),
                 crate::om::body_write::BodyWriteIndex::from_wire(0x645, &[0x86, 0x45]).unwrap(),
                 100,
             )
@@ -1254,7 +1275,15 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
 }
 
 #[test]
-fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
+fn om_delete_reference_field_requires_counted_canonical_nullable_slots() {
+    fn read(
+        record: crate::om::operation_record::OperationPayload<'_>,
+    ) -> Option<crate::om::delete_references::DeleteReferences<()>> {
+        crate::test_support::with_decode_context(|_ctx| {
+            crate::om::delete_references::DeleteReferences::read(record)
+        })
+    }
+
     fn record(payload: &[u8]) -> crate::om::operation_record::OperationPayload<'_> {
         crate::om::operation_record::OperationPayload::new(payload, 100, "DELETE").unwrap()
     }
@@ -1263,27 +1292,31 @@ fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
         0x0c, 0x00, 0x00, 0x01, 0x00, 0x01, 0x06, 0xf0, 0x20, 0xff, 0xf1, 0x02, 0x08, 0xf1, 0x02,
         0x09, 0xff, 0x00,
     ];
-    let field = crate::om::delete_references::DeleteReferences::read(record(&payload)).unwrap();
+    let field = read(record(&payload)).unwrap();
     assert_eq!(field.control(), 0x0c);
     assert_eq!(field.offset(), 100);
     assert_eq!(
         field
             .slots()
-            .each_ref()
-            .map(|reference| reference.as_ref().map(|(token, ())| token.value())),
+            .iter()
+            .map(|reference| reference.as_ref().map(|(token, ())| token.value()))
+            .collect::<Vec<_>>(),
         [Some(0x20), None, Some(0x208), Some(0x209), None]
     );
-    assert_eq!(field.reference_offsets(), [107, 109, 110, 113, 116]);
+    assert_eq!(
+        field.reference_offsets().collect::<Vec<_>>(),
+        [107, 109, 110, 113, 116]
+    );
 
     let mut noncanonical = payload;
     noncanonical[11] = 0x00;
     noncanonical[12] = 0x20;
-    assert!(crate::om::delete_references::DeleteReferences::read(record(&noncanonical)).is_none());
+    assert!(read(record(&noncanonical)).is_none());
     let truncated = &payload[..payload.len() - 1];
-    assert!(crate::om::delete_references::DeleteReferences::read(record(truncated)).is_none());
+    assert!(read(record(truncated)).is_none());
     let mut wrong_count = payload;
     wrong_count[6] = 0x05;
-    assert!(crate::om::delete_references::DeleteReferences::read(record(&wrong_count)).is_none());
+    assert!(read(record(&wrong_count)).is_none());
 }
 
 #[test]

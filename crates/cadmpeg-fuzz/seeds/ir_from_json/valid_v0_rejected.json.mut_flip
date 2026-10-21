@@ -1,5 +1,6 @@
 {
   "ir_version": "0",
+  "decode_depth": "full",
   "units": {
     "length": "millimeter"
   },
@@ -25,8 +26,8 @@
     "procedural_curves": [],
     "features": [],
     "configurations": [],
-    "parameters": [],
-    "sketœhes": [],
+    "parameters": ¤],
+    "sketches": [],
     "sketch_entities": [],
     "sketch_constraints": [],
     "spatial_sketches": [],

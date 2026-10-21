@@ -26,6 +26,7 @@ macro_rules! e5_test_context {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let ($ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("build the decode context");
+        let _ = &$ctx;
     };
 }
 
@@ -79,7 +80,7 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
     record[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     record[3] = 0xff;
     let payload = [
-        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
+        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x21,
     ];
     record[5..7].copy_from_slice(
         &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
@@ -88,8 +89,8 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
 
     let edges = crate::families::e5::records::e5_edges(&record);
     assert_eq!(edges.len(), 1);
-    assert_eq!(edges[0].start_vertex_id, 0x06_0504);
-    assert_eq!(edges[0].end_vertex_id, 0x09_0807);
+    assert_eq!(edges[0].start_vertex, 0x06_0504);
+    assert_eq!(edges[0].end_vertex, 0x09_0807);
 }
 
 #[test]
@@ -105,7 +106,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         (102, 30, 10, [212, 0]),
     ] {
         let mut payload = vec![0x85, 0x08, 200, 0x08, start, 0x08, end];
-        payload.extend_from_slice(&[0x18, bound[0], bound[1], 0x18, bound[0], bound[1]]);
+        payload.extend_from_slice(&[0x18, bound[0], bound[1], 0x18, bound[0], bound[1], 0x21]);
         append_e5_record(&mut bytes, 0xff, u32::from(id), &payload);
     }
     for (id, surface, offset) in [
@@ -141,9 +142,13 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     jet.extend_from_slice(&le_f64(0.0));
     jet.extend_from_slice(&le_f64(1.0));
     append_e5_record(&mut bytes, 0xa0, 403, &jet);
-    let mut support_payload = vec![0x82, 0x18, 144, 1, 0x18, 154, 1, 0x81, 0, 0];
+    let mut support_payload = vec![0x82, 0x18, 144, 1, 0x18, 154, 1, 0x81, 3, 0];
     support_payload.extend_from_slice(&le_f64(-10.0));
     support_payload.extend_from_slice(&le_f64(10.0));
+    for value in [0.0_f64, -10.0, 10.0, 1.0, 0.0, -10.0, 10.0, 0.0] {
+        support_payload.extend_from_slice(&le_f64(value));
+    }
+    support_payload.extend_from_slice(&0_u32.to_le_bytes());
     append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
     for (bound, pcurves) in [
         (210u32, [400u16, 410]),
@@ -157,9 +162,9 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         }
         bound_payload.push(0x82);
         bound_payload.extend_from_slice(&le_f64(0.5));
-        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        bound_payload.extend_from_slice(&1_u32.to_le_bytes());
         bound_payload.extend_from_slice(&le_f64(0.5));
-        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        bound_payload.extend_from_slice(&1_u32.to_le_bytes());
         append_e5_record(&mut bytes, 0x0e, bound, &bound_payload);
     }
     let mut bound_payload = vec![0x82, 0x18, 144, 1, 0x08, 200, 0x82];
@@ -172,18 +177,17 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         0x87, 0x18, 144, 1, 0x08, 100, 0x18, 145, 1, 0x08, 101, 0x18, 146, 1, 0x08, 102, 0x18, 244,
         1, 0x83,
     ];
-    for _ in 0..13 {
-        loop_payload.extend_from_slice(&1i16.to_le_bytes());
+    for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0] {
+        loop_payload.extend_from_slice(&sign.to_le_bytes());
     }
     append_e5_record(&mut bytes, 0x09, 300, &loop_payload);
     let mut reverse_loop_payload = vec![
         0x87, 0x18, 154, 1, 0x08, 100, 0x18, 156, 1, 0x08, 102, 0x18, 155, 1, 0x08, 101, 0x18, 245,
         1, 0x83,
     ];
-    for _ in 0..12 {
-        reverse_loop_payload.extend_from_slice(&1i16.to_le_bytes());
+    for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0] {
+        reverse_loop_payload.extend_from_slice(&sign.to_le_bytes());
     }
-    reverse_loop_payload.extend_from_slice(&0i16.to_le_bytes());
     append_e5_record(&mut bytes, 0x09, 301, &reverse_loop_payload);
     append_e5_record(&mut bytes, 0xcc, 500, &[]);
     append_e5_record(&mut bytes, 0xcc, 501, &[]);
@@ -203,13 +207,13 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         &mut bytes,
         0x08,
         700,
-        &[0x82, 0x18, 88, 2, 0x18, 89, 2, 0x82, 1, 0, 1, 0, 1, 0, 1, 0],
+        &[
+            0x82, 0x18, 88, 2, 0x18, 89, 2, 0x82, 1, 0, 255, 255, 1, 0, 255, 255,
+        ],
     );
     append_e5_record(&mut bytes, 0x01, 800, &[0x81, 0x18, 188, 2]);
 
-    let topology = crate::families::e5::graph::parse_topology(&ctx, &bytes)
-        .expect("parse the topology")
-        .expect("E5 graph");
+    let topology = crate::families::e5::graph::parse_topology(&bytes).expect("E5 graph");
     assert_eq!(topology.faces.len(), 2);
     assert_eq!(topology.faces[0].surface, 500);
     assert_eq!(
@@ -228,7 +232,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
             .collect::<Vec<_>>(),
         vec![false, false, false]
     );
-    assert_eq!(topology.faces[0].loops[0].outer, Some(true));
+    assert!(topology.faces[0].loops[0].outer);
     assert_eq!(
         topology.faces[0].loops[0]
             .resolved_members()
@@ -247,7 +251,14 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
             .collect::<Vec<_>>(),
         vec![(0, true), (1, true), (2, true)]
     );
-    assert_eq!(topology.bodies[0].faces, vec![600, 601]);
+    assert_eq!(
+        topology.bodies[0]
+            .faces
+            .iter()
+            .map(|face| face.record_id)
+            .collect::<Vec<_>>(),
+        vec![600, 601]
+    );
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
         topology.pcurves[&400],
@@ -273,11 +284,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
         .expect("curve-support record");
     missing_support[support_start + 3] = 0x7f;
-    assert!(
-        crate::families::e5::graph::parse_topology(&ctx, &missing_support)
-            .expect("parse the topology")
-            .is_none()
-    );
+    assert!(crate::families::e5::graph::parse_topology(&missing_support).is_none());
 
     let mut missing_support_pcurve = bytes.clone();
     let support_start = missing_support_pcurve
@@ -285,11 +292,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
         .expect("curve-support record");
     missing_support_pcurve[support_start + 15..support_start + 17].copy_from_slice(&[0xff, 0x0f]);
-    assert!(
-        crate::families::e5::graph::parse_topology(&ctx, &missing_support_pcurve)
-            .expect("parse the topology")
-            .is_none()
-    );
+    assert!(crate::families::e5::graph::parse_topology(&missing_support_pcurve).is_none());
 
     let mut missing_bounds = bytes.clone();
     let bounds_start = missing_bounds
@@ -297,11 +300,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0x0e])
         .expect("parameter-bound record");
     missing_bounds[bounds_start + 3] = 0x7f;
-    assert!(
-        crate::families::e5::graph::parse_topology(&ctx, &missing_bounds)
-            .expect("parse the topology")
-            .is_none()
-    );
+    assert!(crate::families::e5::graph::parse_topology(&missing_bounds).is_none());
 
     let mut missing_pcurve_surface = bytes;
     let pcurve_start = missing_pcurve_surface
@@ -313,11 +312,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .expect("support pcurve record");
     missing_pcurve_surface[pcurve_start + 14..pcurve_start + 17]
         .copy_from_slice(&[0x18, 0x84, 0x03]);
-    assert!(
-        crate::families::e5::graph::parse_topology(&ctx, &missing_pcurve_surface)
-            .expect("parse the topology")
-            .is_none()
-    );
+    assert!(crate::families::e5::graph::parse_topology(&missing_pcurve_surface).is_none());
 }
 
 #[test]
@@ -582,9 +577,7 @@ fn e5_topology_refuses_entity_before_boundary_curve_append() {
 fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     e5_test_context!(ctx);
     let stream = e5_torus_topology_stream();
-    crate::families::e5::graph::parse_topology(&ctx, &stream)
-        .expect("parse the topology")
-        .expect("generated E5 topology");
+    crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
         crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
@@ -637,11 +630,11 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         loss.code.category() != cadmpeg_ir::report::loss::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
-            && loss.message.contains("two trailing orientation signs")
-    }));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| { loss.code.category() != cadmpeg_ir::report::loss::LossCategory::Topology }));
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");

@@ -267,3 +267,71 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         1
     );
 }
+
+#[test]
+fn native_triangle_rosters_derive_coordinates_without_endpoint_fallback() {
+    let stream = crate::test_support::test_b5::b5_closed_triangle_stream_with_native_vertex_chain();
+    crate::test_support::with_service_context(|ctx| {
+        let graph = crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )?
+        .expect("native triangle graph");
+        for loop_ in graph.loops.values() {
+            for member in &loop_.members {
+                let edge = &graph.edges[&member.edge];
+                assert_eq!(edge.support, member.pcurve);
+                let stations = edge.parameter_incidences.map(|id| {
+                    let incidence = &graph.parameter_incidences[&id];
+                    let lane = incidence
+                        .lanes
+                        .iter()
+                        .find(|lane| lane.curve == member.pcurve)
+                        .expect("the shared curve incidence is present");
+                    (lane.control, lane.parameter)
+                });
+                assert!(stations[0] < stations[1]);
+                assert_eq!(member.controls[1], 1);
+            }
+        }
+        let records = crate::families::b5::graph::records(&stream);
+        let by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect();
+        let edges = graph
+            .edges
+            .iter()
+            .map(|(&id, edge)| (id, edge.vertices))
+            .collect();
+        let geometry = crate::families::b5::graph::B5PcurveContext {
+            pcurves: &graph.pcurves,
+            opaque_pcurves: &graph.opaque_pcurves,
+            surfaces: &graph.surfaces,
+            profiles: &graph.profiles,
+            edge_parameter_incidences: &graph.edge_parameter_incidences,
+            parameter_incidences: &graph.parameter_incidences,
+        };
+        let coordinates = crate::families::b5::graph::incidence_vertex_coordinates(
+            ctx,
+            &edges,
+            &graph.vertex_incidence_links,
+            &by_id,
+            &geometry,
+        )?;
+        assert_eq!(coordinates.len(), 3);
+        for (vertex, expected) in [
+            (600, [0.0, 0.0, 0.0]),
+            (601, [1.0, 0.0, 0.0]),
+            (602, [0.0, 1.0, 0.0]),
+        ] {
+            assert_eq!(
+                crate::test_support::test_b5::coordinates(coordinates[&vertex]),
+                expected
+            );
+        }
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("native coordinate derivation within service budget");
+}

@@ -8,11 +8,12 @@ use super::{
     CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter,
     DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
     FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
-    FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame, FlexForm, FlexMode,
-    FuzzyTolerance, GeometryImportFormat, HelicalSweepLaw, HelicalSweepTravel,
-    HelixConstructionStyle, HelixShape, InnerWireTaper, NoGeneratedSection, PolygonSideCount,
-    PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide, RuledCurveOrientation,
-    RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition, SheetMetalHeightDatum,
+    FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
+    FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
+    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape, InnerWireTaper,
+    NoGeneratedSection, PolygonSideCount, PrincipalPlane,
+    RevolutionFuseOrder, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner,
+    ScaleFactors, SheetMetalBendPosition, SheetMetalHeightDatum, SheetMetalHemBendPosition,
     SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation,
     SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode, SweepPathExtent,
     SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
@@ -98,6 +99,7 @@ rewrite_enum!(ScaleFactors, []; {
 });
 rewrite_scalar!(SheetMetalBendPosition);
 rewrite_scalar!(SheetMetalHeightDatum);
+rewrite_scalar!(SheetMetalHemBendPosition);
 rewrite_scalar!(SheetMetalHemDirection);
 rewrite_scalar!(SheetMetalThicknessSide);
 rewrite_scalar!(ShellJoin);
@@ -118,3 +120,5 @@ rewrite_enum!(WrapMode, []; {
 });
 
 rewrite_record!(super::SweepCircularRegion, []; { outer_radius, wall_thickness });
+
+rewrite_scalar!(FilledSurfaceBoundaryCondition);

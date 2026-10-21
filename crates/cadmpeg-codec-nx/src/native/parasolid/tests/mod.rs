@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::deltas::inline_schema_fields::InlineSchemaFields;
-
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_prt::prt_with_partition;
 use crate::test_support::test_streams::topology_partition_stream;
@@ -9,35 +7,6 @@ use crate::test_support::test_streams::topology_partition_stream;
 use std::io::Cursor;
 
 use crate::parasolid::Stream;
-
-#[test]
-fn type38_leading_statuses_preserve_default_omission_and_nondefault_values() {
-    let base = serde_json::json!({
-        "schema": "type38", "xmt": 3, "node_id": 7,
-        "leading_references": [1, 2, 3, 4, 5], "marker": 45,
-        "linked_references": [2, 3], "state_references": [6, 7, 8], "numeric_values": null
-    });
-    for statuses in [None, Some([1; 5]), Some([1, 1, 1, 1, 0])] {
-        let mut wire = base.clone();
-        if let Some(statuses) = statuses {
-            wire["leading_statuses"] =
-                serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(statuses));
-        }
-        let fields: InlineSchemaFields = serde_json::from_value(wire.clone()).unwrap();
-        let InlineSchemaFields::Type38 { state } = &fields else {
-            panic!("type38 wire must decode as Type38");
-        };
-        assert_eq!(state.leading_statuses(), statuses.unwrap_or([1; 5]));
-        if state.leading_statuses() == [1; 5] {
-            wire.as_object_mut().unwrap().remove("leading_statuses");
-        }
-        assert_eq!(serde_json::to_value(fields).unwrap(), wire);
-    }
-    let mut null = base.clone();
-    null["leading_statuses"] = serde_json::Value::Null;
-    let fields: InlineSchemaFields = serde_json::from_value(null).unwrap();
-    assert_eq!(serde_json::to_value(fields).unwrap(), base);
-}
 
 fn stream(subtype: crate::parasolid::ParasolidSubtype, schema: &str, inflated: Vec<u8>) -> Stream {
     Stream {
@@ -77,39 +46,41 @@ fn native_value_records_use_only_ledger_owned_offsets() {
     assert!(records.doubles.is_empty());
 }
 
-fn record(
+fn membership_record(
     kind: u16,
     xmt: u32,
     node_id: Option<u32>,
     references: Vec<u32>,
-) -> crate::deltas::Record {
-    use crate::deltas::record_family::RecordFamily;
-    let family = match kind {
-        14 => RecordFamily::Face {
-            references: [1; 11],
-            node_id: node_id.expect("face node"),
+) -> crate::records::group::MembershipRecord {
+    use crate::records::group::{MembershipKind, MembershipRecord};
+    let kind = match kind {
+        14 | 16 => MembershipKind::Node {
+            kind,
+            node_id: node_id.expect("member node"),
         },
-        16 => RecordFamily::Edge {
-            references: [1; 8],
-            node_id: node_id.expect("edge node"),
-        },
-        90 => RecordFamily::Group {
-            references: references.try_into().unwrap(),
-            node_id: node_id.expect("group node"),
-            selector: GroupSelector::Form4,
-            linked_reference_status: GroupReferenceStatus::Form0,
-        },
-        91 => RecordFamily::Type91 {
-            references: references.try_into().unwrap(),
-        },
-        other => panic!("unexpected test kind {other}"),
+        90 => {
+            let [_, _, _, _, first_member]: [u32; 5] = references.try_into().unwrap();
+            MembershipKind::Group {
+                node_id: node_id.expect("group node"),
+                selector: GroupSelector::Mixed,
+                first_member,
+            }
+        }
+        91 => {
+            let [owning_group, owner, _, _, next_member, previous_member]: [u32; 6] =
+                references.try_into().unwrap();
+            MembershipKind::Member {
+                owning_group,
+                owner,
+                next_member,
+                previous_member,
+            }
+        }
+        other => panic!("unexpected membership test kind {other}"),
     };
-    crate::deltas::Record {
-        family,
-        xmt,
-        canonical_bytes: if kind == 90 { vec![0, 90] } else { Vec::new() },
-        offset: 0,
-        end: 1,
+    MembershipRecord {
+        xmt: xmt.try_into().unwrap(),
+        kind,
     }
 }
 
@@ -122,15 +93,14 @@ use super::topology_attribute_kind::TopologyAttributeKind;
 use super::{
     parasolid_attribute_field_names, parasolid_attribute_field_uses,
     parasolid_entity_51_structured_uses,
-    parasolid_topology_attribute_fields_have_untransferred_values, GroupReferenceStatus,
-    ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
-    ParasolidAttributeFieldValueKind, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
-    ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
-    ParasolidEntity54StringRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
-    ParasolidEntityVectorRecord, ParasolidFieldNamesRecord, ParasolidTopologyAttributeClassUse,
+    parasolid_topology_attribute_fields_have_untransferred_values, ParasolidAttributeClassUse,
+    ParasolidAttributeDefinition, ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind,
+    ParasolidEntity51NumericKind, ParasolidEntity51NumericUse, ParasolidEntity51Record,
+    ParasolidEntity51StringUse, ParasolidEntity51StructuredUse, ParasolidEntity54StringRecord,
+    ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+    ParasolidFieldNamesRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
 };
-use crate::deltas::group::GroupSelector;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::attribute_action::AttributeAction;
@@ -138,6 +108,7 @@ use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::entity_references::EntityReferences;
 use crate::parasolid::name_references::NameReferences;
 use crate::printable_string::PrintableString;
+use crate::records::group::GroupSelector;
 use std::num::NonZeroU32;
 
 #[test]
@@ -700,10 +671,16 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
 #[test]
 fn topology_retains_entity_attribute_list_references() {
     let mut stream = topology_partition_stream();
-    for (kind, attribute) in [(14, 41), (15, 42), (17, 43), (16, 44), (18, 45)] {
+    for (kind, identity, attribute) in [
+        (14, 4, 41),
+        (15, 5, 42),
+        (17, 7, 43),
+        (16, 8, 44),
+        (18, 10, 45),
+    ] {
         let at = stream
-            .windows(2)
-            .position(|window| window == [0, kind])
+            .windows(4)
+            .position(|window| window == [0, kind, 0, identity])
             .expect("topology record");
         put_ref(&mut stream, at + if kind == 17 { 4 } else { 8 }, attribute);
     }
