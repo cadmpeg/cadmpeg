@@ -56,6 +56,7 @@ use crate::ids;
 use crate::ids::native_stream;
 use crate::layout::canvas_scope_tail_98 as canvas_tail;
 use crate::layout::canvas_scope_typed_tail as typed_canvas_tail;
+use crate::layout::thread_bound_hole_tail as hole_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
 use crate::records::feature::direct_face;
@@ -801,6 +802,7 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
     }
     match kind {
         "CopyPasteBodies" => tail_length == 110,
+        "Hole" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 109),
         "CoilPrimitive" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 88),
         _ => matches!(tail_length, 72 | 76 | 77 | 78 | 87),
     }
@@ -832,7 +834,7 @@ fn parameter_scope_previous_history_offset_for_form(
         return None;
     }
     match (kind, tail_length) {
-        ("CopyPasteBodies", 110) => Some(53),
+        ("CopyPasteBodies", 110) | ("Hole", 109) => Some(53),
         ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
@@ -877,6 +879,9 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 || (kind == "Canvas"
                     && (exact_canvas_scope_tail(bytes.get(kind_end..paired_at)?, record_index)
                         || exact_typed_canvas_scope_tail(bytes.get(kind_end..paired_at)?)));
+            let fixed_tail = fixed_tail
+                || (kind == "Hole"
+                    && exact_thread_bound_hole_tail(bytes.get(kind_end..paired_at)?, record_index));
             if fixed_tail
                 && parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && fixed_candidate
@@ -1221,6 +1226,35 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         Some(Ok(scope))
     })()
     .transpose()
+}
+
+fn exact_thread_bound_hole_tail(tail: &[u8], hole: u32) -> bool {
+    if tail.len() != hole_tail::LEN {
+        return false;
+    }
+    let reference = |at| super::shared_frames::marked_record_reference(tail, at);
+    let Some(thread) =
+        reference(hole_tail::THREAD_REFERENCE).filter(|thread| *thread > 3 && *thread != hole)
+    else {
+        return false;
+    };
+    View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL).is_some_and(|ordinal| ordinal != 0)
+        && tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT) == Some(&[0; 8])
+        && View::u32_le_at(tail, hole_tail::MEMBER_COUNT) == Some(2)
+        && reference(hole_tail::SELF_REFERENCE) == Some(hole)
+        && tail.get(hole_tail::ZERO_BEFORE_COMPANION..hole_tail::FIRST_COMPANION) == Some(&[0; 3])
+        && reference(hole_tail::FIRST_COMPANION) == thread.checked_sub(1)
+        && tail.get(hole_tail::ZERO_BEFORE_HISTORY) == Some(&0)
+        && View::u32_le_at(tail, hole_tail::PREVIOUS_HISTORY_STATE).is_some()
+        && View::f64_le_at(tail, hole_tail::DURATION)
+            .is_some_and(|duration| duration.is_finite() && duration >= 0.0)
+        && View::u32_le_at(tail, hole_tail::EPOCH)
+            == View::u32_le_at(tail, hole_tail::REPEATED_EPOCH)
+        && reference(hole_tail::SECOND_COMPANION) == thread.checked_sub(2)
+        && tail.get(hole_tail::ZERO_BEFORE_THIRD..hole_tail::THIRD_COMPANION) == Some(&[0; 2])
+        && reference(hole_tail::THIRD_COMPANION) == thread.checked_sub(3)
+        && reference(hole_tail::CLOSING_SELF_REFERENCE) == Some(hole)
+        && tail.get(hole_tail::ZERO_TAIL) == Some(&0)
 }
 
 fn exact_typed_canvas_scope_tail(tail: &[u8]) -> bool {

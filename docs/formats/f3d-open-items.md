@@ -206,21 +206,6 @@ remains native, or unresolved when its group declares lost references.
 persistent edge selection and distinguish identity fields from validation or
 topology context.
 
-### DR-73. Thread compact-trailer record reference
-
-**Question.** What does the record named by a reference-bearing compact
-`Thread` trailer hold?
-
-**Known.** `f3d.md` §3.1 "The three LP-UTF16 fields are the designation"
-gives both compact trailer layouts. The reference-bearing layout stores a
-marked nonzero indexed-record reference after the physical thread scalars. The
-decoder retains its target and byte offset. The reference is independent of
-the ordered face-selection groups.
-
-**Need.** A source-less writer must select the referenced record and generate
-its payload. The physical thread construction and face selections decode
-without assigning a semantic role to that record.
-
 ### DR-74. Lost-edge runs shorter than the operand list
 
 **Question.** Which operands of a counted edge group do the records of a

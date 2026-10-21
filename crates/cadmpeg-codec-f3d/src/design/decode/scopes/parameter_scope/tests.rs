@@ -214,3 +214,74 @@ fn typed_canvas_scope_validates_reference_types_and_fixed_tail() {
         assert!(parse(&invalid).is_none());
     }
 }
+
+#[test]
+fn thread_bound_hole_scope_requires_reciprocal_tail_and_history() {
+    use crate::design::test_support::indexed_record_offsets_for_test;
+    let mut prefix = Vec::new();
+    prefix.extend_from_slice(&3u32.to_le_bytes());
+    prefix.extend_from_slice(b"300");
+    prefix.extend_from_slice(&12u32.to_le_bytes());
+    prefix.extend_from_slice(&[0; 10]);
+    prefix.extend_from_slice(&2u32.to_le_bytes());
+    for member in [55u32, 56] {
+        prefix.push(1);
+        prefix.extend_from_slice(&member.to_le_bytes());
+        prefix.extend_from_slice(&[0; 6]);
+    }
+    prefix.extend_from_slice(&9u32.to_le_bytes());
+    lp_utf16(&mut prefix, "Hole");
+    let mut tail = [0; 109];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[12..16].copy_from_slice(&2u32.to_le_bytes());
+    for (at, index) in [
+        (16, 12u32),
+        (27, 100),
+        (41, 99),
+        (73, 98),
+        (86, 97),
+        (97, 12),
+    ] {
+        tail[at] = 1;
+        tail[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+    tail[53..57].copy_from_slice(&8u32.to_le_bytes());
+    tail[57..61].copy_from_slice(&4u32.to_le_bytes());
+    tail[61..69].copy_from_slice(&0.25f64.to_le_bytes());
+    tail[69..73].copy_from_slice(&4u32.to_le_bytes());
+    let parse = |tail: &[u8]| {
+        let mut bytes = prefix.clone();
+        bytes.extend_from_slice(tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"260");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        super::parse_parameter_scope(
+            &bytes,
+            &indexed_record_offsets_for_test(&bytes),
+            12,
+            &"300".to_owned().try_into().unwrap(),
+            0,
+        )
+        .unwrap()
+    };
+    let scope = parse(&tail).expect("Thread-bound Hole scope");
+    assert_eq!(scope.kind_name(), "Hole");
+    assert_eq!(scope.history_state_id(), Some(9));
+    assert_eq!(scope.previous_history_state_id(), Some(8));
+    let wire = serde_json::to_string(&scope).unwrap();
+    let decoded: crate::records::feature::scope::DesignParameterScope =
+        serde_json::from_str(&wire).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+    for offset in [
+        0, 4, 12, 17, 21, 28, 32, 38, 42, 46, 52, 69, 74, 78, 84, 87, 91, 98, 102, 108,
+    ] {
+        let mut invalid = tail;
+        invalid[offset] ^= 1;
+        assert!(parse(&invalid).is_none(), "tail offset {offset}");
+    }
+    for duration in [-0.25, f64::NAN, f64::INFINITY] {
+        let mut invalid = tail;
+        invalid[61..69].copy_from_slice(&duration.to_le_bytes());
+        assert!(parse(&invalid).is_none());
+    }
+}

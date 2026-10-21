@@ -5171,6 +5171,30 @@ Spec §3.1 · layout: byte offsets · size: 196 B
 | 143 | 51 | `third_companion` | `bytes[51]` | little | spec | A typed Canvas scope has a 196-byte fixed tail. |
 | 194 | 2 | `zero_tail` | `bytes[2]` | little | spec | A typed Canvas scope has a 196-byte fixed tail. |
 
+## `thread_bound_hole_tail`
+
+Spec §3.1 · layout: byte offsets · size: 109 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 4 | 8 | `zero_prefix` | `bytes[8]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 12 | 4 | `member_count` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 16 | 11 | `self_reference` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 27 | 11 | `thread_reference` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 38 | 3 | `zero_before_companion` | `bytes[3]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 41 | 11 | `first_companion` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 52 | 1 | `zero_before_history` | `u8` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 53 | 4 | `previous_history_state` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 57 | 4 | `epoch` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 61 | 8 | `duration` | `f64` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 69 | 4 | `repeated_epoch` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 73 | 11 | `second_companion` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 84 | 2 | `zero_before_third` | `bytes[2]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 86 | 11 | `third_companion` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 97 | 11 | `closing_self_reference` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 108 | 1 | `zero_tail` | `u8` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

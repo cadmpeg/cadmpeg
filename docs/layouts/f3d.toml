@@ -17364,3 +17364,129 @@ offset = 194
 type = "bytes[2]"
 source = "spec"
 anchor = "A typed Canvas scope has a 196-byte fixed tail."
+
+[[record]]
+name = "thread_bound_hole_tail"
+kind = "byte"
+section = "3.1"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+size = 109
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 4
+type = "bytes[8]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "member_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "self_reference"
+offset = 16
+type = "bytes[11]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "thread_reference"
+offset = 27
+type = "bytes[11]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "zero_before_companion"
+offset = 38
+type = "bytes[3]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "first_companion"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "zero_before_history"
+offset = 52
+type = "u8"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "epoch"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "duration"
+offset = 61
+type = "f64"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "repeated_epoch"
+offset = 69
+type = "u32"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "second_companion"
+offset = 73
+type = "bytes[11]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "zero_before_third"
+offset = 84
+type = "bytes[2]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "third_companion"
+offset = 86
+type = "bytes[11]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "closing_self_reference"
+offset = 97
+type = "bytes[11]"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
+
+[[record.field]]
+name = "zero_tail"
+offset = 108
+type = "u8"
+source = "spec"
+anchor = "A Thread-bound Hole scope has a 109-byte reciprocal tail."
