@@ -698,10 +698,12 @@ fn decode_extracts_pmi_semantic_dimension() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
+    let payload = pmi_semantic_payload();
+    let source_position = parse_payload(&payload, &mut Vec::new())[0].offset.expect("source offset");
     source.extend(make_block(
         0x49,
         "Contents/PMISemanticDataDB",
-        &pmi_semantic_payload(),
+        &payload,
     ));
 
     let decoded = SldprtCodec
@@ -723,7 +725,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(dimension.reference_only);
     assert_eq!(
         decoded.source_fidelity().annotations.provenance[&dimension.id].offset,
-        dimension.offset.expect("source offset")
+        source_position
     );
     let parameter = decoded
         .ir()
