@@ -429,7 +429,8 @@ fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
     assert_eq!(layout.registry_flag_offset(), 153);
     assert_eq!(layout.display_name_offset(), 161);
     assert_eq!(layout.components_root_record_offset(), 174);
-    for padding in [0, 9, u64::MAX] {
+    assert!(ActRootLayout::new(0, "0_3".into(), String::new(), 0).is_ok());
+    for padding in [9, u64::MAX] {
         assert!(ActRootLayout::new(0, "0_3".into(), String::new(), padding).is_err());
     }
     assert!(ActRootLayout::new(u64::MAX - 63, "0_3".into(), String::new(), 1).is_ok());
