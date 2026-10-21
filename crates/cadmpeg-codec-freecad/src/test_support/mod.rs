@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared synthetic `FCStd` archive fixtures for crate tests.
 
+pub(crate) mod source_fidelity;
 pub(crate) mod test_archive;
 
 pub(crate) fn assert_retained_refusal_at<T>(
