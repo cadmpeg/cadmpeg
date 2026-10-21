@@ -1744,6 +1744,9 @@ impl F3dNative {
         for relation in &self.sketch_relations {
             relation.retain_source(&mut fidelity)?;
         }
+        for point in &self.sketch_points {
+            point.retain_source(&mut fidelity);
+        }
         for header in &self.design_entity_headers {
             header.retain_source(&mut fidelity);
         }

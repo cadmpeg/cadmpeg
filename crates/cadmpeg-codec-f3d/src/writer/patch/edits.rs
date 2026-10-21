@@ -2422,6 +2422,8 @@ pub(super) fn validate_sketch_point_edits(
     for point in target {
         let before = by_id[point.id.as_str()];
         let mut normalized = point.clone();
+        normalized.byte_offset = before.byte_offset;
+        normalized.coordinate_offset = before.coordinate_offset;
         normalized
             .try_set_coordinates(before.coordinates())
             .map_err(CodecError::Malformed)?;
@@ -2443,8 +2445,13 @@ pub(super) fn validate_sketch_point_edits(
                 CodecError::malformed(format_args!("invalid sketch-point id {}", point.id))
             })?;
         edits.entry(stream).or_default().push(SketchPointEdit {
-            offset: point.byte_offset,
-            coordinate_offset: point.coordinate_offset,
+            offset: source_position(before.byte_offset, &point.id, "sketch point byte offset")?,
+            coordinate_offset: before.coordinate_offset.ok_or_else(|| {
+                CodecError::UnsupportedContent(format!(
+                    "F3D patch requires an actual source sketch point coordinate offset for {}",
+                    point.id
+                ))
+            })?,
             coordinates: point.coordinates(),
         });
     }

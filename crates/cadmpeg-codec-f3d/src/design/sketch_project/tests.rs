@@ -1056,7 +1056,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut coincident_point = point.clone();
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
-    coincident_point.byte_offset = 107;
+    coincident_point.byte_offset = Some(107);
     let mut form = coincident_point.record_form().clone().into_raw();
     let crate::records::sketch_geometry::SketchPointRecordForm::Version11 { persistent_id, .. } =
         &mut form

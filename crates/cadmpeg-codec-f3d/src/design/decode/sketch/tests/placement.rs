@@ -266,7 +266,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     let mut identityless_point = point.clone();
     identityless_point.id = "f3d:native:sketch-point#1".into();
     identityless_point.record_index = 21;
-    identityless_point.coordinate_offset = 33;
+    identityless_point.coordinate_offset = Some(33);
     identityless_point
         .try_set_record_form(
             crate::records::sketch_geometry::SketchPointRecordForm::Version0 { flag: false },
