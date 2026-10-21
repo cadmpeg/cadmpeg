@@ -97,7 +97,11 @@ pub(crate) fn assert_marker_framing_omission(
             )
         })
         .collect::<Vec<_>>();
-    assert_eq!(names(output), expected_names);
+    assert_eq!(
+        names(output),
+        expected_names,
+        "source={source:#?}; output={output:#?}; report={report:#?}"
+    );
     for lane in &output.feature_input_lanes {
         assert!(lane.sketch_entities.is_empty());
         assert!(lane.references.is_empty());

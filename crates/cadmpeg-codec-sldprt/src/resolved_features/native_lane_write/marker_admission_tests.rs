@@ -35,7 +35,13 @@ fn source() -> SldprtNative {
         1,
     )
     .unwrap();
-    for (index, id, coordinates) in [(0u32, 1u32, [0.001, 0.002]), (2, 2, [0.003, 0.004])] {
+    // D6 operands address compatible point ordinals, not object indexes.
+    // Keep original operands [0, 2] and provide the actual middle point.
+    for (index, id, coordinates) in [
+        (0u32, 1u32, [0.001, 0.002]),
+        (1, 2, [0.002, 0.003]),
+        (2, 3, [0.003, 0.004]),
+    ] {
         payload.extend_from_slice(&index.to_le_bytes());
         crate::resolved_features::write_generate::append_coordinate_marker(
             &mut payload,
@@ -69,12 +75,20 @@ fn source() -> SldprtNative {
         payload,
     )
     .unwrap();
-    assert_eq!(lane.sketch_entities.len(), 2);
+    assert_eq!(lane.sketch_entities.len(), 3);
     assert_eq!(lane.scalars.len(), 1);
     assert!(lane.scalars[0]
         .operands
         .iter()
         .all(|operand| operand.entity_ref.is_some()));
+    assert_eq!(
+        lane.scalars[0].operands[0].entity_ref.as_deref(),
+        Some(lane.sketch_entities[0].id())
+    );
+    assert_eq!(
+        lane.scalars[0].operands[1].entity_ref.as_deref(),
+        Some(lane.sketch_entities[2].id())
+    );
     SldprtNative {
         feature_histories: vec![history],
         feature_input_lanes: vec![lane],
@@ -113,7 +127,7 @@ fn linked_native_scalar_requires_reconstructible_markers_but_keeps_independent_n
     let [lane] = target.feature_input_lanes.as_slice() else {
         panic!("one valid lane");
     };
-    assert_eq!(lane.sketch_entities.len(), 2);
+    assert_eq!(lane.sketch_entities.len(), 3);
     assert_eq!(lane.scalars[0].value.get(), 0.025);
     assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
     assert!(lane.scalars[0]
@@ -133,7 +147,7 @@ fn linked_native_scalar_requires_reconstructible_markers_but_keeps_independent_n
         if unresolved {
             rejected.feature_input_lanes[0].scalars[0].operands[1].entity_ref = None;
         } else {
-            rejected.feature_input_lanes[0].sketch_entities[1]
+            rejected.feature_input_lanes[0].sketch_entities[2]
                 .reclassify(SketchInputKind::from_native_code(9));
         }
         let (target, losses, dispositions) = regenerate_control(&rejected);
