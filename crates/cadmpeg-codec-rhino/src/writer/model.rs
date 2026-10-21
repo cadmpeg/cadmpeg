@@ -533,7 +533,7 @@ impl<'a> WritableModel<'a> {
             };
             let start = resolve(&vertex_positions, edge.start.as_str())?;
             let end = resolve(&vertex_positions, edge.end.as_str())?;
-            let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
+            let tolerance = stated_write_tolerance(edge.tolerance, ir);
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
             {
@@ -721,11 +721,7 @@ impl<'a> WritableModel<'a> {
                                     origin,
                                     u_axis,
                                     normal.cross(u_axis),
-                                    stated_write_tolerance(
-                                        face.source.tolerance,
-                                        ir,
-                                        face.source.id.as_str(),
-                                    )?,
+                                    stated_write_tolerance(face.source.tolerance, ir),
                                     &edges[edge],
                                     coedge.sense,
                                     &pcurve,
@@ -741,11 +737,7 @@ impl<'a> WritableModel<'a> {
                                 coedge.id.as_str(),
                             ))
                         })?;
-                        let face_tolerance = stated_write_tolerance(
-                            face.source.tolerance,
-                            ir,
-                            face.source.id.as_str(),
-                        )?;
+                        let face_tolerance = stated_write_tolerance(face.source.tolerance, ir);
                         validate_nurbs_trim(
                             surface,
                             face_tolerance,
@@ -854,8 +846,7 @@ impl<'a> WritableModel<'a> {
                     normal,
                     u_axis,
                 } => {
-                    let tolerance =
-                        stated_write_tolerance(face.source.tolerance, ir, face.source.id.as_str())?;
+                    let tolerance = stated_write_tolerance(face.source.tolerance, ir);
                     let mut boundary = Vec::new();
                     for position in &loop_.coedges {
                         let coedge = &result.coedges[*position];

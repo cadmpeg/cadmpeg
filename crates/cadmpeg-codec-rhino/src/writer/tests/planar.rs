@@ -382,21 +382,18 @@ fn open_planar_solid_is_rejected_before_output() {
     assert_eq!(output, [0xaa]);
 }
 
-/// A stated tolerance finer than the Rhino Brep write route resolves.
-const EPS_BELOW_WRITE_BOUND: f64 = 1.0e-12;
-
-/// Decimal rendering of `EPS_BELOW_WRITE_BOUND` in a refusal message.
-const EPS_BELOW_WRITE_BOUND_TEXT: &str = "0.000000000001";
+/// A fine positive stated tolerance with exact planar source geometry.
+const EPS_FINE_STATED_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
-fn sub_resolution_edge_tolerance_omits_sheet_face_without_widening() {
+fn fine_edge_tolerance_writes_exact_sheet_face_without_widening() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.model.edges[0].tolerance = Some(
-        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+        cadmpeg_ir::scalar::PositiveReal::new(EPS_FINE_STATED_TOLERANCE)
             .expect("positive finite tolerance"),
     );
     let mut output = Vec::new();
@@ -406,31 +403,43 @@ fn sub_resolution_edge_tolerance_omits_sheet_face_without_widening() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect("unrepresentable tolerance omits only its sheet face");
-    let loss = report
-        .losses
-        .iter()
-        .find(|loss| loss.code == crate::loss::RhinoLossCode::WriterEntityOmitted.kind())
-        .expect("sheet-face omission is reported");
-    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
-    let message = &loss.message;
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("edge#polygon.0"), "{message}");
+        .expect("exact sheet geometry satisfies its fine stated tolerance");
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::RhinoLossCode::WriterEntityOmitted.kind()),
+        "{:#?}",
+        report.losses
+    );
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
-        .expect("empty archive is valid");
-    assert!(decoded.ir().model.bodies.is_empty());
+        .expect("written exact sheet is valid");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    for point in &ir.model.points {
+        let expected = point.position().get();
+        assert!(
+            decoded.ir().model.points.iter().any(|point| {
+                let actual = point.position().get();
+                (actual.x - expected.x).abs() <= EPS_FINE_STATED_TOLERANCE
+                    && (actual.y - expected.y).abs() <= EPS_FINE_STATED_TOLERANCE
+                    && (actual.z - expected.z).abs() <= EPS_FINE_STATED_TOLERANCE
+            }),
+            "exact source point must survive within its stated tolerance"
+        );
+    }
 }
 
 #[test]
-fn sub_resolution_face_tolerance_omits_sheet_face_without_widening() {
+fn fine_face_tolerance_writes_exact_sheet_face_without_widening() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.model.faces[0].tolerance = Some(
-        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+        cadmpeg_ir::scalar::PositiveReal::new(EPS_FINE_STATED_TOLERANCE)
             .expect("positive finite tolerance"),
     );
     let mut output = Vec::new();
@@ -440,20 +449,32 @@ fn sub_resolution_face_tolerance_omits_sheet_face_without_widening() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect("unrepresentable tolerance omits only its sheet face");
-    let loss = report
-        .losses
-        .iter()
-        .find(|loss| loss.code == crate::loss::RhinoLossCode::WriterEntityOmitted.kind())
-        .expect("sheet-face omission is reported");
-    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
-    let message = &loss.message;
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("face#polygon"), "{message}");
+        .expect("exact sheet geometry satisfies its fine stated tolerance");
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::RhinoLossCode::WriterEntityOmitted.kind()),
+        "{:#?}",
+        report.losses
+    );
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
-        .expect("empty archive is valid");
-    assert!(decoded.ir().model.bodies.is_empty());
+        .expect("written exact sheet is valid");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    for point in &ir.model.points {
+        let expected = point.position().get();
+        assert!(
+            decoded.ir().model.points.iter().any(|point| {
+                let actual = point.position().get();
+                (actual.x - expected.x).abs() <= EPS_FINE_STATED_TOLERANCE
+                    && (actual.y - expected.y).abs() <= EPS_FINE_STATED_TOLERANCE
+                    && (actual.z - expected.z).abs() <= EPS_FINE_STATED_TOLERANCE
+            }),
+            "exact source point must survive within its stated tolerance"
+        );
+    }
 }
 
 #[test]

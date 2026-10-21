@@ -34,28 +34,10 @@ use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
-/// Returns the IR-stated linear tolerance that governs `owner`.
-///
-/// An absent per-entity tolerance defers to the document linear tolerance.
-/// Rhino Brep write routes compare evaluated geometry against this tolerance.
-/// A stated tolerance below `EPS_WRITE_DEGENERATE` is finer than the write
-/// route resolves, so the route refuses the document instead of widening the
-/// stated value.
-fn stated_write_tolerance(
-    stated: Option<cadmpeg_ir::scalar::PositiveReal>,
-    ir: &CadIr,
-    owner: &str,
-) -> Result<f64, CodecError> {
-    let (field, value) = stated.map_or_else(
-        || ("document linear tolerance", ir.tolerances.linear.get()),
-        |tolerance| ("tolerance", tolerance.get()),
-    );
-    if value >= EPS_WRITE_DEGENERATE {
-        return Ok(value);
-    }
-    Err(CodecError::UnsupportedContent(format!(
-        "{field} {value} of {owner} is finer than the Rhino Brep write bound {EPS_WRITE_DEGENERATE}"
-    )))
+/// Return the exact IR-stated linear tolerance; no implementation floor applies.
+/// An absent entity tolerance uses the document's stated linear tolerance.
+fn stated_write_tolerance(stated: Option<cadmpeg_ir::scalar::PositiveReal>, ir: &CadIr) -> f64 {
+    stated.map_or(ir.tolerances.linear.get(), |tolerance| tolerance.get())
 }
 
 trait WriteSeek: Write + Seek {}
