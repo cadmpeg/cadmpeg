@@ -388,7 +388,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
                 radius: actual_radius,
             },
             ..
-        }] if actual_radius.get() == 2.0)
+        }] if decoded.ir().dimension_value(&actual_radius).unwrap().get() == 2.0)
     ));
     assert_eq!(
         decoded.ir().model.features[2].dependencies.as_slice(),
@@ -411,7 +411,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
                 distance: actual_distance,
             },
             ..
-        }] if actual_distance.get() == 3.0)
+        }] if decoded.ir().dimension_value(&actual_distance).unwrap().get() == 3.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -420,7 +420,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
-            }, Some(actual_diameter),) if actual_diameter.get() == 4.0)));
+            }, Some(actual_diameter),) if decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 4.0)));
 
     {
         let mut ir = decoded.ir_mut();
@@ -600,7 +600,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
+        decoded.ir().model.configurations[0].feature_states[&feature_id].definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
             if matches!(
                 (operands.target(), operands.tools()),
@@ -610,7 +610,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             )
     ));
     assert!(matches!(
-        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
+        decoded.ir().model.configurations[1].feature_states[&feature_id].definition().expect("structural override"), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
@@ -649,12 +649,12 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(1));
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
+        decoded.ir().model.configurations[0].feature_states[&feature_id].definition().expect("structural override"), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
     assert!(matches!(
-        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
+        decoded.ir().model.configurations[1].feature_states[&feature_id].definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
             if matches!(
                 (operands.target(), operands.tools()),
@@ -687,7 +687,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
             op: BooleanOp::Cut,
         }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle },
-                }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
+                }) if (decoded.ir().dimension_value(&angle).unwrap().get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
 }
 
@@ -727,7 +727,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
             },))));
     let feature_id = &decoded.ir().model.features[0].id;
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
+        decoded.ir().model.configurations[0].feature_states[feature_id].definition().expect("structural override"), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
         }) if matches!((shape.mode(),), (SweepMode::Solid {
@@ -810,7 +810,7 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
     ));
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
+        decoded.ir().model.configurations[0].feature_states[&feature_id].definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
             path: Some(PathRef::Native(path)),
             ..
@@ -1201,7 +1201,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(parameter.expression, "25mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -1305,7 +1305,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(parameter.expression, "25mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(

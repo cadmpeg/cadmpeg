@@ -2,6 +2,8 @@
 //! Split-face, body-modifier, and operation-identity projection tests.
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::dimensions::source_value;
+
 use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
@@ -214,13 +216,13 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
         features: vec![principal, offset],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
-        }) if (reference == &projected[0].id) && actual_distance.get() == 6.0
+        }) if (reference == &projected[0].id) && source_value(&actual_distance, &history.features).get() == 6.0
     ));
     assert_eq!(
         projected[1].dependencies.as_slice(),
@@ -387,7 +389,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         FeatureDefinition::Operation(FeatureOperation::Dome {
             height: Some(actual_height),
             ..
-        }) if actual_height.get() == 2.0
+        }) if source_value(&actual_height, &history.features).get() == 2.0
     ));
     assert!(matches!(
         projected[1].evaluation.definition(),
@@ -397,7 +399,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
                 ..
             },
             ..
-        }) if actual_thickness.get() == 1.0
+        }) if source_value(&actual_thickness, &history.features).get() == 1.0
     ));
     assert!(matches!(
         projected[2].evaluation.definition(),
@@ -476,7 +478,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             angle: Some(value),
             outward: None,
             ..
-        }) if (value.get() - std::f64::consts::PI / 60.0).abs() < 1.0e-12
+        }) if (source_value(&value, &history.features).get() - std::f64::consts::PI / 60.0).abs() < 1.0e-12
     ));
 }
 

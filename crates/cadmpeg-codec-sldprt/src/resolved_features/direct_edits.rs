@@ -500,28 +500,33 @@ mod tests {
             classes,
             names: vec![
                 FeatureInputName {
+                    sequence: 8,
+                    feature_ref: None,
                     id: "name".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: 8,
+                    offset: Some(8),
                     value: "Move Face".into(),
                     object_id: ObjectId::from_value(7),
                 },
                 FeatureInputName {
+                    sequence: 100,
+                    feature_ref: None,
                     id: "d1-name".into(),
                     parent: "lane".into(),
                     ordinal: 1,
-                    offset: 100,
+                    offset: Some(100),
                     value: "D1".into(),
                     object_id: None,
                 },
             ],
             scalars: vec![FeatureInputScalar {
+                sequence: 128,
                 id: "d1-scalar".into(),
                 parent: "lane".into(),
                 feature_ref: Some("move-face".into()),
                 ordinal: 0,
-                offset: 128,
+                offset: Some(128),
                 object_id: 8,
                 name: "d1-name".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
@@ -556,7 +561,7 @@ mod tests {
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
                 faces: FaceSelection::Unresolved,
                 motion: FaceMotion::Translate { direction, distance },
-            }) if *direction == Vector3::new(0.0, -1.0, 0.0) && *distance == Length::new(5.0).unwrap()
+            }) if *direction == Vector3::new(0.0, -1.0, 0.0) && *distance == cadmpeg_ir::Dimension::Literal(Length::new(5.0).unwrap())
         ));
 
         for lane in [

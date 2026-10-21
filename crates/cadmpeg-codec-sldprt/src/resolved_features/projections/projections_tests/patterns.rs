@@ -86,10 +86,11 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: vec![FeatureInputSurfaceSelection {
+            sequence: 0,
             id: "seed".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             selector: 0,
             kind: FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "name".into(),

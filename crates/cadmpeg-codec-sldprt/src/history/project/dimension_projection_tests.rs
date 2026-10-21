@@ -2,6 +2,8 @@
 //! Dimension and cosmetic thread feature projection tests.
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::dimensions::source_value;
+
 use crate::history::parameters::format_native_scalar;
 use crate::history::project::modify::project_chamfer;
 use crate::history::project::project_features;
@@ -186,7 +188,7 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
         features: vec![hole, profile],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -200,9 +202,9 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
                 },
                 ..
             }, Some(actual_diameter),)
-                if ((drill_point_angle.get() - 118.0_f64.to_radians()).abs() < 1.0e-12)
-                    && actual_diameter.get() == 4.2
-                    && actual_length.get() == 10.0)));
+                if ((source_value(&drill_point_angle, &history.features).get() - 118.0_f64.to_radians()).abs() < 1.0e-12)
+                    && source_value(&actual_diameter, &history.features).get() == 4.2
+                    && source_value(&actual_length, &history.features).get() == 10.0)));
 }
 
 #[test]
@@ -247,7 +249,7 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
         features: vec![revolve],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -255,7 +257,7 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
             op: BooleanOp::Cut,
         }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value }
-                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_PROJECTED_REVOLUTION_ANGLE)
+                }) if (source_value(&value, &history.features).get() - std::f64::consts::TAU).abs() < EPS_PROJECTED_REVOLUTION_ANGLE)
     ));
 }
 
@@ -304,7 +306,7 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
         features: vec![revolve],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -312,7 +314,7 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
             ..
         }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value }
-                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_BOUND_REVOLUTION_ANGLE)
+                }) if (source_value(&value, &history.features).get() - std::f64::consts::TAU).abs() < EPS_BOUND_REVOLUTION_ANGLE)
     ));
 }
 
@@ -343,7 +345,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         features: vec![chamfer],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
@@ -355,7 +357,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
                         angle: value,
                     },
                     ..
-                }] if ((value.get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && actual_distance.get() == 1.5
+                }] if ((source_value(&value, &history.features).get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && source_value(&actual_distance, &history.features).get() == 1.5
             )
     ));
 
@@ -378,7 +380,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
                         distance: actual_distance,
                     },
                     ..
-                }] if actual_distance.get() == 2.0
+                }] if source_value(&actual_distance, std::slice::from_ref(&distance)).get() == 2.0
             )
     ));
 
@@ -400,7 +402,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
                         second: actual_second,
                     },
                     ..
-                }] if actual_first.get() == 2.0 && actual_second.get() == 3.0
+                }] if source_value(&actual_first, std::slice::from_ref(&distance)).get() == 2.0 && source_value(&actual_second, std::slice::from_ref(&distance)).get() == 3.0
             )
     ));
 }
@@ -583,7 +585,8 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
         .push(crate::records::FeatureInputSurfaceSelection {
             id: "selection".into(),
             parent: lane.id.clone(),
-            ordinal: 0, sequence: 0,
+            ordinal: 0,
+            sequence: 0,
             offset: Some(0),
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,

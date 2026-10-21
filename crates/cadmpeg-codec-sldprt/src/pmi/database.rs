@@ -21,7 +21,7 @@ const OVERFLOW_HEADER: usize = 18;
 pub(super) fn encode(entries: &[(String, Vec<u8>)]) -> Result<Vec<u8>, CodecError> {
     let page_count = entries.len().checked_add(2).ok_or_else(capacity)?;
     let mut pages = (0..page_count)
-        .map(|_| vec![0u8; PAGE_SIZE])
+        .map(|_| [0u8; PAGE_SIZE].to_vec())
         .collect::<Vec<_>>();
     let header = &mut pages[0];
     header[..7].copy_from_slice(b"unqlite");
@@ -97,7 +97,7 @@ fn write_overflow(pages: &mut Vec<Vec<u8>>, key: &[u8], value: &[u8]) -> Result<
     let mut input = key.iter().chain(value).copied().peekable();
     let mut offset = OVERFLOW_HEADER;
     loop {
-        let mut page = vec![0u8; PAGE_SIZE];
+        let mut page = [0u8; PAGE_SIZE].to_vec();
         for target in &mut page[offset..] {
             let Some(byte) = input.next() else {
                 break;
@@ -124,6 +124,7 @@ fn write_overflow(pages: &mut Vec<Vec<u8>>, key: &[u8], value: &[u8]) -> Result<
 
 fn key_hash(bytes: &[u8]) -> u32 {
     bytes.iter().take(2048).fold(5381u32, |value, byte| {
+        // wrapping-exception: UnQLite defines its DJB2 hash modulo 2^32.
         value.wrapping_mul(33).wrapping_add(u32::from(*byte))
     })
 }

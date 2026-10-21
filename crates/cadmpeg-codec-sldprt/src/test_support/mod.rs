@@ -94,3 +94,5 @@ pub(crate) mod native;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
 pub(crate) mod tessellation;
+
+pub(crate) mod dimensions;

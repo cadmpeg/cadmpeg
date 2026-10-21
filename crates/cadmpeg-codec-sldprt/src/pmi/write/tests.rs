@@ -88,8 +88,8 @@ fn authored_database_round_trips_current_bound_value_names_and_overflow_text() {
         record.display_text(),
         Some("current dimension text".repeat(400).as_str())
     );
-    assert!(record.offset < u64::try_from(bytes.len()).unwrap());
-    assert!(record.value_offset < u64::try_from(bytes.len()).unwrap());
+    assert!(record.offset < Some(u64::try_from(bytes.len()).unwrap()));
+    assert!(record.value_offset < Some(u64::try_from(bytes.len()).unwrap()));
     ctx.finish_session().unwrap();
 }
 

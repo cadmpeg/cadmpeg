@@ -470,12 +470,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_helix_native_axis(
         &self,
-        axis_native_ref: &str,
+        _axis_native_ref: &str,
         _law: &cadmpeg_ir::features::HelixLaw,
-        start_angle: Angle,
-        clockwise: bool,
+        _start_angle: Angle,
+        _clockwise: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
-        let _ = (axis_native_ref, start_angle, clockwise);
         // (P/S-entity): this native axis envelope has no decoded serializer for
         // its authoring-law discriminator. Synthesis omits this operation with
         // a named loss while preserving independently exportable geometry.

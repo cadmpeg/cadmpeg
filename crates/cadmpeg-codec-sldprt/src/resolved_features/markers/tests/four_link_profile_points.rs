@@ -93,7 +93,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     let entities = sketch_input_entities(&payload, "lane");
     let first_entity = entities
         .iter()
-        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(first))
+        .find(|entity| entity.offset() == Some(cadmpeg_core::decode::u64_from_index(first)))
         .expect("first linked profile point");
     assert_eq!(first_entity.kind(), SketchInputKind::Point);
     assert_eq!(

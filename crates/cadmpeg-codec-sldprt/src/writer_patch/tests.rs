@@ -728,7 +728,7 @@ fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
         .model
         .parameters
         .iter()
-        .any(|parameter| parameter.name == "Depth" && parameter.expression == "30000mm"));
+        .any(|parameter| parameter.name == "Depth" && parameter.expression == "30000mm".into()));
 }
 
 #[test]

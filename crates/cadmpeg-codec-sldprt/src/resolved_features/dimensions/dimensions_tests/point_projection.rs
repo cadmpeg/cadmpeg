@@ -27,7 +27,8 @@ fn explicit_point_circle_input() -> (
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(42),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
@@ -39,7 +40,7 @@ fn explicit_point_circle_input() -> (
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             entity_index: 0,
@@ -51,10 +52,12 @@ fn explicit_point_circle_input() -> (
         configuration: None,
         native_payload: vec![0].into(),
         classes: vec![FeatureInputClass {
+            sequence: 10,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10,
+            offset: Some(10),
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -66,11 +69,12 @@ fn explicit_point_circle_input() -> (
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 20,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: 20,
+            offset: Some(20),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             class_ref: Some("class".into()),
             object_index: 0,

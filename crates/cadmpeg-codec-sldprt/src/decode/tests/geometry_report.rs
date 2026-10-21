@@ -326,17 +326,24 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 10,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10,
+            offset: Some(10),
             name: class_name.into(),
         }],
         names: vec![FeatureInputName {
+            sequence: u32::try_from(
+                10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()),
+            )
+            .unwrap(),
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()),
+            offset: Some(10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len())),
             object_id: ObjectId::from_value(42),
             value: "Boss".into(),
         }],
@@ -388,7 +395,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     native.feature_histories[0].features[0].name = "Profile".into();
     lane.classes[0].name = "moProfileFeature_c".into();
     lane.names[0].offset =
-        10 + 6 + cadmpeg_core::decode::u64_from_index("moProfileFeature_c".len());
+        Some(10 + 6 + cadmpeg_core::decode::u64_from_index("moProfileFeature_c".len()));
     lane.names[0].value = "Profile".into();
     native.feature_input_lanes = vec![lane.clone()];
     assert_eq!(unbound_feature_input_operation_objects(&native), 0);
@@ -397,7 +404,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     native.feature_histories[0].features[0].name = "Boss".into();
     native.feature_histories[0].features[0].input_class = Some(class_name.into());
     lane.classes[0].name = class_name.into();
-    lane.names[0].offset = 10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len());
+    lane.names[0].offset = Some(10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()));
     lane.names[0].value = "Boss".into();
     native.feature_input_lanes = vec![lane.clone()];
     native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
@@ -410,7 +417,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     native.feature_histories[0].features.push(duplicate);
     assert_eq!(unbound_feature_input_operation_objects(&native), 1);
 
-    lane.names[0].offset += 1;
+    lane.names[0].offset = lane.names[0].offset.map(|offset| offset + 1);
     native.feature_input_lanes = vec![lane];
     assert_eq!(unbound_feature_input_operation_objects(&native), 0);
 }

@@ -123,10 +123,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         configurations: Vec::new(),
         features: vec![seed_native, pattern_native, path_native, next_native],
     };
-    let name = |offset: u64, object_id: u32, value: &str| FeatureInputName { feature_ref: None,
+    let name = |offset: u64, object_id: u32, value: &str| FeatureInputName {
+        feature_ref: None,
         id: format!("name-{offset}"),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         value: value.into(),
         object_id: ObjectId::try_from(object_id).ok(),
@@ -196,18 +198,22 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     );
     let mut display_payload = vec![0; 512];
     let display_names = [
-        FeatureInputName { feature_ref: None,
+        FeatureInputName {
+            feature_ref: None,
             id: "display-d3".into(),
             parent: "lane".into(),
-            ordinal: 0, sequence: 0,
+            ordinal: 0,
+            sequence: 0,
             offset: Some(100),
             object_id: Some(ObjectId::Absent),
             value: "D3".into(),
         },
-        FeatureInputName { feature_ref: None,
+        FeatureInputName {
+            feature_ref: None,
             id: "display-d4".into(),
             parent: "lane".into(),
-            ordinal: 1, sequence: 1,
+            ordinal: 1,
+            sequence: 1,
             offset: Some(300),
             object_id: Some(ObjectId::Absent),
             value: "D4".into(),
@@ -448,10 +454,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         configuration: None,
         native_payload: native_payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(line_ref_offset)).unwrap(),
+            feature_ref: None,
             id: "line-reference".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(line_ref_offset),
+            offset: Some(cadmpeg_core::decode::u64_from_index(line_ref_offset)),
             name: "moLineRef_w".into(),
         }],
         names: vec![
@@ -771,17 +779,21 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         (cadmpeg_core::nonblank_literal!("e"), "19".into()),
     ]);
     derived_lane.classes.extend([
-        FeatureInputClass { feature_ref: None,
+        FeatureInputClass {
+            feature_ref: None,
             id: "count-dimension".into(),
             parent: "lane".into(),
-            ordinal: 1, sequence: 1,
+            ordinal: 1,
+            sequence: 1,
             offset: Some(200),
             name: "moNumberDim_c".into(),
         },
-        FeatureInputClass { feature_ref: None,
+        FeatureInputClass {
+            feature_ref: None,
             id: "spacing-dimension".into(),
             parent: "lane".into(),
-            ordinal: 2, sequence: 2,
+            ordinal: 2,
+            sequence: 2,
             offset: Some(300),
             name: "ParallelPlaneDistanceDim_c".into(),
         },
@@ -819,7 +831,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     mirror_history.features[1].input_class = Some("moMirrorSolid_c".into());
     mirror_history.features[2].input_class = Some("moDerivedCosmeticThread_c".into());
     let mut mirror_lane = lane.clone();
-    mirror_lane.names[2].offset = 150;
+    mirror_lane.names[2].offset = Some(150);
     mirror_lane.native_payload.resize(700, 0);
     mirror_lane.native_payload.fill(0);
     mirror_lane.classes.clear();
@@ -1179,7 +1191,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         FeatureInputRelationInstance {
             id: id.into(),
             parent: "lane".into(),
-            ordinal: u32::try_from(offset).expect("relation offset fits u32"), sequence: u32::try_from(offset).expect("relation offset fits u32"),
+            ordinal: u32::try_from(offset).expect("relation offset fits u32"),
+            sequence: u32::try_from(offset).expect("relation offset fits u32"),
             offset: Some(offset),
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
@@ -1372,7 +1385,8 @@ fn roster_point_line_distance_materializes_one_solver_line() {
     let relation = FeatureInputRelationInstance {
         id: "relation-point-line".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(100),
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
@@ -1385,14 +1399,14 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: 101,
+                offset: Some(101),
                 reference_ref: "point-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 0,
                 entity_ref: Some("point-0".into()),
             },
             FeatureInputOperand {
-                offset: 102,
+                offset: Some(102),
                 reference_ref: "line-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 2,
@@ -1576,7 +1590,8 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
     let relation = FeatureInputRelationInstance {
         id: "relation-point-line-ambiguous".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(100),
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
@@ -1589,14 +1604,14 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: 101,
+                offset: Some(101),
                 reference_ref: "point-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 4,
                 entity_ref: Some("point-4".into()),
             },
             FeatureInputOperand {
-                offset: 102,
+                offset: Some(102),
                 reference_ref: "line-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 1,
@@ -1738,7 +1753,8 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
             FeatureInputRelationInstance {
                 id: id.into(),
                 parent: "lane".into(),
-                ordinal: 0, sequence: 0,
+                ordinal: 0,
+                sequence: 0,
                 offset: Some(offset),
                 family,
                 class_ref: "class".into(),
@@ -1797,7 +1813,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: id.to_string(),
-        expression: format!("{distance}mm"),
+        expression: format!("{distance}mm").into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(distance).unwrap())),
         properties: BTreeMap::new(),

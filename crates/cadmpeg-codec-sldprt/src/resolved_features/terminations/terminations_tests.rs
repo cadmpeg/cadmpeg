@@ -490,18 +490,22 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 10,
+                feature_ref: None,
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
-                offset: 10,
+                offset: Some(10),
                 value: "extrusion".into(),
                 object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
+                sequence: 300,
+                feature_ref: None,
                 id: "profile-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 1,
-                offset: 300,
+                offset: Some(300),
                 value: "profile".into(),
                 object_id: ObjectId::from_value(11),
             },
@@ -537,7 +541,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
     );
     let selections = compact_surface_selections(&identity_ctx, &histories, &lane).unwrap();
     assert_eq!(selections.len(), 1);
-    assert_eq!(selections[0].offset, 220);
+    assert_eq!(selections[0].offset, Some(220));
 }
 
 #[test]
@@ -586,26 +590,32 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 10,
+                feature_ref: None,
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
-                offset: 10,
+                offset: Some(10),
                 value: "extrusion".into(),
                 object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
+                sequence: 200,
+                feature_ref: None,
                 id: "cosmetic-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 1,
-                offset: 200,
+                offset: Some(200),
                 value: "cosmetic".into(),
                 object_id: ObjectId::from_value(11),
             },
             FeatureInputName {
+                sequence: 500,
+                feature_ref: None,
                 id: "next-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 2,
-                offset: 500,
+                offset: Some(500),
                 value: "next".into(),
                 object_id: ObjectId::from_value(12),
             },
@@ -689,10 +699,12 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
             native_payload,
             classes: Vec::new(),
             names: vec![FeatureInputName {
+                sequence: 10,
+                feature_ref: None,
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
-                offset: 10,
+                offset: Some(10),
                 value: "extrusion".into(),
                 object_id: ObjectId::from_value(10),
             }],
@@ -1577,10 +1589,12 @@ fn enrich_combine_uses_outermost_body_paths() {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "combine-name".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: ObjectId::from_value(119),
             value: "Combine".into(),
         }],
@@ -1673,17 +1687,21 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![crate::records::FeatureInputClass {
+            sequence: 40,
+            feature_ref: None,
             id: "general-curve".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: 40,
+            offset: Some(40),
             name: "moGeneralCurveRef_w".into(),
         }],
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "sweep-name".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: ObjectId::from_value(119),
             value: "Sweep".into(),
         }],
@@ -1750,10 +1768,12 @@ fn combine_selection_enrichment_binds_target_and_tool_paths() {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "combine-name".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: ObjectId::from_value(119),
             value: "Combine".into(),
         }],

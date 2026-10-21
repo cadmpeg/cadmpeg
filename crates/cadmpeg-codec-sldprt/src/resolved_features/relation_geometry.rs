@@ -2458,7 +2458,7 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         let next_marker_offset = feature_markers
             .iter()
             .find(|marker| marker.offset() > radial.offset())
-            .filter_map(|marker| marker.offset());
+            .and_then(|marker| marker.offset());
         if !lane.classes.iter().any(|class| {
             class.name == class_name
                 && class.offset > radial.offset()
@@ -3254,7 +3254,7 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -3357,7 +3357,7 @@ mod relation_geometry_tests {
             expression: "7mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("terminal".into()),
@@ -3450,7 +3450,7 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -3550,11 +3550,12 @@ mod relation_geometry_tests {
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![FeatureInputScalar {
+                sequence: 30,
                 id: "scalar".into(),
                 parent: LANE.into(),
                 feature_ref: Some(FEATURE.into()),
                 ordinal: 0,
-                offset: 30,
+                offset: Some(30),
                 object_id: 0,
                 name: "distance".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
@@ -3587,7 +3588,7 @@ mod relation_geometry_tests {
             expression: "5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
@@ -3598,7 +3599,7 @@ mod relation_geometry_tests {
             .first_mut()
             .expect("synthetic relation");
         fallback_relation.id = "fallback-relation".into();
-        fallback_relation.offset = 31;
+        fallback_relation.offset = Some(31);
         fallback_relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
             vec!["fallback-scalar".into()],
             Some("fallback-scalar".into()),
@@ -3611,7 +3612,7 @@ mod relation_geometry_tests {
         let fallback_operands = fallback_relation.operands.clone();
         let fallback_scalar = fallback_lane.scalars.first_mut().expect("synthetic scalar");
         fallback_scalar.id = "fallback-scalar".into();
-        fallback_scalar.offset = 31;
+        fallback_scalar.offset = Some(31);
 
         fallback_scalar.operands = fallback_operands;
         for marker in &mut fallback_lane.sketch_entities {
@@ -3914,7 +3915,7 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -3935,7 +3936,7 @@ mod relation_geometry_tests {
             expression: "6.5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(6.5).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),

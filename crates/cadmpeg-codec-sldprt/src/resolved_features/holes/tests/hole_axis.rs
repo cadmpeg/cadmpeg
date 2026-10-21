@@ -423,7 +423,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
-        shape.diameter(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_placed_evaluation.set_definition(updated_placed_definition);
@@ -453,7 +453,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
-        shape.diameter(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_unplaced_evaluation.set_definition(updated_unplaced_definition);
@@ -766,7 +766,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
-        shape.diameter(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_drilled_evaluation.set_definition(updated_drilled_definition);
@@ -848,7 +848,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         shape.construction().clone(),
         *shape.exit_kind(),
-        edited_diameter,
+        edited_diameter.cloned(),
     )
     .unwrap();
     updated_hole_evaluation.set_definition(updated_hole_definition);
@@ -926,7 +926,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
-        shape.diameter(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_horizontal_evaluation.set_definition(updated_horizontal_definition);

@@ -293,7 +293,14 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
     else {
         panic!("dimension tolerance");
     };
-    assert!(approximately_equal(nominal.value.get(), 3.962_4));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        3.962_4
+    ));
     assert!(approximately_equal(lower_deviation.value.get(), -0.162_4));
     assert!(approximately_equal(upper_deviation.value.get(), 0.137_6));
 
@@ -313,7 +320,14 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert!(approximately_equal(nominal.value.get(), 3.962_4));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        3.962_4
+    ));
 }
 
 #[test]
@@ -787,7 +801,14 @@ fn rendered_depth_resolves_axial_nominal_planes() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert!(approximately_equal(nominal.value.get(), 7.62));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        7.62
+    ));
 }
 
 #[test]
@@ -817,7 +838,14 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert!(approximately_equal(nominal.value.get(), 14.2875));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        14.2875
+    ));
 
     root.annotations
         .entities
@@ -981,7 +1009,14 @@ fn semantic_slot_dimensions_resolve_exact_nominals() {
     else {
         panic!("dimension tolerance");
     };
-    assert!(approximately_equal(nominal.value.get(), 12.7));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        12.7
+    ));
     assert!(approximately_equal(lower_deviation.value.get(), -0.2));
     assert!(approximately_equal(upper_deviation.value.get(), 0.2));
     let length = annotations
@@ -992,7 +1027,14 @@ fn semantic_slot_dimensions_resolve_exact_nominals() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert!(approximately_equal(nominal.value.get(), 38.1));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        38.1
+    ));
 }
 
 #[test]
@@ -1056,8 +1098,21 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
             panic!("dimension definition");
         };
         let nominal = relation.nominal().expect("dimension nominal");
-        assert_eq!(nominal.quantity, quantity);
-        assert!(approximately_equal(nominal.value.get(), expected));
+        assert_eq!(
+            nominal
+                .literal()
+                .expect("unbound annotation nominal")
+                .quantity,
+            quantity
+        );
+        assert!(approximately_equal(
+            nominal
+                .literal()
+                .expect("unbound annotation nominal")
+                .value
+                .get(),
+            expected
+        ));
     }
 }
 
@@ -1114,7 +1169,14 @@ fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert!(approximately_equal(nominal.value.get(), 9.525));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        9.525
+    ));
 
     root.features
         .entities
@@ -1193,7 +1255,14 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
     else {
         panic!("dimension tolerance");
     };
-    assert!(approximately_equal(nominal.value.get(), 3.175));
+    assert!(approximately_equal(
+        nominal
+            .literal()
+            .expect("unbound annotation nominal")
+            .value
+            .get(),
+        3.175
+    ));
     assert_eq!(*upper_deviation, length(0.0).expect("finite length"));
 
     *root.features.entities.get_mut(2).expect("second member") =

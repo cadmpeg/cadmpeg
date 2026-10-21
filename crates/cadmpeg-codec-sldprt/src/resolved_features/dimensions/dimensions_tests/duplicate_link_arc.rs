@@ -93,10 +93,12 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 112,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 112,
+            offset: Some(112),
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -108,6 +110,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),

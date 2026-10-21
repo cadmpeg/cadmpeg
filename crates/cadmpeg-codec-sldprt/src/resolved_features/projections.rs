@@ -298,10 +298,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
                 for scalar in &lane.scalars {
                     let owned = match scalar.feature_ref.as_deref() {
                         Some(owner) => owner == native_feature.id,
-                        None => {
-                            start.is_some_and(|start| scalar.offset > start)
-                                && end.is_none_or(|end| scalar.offset < end)
-                        }
+                        None => scalar.offset.is_some_and(|offset| {
+                            start.is_some_and(|start| offset > start)
+                                && end.is_none_or(|end| offset < end)
+                        }),
                     };
                     if !owned {
                         continue;

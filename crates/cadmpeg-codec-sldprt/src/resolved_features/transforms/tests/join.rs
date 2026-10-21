@@ -553,7 +553,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -582,7 +583,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: id.to_string(),
-        expression: String::new(),
+        expression: String::new().into(),
         display,
         value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
         properties: BTreeMap::new(),
@@ -633,7 +634,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let circle = FeatureInputRelationInstance {
         family: FeatureInputRelationFamily::CircleDiameter,
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "circle-reference".into(),
             kind: FeatureInputOperandKind::E1,
             entity_index: 0,

@@ -380,7 +380,7 @@ fn a_reduced_operation_preserves_its_positional_parameter_quantity() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("D1 retained");
-    assert_eq!(parameter.expression, "1.25");
+    assert_eq!(parameter.expression, "1.25".into());
     assert!(matches!(parameter.value, Some(ParameterValue::Length(value)) if value.get() == 1.25));
 }
 

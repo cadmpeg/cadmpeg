@@ -1,5 +1,7 @@
 //! Tests for the `bindings` module.
 
+use crate::test_support::dimensions::source_value;
+
 use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
     bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
@@ -89,10 +91,12 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         configurations: Vec::new(),
         features: vec![extrusion, child, following, attribute],
     };
-    let name = |id: &str, offset, object_id, value: &str| FeatureInputName { feature_ref: None,
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
@@ -101,7 +105,8 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         id: id.into(),
         parent: "lane".into(),
         feature_ref: None,
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         object_id: 20,
         name: name.into(),
@@ -179,7 +184,8 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     let selection = FeatureInputSurfaceSelection {
         id: "selection".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -435,10 +441,12 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         native_payload: vec![0; 256].into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            offset: Some(100),
             object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
@@ -449,10 +457,11 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         edge_selections: Vec::new(),
         surface_selections: Vec::new(),
         generated_surface_identities: vec![FeatureInputGeneratedSurfaceIdentity {
+            sequence: 150,
             id: "identity".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 150,
+            offset: Some(150),
             type_prefix: [0xc2, 0x83, 0xfb, 0x08].into(),
             feature_source_id: 224_u32.try_into().unwrap(),
             local_identity: 2,
@@ -608,10 +617,12 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            offset: Some(100),
             object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
@@ -665,7 +676,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
                 count,
             } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
             && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
-            && angle.get() == std::f64::consts::FRAC_PI_2
+            && source_value(angle.dimension(), &history.features).get() == std::f64::consts::FRAC_PI_2
             && *count == cadmpeg_ir::Dimension::Literal(4))
     ));
 }
@@ -840,17 +851,21 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         text: None,
         content: Vec::new(),
     };
-    let class = |offset, name: &str| FeatureInputClass { feature_ref: None,
+    let class = |offset, name: &str| FeatureInputClass {
+        feature_ref: None,
         id: format!("class-{offset}"),
         parent: "sldprt:feature-input:config-objects#1".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         name: name.into(),
     };
-    let name = |index, value: &str| FeatureInputName { feature_ref: None,
+    let name = |index, value: &str| FeatureInputName {
+        feature_ref: None,
         id: format!("name-{index}"),
         parent: "sldprt:feature-input:config-objects#1".into(),
-        ordinal: index, sequence: index,
+        ordinal: index,
+        sequence: index,
         offset: Some(250 + u64::from(index)),
         object_id: None,
         value: value.into(),
@@ -859,7 +874,8 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         id: format!("scalar-{index}"),
         parent: "sldprt:feature-input:config-objects#1".into(),
         feature_ref: None,
-        ordinal: index, sequence: index,
+        ordinal: index,
+        sequence: index,
         offset: Some(300 + 20 * u64::from(index)),
         object_id: index,
         name: format!("name-{index}"),

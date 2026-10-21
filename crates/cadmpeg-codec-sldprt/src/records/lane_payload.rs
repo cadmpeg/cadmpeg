@@ -2,13 +2,14 @@
 //! Transient input-lane bytes and their document-safe evidence.
 
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Bytes exist only during source parsing or a fidelity-backed patch.
 /// Serialization carries their length and digest, never their content.
 #[derive(Debug, Clone)]
 pub(crate) struct LanePayload {
-    bytes: Vec<u8>,
+    bytes: NativeBytes,
     evidence: Evidence,
 }
 
@@ -40,7 +41,7 @@ impl LanePayload {
     }
 
     pub(crate) fn into_inner(self) -> Vec<u8> {
-        self.bytes
+        self.bytes.into_inner()
     }
 
     /// Rehydrate layout only after the sidecar's extent and digest agree.
@@ -52,7 +53,7 @@ impl LanePayload {
                 "SLDPRT retained input-lane bytes disagree with their document evidence",
             ));
         }
-        self.bytes = bytes.to_vec();
+        self.bytes = bytes.to_vec().into();
         Ok(())
     }
 }
@@ -63,7 +64,10 @@ impl From<Vec<u8>> for LanePayload {
             byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
             sha256: Sha256Digest::digest(&bytes),
         };
-        Self { bytes, evidence }
+        Self {
+            bytes: bytes.into(),
+            evidence,
+        }
     }
 }
 
@@ -102,7 +106,7 @@ impl Serialize for LanePayload {
 impl<'de> Deserialize<'de> for LanePayload {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Ok(Self {
-            bytes: Vec::new(),
+            bytes: Vec::new().into(),
             evidence: Evidence::deserialize(deserializer)?,
         })
     }

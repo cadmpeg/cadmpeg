@@ -1,5 +1,7 @@
 //! Axial hole-profile role tests.
 
+use crate::test_support::dimensions::source_value;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_test_support::edit;
 
@@ -81,7 +83,7 @@ fn axial_profile_resolves_counterbore_roles() {
             diameter: actual_diameter,
             depth: actual_depth,
             drill_point_angle: angle,
-        } if ((angle.get() - 118_f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 10.0 && actual_depth.get() == 5.7
+        } if ((source_value(&angle, std::slice::from_ref(&profile)).get() - 118_f64.to_radians()).abs() < 1.0e-12) && source_value(&actual_diameter, std::slice::from_ref(&profile)).get() == 10.0 && source_value(&actual_depth, std::slice::from_ref(&profile)).get() == 5.7
     ));
     assert_eq!(construction.bottom, None);
 
@@ -361,7 +363,7 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
         drilled.kind,
         HoleKind::SimpleDrilled {
             drill_point_angle: angle,
-        } if (angle.get() - 118_f64.to_radians()).abs() < 1.0e-12
+        } if (source_value(&angle, std::slice::from_ref(&profile)).get() - 118_f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(
         drilled.bottom,
@@ -562,7 +564,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
         HoleKind::Countersink {
             diameter: actual_diameter,
             angle,
-        } if ((angle.get() - 90_f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 5.0
+        } if ((source_value(&angle, std::slice::from_ref(&profile)).get() - 90_f64.to_radians()).abs() < 1.0e-12) && source_value(&actual_diameter, std::slice::from_ref(&profile)).get() == 5.0
     ));
     assert_eq!(
         construction.bottom,
@@ -905,8 +907,14 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         Some("native-position")
     );
 
-    project_profiled_hole_constructions(&ctx, &mut features, &entities, &[history], &[lane])
-        .unwrap();
+    project_profiled_hole_constructions(
+        &ctx,
+        &mut features,
+        &entities,
+        std::slice::from_ref(&history),
+        &[lane],
+    )
+    .unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -919,7 +927,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
                     depth: actual_depth,
                 },
                 ..
-            },) if actual_diameter.get() == 9.0 && actual_diameter_2.get() == 15.0 && actual_depth.get() == 8.6)));
+            },) if source_value(&actual_diameter, &history.features).get() == 9.0 && source_value(&actual_diameter_2, &history.features).get() == 15.0 && source_value(&actual_depth, &history.features).get() == 8.6)));
 }
 
 #[test]
@@ -1035,7 +1043,14 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     ]
     .concat();
 
-    project_profiled_hole_constructions(&ctx, &mut features, &entities, &[history], &[]).unwrap();
+    project_profiled_hole_constructions(
+        &ctx,
+        &mut features,
+        &entities,
+        std::slice::from_ref(&history),
+        &[],
+    )
+    .unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -1044,7 +1059,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
                 length: actual_length
             }),
             ..
-        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 4.2 && actual_length.get() == 6.8)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if source_value(&actual_diameter, &history.features).get() == 4.2 && source_value(&actual_length, &history.features).get() == 6.8)));
     assert!(matches!(
         features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -1052,5 +1067,5 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
                 length: actual_length
             }),
             ..
-        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.0 && actual_length.get() == 14.0)));
+        }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if source_value(&actual_diameter, &history.features).get() == 6.0 && source_value(&actual_length, &history.features).get() == 14.0)));
 }

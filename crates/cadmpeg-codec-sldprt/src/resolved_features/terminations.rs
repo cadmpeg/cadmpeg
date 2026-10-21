@@ -277,8 +277,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 .scalars
                                 .iter()
                                 .filter(|scalar| {
-                                    scalar.offset > u64_from_index(offset)
-                                        && scalar.offset < u64_from_index(end)
+                                    scalar.offset.is_some_and(|position| {
+                                        position > u64_from_index(offset)
+                                            && position < u64_from_index(end)
+                                    })
                                 })
                                 .filter_map(|scalar| {
                                     let name = names_by_id.get(scalar.name.as_str())?;

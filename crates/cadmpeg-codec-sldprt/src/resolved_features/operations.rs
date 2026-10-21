@@ -519,8 +519,8 @@ pub(crate) fn enrich_history_split_lines(
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in histories.iter().flat_map(|history| &history.features) {
-            if let Some(name) = names.of(feature) {
-                objects.push((name.offset, feature));
+            if let Some(offset) = names.of(feature).and_then(|name| name.offset) {
+                objects.push((offset, feature));
             }
         }
         objects.sort_unstable_by_key(|(left, _)| *left);

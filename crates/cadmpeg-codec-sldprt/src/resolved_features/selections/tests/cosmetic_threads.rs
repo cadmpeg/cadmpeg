@@ -301,7 +301,8 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         id: "diameter".into(),
         parent: "lane".into(),
         feature_ref: Some("other-feature".into()),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(150),
         object_id: 52,
         name: "diameter-name".into(),
@@ -316,18 +317,22 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 120,
+                feature_ref: None,
                 id: "diameter-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 120,
+                offset: Some(120),
                 object_id: Some(ObjectId::Absent),
                 value: "D2".into(),
             },
             FeatureInputName {
+                sequence: 400,
+                feature_ref: None,
                 id: "next-feature".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 400,
+                offset: Some(400),
                 object_id: ObjectId::from_value(54),
                 value: "Next".into(),
             },
@@ -350,11 +355,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
     for i in 0..1024 {
         let mut scalar = lane.scalars[0].clone();
         scalar.object_id = 1000 + i;
-        scalar.offset = 0;
+        scalar.offset = Some(0);
         unrelated.scalars.push(scalar);
         let mut name = lane.names[0].clone();
         name.id = format!("unrelated#{i}");
-        name.offset = 0;
+        name.offset = Some(0);
         unrelated.names.push(name);
     }
     assert_eq!(
@@ -382,7 +387,8 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         id: "next-scalar".into(),
         parent: "lane".into(),
         feature_ref: None,
-        ordinal: 1, sequence: 1,
+        ordinal: 1,
+        sequence: 1,
         offset: Some(200),
         object_id: 54,
         name: "next-feature".into(),
@@ -443,10 +449,12 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            feature_ref: None,
             id: "component-edge".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -533,17 +541,25 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
         native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
+                sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(
+                    component_edge_offset,
+                ))
+                .unwrap(),
+                feature_ref: None,
                 id: "component-edge".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: cadmpeg_core::decode::u64_from_index(component_edge_offset),
+                offset: Some(cadmpeg_core::decode::u64_from_index(component_edge_offset)),
                 name: component_edge_name.into(),
             },
             FeatureInputClass {
+                sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(edge_ref_offset))
+                    .unwrap(),
+                feature_ref: None,
                 id: "edge-ref".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: cadmpeg_core::decode::u64_from_index(edge_ref_offset),
+                offset: Some(cadmpeg_core::decode::u64_from_index(edge_ref_offset)),
                 name: edge_ref_name.into(),
             },
         ],

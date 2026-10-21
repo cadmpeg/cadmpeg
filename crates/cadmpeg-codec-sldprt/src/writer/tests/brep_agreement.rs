@@ -303,8 +303,8 @@ fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResul
         .iter()
         .map(|parameter| (&parameter.name, &parameter.expression))
         .collect::<Vec<_>>();
-    expected.sort();
-    actual.sort();
+    expected.sort_by_key(|(name, _)| *name);
+    actual.sort_by_key(|(name, _)| *name);
     assert_eq!(
         actual, expected,
         "neutral parameters decide the written history"

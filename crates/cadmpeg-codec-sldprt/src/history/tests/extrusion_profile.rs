@@ -40,7 +40,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }) if actual_length.get() == 12.7
+        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 12.7
     ));
 }
 
@@ -168,7 +168,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         decoded.ir().model.configurations[0]
             .feature_states
             .get(&feature_id)
-            .map(|state| &state.definition),
+            .and_then(|state| state.definition()),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -183,7 +183,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         decoded.ir().model.configurations[1]
             .feature_states
             .get(&feature_id)
-            .map(|state| &state.definition),
+            .and_then(|state| state.definition()),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -334,14 +334,14 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     let state_a = &decoded.ir().model.configurations[0].feature_states[&extrusion_id];
     let state_b = &decoded.ir().model.configurations[1].feature_states[&extrusion_id];
     assert!(matches!(
-        &state_a.definition,
+        state_a.definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
         }) if profile == &profile_a.id
     ));
     assert!(matches!(
-        &state_b.definition,
+        state_b.definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
@@ -490,7 +490,7 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
             },
             op: BooleanOp::NewBody,
             ..
-        }) if actual_length.get() == 6.0
+        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 6.0
     ));
 }
 
