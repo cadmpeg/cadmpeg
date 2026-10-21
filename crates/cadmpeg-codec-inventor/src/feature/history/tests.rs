@@ -189,6 +189,8 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
             label(107, 21, "Definition1", EXTRUSION, &[]),
         ],
         entity_style_links: Vec::new(),
+        kernel_entity_links: Vec::new(),
+        work_planes: Vec::new(),
         issues: Vec::new(),
     };
     (inventory, vec![sketch(7), sketch(10)])

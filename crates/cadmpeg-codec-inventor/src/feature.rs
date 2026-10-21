@@ -102,6 +102,22 @@ const MIRROR_FEATURE_TYPE: [u8; 16] = [
 const PROFILE_SELECTION_TYPE: [u8; 16] = [
     0x3b, 0x24, 0x77, 0xa4, 0xd1, 0x11, 0x8f, 0x96, 0x00, 0x08, 0x26, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
+const KERNEL_ENTITY_LINK_TYPE: [u8; 16] = [
+    0x21, 0x75, 0x0f, 0xcc, 0xd1, 0x11, 0x27, 0x80, 0xe3, 0x86, 0x19, 0x96, 0x22, 0x59, 0x01, 0x7a,
+];
+const WORK_PLANE_TYPE: [u8; 16] = [
+    0x42, 0xdf, 0x52, 0xce, 0xd0, 0x11, 0xd0, 0xd2, 0x00, 0x08, 0xcc, 0xbc, 0x06, 0x63, 0xdc, 0x09,
+];
+const TERMINATION_FLAG_TYPE: [u8; 16] = [
+    0xfd, 0x24, 0x89, 0x3d, 0xd2, 0x11, 0xfa, 0x99, 0x00, 0x08, 0x40, 0xab, 0x06, 0x63, 0xdc, 0x09,
+];
+const SURFACE_TYPE: [u8; 16] = [
+    0xf0, 0x80, 0x12, 0x15, 0xd4, 0x11, 0x9e, 0x8e, 0xef, 0x90, 0xa8, 0xac, 0x7f, 0x9a, 0xc3, 0xff,
+];
+/// Surface-form value of a plane in a surface record.
+const PLANE_SURFACE_FORM: u32 = 25;
+/// Work-plane value that precedes the explicit plane frame in its extended form.
+const WORK_PLANE_FRAME_MARKER: u32 = 0x203;
 const FEATURE_LABEL_TYPE: [u8; 16] = [
     0x2b, 0xa4, 0x48, 0x2b, 0xd2, 0x11, 0x58, 0x64, 0x60, 0x00, 0x74, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
 ];
@@ -114,6 +130,8 @@ pub(crate) struct FeatureInventory {
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
+    pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
+    pub(crate) work_planes: Vec<PmDcWorkPlane>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -180,6 +198,18 @@ pub(crate) enum PmDcFeaturePropertyKind {
         index_references: PmDcU32List,
         index_reference_value: i32,
         value: u32,
+    },
+    TerminationFlag {
+        value: u8,
+    },
+    PlaneSurface {
+        references: [crate::pmdc::PmDcReference; 3],
+        state: u8,
+        surface_form: u32,
+        value: u32,
+        origin: [cadmpeg_ir::scalar::FiniteReal; 3],
+        u_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
+        v_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
     },
 }
 
@@ -372,6 +402,32 @@ pub(crate) struct PmDcEntityStyleLinkPayload {
     entity_type: u32,
 }
 
+/// Link from a selection to one entity of a `PmDc` kernel body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmDcKernelEntityLinkPayload {
+    save_version_major: u8,
+    header_value: u32,
+    header_id: u16,
+    pub(crate) selection_source: u32,
+    state: u8,
+    pub(crate) body: crate::pmdc::PmDcReference,
+    entity_id: u32,
+    entity_type: u32,
+}
+
+/// A planar work feature with its resolved frame in internal centimetres.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PmDcWorkPlanePayload {
+    save_version_major: u8,
+    pub(crate) header: PmDcContentHeader,
+    entity_flags: u32,
+    values: Vec<u32>,
+    marker: bool,
+    pub(crate) origin: [cadmpeg_ir::scalar::FiniteReal; 3],
+    pub(crate) u_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
+    pub(crate) v_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcFeaturePayload {
     save_version_major: u8,
@@ -400,6 +456,8 @@ pub(crate) fn inventory(
         properties: Vec::new(),
         labels: Vec::new(),
         entity_style_links: Vec::new(),
+        kernel_entity_links: Vec::new(),
+        work_planes: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -485,6 +543,42 @@ pub(crate) fn inventory(
                             "admit Inventor PmDc entity style link record",
                         )
                     }),
+                KERNEL_ENTITY_LINK_TYPE => parse_kernel_entity_link(record.payload, version)
+                    .and_then(|link| {
+                        push_record(
+                            ctx,
+                            &mut inventory.kernel_entity_links,
+                            link,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc kernel entity link record",
+                        )
+                    }),
+                WORK_PLANE_TYPE => parse_work_plane(record.payload, version).and_then(|plane| {
+                    push_record(
+                        ctx,
+                        &mut inventory.work_planes,
+                        plane,
+                        record.type_id,
+                        segment.pair.token.key(),
+                        record.ordinal,
+                        "admit Inventor PmDc work plane record",
+                    )
+                }),
+                SURFACE_TYPE => parse_surface(record.payload, version).and_then(|surface| {
+                    surface.map_or(Ok(()), |surface| {
+                        push_record(
+                            ctx,
+                            &mut inventory.properties,
+                            surface,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc surface record",
+                        )
+                    })
+                }),
                 type_id => feature_property_parser(type_id).map_or_else(
                     || Ok(()),
                     |parser| {
@@ -633,6 +727,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         FILLET_EDGE_SET_TYPE => Some(parse_fillet_edge_set),
         EDGE_COLLECTION_TYPE => Some(parse_edge_collection),
         EDGE_ITEM_TYPE => Some(parse_edge_item),
+        TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         _ => None,
     }
 }
@@ -848,6 +943,124 @@ fn parse_profile_selection(
         header,
         PmDcFeaturePropertyKind::ProfileSelection { entity_link, value },
     ))
+}
+
+fn parse_kernel_entity_link(
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcKernelEntityLinkPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header_value = cursor.u32("kernel entity link header value")?;
+    let header_id = cursor.u16("kernel entity link header id")?;
+    let selection_source = cursor.u32("kernel entity link selection source")?;
+    let state = cursor.u8("kernel entity link state")?;
+    let body = cursor.reference("kernel entity link body reference")?;
+    let entity_id = cursor.u32("kernel entity link entity id")?;
+    let entity_type = cursor.u32("kernel entity link entity type")?;
+    cursor.finish("kernel entity link")?;
+    Ok(PmDcKernelEntityLinkPayload {
+        save_version_major: version,
+        header_value,
+        header_id,
+        selection_source,
+        state,
+        body,
+        entity_id,
+        entity_type,
+    })
+}
+
+fn f64_triple(
+    cursor: &mut Cursor<'_>,
+    field: &'static str,
+) -> Result<[cadmpeg_ir::scalar::FiniteReal; 3], CodecError> {
+    Ok([cursor.f64(field)?, cursor.f64(field)?, cursor.f64(field)?])
+}
+
+fn parse_work_plane(source: View<'_>, version: u8) -> Result<PmDcWorkPlanePayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let entity_flags = cursor.u32("work plane entity flags")?;
+    let mut values = vec![
+        cursor.u32("work plane value")?,
+        cursor.u32("work plane value")?,
+    ];
+    if version > 21 {
+        values.push(cursor.u32("work plane value")?);
+    }
+    let marker = cursor.peek_u32("work plane frame marker")? == WORK_PLANE_FRAME_MARKER;
+    if marker {
+        cursor.u32("work plane frame marker")?;
+    }
+    values.push(cursor.u32("work plane value")?);
+    let origin = f64_triple(&mut cursor, "work plane origin")?;
+    let u_axis = f64_triple(&mut cursor, "work plane u axis")?;
+    let v_axis = f64_triple(&mut cursor, "work plane v axis")?;
+    cursor.finish("work plane")?;
+    Ok(PmDcWorkPlanePayload {
+        save_version_major: version,
+        header,
+        entity_flags,
+        values,
+        marker,
+        origin,
+        u_axis,
+        v_axis,
+    })
+}
+
+fn parse_termination_flag(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let value = cursor.u8("termination flag value")?;
+    cursor.finish("termination flag")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::TerminationFlag { value },
+    ))
+}
+
+/// Parse a surface record. Only the plane form is typed; other forms are not
+/// admitted.
+fn parse_surface(
+    source: View<'_>,
+    version: u8,
+) -> Result<Option<PmDcFeaturePropertyPayload>, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let references = [
+        cursor.reference("surface reference")?,
+        cursor.reference("surface reference")?,
+        cursor.reference("surface reference")?,
+    ];
+    let state = cursor.u8("surface state")?;
+    let form = cursor.u32("surface form")?;
+    if form != PLANE_SURFACE_FORM {
+        return Ok(None);
+    }
+    let value = cursor.u32("surface value")?;
+    let origin = f64_triple(&mut cursor, "surface plane origin")?;
+    let u_axis = f64_triple(&mut cursor, "surface plane u axis")?;
+    let v_axis = f64_triple(&mut cursor, "surface plane v axis")?;
+    cursor.finish("plane surface")?;
+    Ok(Some(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::PlaneSurface {
+            references,
+            state,
+            surface_form: form,
+            value,
+            origin,
+            u_axis,
+            v_axis,
+        },
+    )))
 }
 
 fn parse_entity_style_link(
@@ -1245,6 +1458,7 @@ struct ProjectionIndex<'a> {
     directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
+    work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
 }
 
 pub(crate) fn project(
@@ -1315,6 +1529,15 @@ pub(crate) fn project(
             record,
         )
     }));
+    let unique_work_planes = unique_index(inventory.work_planes.iter().map(|record| {
+        (
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
+            record,
+        )
+    }));
     let unique_transforms = unique_index(sketch.transforms.iter().map(|record| {
         (
             (
@@ -1357,8 +1580,16 @@ pub(crate) fn project(
                 );
                 links.insert(key);
             }
+            for record in &inventory.kernel_entity_links {
+                let key = (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                );
+                links.insert(key);
+            }
             links
         },
+        work_planes: unique_work_planes,
     };
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
@@ -1775,27 +2006,43 @@ fn project_extrusion(
     if boolean(source, 3, index)? {
         direction = direction.reversed();
     }
-    let length = length_parameter(source, 4, index)?;
-    let taper =
-        cadmpeg_ir::scalar::SlopeAngle::try_from(angle_parameter(source, 5, index)?).ok()?;
-    let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
-        1 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(
-                cadmpeg_ir::scalar::PositiveLength::try_from(length).ok()?,
-            ),
-        },
-        4 => LinearTermination::ThroughNext {},
-        5 => LinearTermination::ThroughAll {},
-        _ => return None,
-    };
-    let side = ExtrudeSide {
-        termination,
-        draft: (taper.get() != 0.0).then_some(taper),
-    };
-    let extent = if boolean(source, 7, index)? {
-        ExtrudeExtent::Symmetric { side }
+    let extent_value = enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)?;
+    let symmetric = boolean(source, 7, index)?;
+    let second_extent = source
+        .properties
+        .references()
+        .get(29)
+        .is_some_and(|reference| reference.index() != 0);
+    let first = extrusion_side(source, index, ExtrusionSideSlots::FIRST, extent_value)?;
+    let start = if extent_value == EXTENT_FROM_TO {
+        ExtrudeStart::FromFace {
+            face: termination_target(source, index, 8, 10, 17)?,
+            offset: None,
+        }
     } else {
-        ExtrudeExtent::OneSided { side }
+        ExtrudeStart::ProfilePlane {}
+    };
+    let extent = match (extent_value, symmetric, second_extent) {
+        (EXTENT_SYMMETRIC_DISTANCE | EXTENT_THROUGH_ALL, true, false) => {
+            ExtrudeExtent::Symmetric { side: first }
+        }
+        (EXTENT_SYMMETRIC_DISTANCE, false, _) | (_, true, true) => return None,
+        (_, true, false) => return None,
+        (_, false, true) => {
+            let second_value = enum16(source, 29, PmDcFeatureEnumFamily::Extent, index)?;
+            if !matches!(
+                second_value,
+                EXTENT_DISTANCE | EXTENT_THROUGH_NEXT | EXTENT_THROUGH_ALL
+            ) || extent_value == EXTENT_FROM_TO
+            {
+                return None;
+            }
+            ExtrudeExtent::TwoSided {
+                first,
+                second: extrusion_side(source, index, ExtrusionSideSlots::SECOND, second_value)?,
+            }
+        }
+        (_, false, false) => ExtrudeExtent::OneSided { side: first },
     };
     let (feature_id, result) = match feature_result(ctx, source, 26, index)? {
         Ok(value) => value,
@@ -1824,7 +2071,7 @@ fn project_extrusion(
                     vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
                     source: Some(ExtrusionDirectionSource::Custom {}),
                 },
-                start: ExtrudeStart::ProfilePlane {},
+                start,
                 extent,
                 op,
                 solid: Some(true),
@@ -1837,6 +2084,102 @@ fn project_extrusion(
         native_ref: Some(source.id()),
     };
     Some(Ok((feature, result)))
+}
+
+const EXTENT_DISTANCE: u16 = 1;
+const EXTENT_SYMMETRIC_DISTANCE: u16 = 2;
+const EXTENT_THROUGH_NEXT: u16 = 4;
+const EXTENT_THROUGH_ALL: u16 = 5;
+const EXTENT_FROM_TO: u16 = 6;
+const EXTENT_TO: u16 = 7;
+
+/// Property slots of one extrusion side.
+#[derive(Clone, Copy)]
+struct ExtrusionSideSlots {
+    length: usize,
+    taper: usize,
+}
+
+impl ExtrusionSideSlots {
+    const FIRST: Self = Self {
+        length: 4,
+        taper: 5,
+    };
+    const SECOND: Self = Self {
+        length: 27,
+        taper: 28,
+    };
+}
+
+fn extrusion_side(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+    slots: ExtrusionSideSlots,
+    extent: u16,
+) -> Option<ExtrudeSide> {
+    let taper =
+        cadmpeg_ir::scalar::SlopeAngle::try_from(angle_parameter(source, slots.taper, index)?)
+            .ok()?;
+    let termination = match extent {
+        EXTENT_DISTANCE | EXTENT_SYMMETRIC_DISTANCE => LinearTermination::Blind {
+            length: cadmpeg_ir::scalar::NonZeroLength::from(
+                cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
+                    source,
+                    slots.length,
+                    index,
+                )?)
+                .ok()?,
+            ),
+        },
+        EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
+        EXTENT_THROUGH_ALL => LinearTermination::ThroughAll {},
+        EXTENT_FROM_TO | EXTENT_TO => LinearTermination::ToFace {
+            face: termination_target(source, index, 11, 13, 18)?,
+            offset: None,
+        },
+        _ => return None,
+    };
+    Some(ExtrudeSide {
+        termination,
+        draft: (taper.get() != 0.0).then_some(taper),
+    })
+}
+
+/// Resolve an extent target: a work plane, or a model face recorded as a
+/// termination flag with value 1 and its plane surface.
+fn termination_target(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+    plane_slot: usize,
+    flag_slot: usize,
+    surface_slot: usize,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let references = source.properties.references();
+    let plane = references.get(plane_slot)?.index();
+    let flag = references.get(flag_slot)?.index();
+    let surface = references.get(surface_slot)?.index();
+    let token = source.identity.segment_token.as_str();
+    if plane != 0 {
+        if flag != 0 || surface != 0 {
+            return None;
+        }
+        let plane = index
+            .work_planes
+            .get(&(token, plane.checked_sub(1)?))
+            .and_then(Option::as_ref)?;
+        return Some(cadmpeg_ir::features::FaceSelection::Native(plane.id()));
+    }
+    if !matches!(
+        resolve_property(token, flag, index)?.kind,
+        PmDcFeaturePropertyKind::TerminationFlag { value: 1 }
+    ) {
+        return None;
+    }
+    let surface = resolve_property(token, surface, index)?;
+    if !matches!(surface.kind, PmDcFeaturePropertyKind::PlaneSurface { .. }) {
+        return None;
+    }
+    Some(cadmpeg_ir::features::FaceSelection::Native(surface.id()))
 }
 
 fn project_fillet(
@@ -2391,6 +2734,18 @@ impl RecordPayload for PmDcFeaturePayload {
     const KIND: &'static str = "feature";
 }
 
+pub(crate) type PmDcKernelEntityLink = Located<PmDcKernelEntityLinkPayload>;
+
+impl RecordPayload for PmDcKernelEntityLinkPayload {
+    const KIND: &'static str = "kernel-entity-link";
+}
+
+pub(crate) type PmDcWorkPlane = Located<PmDcWorkPlanePayload>;
+
+impl RecordPayload for PmDcWorkPlanePayload {
+    const KIND: &'static str = "work-plane";
+}
+
 pub(crate) type PmDcFeatureTerminator = Located<PmDcFeatureTerminatorPayload>;
 
 impl RecordPayload for PmDcFeatureTerminatorPayload {
@@ -2408,10 +2763,11 @@ mod tests {
         PmDcEntityStyleLink, PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily,
         PmDcFeatureLabel, PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload,
         PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
-        PmDcFeatureReferenceFamily, PmDcLinkedHeader, PmDcPatternFamily, ProjectionIndex,
-        BOOLEAN_TYPE, CHAMFER_CLASS_ID, END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE,
-        EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE, FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID,
-        MIRROR_FEATURE_TYPE, RECTANGULAR_PATTERN_FEATURE_TYPE,
+        PmDcFeatureReferenceFamily, PmDcLinkedHeader, PmDcPatternFamily, PmDcWorkPlane,
+        PmDcWorkPlanePayload, ProjectionIndex, BOOLEAN_TYPE, CHAMFER_CLASS_ID,
+        END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE, EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE,
+        FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID, MIRROR_FEATURE_TYPE, PLANE_SURFACE_FORM,
+        RECTANGULAR_PATTERN_FEATURE_TYPE, WORK_PLANE_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
@@ -2442,6 +2798,8 @@ mod tests {
             properties: Vec::new(),
             labels: Vec::new(),
             entity_style_links: Vec::new(),
+            kernel_entity_links: Vec::new(),
+            work_planes: Vec::new(),
             issues: Vec::new(),
         };
         let design = crate::design::DesignInventory {
@@ -2921,6 +3279,7 @@ mod tests {
                     )
                 })
                 .collect(),
+            work_planes: std::collections::HashMap::new(),
         }
     }
 
@@ -3940,4 +4299,6 @@ mod tests {
         );
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
+
+    mod extents;
 }
