@@ -35,14 +35,12 @@ fn parse_payload(
     super::parse_payload(&ctx, payload, losses).expect("PMI test input fits service policy")
 }
 
-fn write_with_regenerated_pmi(
-    ir: &cadmpeg_ir::CadIr,
-    fidelity: &cadmpeg_ir::SourceFidelity,
-    output: &mut Vec<u8>,
-) {
+fn write_with_regenerated_pmi(ir: &cadmpeg_ir::CadIr, output: &mut Vec<u8>) {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        // This helper tests regeneration. Retained layout can legitimately patch
+        // these edits, so explicitly author the same current document without it.
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
         .expect("semantic PMI is regenerated from the document");
     assert!(matches!(
         plan.report().write_path(),
@@ -699,12 +697,10 @@ fn decode_extracts_pmi_semantic_dimension() {
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
     let payload = pmi_semantic_payload();
-    let source_position = parse_payload(&payload, &mut Vec::new())[0].offset.expect("source offset");
-    source.extend(make_block(
-        0x49,
-        "Contents/PMISemanticDataDB",
-        &payload,
-    ));
+    let source_position = parse_payload(&payload, &mut Vec::new())[0]
+        .offset
+        .expect("source offset");
+    source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
 
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -787,7 +783,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     }
 
     let mut encoded = Vec::new();
-    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
+    write_with_regenerated_pmi(decoded.ir(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -974,7 +970,7 @@ fn duplicate_pmi_records_share_one_parameter_and_report_annotation_loss() {
     }
 
     let mut encoded = Vec::new();
-    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
+    write_with_regenerated_pmi(decoded.ir(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1067,7 +1063,7 @@ fn ordinate_pmi_values_survive_reported_annotation_omission() {
     }
 
     let mut encoded = Vec::new();
-    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
+    write_with_regenerated_pmi(decoded.ir(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

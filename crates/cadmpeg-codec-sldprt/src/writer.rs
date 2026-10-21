@@ -127,18 +127,22 @@ pub(super) fn write_semantic_at(
         .transpose()?;
     let source_scan = source_context
         .as_ref()
-        .map(|(ctx, root)| crate::container::scan(ctx, *root).map_err(|error| match error {
-            // W1/P: malformed retained layout declines a patch; it cannot
-            // reject a valid current document or supply synthesis content.
-            CodecError::Malformed(reason) => CodecError::UnsupportedContent(format!(
-                "retained SLDPRT source layout cannot be patched: {reason}"
-            )),
-            other => other,
-        }))
+        .map(|(ctx, root)| {
+            crate::container::scan(ctx, *root).map_err(|error| match error {
+                // W1/P: malformed retained layout declines a patch; it cannot
+                // reject a valid current document or supply synthesis content.
+                CodecError::Malformed(reason) => CodecError::UnsupportedContent(format!(
+                    "retained SLDPRT source layout cannot be patched: {reason}"
+                )),
+                other => other,
+            })
+        })
         .transpose()?;
     if let Some(native) = native.as_mut() {
         crate::native::source::attach(native, |id| {
-            retained_records.iter().find(|record| record.id == *id)
+            retained_records
+                .iter()
+                .find(|record| record.id == *id)
                 .and_then(|record| record.data)
         })?;
     }
@@ -4356,7 +4360,7 @@ mod nurbs_write_tests {
     use cadmpeg_ir::Annotations;
 
     #[test]
-    fn unsupported_pmi_declines_the_path_from_current_content() {
+    fn unsupported_pmi_is_reported_and_omitted_from_current_content() {
         let mut ir = CadIr::empty();
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
             id: cadmpeg_ir::ids::PmiId::mint("sldprt:model:pmi#A1").expect("identity grammar"),
@@ -4370,10 +4374,10 @@ mod nurbs_write_tests {
                 identification: "A".into(),
             },
         });
-        assert!(matches!(
-            check_semantic_support(&ir, &Annotations::default()),
-            Err(CodecError::UnsupportedContent(_))
-        ));
+        // #209 S-entity: an unencodable datum is an affected entity loss,
+        // not a refusal of the remaining authored native document.
+        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert_unsupported_pmi_is_reported(&ir);
 
         let cadmpeg_ir::PmiDefinition::Datum { identification } =
             &mut ir.model.pmi.first_mut().expect("PMI annotation").definition
@@ -4381,13 +4385,44 @@ mod nurbs_write_tests {
             panic!("datum definition");
         };
         *identification = "B".into();
-        assert!(matches!(
-            check_semantic_support(&ir, &Annotations::default()),
-            Err(CodecError::UnsupportedContent(message)) if message.contains("semantic PMI")
-        ));
+        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert_unsupported_pmi_is_reported(&ir);
 
         ir.model.pmi.clear();
         assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+    }
+
+    fn assert_unsupported_pmi_is_reported(ir: &CadIr) {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::{Codec, DecodeOptions};
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .expect("S-entity writes the remaining document");
+        assert_eq!(
+            plan.report()
+                .coverage
+                .disposition(cadmpeg_ir::schema::EntityKind::PmiAnnotation),
+            cadmpeg_ir::codec::write::ArenaDisposition::Reported
+        );
+        let omitted = plan
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code.local_code() == "writer.entity-omitted"
+                    && loss.message.contains("sldprt:model:pmi#A1")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(omitted.len(), 1);
+        assert_eq!(omitted[0].severity, cadmpeg_ir::report::Severity::Error);
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes)
+            .expect("write remaining native document");
+        let output = crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("remaining authored native document reads");
+        assert!(output.ir().model.pmi.is_empty());
+        assert!(output.ir().model.bodies.is_empty());
     }
 
     #[test]
