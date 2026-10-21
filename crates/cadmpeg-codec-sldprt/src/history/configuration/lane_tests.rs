@@ -1775,3 +1775,4 @@ fn configuration_frame_alias_binds_without_body_membership() {
 }
 
 mod holes;
+mod patterns;
