@@ -1218,7 +1218,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
-    let mut history_predecessors = HashMap::new();
+    let mut history_predecessors = BTreeMap::new();
     for scope in &native.design_parameter_scopes {
         // Known history-state references can prove a cycle independently of
         // whether every scope has an authored timeline position.
