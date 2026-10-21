@@ -53,6 +53,13 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
             .get(),
         1.0
     );
+    let auxiliary = native
+        .sketch_curve_identities
+        .iter()
+        .find(|curve| curve.record_index == 800)
+        .unwrap();
+    assert!(auxiliary.owner_reference.is_none());
+    let auxiliary_id = auxiliary.id.clone();
     let plan = F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
@@ -66,6 +73,23 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "evaluation.stale"));
+    assert_eq!(
+        plan.report().native_dispositions.record_disposition(
+            "f3d",
+            "sketch_curve_identities",
+            &auxiliary_id
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&auxiliary_id)));
+    assert!(crate::test_support::native_test::f3d_native(&ir)
+        .sketch_curve_identities
+        .iter()
+        .any(|curve| curve.id == auxiliary_id && curve.owner_reference.is_none()));
     let mut output = Vec::new();
     plan.write_to(&mut output).unwrap();
     let written = F3dCodec
@@ -133,6 +157,10 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         Some(ParameterValue::Length(Length::new(15.0).unwrap()))
     );
     let native = crate::test_support::native_test::f3d_native(written.ir());
+    assert!(!native
+        .sketch_curve_identities
+        .iter()
+        .any(|curve| curve.record_index == 800));
     assert_eq!(native.design_parameters.len(), 2);
     assert!(native
         .design_parameters
