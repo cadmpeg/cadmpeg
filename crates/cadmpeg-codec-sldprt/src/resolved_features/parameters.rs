@@ -534,7 +534,7 @@ pub(crate) fn sync_feature_scalars(
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })
                     .collect::<Vec<_>>();
-                let parsed = crate::history::parameters::source_parameter_value(feature, name);
+                let parsed = crate::history::parameters::source_parameter_value(feature, name.as_str());
                 let value = match &parsed {
                     Some(ParameterValue::Length(value)) => value.get() / 1000.0,
                     Some(ParameterValue::Angle(value)) => value.get(),
