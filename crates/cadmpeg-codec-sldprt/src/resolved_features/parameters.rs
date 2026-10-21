@@ -231,9 +231,65 @@ pub(crate) fn enrich_history_parameters<'a>(
         }
         starts.sort_by_key(|left| left.0);
         let owners = ScalarOwners::new(&lane.scalars);
+        let mut pattern_values = Vec::new();
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|next| next.0);
             let feature = &histories[history_index].features[feature_index];
+            if feature.input_class.as_deref() == Some("moLPattern_c") {
+                let object_start = object_names
+                    .of(feature)
+                    .and_then(|name| name.offset)
+                    .and_then(|offset| usize::try_from(offset).ok());
+                let object_end = starts
+                    .get(index + 1)
+                    .and_then(|&(_, history, feature)| {
+                        object_names
+                            .of(&histories[history].features[feature])?
+                            .offset
+                            .and_then(|offset| usize::try_from(offset).ok())
+                    })
+                    .unwrap_or(lane.native_payload.len());
+                if let Some(dimensions) = object_start.and_then(|start| {
+                    super::axes::typed_linear_pattern_dimensions(feature, lane, start, object_end)
+                }) {
+                    for (name, default, length) in [
+                        (
+                            dimensions.spacing_name,
+                            crate::history::literals::format_length_mm(dimensions.spacing.into()),
+                            true,
+                        ),
+                        (dimensions.count_name, dimensions.count.to_string(), false),
+                    ] {
+                        let cache = feature
+                            .dimension_properties
+                            .get(name)
+                            .and_then(|properties| properties.get("Value"));
+                        let typed = match cache {
+                            None => Some(default),
+                            Some(cache) if length => {
+                                crate::history::literals::parse_positive_dimension_length_mm(cache)
+                                    .map(|value| {
+                                        crate::history::literals::format_length_mm(value.into())
+                                    })
+                            }
+                            Some(cache) => cache
+                                .trim()
+                                .parse::<u32>()
+                                .ok()
+                                .filter(|count| *count > 0)
+                                .map(|count| count.to_string()),
+                        };
+                        if let Some(typed) = typed {
+                            pattern_values.push((
+                                history_index,
+                                feature_index,
+                                name.to_owned(),
+                                typed,
+                            ));
+                        }
+                    }
+                }
+            }
             let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
             for scalar in owners
                 .owned(&feature.id, start, end)
@@ -284,6 +340,13 @@ pub(crate) fn enrich_history_parameters<'a>(
                         .push((scalar.value.get(), unit));
                 }
             }
+        }
+        for (history, feature, name, value) in pattern_values {
+            histories[history].features[feature]
+                .dimension_properties
+                .entry(name)
+                .or_default()
+                .insert(cadmpeg_core::nonblank_literal!("Value"), value);
         }
     }
 
