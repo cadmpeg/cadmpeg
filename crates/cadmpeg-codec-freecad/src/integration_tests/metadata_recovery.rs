@@ -141,7 +141,10 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
         .expect("source-only payload");
     assert_eq!(raw.len(), 1);
     assert_eq!(raw[0].name, "Thumbnail.png");
-    assert!(!raw[0].stored_data.is_empty());
+    assert!(
+        !crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &raw[0].id)
+            .is_empty()
+    );
     let admitted = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("admitted entries");
@@ -188,9 +191,18 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
             &source,
         )
         .unwrap();
-    assert!(crate::test_support::validate_native(&changed)
-        .iter()
-        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+    let findings = crate::fidelity::validation::validate(
+        &cadmpeg_test_support::service_decode_context(),
+        &changed,
+        result.source_fidelity(),
+    )
+    .expect("validate source entry ownership");
+    assert!(findings.iter().any(
+        |finding| finding.message == "invalid source-only FCStd entry"
+            && finding.check == cadmpeg_ir::report::check::Check::PayloadIntegrity
+            && finding.severity == cadmpeg_ir::report::Severity::Error
+            && finding.entity.as_deref() == Some(source[0].id.as_str())
+    ));
 }
 
 #[test]
