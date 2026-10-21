@@ -184,3 +184,36 @@ fn writer_names_the_model_product_from_options_on_both_paths() {
     let step = write_named(&ir, "Bracket model");
     assert_eq!(record_names(&step, "PRODUCT"), ["Bracket model"]);
 }
+
+#[test]
+fn writer_names_a_product_by_its_part_number() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let mut definition = unnamed_definition(
+        "test:model:product-definition#part-0",
+        vec![ir.model.bodies[0].id.clone()],
+    );
+    definition.part_number = Some("P-1001".into());
+    ir.model.product_definitions = vec![definition];
+    ir.model.occurrences = vec![unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#part-0",
+        None,
+    )];
+    let step = write_named(&ir, "Bracket model")
+        .replace("PRODUCT('P-1001','P-1001',", "PRODUCT('P-1001','',");
+    assert_eq!(record_names(&step, "PRODUCT"), [""]);
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .expect("decode product named by its part number");
+    let product = decoded
+        .ir()
+        .model
+        .product_definitions
+        .first()
+        .expect("decoded product");
+    assert_eq!(product.label, None);
+    assert_eq!(product.part_number.as_deref(), Some("P-1001"));
+    let step = write_named(decoded.ir(), "Bracket model");
+    assert_eq!(record_names(&step, "PRODUCT"), ["P-1001"]);
+}

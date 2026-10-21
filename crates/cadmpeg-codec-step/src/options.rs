@@ -24,8 +24,8 @@ pub struct StepWriteOptions {
     ///
     /// Without product definitions, the single `PRODUCT` id and name use this
     /// value. With product definitions, it names the definition of the sole
-    /// root occurrence when that definition has no label or source name. It
-    /// never names a leaf part.
+    /// root occurrence when that definition has no label, source name, or part
+    /// number. It names a part only when that part is the sole root definition.
     pub product_name: String,
     /// The sole entry in the `FILE_NAME` author list.
     pub author: String,

@@ -1384,6 +1384,7 @@ impl<'a> Builder<'a> {
                         .label
                         .as_deref()
                         .or(product.source_name.as_deref())
+                        .or(product.part_number.as_deref())
                         .or_else(|| (root_product == Some(&product.id)).then_some(self.model_name));
                     (product.id.as_str(), name)
                 })
