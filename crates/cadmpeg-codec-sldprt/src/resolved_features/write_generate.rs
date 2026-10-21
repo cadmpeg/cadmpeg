@@ -160,7 +160,7 @@ impl GeneratedValue<'_> {
                 .parameters
                 .iter()
                 .find(|parameter| parameter.id == *id)
-                .map(|parameter| parameter.name.to_string())
+                .map(|parameter| parameter.name.clone())
                 .ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(format_args!(
                         "SLDPRT sketch dimension references missing parameter {id}"

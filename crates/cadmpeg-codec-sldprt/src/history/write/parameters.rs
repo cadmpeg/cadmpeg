@@ -184,7 +184,7 @@ fn sync_neutral_parameters(
             .collect();
         let mut names = parameters
             .iter()
-            .map(|parameter| parameter.name.to_string())
+            .map(|parameter| parameter.name.clone())
             .collect::<Vec<_>>();
         names.extend(
             record

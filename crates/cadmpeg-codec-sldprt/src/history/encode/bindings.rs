@@ -187,7 +187,7 @@ pub(crate) fn visit_operation_roles(
             )?;
         }
         FeatureOperation::Shell { .. } | FeatureOperation::Thicken { .. } => {
-            bind(&["Thickness", "D1"], &["/thickness"])?
+            bind(&["Thickness", "D1"], &["/thickness"])?;
         }
         FeatureOperation::Draft { .. } => bind(&["Angle", "D1"], &["/angle"])?,
         FeatureOperation::Rib { .. } => {
@@ -213,7 +213,7 @@ pub(crate) fn visit_operation_roles(
             bind(&["StartAngle"], &["/start_angle"])?;
         }
         FeatureOperation::Wrap { .. } => {
-            bind(&["Depth"], &["/mode/emboss/depth", "/mode/deboss/depth"])?
+            bind(&["Depth"], &["/mode/emboss/depth", "/mode/deboss/depth"])?;
         }
         FeatureOperation::RuledSurface { .. } => {
             bind(&["Distance", "D1"], &["/mode/distance"])?;

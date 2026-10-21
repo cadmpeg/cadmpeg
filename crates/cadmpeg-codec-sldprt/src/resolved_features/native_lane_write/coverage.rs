@@ -146,7 +146,8 @@ pub(super) fn neutral_copies(
                     .iter()
                     .flat_map(|history| &history.features)
                     .any(|feature| {
-                        name.object_id.and_then(|id| id.value()) == feature.source_value()
+                        name.object_id.and_then(crate::records::ObjectId::value)
+                            == feature.source_value()
                             && name.feature_ref.as_deref() == Some(feature.id.as_str())
                     })
             {

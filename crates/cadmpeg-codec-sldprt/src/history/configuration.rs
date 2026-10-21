@@ -1112,7 +1112,10 @@ fn inherit_configuration_hole_semantics(
         }
         _ => {}
     }
-    if exit_kind.as_ref().is_none_or(|kind| kind.is_unresolved()) {
+    if exit_kind
+        .as_ref()
+        .is_none_or(cadmpeg_ir::features::holes::HoleKind::is_unresolved)
+    {
         exit_kind.clone_from(base_exit_kind);
     }
     if diameter.is_none() {

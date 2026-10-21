@@ -503,7 +503,7 @@ fn tokenize_parameter_expressions(
     Ok(())
 }
 
-/// Render only current parameter identities and names in SolidWorks syntax.
+/// Render only current parameter identities and names in `SolidWorks` syntax.
 pub(crate) fn render_parameter_expression(
     parameter: &DesignParameter,
     parameters: &[DesignParameter],
@@ -519,7 +519,7 @@ pub(crate) fn render_parameter_expression(
     }
     parameter.expression.render_with(|id| {
         let target = parameters.iter().find(|target| &target.id == id)?;
-        let mut name = target.name.to_string();
+        let mut name = target.name.clone();
         if target.owner != parameter.owner
             && !target
                 .owner
