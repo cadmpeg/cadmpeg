@@ -1125,6 +1125,7 @@ pub(super) fn var_blend_spl_sur(
     };
     cur.at_scope_end().then_some(())?;
     let cache = match cache.into_form()? {
+        cadmpeg_ir::geometry::RevisionCacheForm::Absent {} => return None,
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             match std::num::NonZeroI64::new(shape_prefix) {
                 Some(shape_prefix) => VariableBlendCache::Current {

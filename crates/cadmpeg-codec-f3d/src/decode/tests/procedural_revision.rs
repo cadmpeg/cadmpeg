@@ -977,12 +977,19 @@ fn decode_retains_versioned_nested_translational_extrusion() {
         procedural
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        None
+        Some(0.02)
     );
-    // The original cache-only fit is decode evidence after its cache is rejected.
-    assert!(result.report().losses.iter().any(|loss| {
+    let carrier = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.geometry.procedural_construction() == Some(&procedural.id))
+        .expect("the accepted construction has its actual carrier");
+    assert!(carrier.geometry.solved_cache().is_some());
+    assert!(!result.report().losses.iter().any(|loss| {
         loss.code == F3dLossCode::SurfaceCacheRejected.kind()
-            && loss.message.contains("fit tolerance Some(0.02)")
+            && loss.message.contains(carrier.id.as_str())
     }));
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected versioned extrusion")

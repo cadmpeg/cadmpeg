@@ -264,6 +264,7 @@ rewrite_enum!(ProjectionTail<R>, [R]; {
 });
 rewrite_scalar!(RecordBounds);
 rewrite_enum!(RevisionCacheForm<P>, [P]; {
+    Absent {},
     SolvedCache {fit_tolerance},
     Parameterization(field0),
 });
