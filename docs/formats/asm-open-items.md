@@ -243,6 +243,22 @@ the record grammar does not identify one construction.
 
 **Need.** A conical helix with a nonzero `t0` and a nonzero apex factor, together with its edge vertices, separates the two origins. A wrong origin offsets the radius of every evaluated point by the same length.
 
+### GC-41. Profile angle of a `helix_spl_circ`
+
+**Question.** Which point of the profile circle does a profile parameter `u` select, and what does the angle stored before the path control?
+
+**Known.** `asm.md` §6.3 `helix_spl_circ` gives the swept circle. The stored angle is `0`, `π`, or `-π`. The map `u ↦ C(t)+r·(-cos(u+a)·ρ̂(t)+sin(u+a)·n)`, with `a` the stored angle and `ρ̂(t)` the unit vector of `ρ(t)`, puts the pcurves of helix and spline edges on their edges. It puts some pcurves of circular cap edges a quarter or half turn away from their edges.
+
+**Need.** A writer that emits pcurves on this surface needs the map. A rule that also holds for the cap-edge pcurves settles it.
+
+### GC-42. Tangential and apex terms of a `helix_spl_line` profile
+
+**Question.** Does the `y` coefficient of a `helix_spl_line` direction scale `τ(t)`, and does the profile vector include the apex factor's radial scale?
+
+**Known.** `asm.md` §6.3 `helix_spl_circ` gives the linear surface `S(u,t)` with `y` on `τ(t)` and no apex scale. Every decoded direction has `y=0`, and every decoded path has a zero apex factor, so neither term is observed.
+
+**Need.** A thread surface with a tangential profile component or on a conical path, together with its edges, fixes both terms.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution

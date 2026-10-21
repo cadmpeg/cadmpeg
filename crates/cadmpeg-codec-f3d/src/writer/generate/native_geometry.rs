@@ -2032,10 +2032,10 @@ fn native_cacheless_procedural_surface_definition(
             native_f64(bytes, value);
         }
         for value in dimension_range {
-            native_f64(bytes, if circular { value / LEN_TO_MM } else { value });
+            native_f64(bytes, value);
         }
         if let HelixSurfaceProfile::Circle(circle) = profile {
-            native_f64(bytes, circle.length().get() / LEN_TO_MM);
+            native_f64(bytes, circle.length().get());
         }
         for value in path_angle_range {
             native_f64(bytes, value);
@@ -2069,14 +2069,7 @@ fn native_cacheless_procedural_surface_definition(
             }
             HelixSurfaceProfile::Line(line) => {
                 let direction = line.direction();
-                native_point(
-                    bytes,
-                    [
-                        direction.x / LEN_TO_MM,
-                        direction.y / LEN_TO_MM,
-                        direction.z / LEN_TO_MM,
-                    ],
-                );
+                native_point(bytes, [direction.x, direction.y, direction.z / LEN_TO_MM]);
             }
         }
         bytes.push(0x10);

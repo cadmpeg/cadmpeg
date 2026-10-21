@@ -2575,7 +2575,7 @@ pub struct HelixCircleProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixCircleProfileWire {
-    /// Native profile length.
+    /// Native angle stored before the path, in radians.
     length: f64,
     /// Signed circular profile radius.
     radius: f64,
@@ -2591,7 +2591,7 @@ impl HelixCircleProfile {
         let radius = FiniteReal::new(radius).ok_or("helix circle profile radius must be finite")?;
         Ok(Self { length, radius })
     }
-    /// Native profile length.
+    /// Native angle stored before the path, in radians.
     #[must_use]
     pub const fn length(&self) -> FiniteReal {
         self.length
@@ -2623,7 +2623,8 @@ pub struct HelixLineProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixLineProfileWire {
-    /// Finite non-degenerate profile direction.
+    /// Profile direction coefficients: `x` and `y` scale the path's rotated
+    /// major and minor vectors, and `z` is a length along the path axis.
     direction: Vector3,
 }
 
@@ -2637,7 +2638,8 @@ impl HelixLineProfile {
         }
         Ok(Self { direction })
     }
-    /// Finite non-degenerate profile direction.
+    /// Profile direction coefficients: `x` and `y` scale the path's rotated
+    /// major and minor vectors, and `z` is a length along the path axis.
     #[must_use]
     pub const fn direction(&self) -> FiniteVector3 {
         self.direction
@@ -2659,7 +2661,7 @@ impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
 pub enum HelixSurfaceProfile {
     /// Circular profile swept along the helix.
     Circle(HelixCircleProfile),
-    /// Linear profile swept along a direction.
+    /// Linear profile swept along the helix.
     Line(HelixLineProfile),
 }
 
@@ -2678,9 +2680,9 @@ pub struct HelixSurfaceConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixSurfaceConstructionWire {
-    /// Native helix angle interval.
+    /// Native profile parameter interval.
     angle_range: [f64; 2],
-    /// Native profile dimension interval.
+    /// Native path angle interval.
     dimension_range: [f64; 2],
     /// Circular path of the helix surface.
     path: HelixPathConstruction,
@@ -2707,13 +2709,13 @@ impl HelixSurfaceConstruction {
             profile,
         })
     }
-    /// Return the angle range.
+    /// Return the native profile parameter interval.
     #[must_use]
     pub const fn angle_range(&self) -> &FiniteVector<2> {
         &self.angle_range
     }
 
-    /// Return the dimension range.
+    /// Return the native path angle interval.
     #[must_use]
     pub const fn dimension_range(&self) -> &FiniteVector<2> {
         &self.dimension_range
