@@ -414,12 +414,12 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .iter()
         .any(|loss| loss.code.local_code() == "native.records-omitted"));
     let mut encoded = Vec::new();
-    plan.write_to(&mut encoded).unwrap();
+    let report = plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     crate::test_support::native::assert_marker_framing_omission(
-        plan.report(),
+        &report,
         &sldprt_native(decoded.ir()),
         &sldprt_native(regenerated.ir()),
     );
@@ -430,7 +430,7 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
     let synthesized =
         crate::test_support::assert_source_free_synthesis_agrees(decoded.ir(), regenerated.ir());
     crate::test_support::native::assert_marker_framing_omission(
-        plan.report(),
+        &report,
         &sldprt_native(decoded.ir()),
         &sldprt_native(synthesized.ir()),
     );

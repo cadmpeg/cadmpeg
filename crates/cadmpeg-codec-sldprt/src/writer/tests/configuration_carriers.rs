@@ -1715,7 +1715,7 @@ fn untyped_feature_framing_is_not_written_as_content() {
                     && loss.code.local_code() == "native.records-omitted")
         );
         let mut written = Vec::new();
-        plan.write_to(&mut written).unwrap();
+        let report = plan.write_to(&mut written).unwrap();
         let output = SldprtCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
@@ -1723,7 +1723,7 @@ fn untyped_feature_framing_is_not_written_as_content() {
             crate::test_support::assert_source_free_synthesis_agrees(&document, output.ir());
         for actual in [output.ir(), synthesized.ir()] {
             crate::test_support::native::assert_marker_framing_omission(
-                plan.report(),
+                &report,
                 &sldprt_native(&document),
                 &sldprt_native(actual),
             );
