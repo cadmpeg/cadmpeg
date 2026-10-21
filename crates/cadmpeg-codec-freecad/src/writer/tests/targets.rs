@@ -125,10 +125,11 @@ fn unchanged_represented_sources_patch_their_own_layout() {
             decoded.report().losses
         );
         let output = inherited(&decoded);
-        assert!(matches!(
-            output.report().write_path(),
-            WritePath::Patched { .. }
-        ));
+        assert!(
+            matches!(output.report().write_path(), WritePath::Patched { .. }),
+            "unchanged represented source {target_id}: {:#?}",
+            output.report()
+        );
         assert_eq!(target(&output), target_id);
         assert_eq!(entry_payloads(&bytes(output)), entry_payloads(source));
     }
