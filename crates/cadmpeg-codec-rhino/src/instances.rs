@@ -93,20 +93,18 @@ impl UnitDetail {
 
 impl Serialize for UnitDetail {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut record = serializer.serialize_struct(
-            "UnitDetail",
-            if matches!(self.meters_per_unit, UnitScale::Custom(_)) {
-                3
-            } else {
-                2
-            },
-        )?;
+        let mut record = serializer.serialize_struct("UnitDetail", 3)?;
         record.serialize_field("unit_system", &self.unit)?;
         match self.meters_per_unit {
             UnitScale::Custom(scale) => record.serialize_field("meters_per_unit", &scale)?,
-            // Standard unit codes define their scale. The unused source
-            // floating-point slot is an encoding fact, retained with bytes.
-            UnitScale::OtherBits(_) => {}
+            UnitScale::OtherBits(bits) => {
+                let scale = f64::from_bits(bits);
+                if scale.is_finite() {
+                    record.serialize_field("meters_per_unit", &scale)?;
+                } else {
+                    record.serialize_field("meters_per_unit_bits", &bits)?;
+                }
+            }
         }
         record.serialize_field("custom_unit_name", &self.custom_name)?;
         record.end()
