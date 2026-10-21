@@ -363,7 +363,53 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         &mut edited,
     )
     .unwrap();
-    crate::test_support::assert_synthesis_fallback(&edited, decoded.source_fidelity());
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    assert!(plan.report().synthesis_cause().is_none());
+    assert!(!plan.report().losses.is_empty());
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    crate::test_support::assert_source_free_synthesis_agrees(&edited, written.ir());
+    assert_eq!(written.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(written.ir().model.faces.len(), edited.model.faces.len());
+    assert_eq!(
+        written.ir().model.configurations.len(),
+        edited.model.configurations.len()
+    );
+    let written_feature = written
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    for configuration in &written.ir().model.configurations {
+        assert!(configuration.feature_states.is_empty());
+        assert!(matches!(
+            super::effective_definition(written.ir(), configuration, &written_feature.id).unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::ThroughAll {},
+                        ..
+                    }
+                },
+                ..
+            })
+        ));
+    }
 }
 
 #[test]
