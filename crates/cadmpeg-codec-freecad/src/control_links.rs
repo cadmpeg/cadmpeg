@@ -34,7 +34,10 @@ fn target(expression: &Expression, measurement: Measurement) -> Option<&Paramete
     let mut text = String::new();
     for token in &expression.tokens {
         match token {
-            ExpressionToken::Parameter(id) if target.is_none() => target = Some(id),
+            ExpressionToken::Parameter(id) if target.is_none() => {
+                target = Some(id);
+                text.push('\0');
+            }
             ExpressionToken::Text(value) => {
                 text.extend(value.chars().filter(|c| !c.is_whitespace()))
             }
@@ -42,9 +45,9 @@ fn target(expression: &Expression, measurement: Measurement) -> Option<&Paramete
         }
     }
     let expected = match measurement {
-        Measurement::Direct => "",
-        Measurement::Diameter => "/2",
-        Measurement::Negated => "-()",
+        Measurement::Direct => "\0",
+        Measurement::Diameter => "\0/2",
+        Measurement::Negated => "-(\0)",
     };
     (text == expected).then_some(target).flatten()
 }
@@ -331,6 +334,13 @@ mod tests {
         };
         assert_eq!(target(&expression, Measurement::Negated), Some(&id));
         assert_eq!(target(&expression, Measurement::Direct), None);
+        let reversed_tokens = Expression {
+            tokens: vec![
+                ExpressionToken::Parameter(id.clone()),
+                ExpressionToken::Text("-()".into()),
+            ],
+        };
+        assert_eq!(target(&reversed_tokens, Measurement::Negated), None);
         let angle = |value| ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value).unwrap());
         assert!(cache_agrees(
             Some(&angle(5.0)),
