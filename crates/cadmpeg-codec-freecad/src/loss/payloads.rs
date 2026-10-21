@@ -55,17 +55,9 @@ pub(crate) fn decode_losses(
             {
                 products.iter().any(|product| product.object == owner)
             }
-            "Mesh::PropertyMeshKernel" => ir.model.tessellations.iter().any(|mesh| {
-                mesh.source_object
-                    .as_ref()
-                    .is_some_and(|source| source.object_id.as_str() == owner)
-            }),
-            "Points::PropertyPointKernel" => ir.model.points.iter().any(|point| {
-                point
-                    .source_object
-                    .as_ref()
-                    .is_some_and(|source| source.object_id.as_str() == owner)
-            }),
+            "Mesh::PropertyMeshKernel" | "Points::PropertyPointKernel" => {
+                crate::application_geometry::holds_property(ir, &property.type_name, owner)
+            }
             "App::PropertyVectorList" | "App::PropertyFloatList"
                 if matches!(
                     property.name.as_str(),

@@ -20,6 +20,24 @@ const MAX_ELEMENTS: usize = 1_000_000;
 const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
 const MESH_VERSION: u32 = mesh_hdr::VERSION_VALUE;
 
+/// Whether a kernel property has delivered its owning object's neutral geometry.
+pub(crate) fn holds_property(ir: &CadIr, type_name: &str, owner: &str) -> bool {
+    match type_name {
+        "Mesh::PropertyMeshKernel" => ir.model.tessellations.iter().any(|mesh| {
+            mesh.source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id.as_str() == owner)
+        }),
+        "Points::PropertyPointKernel" => ir.model.points.iter().any(|point| {
+            point
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id.as_str() == owner)
+        }),
+        _ => false,
+    }
+}
+
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
