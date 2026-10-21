@@ -157,13 +157,11 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
     enrich_history_parameters_semantic(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
-        crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes)?;
-        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(
-            histories, lanes,
-        )?;
+        crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
+        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
     } else {
         crate::resolved_features::holes::
-            enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes)?;
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes);
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(
         ctx, histories, lanes,
@@ -360,7 +358,7 @@ fn project_configuration_design_states_within(
         );
         enrich_history_parameters_semantic(&mut projection, scoped_lanes);
         crate::resolved_features::holes::
-            enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut projection, scoped_lanes)?;
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut projection, scoped_lanes);
         crate::pmi::enrich_history_parameters_with_features(
             &mut projection,
             pmi_dimensions,
@@ -838,7 +836,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &ir.model.sketch_entities,
                 histories,
                 scoped_lanes,
-            )?;
+            );
             crate::resolved_features::holes::project_spatial_hole_position_sketches(
                 &mut features,
                 &ir.model.spatial_sketches,

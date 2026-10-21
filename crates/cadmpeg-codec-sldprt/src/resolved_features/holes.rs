@@ -229,7 +229,7 @@ fn hole_position_sketch_source(
 pub(crate) fn enrich_history_hole_constructions(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     for history in histories {
         let mut additions = Vec::new();
         for (feature_index, feature) in history.features.iter().enumerate() {
@@ -238,13 +238,12 @@ pub(crate) fn enrich_history_hole_constructions(
             {
                 continue;
             }
-            let profile = if let Some(profile) =
-                hole_profile_from_position_source(feature, history, lanes)?
-            {
-                Some(profile)
-            } else {
-                hole_profile_from_child_order(feature, history)?
-            };
+            let profile =
+                if let Some(profile) = hole_profile_from_position_source(feature, history, lanes) {
+                    Some(profile)
+                } else {
+                    hole_profile_from_child_order(feature, history)
+                };
             let Some((profile, rank)) = profile else {
                 continue;
             };
@@ -333,7 +332,6 @@ pub(crate) fn enrich_history_hole_constructions(
             );
         }
     }
-    Ok(())
 }
 
 fn hole_profile_source(profile: &crate::records::Feature) -> String {
@@ -365,15 +363,13 @@ fn hole_profile_from_position_source<'a>(
     feature: &crate::records::Feature,
     history: &'a crate::records::FeatureHistory,
     lanes: &[FeatureInputLane],
-) -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
+) -> Option<(&'a crate::records::Feature, u8)> {
     let mut sources = lanes
         .iter()
         .filter_map(|lane| hole_position_sketch_source(feature, lane));
-    let Some(source) = sources.next() else {
-        return Ok(None);
-    };
+    let source = sources.next()?;
     if sources.any(|candidate| candidate != source) {
-        return Ok(None);
+        return None;
     }
     let unique_position = || {
         let mut positions = history.features.iter().filter(|candidate| {
@@ -383,58 +379,51 @@ fn hole_profile_from_position_source<'a>(
         let position = positions.next()?;
         positions.next().is_none().then_some(position)
     };
-    let serialized_successor =
-        || -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
-            let Some(position) = unique_position() else {
-                return Ok(None);
-            };
-            let mut profile: Option<&crate::records::Feature> = None;
-            for lane in lanes {
-                if hole_position_sketch_source(feature, lane) != Some(source) {
+    let serialized_successor = || -> Option<(&'a crate::records::Feature, u8)> {
+        let position = unique_position()?;
+        let mut profile: Option<&crate::records::Feature> = None;
+        for lane in lanes {
+            if hole_position_sketch_source(feature, lane) != Some(source) {
+                continue;
+            }
+            let names = FeatureObjectNames::new(&lane.names);
+            let position_offset = names.of(position).map(|name| name.offset)?;
+            let mut minimum = None;
+            let mut successor = None;
+            let mut ambiguous = false;
+            for candidate in &history.features {
+                let Some(offset) = names.of(candidate).map(|name| name.offset) else {
+                    continue;
+                };
+                if offset <= position_offset {
                     continue;
                 }
-                let names = FeatureObjectNames::new(&lane.names);
-                let Some(position_offset) = names.of(position).map(|name| name.offset) else {
-                    return Ok(None);
-                };
-                let mut minimum = None;
-                let mut successor = None;
-                let mut ambiguous = false;
-                for candidate in &history.features {
-                    let Some(offset) = names.of(candidate).map(|name| name.offset) else {
-                        continue;
-                    };
-                    if offset <= position_offset {
-                        continue;
-                    }
-                    if minimum.is_none_or(|minimum| offset < minimum) {
-                        minimum = Some(offset);
-                        successor = Some(candidate);
-                        ambiguous = false;
-                    } else if minimum == Some(offset) {
-                        ambiguous = true;
-                    }
-                }
-                let Some(successor) = successor else {
-                    return Ok(None);
-                };
-                if ambiguous
-                    || classify(successor) != Some(FeatureClass::Sketch)
-                    || !crate::history::project::solid::is_hole_profile_construction(successor)
-                {
-                    return Ok(None);
-                }
-                if profile.is_some_and(|profile| profile.id != successor.id) {
-                    return Ok(None);
-                }
-                if profile.is_none() {
-                    profile = Some(successor);
+                if minimum.is_none_or(|minimum| offset < minimum) {
+                    minimum = Some(offset);
+                    successor = Some(candidate);
+                    ambiguous = false;
+                } else if minimum == Some(offset) {
+                    ambiguous = true;
                 }
             }
-            Ok(profile.map(|profile| (profile, 4)))
-        };
-    if let Some(profile) = serialized_successor()? {
-        return Ok(Some(profile));
+            let successor = successor?;
+            if ambiguous
+                || classify(successor) != Some(FeatureClass::Sketch)
+                || !crate::history::project::solid::is_hole_profile_construction(successor)
+            {
+                return None;
+            }
+            if profile.is_some_and(|profile| profile.id != successor.id) {
+                return None;
+            }
+            if profile.is_none() {
+                profile = Some(successor);
+            }
+        }
+        profile.map(|profile| (profile, 4))
+    };
+    if let Some(profile) = serialized_successor() {
+        return Some(profile);
     }
     let adjacent_sources = [source.checked_sub(1), source.checked_add(1)];
     let mut first = None;
@@ -456,12 +445,10 @@ fn hole_profile_from_position_source<'a>(
     }
     if let Some(profile) = first {
         if !ambiguous {
-            return Ok(Some((profile, 3)));
+            return Some((profile, 3));
         }
     }
-    let Some(hole_source) = feature.source_value() else {
-        return Ok(None);
-    };
+    let hole_source = feature.source_value()?;
     let (lower, upper) = if hole_source < source {
         (hole_source, source)
     } else {
@@ -478,16 +465,14 @@ fn hole_profile_from_position_source<'a>(
             continue;
         }
         if bounded.is_some() {
-            return Ok(None);
+            return None;
         }
         bounded = Some(candidate);
     }
     if let Some(profile) = bounded {
-        return Ok(Some((profile, 2)));
+        return Some((profile, 2));
     }
-    let Some(position) = unique_position() else {
-        return Ok(None);
-    };
+    let position = unique_position()?;
     let adjacent_ordinals = [
         position.ordinal.checked_sub(1),
         position.ordinal.checked_add(1),
@@ -502,22 +487,22 @@ fn hole_profile_from_position_source<'a>(
             continue;
         }
         if first.is_some() {
-            return Ok(None);
+            return None;
         }
         first = Some(candidate);
     }
-    Ok(first.map(|profile| (profile, 1)))
+    first.map(|profile| (profile, 1))
 }
 
 fn hole_profile_from_child_order<'a>(
     feature: &crate::records::Feature,
     history: &'a crate::records::FeatureHistory,
-) -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
+) -> Option<(&'a crate::records::Feature, u8)> {
     let (Some(first_ordinal), Some(second_ordinal)) = (
         feature.ordinal.checked_add(1),
         feature.ordinal.checked_add(2),
     ) else {
-        return Ok(None);
+        return None;
     };
     let ordinals = [first_ordinal, second_ordinal];
     let unique_child = |ordinal| {
@@ -531,14 +516,14 @@ fn hole_profile_from_child_order<'a>(
     let (Some(first_child), Some(second_child)) =
         (unique_child(ordinals[0]), unique_child(ordinals[1]))
     else {
-        return Ok(None);
+        return None;
     };
     let children = [first_child, second_child];
     if children
         .iter()
         .any(|child| classify(child) != Some(FeatureClass::Sketch))
     {
-        return Ok(None);
+        return None;
     }
     let mut first = None;
     for child in children {
@@ -546,17 +531,17 @@ fn hole_profile_from_child_order<'a>(
             continue;
         }
         if first.is_some() {
-            return Ok(None);
+            return None;
         }
         first = Some(child);
     }
-    Ok(first.map(|profile| (profile, 1)))
+    first.map(|profile| (profile, 1))
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     for history in histories {
         let mut features_by_id = HashMap::new();
         let mut features_by_source = HashMap::new();
@@ -589,8 +574,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                         producer,
                         &features_by_source,
                         &history.features,
-                    )?
-                    else {
+                    ) else {
                         continue;
                     };
                     if let Some(existing) = diameter {
@@ -637,16 +621,15 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                 .insert(cadmpeg_core::nonblank_literal!("D2"), value);
         }
     }
-    Ok(())
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_constructions(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     let mut projection = histories.to_vec();
-    enrich_history_hole_constructions(&mut projection, lanes)?;
-    enrich_history_cosmetic_thread_diameters(&mut projection, lanes)?;
+    enrich_history_hole_constructions(&mut projection, lanes);
+    enrich_history_cosmetic_thread_diameters(&mut projection, lanes);
     let mut fallback_parameters = HashMap::new();
     for feature in projection.iter().flat_map(|history| &history.features) {
         let Some(diameter) = feature.parameters.get("D2") else {
@@ -671,7 +654,6 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("D2"), value);
     }
-    Ok(())
 }
 
 #[derive(Clone)]
@@ -696,7 +678,7 @@ fn profiled_hole_construction(
     profile: &crate::records::Feature,
     sketch: &SketchId,
     entities: &[SketchEntity],
-) -> Result<Option<ProfiledHoleConstruction>, CodecError> {
+) -> Option<ProfiledHoleConstruction> {
     profiled_hole_construction_with_evidence(profile, sketch, entities, ProfileEvidence::Dimensions)
 }
 
@@ -738,7 +720,7 @@ fn profiled_hole_construction_with_evidence(
     sketch: &SketchId,
     entities: &[SketchEntity],
     evidence: ProfileEvidence,
-) -> Result<Option<ProfiledHoleConstruction>, CodecError> {
+) -> Option<ProfiledHoleConstruction> {
     let has_source_dimensions = profile
         .content
         .iter()
@@ -809,7 +791,7 @@ fn profiled_hole_construction_with_evidence(
     };
     if evidence == ProfileEvidence::Dimensions {
         if let Some(construction) = dimension_only {
-            return Ok(Some(construction.into_construction()));
+            return Some(construction.into_construction());
         }
     }
     let mut lines = Vec::new();
@@ -899,12 +881,12 @@ fn profiled_hole_construction_with_evidence(
                         (axis_end, axis_entry),
                     ];
                     if profile_translation(&edges, 2).is_some() {
-                        return Ok(Some(construction.into_construction()));
+                        return Some(construction.into_construction());
                     }
                 }
             }
         }
-        return Ok(None);
+        return None;
     }
     if let ([diameter, recess_diameter, entry_diameter], [recess_depth, depth], [entry_angle]) =
         (diameters.as_slice(), lengths.as_slice(), angles.as_slice())
@@ -929,7 +911,7 @@ fn profiled_hole_construction_with_evidence(
             || recess_depth <= setback
             || depth <= recess_depth
         {
-            return Ok(None);
+            return None;
         }
         for swap in [false, true] {
             for axial_sign in [-1.0, 1.0] {
@@ -956,15 +938,13 @@ fn profiled_hole_construction_with_evidence(
                             (bore_start, bore_end),
                         ];
                         if profile_translation(&edges, 2).is_some() {
-                            let Ok(diameters) =
+                            let diameters =
                                 cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                                     admitted_recess_diameter.into(),
                                     Some(admitted_entry_diameter.into()),
                                 )
-                            else {
-                                return Ok(None);
-                            };
-                            return Ok(Some(ProfiledHoleConstruction {
+                                .ok()?;
+                            return Some(ProfiledHoleConstruction {
                                 diameter: bore_diameter,
                                 extent: LinearTermination::ThroughAll {},
                                 kind: HoleKind::Counterdrill {
@@ -974,19 +954,19 @@ fn profiled_hole_construction_with_evidence(
                                 },
                                 bottom: None,
                                 taper_angle: None,
-                            }));
+                            });
                         }
                     }
                 }
             }
         }
-        return Ok(None);
+        return None;
     }
     let [diameter, entry_diameter] = diameters.as_slice() else {
-        return Ok(None);
+        return None;
     };
     if diameter >= entry_diameter {
-        return Ok(None);
+        return None;
     }
     let bore_radius = diameter.get() / 2.0;
     let entry_radius = entry_diameter.get() / 2.0;
@@ -1032,17 +1012,9 @@ fn profiled_hole_construction_with_evidence(
                         if !half_angle.is_finite() || half_angle <= 0.0 {
                             continue;
                         }
-                        let Some(diameter) =
-                            cadmpeg_ir::scalar::PositiveLength::new(entry_radius * 2.0)
-                        else {
-                            return Ok(None);
-                        };
-                        let Some(taper_angle) =
-                            cadmpeg_ir::scalar::InteriorAngle::new(half_angle * 2.0)
-                        else {
-                            return Ok(None);
-                        };
-                        return Ok(Some(ProfiledHoleConstruction {
+                        let diameter = cadmpeg_ir::scalar::PositiveLength::new(entry_radius * 2.0)?;
+                        let taper_angle = cadmpeg_ir::scalar::InteriorAngle::new(half_angle * 2.0)?;
+                        return Some(ProfiledHoleConstruction {
                             diameter,
                             extent: LinearTermination::Blind {
                                 length: (cadmpeg_ir::scalar::NonZeroLength::from(*depth)).into(),
@@ -1050,7 +1022,7 @@ fn profiled_hole_construction_with_evidence(
                             kind: HoleKind::Simple,
                             bottom: Some(HoleBottom::Flat),
                             taper_angle: Some(taper_angle),
-                        }));
+                        });
                     }
                 }
                 if let [entry_depth, depth] = lengths.as_slice() {
@@ -1118,13 +1090,13 @@ fn profiled_hole_construction_with_evidence(
                             }
                             _ => continue,
                         };
-                        return Ok(Some(ProfiledHoleConstruction {
+                        return Some(ProfiledHoleConstruction {
                             diameter: *diameter,
                             extent,
                             kind,
                             bottom: (angles.is_empty() && flat_bottom).then_some(HoleBottom::Flat),
                             taper_angle: None,
-                        }));
+                        });
                     }
                 }
                 let [depth] = lengths.as_slice() else {
@@ -1155,7 +1127,7 @@ fn profiled_hole_construction_with_evidence(
                         }
                     }
                     if profile_matches {
-                        return Ok(Some(ProfiledHoleConstruction {
+                        return Some(ProfiledHoleConstruction {
                             diameter: *diameter,
                             extent: LinearTermination::ThroughAll {},
                             kind: HoleKind::Countersink {
@@ -1164,7 +1136,7 @@ fn profiled_hole_construction_with_evidence(
                             },
                             bottom: None,
                             taper_angle: None,
-                        }));
+                        });
                     }
                     continue;
                 }
@@ -1185,7 +1157,7 @@ fn profiled_hole_construction_with_evidence(
                     let tip = point(-depth.get() - drill_length, 0.0);
                     let edges = [(entry, bore_start), (bore_start, bore_end), (bore_end, tip)];
                     if profile_translation(&edges, 2).is_some() {
-                        return Ok(Some(ProfiledHoleConstruction {
+                        return Some(ProfiledHoleConstruction {
                             diameter: *diameter,
                             extent: LinearTermination::Blind {
                                 length: (cadmpeg_ir::scalar::NonZeroLength::from(*depth)).into(),
@@ -1199,13 +1171,13 @@ fn profiled_hole_construction_with_evidence(
                                 depth_to_tip: false,
                             }),
                             taper_angle: None,
-                        }));
+                        });
                     }
                 }
             }
         }
     }
-    Ok(None)
+    None
 }
 
 pub(crate) fn project_profiled_hole_constructions(
@@ -1221,7 +1193,7 @@ pub(crate) fn project_profiled_hole_constructions(
         lanes,
     );
     let mut ownership_histories = enriched_histories.clone();
-    enrich_history_hole_constructions(&mut ownership_histories, lanes)?;
+    enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
     let incomplete =
         |diameter: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
@@ -1324,8 +1296,7 @@ pub(crate) fn project_profiled_hole_constructions(
                 sketch,
                 entities,
                 ProfileEvidence::AxialTopology,
-            )?
-            else {
+            ) else {
                 continue;
             };
             profiles.push((profile.ordinal, index, construction));
@@ -1381,7 +1352,7 @@ pub(crate) fn project_profiled_hole_constructions(
                 let Some(sketch) = model_sketches.get(&profile.id) else {
                     continue;
                 };
-                if let Some(construction) = profiled_hole_construction(profile, sketch, entities)? {
+                if let Some(construction) = profiled_hole_construction(profile, sketch, entities) {
                     if direct.is_some() {
                         direct = None;
                         break;
@@ -1533,7 +1504,7 @@ pub(crate) fn project_hole_position_sketches(
     sketch_entities: &[SketchEntity],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -1582,7 +1553,7 @@ pub(crate) fn project_hole_position_sketches(
                     histories,
                     |id| model_sketch_features.get(id).map(|(_, sketch)| sketch),
                     sketch_entities,
-                )?,
+                ),
             };
             let Some(position_feature) = position_feature else {
                 break 'feature_edit;
@@ -1770,7 +1741,6 @@ pub(crate) fn project_hole_position_sketches(
             feature.dependencies.insert(dependency.clone());
         }
     }
-    Ok(())
 }
 
 fn paired_object_locus_markers<'a>(
@@ -3056,7 +3026,7 @@ fn direct_hole_position_feature<'a, 's>(
     histories: &'a [crate::records::FeatureHistory],
     sketch_for: impl Fn(&str) -> Option<&'s SketchId>,
     sketch_entities: &[SketchEntity],
-) -> Result<Option<&'a crate::records::Feature>, CodecError> {
+) -> Option<&'a crate::records::Feature> {
     let mut history = None;
     for candidate in histories {
         if candidate
@@ -3068,9 +3038,7 @@ fn direct_hole_position_feature<'a, 's>(
             break;
         }
     }
-    let Some(history) = history else {
-        return Ok(None);
-    };
+    let history = history?;
     let mut direct_sketches: [Option<&crate::records::Feature>; 2] = [None, None];
     if let Some(children) = hole.properties.get("DissectableChildren") {
         for source in children
@@ -3101,49 +3069,61 @@ fn direct_hole_position_feature<'a, 's>(
             } else if direct_sketches[1].is_none() {
                 direct_sketches[1] = Some(child);
             } else {
-                return Ok(None);
+                return None;
             }
         }
     }
-    let is_axial_profile = |child: &crate::records::Feature| -> Result<bool, CodecError> {
+    let is_axial_profile = |child: &crate::records::Feature| -> bool {
         let Some(sketch) = sketch_for(&child.id) else {
-            return Ok(false);
+            return false;
         };
-        Ok(profiled_hole_construction_with_evidence(
+        profiled_hole_construction_with_evidence(
             child,
             sketch,
             sketch_entities,
             ProfileEvidence::AxialTopology,
-        )?
-        .is_some())
+        )
+        .is_some()
     };
-    let adjacent_position = || -> Result<Option<(&'a crate::records::Feature, &'a crate::records::Feature)>, CodecError> {
-        let (Some(position_ordinal), Some(profile_ordinal)) = (hole.ordinal.checked_add(1), hole.ordinal.checked_add(2)) else { return Ok(None); };
-        let unique_at = |ordinal| {
-            let mut candidates = history.features.iter().filter(|candidate| {
-                candidate.ordinal == ordinal && classify(candidate) == Some(FeatureClass::Sketch)
-                    && sketch_for(&candidate.id).is_some()
-            });
-            let candidate = candidates.next()?;
-            candidates.next().is_none().then_some(candidate)
-        };
-        let (Some(position), Some(profile)) = (unique_at(position_ordinal), unique_at(profile_ordinal)) else { return Ok(None); };
-        if !is_axial_profile(position)? && is_axial_profile(profile)? { Ok(Some((position, profile))) } else { Ok(None) }
-    };
-    Ok(match direct_sketches {
-        [Some(first), Some(second)] => {
-            match (is_axial_profile(first)?, is_axial_profile(second)?) {
-                (true, false) => Some(second),
-                (false, true) => Some(first),
-                _ => None,
+    let adjacent_position =
+        || -> Option<(&'a crate::records::Feature, &'a crate::records::Feature)> {
+            let (Some(position_ordinal), Some(profile_ordinal)) =
+                (hole.ordinal.checked_add(1), hole.ordinal.checked_add(2))
+            else {
+                return None;
+            };
+            let unique_at = |ordinal| {
+                let mut candidates = history.features.iter().filter(|candidate| {
+                    candidate.ordinal == ordinal
+                        && classify(candidate) == Some(FeatureClass::Sketch)
+                        && sketch_for(&candidate.id).is_some()
+                });
+                let candidate = candidates.next()?;
+                candidates.next().is_none().then_some(candidate)
+            };
+            let (Some(position), Some(profile)) =
+                (unique_at(position_ordinal), unique_at(profile_ordinal))
+            else {
+                return None;
+            };
+            if !is_axial_profile(position) && is_axial_profile(profile) {
+                Some((position, profile))
+            } else {
+                None
             }
-        }
-        [Some(profile), None] => adjacent_position()?
+        };
+    match direct_sketches {
+        [Some(first), Some(second)] => match (is_axial_profile(first), is_axial_profile(second)) {
+            (true, false) => Some(second),
+            (false, true) => Some(first),
+            _ => None,
+        },
+        [Some(profile), None] => adjacent_position()
             .filter(|(_, adjacent_profile)| adjacent_profile.id == profile.id)
             .map(|(position, _)| position),
-        [None, None] => adjacent_position()?.map(|(position, _)| position),
+        [None, None] => adjacent_position().map(|(position, _)| position),
         _ => None,
-    })
+    }
 }
 
 pub(crate) fn project_hole_axes(
@@ -3184,7 +3164,7 @@ pub(crate) fn project_hole_axes(
                 histories,
                 |id| model_sketches.get(id),
                 sketch_entities,
-            )?,
+            ),
         };
         let Some(position) = position else {
             continue;

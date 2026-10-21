@@ -678,8 +678,7 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
     crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(
         std::slice::from_mut(&mut history),
         &[lane],
-    )
-    .unwrap();
+    );
     assert_eq!(
         history.features[2].parameters.get("D2"),
         Some(&"<MOD-DIAM>3mm".to_string())

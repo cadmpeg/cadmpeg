@@ -3,7 +3,6 @@
 
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
         holes::{HoleBottom, HoleConstruction, HoleKind},
@@ -247,12 +246,8 @@ pub(super) fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((shape, profile)) =
-        hole_shape_and_profile(feature, features_by_source, history_features)?
-    else {
-        return Ok(None);
-    };
+) -> Option<FeatureDefinition> {
+    let (shape, profile) = hole_shape_and_profile(feature, features_by_source, history_features)?;
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("Blind")
             if profile
@@ -269,7 +264,7 @@ pub(super) fn project_hole(
         Some("ThroughAll") => Some(LinearTermination::ThroughAll {}),
         Some(_) => None,
     };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
+    Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: feature
@@ -302,19 +297,16 @@ pub(super) fn project_hole(
             .as_ref()
             .and_then(|profile| profile.taper_angle.clone()),
         allow_multi_profile_faces: None,
-    })))
+    }))
 }
 fn hole_shape_and_profile(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<
-    Option<(
-        cadmpeg_ir::features::holes::HoleShape,
-        Option<HoleProfileConstruction>,
-    )>,
-    CodecError,
-> {
+) -> Option<(
+    cadmpeg_ir::features::holes::HoleShape,
+    Option<HoleProfileConstruction>,
+)> {
     let profile = hole_profile_construction(feature, features_by_source, history_features);
     let diameter = super::parameter_dimension(feature, &["Diameter"])
         .or_else(|| profile.as_ref().map(|profile| profile.diameter.clone()));
@@ -383,32 +375,28 @@ fn hole_shape_and_profile(
             None => hole_form(HoleKind::Simple),
         }
     };
-    let Ok(shape) = cadmpeg_ir::features::holes::HoleShape::new(
+    let shape = cadmpeg_ir::features::holes::HoleShape::new(
         construction,
         profile
             .as_ref()
             .and_then(|profile| profile.exit_kind.clone()),
         diameter,
-    ) else {
-        return Ok(None);
-    };
-    Ok(Some((shape, profile)))
+    )
+    .ok()?;
+    Some((shape, profile))
 }
 
 pub(crate) fn threaded_hole_major_diameter(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<Option<f64>, CodecError> {
+) -> Option<f64> {
     if classify(feature) != Some(FeatureClass::Hole) {
-        return Ok(None);
+        return None;
     }
-    let Some((shape, _)) = hole_shape_and_profile(feature, features_by_source, history_features)?
-    else {
-        return Ok(None);
-    };
+    let (shape, _) = hole_shape_and_profile(feature, features_by_source, history_features)?;
     let HoleConstruction::NativeThread { major_diameter, .. } = shape.construction() else {
-        return Ok(None);
+        return None;
     };
     let value = major_diameter.literal().copied().or_else(|| {
         let id = major_diameter.parameter()?;
@@ -427,7 +415,7 @@ pub(crate) fn threaded_hole_major_diameter(
                 })
             })
     });
-    Ok(value.map(PositiveLength::get))
+    value.map(PositiveLength::get)
 }
 
 #[derive(Debug, Clone, PartialEq)]

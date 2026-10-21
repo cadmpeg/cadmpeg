@@ -1385,7 +1385,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(feature)
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(feature, features_by_source, history_features)?
+        project_hole(feature, features_by_source, history_features)
             .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)

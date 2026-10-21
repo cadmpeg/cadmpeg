@@ -888,8 +888,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &entities,
         std::slice::from_ref(&history),
         &[lane, alternate_configuration],
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -925,8 +924,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&paired_lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: paired_placements,
         ..
@@ -989,8 +987,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&incomplete_lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         incomplete_features[0].evaluation.definition()
     else {
@@ -1084,8 +1081,7 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1117,8 +1113,7 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous_features[0].evaluation.definition()
     else {
@@ -1633,7 +1628,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     let mut histories = [history];
     enrich_history_parameters(&mut histories, [&lane], true);
     assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
-    enrich_history_hole_constructions(&mut histories, &[lane]).unwrap();
+    enrich_history_hole_constructions(&mut histories, &[lane]);
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1651,7 +1646,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     next_hole.source_id = FeatureSource::from_value(20);
     next_hole.ordinal = 1;
     histories[0].features.push(next_hole);
-    enrich_history_hole_constructions(&mut histories, &[]).unwrap();
+    enrich_history_hole_constructions(&mut histories, &[]);
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1728,7 +1723,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         },
     ]);
 
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane.clone()]).unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane.clone()]);
     assert_eq!(
         history.features[0]
             .properties
@@ -1777,8 +1772,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             object_id: ObjectId::from_value(58),
         },
     ]);
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane])
-        .unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane]);
     assert!(!history.features[0]
         .properties
         .contains_key("DissectableChildren"));
@@ -1825,7 +1819,7 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
         ],
     });
 
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[]).unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[]);
 
     assert_eq!(
         history.features[0]
