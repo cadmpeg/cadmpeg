@@ -4,6 +4,7 @@
 pub(crate) mod bindings;
 mod datum;
 mod format;
+mod independent_parameters;
 mod misc;
 mod modify;
 mod pattern;
@@ -97,6 +98,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     }
 
     pub(super) fn encode(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        self.require_representable_independent_parameters()?;
         let mut encoding = match self.feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::TreeNode { role, children }) => {
                 self.encode_tree_node(*role, children, children.active_child().as_ref())
