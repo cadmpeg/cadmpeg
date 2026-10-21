@@ -283,6 +283,23 @@ pub(crate) fn parse_native_parameter_literal(
     {
         return parse_dimension_display_length(expression).map(ParameterValue::Length);
     }
+    if classify(feature) == Some(FeatureClass::Sketch) {
+        if let Ok(Some(controls)) =
+            crate::history::project::solid::hole_profile_parameter_values(feature)
+        {
+            if let Some(role) = controls.get(name) {
+                return match role {
+                    ParameterValue::Length(_) => {
+                        parse_dimension_length_mm(expression).map(ParameterValue::Length)
+                    }
+                    ParameterValue::Angle(_) => {
+                        parse_angle_rad(expression).map(ParameterValue::Angle)
+                    }
+                    _ => None,
+                };
+            }
+        }
+    }
     if native_parameter_is_length(feature, name, Some(expression)) {
         return parse_dimension_length_mm(expression).map(ParameterValue::Length);
     }
