@@ -62,8 +62,50 @@ pub(crate) fn attach_container_layer(
     attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native)
 }
 
+/// Admit scanner contracts while the actual source positions and encodings exist.
+pub(crate) fn source_validation_findings(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    match admit_source_records(ctx, namespace) {
+        Ok(()) => Ok(Vec::new()),
+        Err(error) => {
+            let message = error.to_string();
+            let error = CodecError::from(error);
+            if matches!(error, CodecError::ResourceLimit(_)) {
+                return Err(error);
+            }
+            Ok(vec![cadmpeg_ir::report::check::Finding {
+                related: Vec::new(),
+                check: cadmpeg_ir::report::check::Check::NativeLinks,
+                severity: cadmpeg_ir::report::Severity::Error,
+                message,
+                entity: None,
+            }])
+        }
+    }
+}
+
+/// Admit scanner contracts while the actual source positions and encodings exist.
+pub(crate) fn admit_source_records(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+    rmfastload_storage::admit(ctx, namespace)?;
+    admit_source_construction_records(ctx, namespace)?;
+    for record in namespace.arena_iter_as_for_decode::<assembly_placement::AssemblyPlacement>(
+        ctx,
+        "assembly_placements",
+    ) {
+        record?;
+    }
+    display_jt::admission::DisplayJtGraph::from_namespace(ctx, namespace)?;
+    structure::occurrences::FastLoadOccurrences::from_namespace(ctx, namespace)?;
+    Ok(())
+}
+
 /// Admit construction target byte contracts and complete surface allocations.
-pub(crate) fn admit_construction_records(
+fn admit_source_construction_records(
     ctx: &DecodeContext<'_>,
     namespace: &cadmpeg_ir::native::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {

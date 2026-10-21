@@ -68,6 +68,9 @@ fn aggregate_admission_preserves_native_json() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);
     assert!(validate_native(&ir).is_empty());
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    crate::decode::source_layout::move_layout(&mut ir, &mut fidelity).unwrap();
+    assert!(validate_native(&ir).is_empty());
 }
 
 #[test]
@@ -209,9 +212,21 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
         );
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native.0.insert("nx".into(), namespace);
-        let findings = validate_native(&ir);
+        let findings = crate::test_support::with_decode_context(|ctx| {
+            crate::native::source_validation_findings(ctx, ir.native.namespace("nx").unwrap())
+        })
+        .unwrap();
         assert_eq!(findings.len(), 1, "{path}");
         assert!(findings[0].message.contains(field), "{path}");
+        // Source positions belong to the scanner/fidelity boundary. Every
+        // semantic mutation must also fail on the actual document wire.
+        if !matches!(field, "source_offset" | "inflated_offset") {
+            let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+            crate::decode::source_layout::move_layout(&mut ir, &mut fidelity).unwrap();
+            let findings = validate_native(&ir);
+            assert_eq!(findings.len(), 1, "{path}");
+            assert!(findings[0].message.contains(field), "{path}: {findings:?}");
+        }
     }
 }
 

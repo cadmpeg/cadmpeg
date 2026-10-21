@@ -3,11 +3,9 @@
 
 use std::collections::BTreeMap;
 
-#[cfg(test)]
 use cadmpeg_core::decode::DecodeContext;
 
 use cadmpeg_ir::native::NativeConvertError;
-#[cfg(test)]
 use cadmpeg_ir::native::NativeNamespace;
 use serde::{Deserialize, Serialize};
 
@@ -61,7 +59,6 @@ impl DisplayJtGraph {
         &self.0.compressed_element_sequences
     }
 
-    #[cfg(test)]
     pub(crate) fn from_namespace(
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,

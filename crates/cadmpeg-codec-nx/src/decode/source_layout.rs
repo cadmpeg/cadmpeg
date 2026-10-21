@@ -9,15 +9,12 @@ use serde_json::{json, Value};
 // only when its value is a hexadecimal byte encoding; typed objects and
 // mathematical arrays continue through the normal traversal.
 const BYTE_FIELDS: &[&str] = &[
-    "attributes",
     "body",
-    "component_quantization_bits",
     "discriminator",
     "first_reference_prefix",
     "flags",
     "index_lane_raw_indices",
     "layout_prefix",
-    "legal_owner_flags",
     "lsg_segment_id",
     "marker",
     "markers",
@@ -86,7 +83,7 @@ const BYTE_FIELDS: &[&str] = &[
     "trailing_value",
 ];
 
-pub(super) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
+pub(crate) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
     for (arena, records) in ir.native.namespace_mut("nx").arenas_mut() {
         for record in records {
             let identity =
@@ -134,39 +131,6 @@ fn extract(value: &mut Value, path: &str, fidelity: &mut SourceFidelity) -> Resu
                 let Some(child) = object.get_mut(&key) else {
                     continue;
                 };
-                if key == "attributes" {
-                    if let Some(bytes) = child
-                        .as_str()
-                        .and_then(decode_hex)
-                        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
-                    {
-                        // endian-exception: reconstructed-scalar
-                        *child = Value::from(u32::from_be_bytes(bytes));
-                        continue;
-                    }
-                }
-                // These byte-sized fields have decoded mathematical/Boolean
-                // semantics. Keep canonical values rather than source encodings.
-                if matches!(
-                    key.as_str(),
-                    "component_quantization_bits" | "legal_owner_flags"
-                ) {
-                    if let Some(bytes) = child.as_str().and_then(decode_hex) {
-                        *child = Value::Array(
-                            bytes
-                                .into_iter()
-                                .map(|value| {
-                                    if key == "legal_owner_flags" {
-                                        Value::Bool(value != 0)
-                                    } else {
-                                        Value::from(value)
-                                    }
-                                })
-                                .collect(),
-                        );
-                        continue;
-                    }
-                }
                 if BYTE_FIELDS.contains(&key.as_str()) && !is_semantic_identity(&key) {
                     if extract_bytes(child, &child_path, fidelity)? {
                         continue;
@@ -255,13 +219,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decoded_quantization_and_owner_flags_remain_typed_values() {
-        let mut value =
-            json!({"component_quantization_bits":"080a0c", "legal_owner_flags":"000100"});
+    fn appendix_b_keep_fields_preserve_exact_native_serialization() {
+        let mut value = json!({"attributes":"00000007", "component_quantization_bits":"080a0c", "legal_owner_flags":"000100"});
         let mut fidelity = SourceFidelity::default();
         extract(&mut value, "native.nx.record", &mut fidelity).unwrap();
-        assert_eq!(value["component_quantization_bits"], json!([8, 10, 12]));
-        assert_eq!(value["legal_owner_flags"], json!([false, true, false]));
+        assert_eq!(value["attributes"], json!("00000007"));
+        assert_eq!(value["component_quantization_bits"], json!("080a0c"));
+        assert_eq!(value["legal_owner_flags"], json!("000100"));
         assert!(fidelity.retained_records().is_empty());
     }
 

@@ -98,11 +98,13 @@ fn rmfastload_native_admission_checks_the_owning_section_class_count() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let (mut ir, _, _) = result.into_parts();
+    let (mut ir, _, fidelity) = result.into_parts();
     crate::test_support::with_decode_context(|ctx| {
         assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
             .unwrap()
             .is_empty());
+        let source = crate::test_support::source_fidelity::native_namespace(&ir, &fidelity);
+        ir.native.0.insert("nx".into(), source);
         let namespace = ir.native.namespace_mut("nx");
         let original =
             serde_json::to_value(&namespace.arenas()["rmfastload_physical_storages"][0]).unwrap();

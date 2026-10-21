@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Roster-owned occurrence lane admission.
 
-#[cfg(test)]
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::NonEmptyMembers;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
@@ -48,7 +47,6 @@ impl FastLoadOccurrences {
         })
     }
 
-    #[cfg(test)]
     pub(crate) fn from_namespace(
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,

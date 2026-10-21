@@ -142,20 +142,7 @@ impl CodecBackend for NxCodec {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Ok(Vec::new());
         };
-        let admitted = native::document_validation::validate(namespace, ir)
-            .and_then(|()| native::rmfastload_storage::admit(ctx, namespace))
-            .and_then(|()| native::admit_construction_records(ctx, namespace))
-            .and_then(|()| {
-                for record in namespace
-                    .arena_iter_as_for_decode::<native::assembly_placement::AssemblyPlacement>(
-                        ctx,
-                        "assembly_placements",
-                    )
-                {
-                    record?;
-                }
-                Ok(())
-            });
+        let admitted = native::document_validation::validate(ctx, namespace, ir);
         Ok(match admitted {
             Ok(()) => Vec::new(),
             Err(error) => {
