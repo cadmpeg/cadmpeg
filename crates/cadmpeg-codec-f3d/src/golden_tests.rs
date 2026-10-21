@@ -1039,19 +1039,29 @@ fn geometry_depth_agrees_with_full_depth() {
             // Actual opaque geometry records and historical payloads are
             // source content. Diagnostics about typed values are not an
             // independent source record (#209 section 1.3).
-            if !result
+            for unknown in result
                 .ir()
                 .native_unknowns("f3d")
                 .expect("valid typed native unknown stubs")
-                .is_empty()
             {
-                assert!(
-                    result
-                        .source_fidelity()
-                        .unrepresented()
-                        .contains(&cadmpeg_ir::ArenaClass::Model),
-                    "opaque ASM records must declare omitted model content"
-                );
+                // A zero-payload mesh_surface states absence, represented by
+                // its typed sentinel. It has no unread exact-surface payload.
+                let typed_absence = result.ir().model.surfaces.iter().any(|surface| {
+                    matches!(&surface.geometry,
+                        cadmpeg_ir::geometry::SurfaceGeometry::Solved(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: Some(record) })
+                            if record == &unknown.id)
+                        && native.mesh_surface_sentinels.iter().any(|sentinel| sentinel.surface == surface.id)
+                });
+                if !typed_absence {
+                    assert!(
+                        result
+                            .source_fidelity()
+                            .unrepresented()
+                            .contains(&cadmpeg_ir::ArenaClass::Model),
+                        "opaque ASM record {} must declare omitted model content",
+                        unknown.id
+                    );
+                }
             }
             let raw_recipe = native.design_edge_operands.iter().any(|operand| {
                 !operand.recipe_program.is_empty()
