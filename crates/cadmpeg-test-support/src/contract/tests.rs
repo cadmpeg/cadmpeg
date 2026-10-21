@@ -44,6 +44,66 @@ fn translation_moves_carriers_and_keeps_native_records_and_directions() {
 }
 
 #[test]
+fn translation_moves_polynomial_and_rational_surface_poles_once() {
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3,
+    };
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+    let rows = vec![
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        vec![Point3::new(7.0, 8.0, 9.0), Point3::new(10.0, 11.0, 12.0)],
+    ];
+    for rational in [false, true] {
+        let poles = if rational {
+            NurbsPoleGrid::Rational {
+                rows: rows
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .enumerate()
+                            .map(|(index, point)| WeightedPole3 {
+                                point: *point,
+                                weight: cadmpeg_ir::scalar::NonZeroReal::new(if index == 0 {
+                                    2.0
+                                } else {
+                                    4.0
+                                })
+                                .unwrap(),
+                            })
+                            .collect()
+                    })
+                    .collect(),
+            }
+        } else {
+            NurbsPoleGrid::Polynomial { rows: rows.clone() }
+        };
+        let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
+        let surface = NurbsSurface::new(axis(), axis(), poles, false).unwrap();
+        let weights = surface.weights();
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#translate").unwrap(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+            source_object: None,
+        });
+        translate_model(&mut ir, [13.0, -7.0, 5.0]).unwrap();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("NURBS surface stays a NURBS surface");
+        };
+        assert_eq!(surface.weights(), weights);
+        for (before, after) in rows.iter().flatten().zip(surface.poles()) {
+            assert_eq!(
+                after.get(),
+                Point3::new(before.x + 13.0, before.y - 7.0, before.z + 5.0)
+            );
+        }
+    }
+}
+
+#[test]
 fn invalid_translation_leaves_document_unchanged() {
     let mut ir = unit_cube().expect("cube fixture");
     let before = ir.clone();
