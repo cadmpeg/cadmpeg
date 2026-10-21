@@ -1210,3 +1210,66 @@ fn native_color_attribute(
     native_f64(records, 1.0);
     Ok(())
 }
+
+/// Whether every stated attribute has an exact content source in the generated
+/// name or timestamp carriers. Attribute chain identities are regenerated.
+pub(super) fn regenerates_attributes(target: &CadIr, native: &F3dNative) -> bool {
+    use cadmpeg_ir::attributes::AttributeValue::{Float, Integer, Reference, String as Text};
+    let mut slots = std::collections::BTreeSet::new();
+    target.model.attributes.iter().all(|attribute| {
+        let owner_id = match &attribute.target {
+            AttributeTarget::Body(id) => id.as_str(),
+            AttributeTarget::Face(id) => id.as_str(),
+            AttributeTarget::Edge(id) => id.as_str(),
+            AttributeTarget::Coedge(id) => id.as_str(),
+            AttributeTarget::Vertex(id) => id.as_str(),
+            _ => return false,
+        };
+        let payload = match attribute.values.as_slice() {
+            [Reference(_), Integer(-1), Reference(_), Reference(_), Reference(owner), rest @ ..]
+                if owner == owner_id =>
+            {
+                rest
+            }
+            values => values,
+        };
+        let kind = match (attribute.name.as_str(), payload) {
+            (
+                "string_attrib-name_attrib-gen-attrib",
+                [Integer(1), Integer(1), Integer(1), Integer(1), Text(marker), Text(name)],
+            ) if marker == "name" => {
+                let canonical = match &attribute.target {
+                    AttributeTarget::Body(id) => target
+                        .model
+                        .bodies
+                        .iter()
+                        .find(|body| &body.id == id)
+                        .and_then(|body| body.name.as_deref()),
+                    AttributeTarget::Face(id) => target
+                        .model
+                        .faces
+                        .iter()
+                        .find(|face| &face.id == id)
+                        .and_then(|face| face.name.as_deref()),
+                    _ => None,
+                };
+                if canonical != Some(name.as_str()) {
+                    return false;
+                }
+                "name"
+            }
+            ("ATTRIB_CUSTOM-attrib", [Text(marker), Integer(1), Float(value)])
+                if marker == "Timestamp_attrib_def" =>
+            {
+                if !native.creation_timestamps.iter().any(|timestamp| {
+                    timestamp.target == attribute.target && timestamp.unix_microseconds == *value
+                }) {
+                    return false;
+                }
+                "timestamp"
+            }
+            _ => return false,
+        };
+        slots.insert((attribute.target.clone(), kind))
+    })
+}

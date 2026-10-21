@@ -292,7 +292,11 @@ fn coverage(
         tessellations: Dropped,
         appearances: Written,
         appearance_bindings: Omitted,
-        attributes: Omitted,
+        attributes: if attributes::regenerates_attributes(target, native) {
+            Reported
+        } else {
+            Omitted
+        },
         pmi: Omitted,
         presentation_layers: Omitted,
     }
