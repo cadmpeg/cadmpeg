@@ -317,6 +317,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[],
         None,
     )?;
+    super::normalize_configuration_differences(&mut ir);
     let id = ParameterId::mint("sldprt:model:parameter#feature:0").unwrap();
     let configuration = &ir.model.configurations[0];
     assert_eq!(
@@ -1103,6 +1104,10 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
         feature_input_lane("lane-1", Some("1")),
     ];
     let mut base = cadmpeg_ir::CadIr::empty();
+    base.model.parameters = crate::history::parameters::project_parameters(&ctx, &histories)?;
+    base.model.features = crate::history::project::project_features(&histories)?;
+    let parameter =
+        cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#feature:0").unwrap();
     base.model
         .configurations
         .push(design_configuration("first", 0, Some(0), None));
@@ -1128,8 +1133,20 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
         .model
         .configurations
         .iter()
-        .all(|configuration| configuration.feature_states.len() == 1
-            && configuration.parameter_values.len() == 1));
+        .all(|configuration| configuration.feature_states.len() == 1));
+    super::normalize_configuration_differences(&mut uncapped);
+    for configuration in &uncapped.model.configurations {
+        assert!(configuration.feature_states.is_empty());
+        assert!(configuration.parameter_values.is_empty());
+        assert_eq!(uncapped.model.features.len(), 1);
+        assert_eq!(uncapped.model.parameters.len(), 1);
+        assert_eq!(
+            configuration.parameter_value(&uncapped, &parameter),
+            Some(&cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(12.0).unwrap()
+            ))
+        );
+    }
 
     let one_pass = super::configuration_history_units(&histories).unwrap();
     let mut capped = base.clone();
@@ -1141,6 +1158,9 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
         one_pass,
     )?;
     assert_eq!(unprojected, 1);
+    assert_eq!(capped.model.configurations[0].feature_states.len(), 1);
+    assert!(capped.model.configurations[1].feature_states.is_empty());
+    super::normalize_configuration_differences(&mut capped);
     assert_eq!(
         capped.model.configurations[0],
         uncapped.model.configurations[0]
