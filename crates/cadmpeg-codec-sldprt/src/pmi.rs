@@ -507,7 +507,7 @@ pub(crate) fn apply_to_parameters(
                 };
                 let expression = cache
                     .as_ref()
-                    .map(Expression::literal)
+                    .map(|value| Expression::text(crate::history::literals::format_parameter_value(value)))
                     .unwrap_or_else(|| Expression::text(record.value.get().to_string()));
                 let index = parameters.len();
                 parameters.push(DesignParameter {
