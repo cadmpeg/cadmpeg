@@ -341,11 +341,38 @@ fn edit_blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> usize {
         .features
         .iter()
         .filter_map(|feature| {
-            let length = ir.dimension_value(blind_depth(feature.definition())?)?;
-            Some((feature.id.clone(), length))
+            let dimension = blind_depth(feature.definition())?;
+            let length = ir.dimension_value(dimension)?;
+            Some((feature.id.clone(), length, dimension.parameter().cloned()))
         })
         .collect::<Vec<_>>();
-    for (feature, length) in &edits {
+    let configuration_edits = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .flat_map(|(configuration, row)| {
+            row.feature_states
+                .iter()
+                .filter_map(move |(feature, state)| {
+                    Some((configuration, feature.clone(), state.definition()?.clone()))
+                })
+        })
+        .filter_map(|(configuration, feature, definition)| {
+            let dimension = blind_depth(&definition)?;
+            let length = ir.dimension_value(dimension)?;
+            let parameter = dimension.parameter().cloned();
+            Some((configuration, feature, definition, length, parameter))
+        })
+        .collect::<Vec<_>>();
+    let mut edited_parameters = BTreeSet::new();
+    for (feature, length, parameter) in &edits {
+        if parameter
+            .as_ref()
+            .is_some_and(|parameter| !edited_parameters.insert(parameter.clone()))
+        {
+            continue;
+        }
         ir.set_dimension(
             feature,
             "/extent/side/termination/length",
@@ -353,7 +380,41 @@ fn edit_blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> usize {
         )
         .expect("edit the canonical blind depth");
     }
-    edits.len()
+    for (configuration, feature, definition, length, parameter) in &configuration_edits {
+        if parameter
+            .as_ref()
+            .is_some_and(|parameter| !edited_parameters.insert(parameter.clone()))
+        {
+            continue;
+        }
+        let index = ir
+            .model
+            .features
+            .iter()
+            .position(|row| row.id == *feature)
+            .expect("configuration feature exists");
+        let base = ir.model.features[index].definition().clone();
+        ir.model.features[index]
+            .evaluation
+            .set_definition(definition.clone());
+        let result = ir.set_dimension(
+            feature,
+            "/extent/side/termination/length",
+            cadmpeg_ir::scalar::NonZeroLength::new(length.get() + MUTATION_MM).unwrap(),
+        );
+        let edited_definition = ir.model.features[index].definition().clone();
+        ir.model.features[index].evaluation.set_definition(base);
+        result.expect("edit the configuration's canonical blind depth");
+        ir.model.configurations[*configuration]
+            .feature_states
+            .insert(
+                feature.clone(),
+                cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+                    definition: edited_definition,
+                },
+            );
+    }
+    edits.len() + configuration_edits.len()
 }
 
 /// A blind-depth edit retains its solved cache and writes the native stale flag.
