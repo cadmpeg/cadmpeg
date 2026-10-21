@@ -204,7 +204,7 @@ pub(crate) fn project(
         let Some(object) = object.framed() else {
             continue;
         };
-        let targets = items(ir, source_order, &object.identity.source_id);
+        let targets = items(ir, source_order, &object.identity.object_id.to_string());
         let candidates = layers
             .iter()
             .enumerate()
@@ -233,6 +233,105 @@ pub(crate) fn project(
                 if targets.iter().any(|target| matches!(target, PresentationItem::Body { body: id } if *id == body.id)) {
                     // Object visibility and layer visibility are independent.
                     body.visible = Some(attributes.visible);
+                }
+            }
+        }
+        let non_body_targets = targets
+            .iter()
+            .filter(|target| !matches!(target, PresentationItem::Body { .. }));
+        if non_body_targets.clone().next().is_some() {
+            if let Some(attributes) = object.attributes.parsed() {
+                ctx.charge_entities(1, "rhino_object_visibility")?;
+                ir.model
+                    .view_presentations
+                    .push(cadmpeg_ir::presentation::ViewPresentation {
+                        id: cadmpeg_ir::presentation::PresentationId::mint(format!(
+                            "rhino:model:object-view#{source_order}"
+                        ))
+                        .map_err(CodecError::malformed)?,
+                        object: Some(object.identity.object_id.to_string()),
+                        order: u32::try_from(ir.model.view_presentations.len())
+                            .map_err(CodecError::malformed)?,
+                        expanded: None,
+                        visible: Some(attributes.visible),
+                        display_mode: None,
+                        selection_style: None,
+                        line_width: None,
+                        point_size: None,
+                        properties: BTreeMap::new(),
+                        native_ref: None,
+                    });
+                if matches!(
+                    attributes.color_source,
+                    crate::objects::ColorSource::Object | crate::objects::ColorSource::Layer
+                ) {
+                    if let Some(bytes) = object.identity.effective_color {
+                        let key = match attributes.color_source {
+                            crate::objects::ColorSource::Layer => {
+                                format!("layer-{}", attributes.layer_index)
+                            }
+                            _ => format!("object-{source_order}"),
+                        };
+                        let appearance = cadmpeg_ir::ids::AppearanceId::mint(format!(
+                            "rhino:model:display-color#{key}"
+                        ))
+                        .map_err(CodecError::malformed)?;
+                        if !ir
+                            .model
+                            .appearances
+                            .iter()
+                            .any(|record| record.id == appearance)
+                        {
+                            ctx.charge_entities(1, "rhino_display_colors")?;
+                            ir.model
+                                .appearances
+                                .push(cadmpeg_ir::appearance::Appearance {
+                                    id: appearance.clone(),
+                                    name: None,
+                                    asset_guid: None,
+                                    library_id: None,
+                                    visual_guid: None,
+                                    physical_token: None,
+                                    schema: None,
+                                    category: None,
+                                    base_color: Some(crate::wire::packed_color(bytes)),
+                                    properties: BTreeMap::new(),
+                                    textures: Vec::new(),
+                                });
+                        }
+                        for (ordinal, item) in non_body_targets.enumerate() {
+                            let target = match attribute_target(item) {
+                                Some(AttributeTarget::Point(id)) => {
+                                    cadmpeg_ir::appearance::AppearanceTarget::Point(id)
+                                }
+                                Some(AttributeTarget::Curve(id)) => {
+                                    cadmpeg_ir::appearance::AppearanceTarget::Curve(id)
+                                }
+                                Some(AttributeTarget::Surface(id)) => {
+                                    cadmpeg_ir::appearance::AppearanceTarget::Surface(id)
+                                }
+                                Some(AttributeTarget::Tessellation(id)) => {
+                                    cadmpeg_ir::appearance::AppearanceTarget::Tessellation(id)
+                                }
+                                _ => continue,
+                            };
+                            ctx.charge_entities(1, "rhino_display_color_bindings")?;
+                            ir.model.appearance_bindings.push(
+                                cadmpeg_ir::appearance::AppearanceBinding {
+                                    id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!(
+                                    "rhino:model:display-color-binding#{source_order}-{ordinal}"
+                                ))
+                                    .map_err(CodecError::malformed)?,
+                                    target,
+                                    appearance: appearance.clone(),
+                                    source_entity_id: None,
+                                    object_type: None,
+                                    visible: None,
+                                    channels: BTreeMap::new(),
+                                },
+                            );
+                        }
+                    }
                 }
             }
         }
