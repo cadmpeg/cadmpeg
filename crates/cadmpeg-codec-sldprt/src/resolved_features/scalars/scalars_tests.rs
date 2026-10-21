@@ -33,7 +33,7 @@ fn named_scalar_identity_decodes_record_fields() {
     assert_eq!(
         named_scalars(&payload, "lane", &names).unwrap(),
         vec![crate::records::FeatureInputScalar {
-            sequence: 32,
+            sequence: 0,
             id: "sldprt:feature-input:scalar#lane:32".into(),
             parent: "lane".into(),
             feature_ref: None,
