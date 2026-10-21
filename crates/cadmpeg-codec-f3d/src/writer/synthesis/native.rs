@@ -210,12 +210,25 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         })
         .map(|header| header.entity_id.suffix())
         .collect::<std::collections::BTreeSet<_>>();
+    let omitted_curve_indices = original
+        .sketch_curve_identities
+        .iter()
+        .filter(|before| {
+            !native
+                .sketch_curve_identities
+                .iter()
+                .any(|after| after.id == before.id)
+        })
+        .map(|curve| u64::from(curve.record_index))
+        .collect::<std::collections::BTreeSet<_>>();
     for record in &mut native.design_types {
         let entities = record
             .entities
             .values()
             .copied()
-            .filter(|id| !omitted_header_entities.contains(id))
+            .filter(|id| {
+                !omitted_header_entities.contains(id) && !omitted_curve_indices.contains(id)
+            })
             .collect();
         record.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
     }
