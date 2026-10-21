@@ -649,8 +649,8 @@ fn synchronize_features(
             });
         if !consistent {
             return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} dependencies are inconsistent with its operands",
-                feature.id
+                "SLDPRT feature {} dependencies are inconsistent with its operands: expected {expected:?}, projected {:?}; definition {:?}",
+                feature.id, projected_features.get(&projected_id).map(|projected| &projected.dependencies), feature.definition()
             )));
         }
     }
