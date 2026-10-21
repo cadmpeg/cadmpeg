@@ -45,6 +45,17 @@ pub(crate) enum AssemblyOperandFrameVariant {
     /// Operand references 18 bytes before their transforms, each transform
     /// followed by an LP-UTF16 GUID (the 945-byte `Assemble` scope).
     Wide,
+    /// The wide operand form five bytes earlier (the 806-, 850- and 861-byte
+    /// `Assemble` scopes).
+    CompactWide,
+}
+
+impl AssemblyOperandFrameVariant {
+    /// Whether the scope lists its owners first and uses the wide
+    /// operand-path locator.
+    pub(crate) fn is_wide_family(self) -> bool {
+        matches!(self, Self::Wide | Self::CompactWide)
+    }
 }
 
 /// Whether a scope belongs to the variable-reference `Assemble` generation.
@@ -79,7 +90,9 @@ enum AssemblyAlignmentLanes {
 impl AssemblyScopeGeneration {
     /// Classify the scope's three coupled layout projections.
     pub(crate) fn new(frame_length: u64, class_tag: &str, paired_class_tag: &str) -> Self {
-        use AssemblyOperandFrameVariant::{Axial, Compact, LegacyClass388, Standard, Wide};
+        use AssemblyOperandFrameVariant::{
+            Axial, Compact, CompactWide, LegacyClass388, Standard, Wide,
+        };
         let (operand_frame, lanes, locator_offsets) = match frame_length {
             399 => (None, Some((4, 0, 4)), Some([51, 62])),
             604 => (None, Some((8, 4, 8)), None),
@@ -94,6 +107,8 @@ impl AssemblyScopeGeneration {
             744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
+            806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
+            850 => (Some(CompactWide), Some((4, 0, 4)), Some([530, 541])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
@@ -460,6 +475,21 @@ fn project_assembly_joint(
                 projected,
                 None,
             )
+        }
+        // A wide scope always qualifies its operands; frames without
+        // qualifiers are an unprojected joint, not an absent one.
+        Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
+            if AssemblyScopeGeneration::new(
+                scope.frame_length(),
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            )
+            .operand_frame_variant()
+            .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
+        {
+            return Err(CodecError::NotImplemented(
+                "wide assembly joint operand paths are unresolved".into(),
+            ));
         }
         _ => return Ok(None),
     };
@@ -1134,6 +1164,62 @@ mod tests {
     }
 
     #[test]
+    fn a_wide_scope_without_operand_qualifiers_is_an_unprojected_joint() {
+        use crate::records::feature::{
+            assembly::{
+                DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+            },
+            scope::{DesignFeatureKind, DesignScopePayload},
+        };
+        let frames = [17, 45].map(|index| DesignAssemblyOperandFrame {
+            reference_record_index: index,
+            reference_offset: 0,
+            transform: cadmpeg_ir::transform::Transform::identity()
+                .rows()
+                .try_into()
+                .unwrap(),
+            transform_offset: 0,
+        });
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            DesignFeatureKind::Assemble,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 806;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+                draft.payload = DesignScopePayload::Assemble(Some(
+                    DesignAssemblyAlignment::try_new(
+                        0.0,
+                        [0.0; 3],
+                        Vec::new(),
+                        Some(DesignAssemblyAlignmentForm::Frames { frames }),
+                    )
+                    .unwrap(),
+                ));
+            })
+            .unwrap();
+        let projection = super::project_assembly_joints(
+            &[scope],
+            &[],
+            &crate::design::components::ComponentInserts::default(),
+            &[],
+        );
+        assert!(projection.joints.is_empty());
+        assert_eq!(
+            projection
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()]
+        );
+    }
+
+    #[test]
     fn affine_projection_rejects_nonfinite_cadir_coefficients() {
         let mut transform = cadmpeg_ir::transform::Transform::identity().rows();
         transform[0][0] = f64::NAN;
@@ -1282,6 +1368,9 @@ mod tests {
             (744, 8, (4, 8)),
             (748, 8, (4, 8)),
             (705, 6, (4, 6)),
+            (806, 4, (0, 4)),
+            (850, 4, (0, 4)),
+            (861, 4, (0, 4)),
             (945, 4, (0, 4)),
             (671, 6, (4, 6)),
             (772, 10, (8, 10)),
@@ -1290,6 +1379,13 @@ mod tests {
                 super::AssemblyScopeGeneration::new(frame_length, "", "")
                     .alignment_lane_bounds(owner_count),
                 Some(expected)
+            );
+        }
+        for (frame_length, locators) in [(806, [534, 545]), (850, [530, 541]), (861, [534, 545])] {
+            assert_eq!(
+                super::AssemblyScopeGeneration::new(frame_length, "", "")
+                    .operand_path_locator_offsets(),
+                Some(locators)
             );
         }
         for (frame_length, owner_count) in [(627, 6), (732, 6), (705, 8), (772, 8), (604, 4)] {
