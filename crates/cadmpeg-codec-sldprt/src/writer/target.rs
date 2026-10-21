@@ -37,7 +37,8 @@ pub(crate) fn plan(
             super::synthesis::SynthesisCause::SourceUnrepresented { classes },
         );
     }
-    if let (Some(namespace), Some(fidelity)) = (input.ir.native.namespace("sldprt"), input.fidelity) {
+    if let (Some(namespace), Some(fidelity)) = (input.ir.native.namespace("sldprt"), input.fidelity)
+    {
         if let Err(error) = crate::native::source::load(namespace, fidelity) {
             if matches!(error, CodecError::ResourceLimit(_)) {
                 return Err(error);

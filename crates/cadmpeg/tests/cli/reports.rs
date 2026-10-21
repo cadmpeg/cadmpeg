@@ -5,7 +5,7 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{PredicateBooleanExt, predicate};
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
 use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
@@ -70,12 +70,10 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "plan");
     assert_eq!(value["refusal"]["code"], "empty_geometry");
-    assert!(
-        value["refusal"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("geometry")
-    );
+    assert!(value["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("geometry"));
     assert!(value["decode_report"].is_object());
     assert!(value["check_report"].is_object());
     // The writer completed its plan before caller policy refused the empty
@@ -217,15 +215,13 @@ fn f3d_export_report_identifies_regenerated_output() {
         value["export"]["identity"]["target"],
         "f3d:manifest-3-2-0-0"
     );
-    assert!(
-        value["export"]["notes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|note| note
-                .as_str()
-                .is_some_and(|note| note.contains("regenerated")))
-    );
+    assert!(value["export"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note
+            .as_str()
+            .is_some_and(|note| note.contains("regenerated"))));
 }
 
 #[test]

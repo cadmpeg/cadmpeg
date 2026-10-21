@@ -102,7 +102,8 @@ pub(crate) fn project_canvas_images(
                                 "Canvas opacity must be finite and between zero and one",
                             )
                         })?,
-                    )).map(Into::into),
+                    ))
+                    .map(Into::into),
                 },
             ));
     }

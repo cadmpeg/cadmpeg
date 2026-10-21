@@ -504,7 +504,10 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     ));
     let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     assert_eq!(
-        sketches[0].fields().unwrap()["dimensions"].as_array().unwrap().len(),
+        sketches[0].fields().unwrap()["dimensions"]
+            .as_array()
+            .unwrap()
+            .len(),
         2
     );
     let sketch_feature = result

@@ -138,9 +138,11 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
     insert_dimension_property(
         &mut properties,
         "value_token",
-        serde_json::to_string(&cadmpeg_ir::native::bytes::NativeBytes::from([0x00_u8, 0xf1, 0x7f]))
-            .expect("native bytes serialize")
-            .trim_matches('"'),
+        serde_json::to_string(&cadmpeg_ir::native::bytes::NativeBytes::from([
+            0x00_u8, 0xf1, 0x7f,
+        ]))
+        .expect("native bytes serialize")
+        .trim_matches('"'),
     );
     assert_eq!(properties["value_token"], "00f17f");
     assert_eq!(

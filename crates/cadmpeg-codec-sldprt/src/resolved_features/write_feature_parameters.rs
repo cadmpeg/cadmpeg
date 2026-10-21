@@ -2,8 +2,8 @@
 //! Author operation scalar lanes from the current canonical parameter caches.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::CadIr;
 
 use crate::native::SldprtNative;
 

@@ -24,12 +24,12 @@ pub(crate) mod parameters;
 pub(crate) mod recipes;
 pub(crate) mod references;
 pub(crate) mod serde_column;
-pub(crate) mod source_frame;
 pub(crate) mod sheet_metal_settings;
 pub(crate) mod sketch_geometry;
 pub(crate) mod sketch_links;
 pub(crate) mod sketch_placement;
 pub(crate) mod sketch_relations;
+pub(crate) mod source_frame;
 #[cfg(test)]
 mod tests;
 pub(crate) mod topology;

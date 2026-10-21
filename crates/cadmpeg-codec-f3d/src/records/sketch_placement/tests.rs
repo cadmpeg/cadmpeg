@@ -59,12 +59,10 @@ fn placement_document_preserves_transform_without_implied_source_layout() {
         ] {
             let mut invalid = wire.clone();
             invalid[field] = 0.into();
-            assert!(
-                serde_json::from_value::<DesignSketchPlacement>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            assert!(serde_json::from_value::<DesignSketchPlacement>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
     }
 }

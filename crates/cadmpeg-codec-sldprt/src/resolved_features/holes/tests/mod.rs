@@ -117,7 +117,8 @@ fn lane() -> FeatureInputLane {
     let identity = |ordinal| FeatureInputGeneratedSurfaceIdentity {
         id: format!("identity-{ordinal}"),
         parent: "lane".into(),
-        ordinal, sequence: ordinal,
+        ordinal,
+        sequence: ordinal,
         offset: Some(u64::from(ordinal)),
         type_prefix: [0xc3, 0x80, 0xc5, 0].into(),
         feature_source_id: 7_u32.try_into().unwrap(),
@@ -145,10 +146,12 @@ fn lane() -> FeatureInputLane {
 fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
-    lane.names.push(FeatureInputName { feature_ref: None,
+    lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "hole-name".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         value: "Hole".into(),
         object_id: ObjectId::from_value(7),

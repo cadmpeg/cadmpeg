@@ -4071,7 +4071,9 @@ pub(super) fn profile_loci_by_marker(
                 else {
                     continue;
                 };
-                let primary_geometry_locus = marker.offset().and_then(|offset| usize::try_from(offset).ok())
+                let primary_geometry_locus = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())
                     .is_some_and(|offset| marker_is_geometry_locus(&lane.native_payload, offset));
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                 let translated_points = transforms
@@ -4518,9 +4520,12 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                         continue;
                     };
                     if primary_only
-                        && marker.offset().and_then(index_from_u64).is_none_or(|offset| {
-                            !marker_is_geometry_locus(&lane.native_payload, offset)
-                        })
+                        && marker
+                            .offset()
+                            .and_then(index_from_u64)
+                            .is_none_or(|offset| {
+                                !marker_is_geometry_locus(&lane.native_payload, offset)
+                            })
                     {
                         continue;
                     }

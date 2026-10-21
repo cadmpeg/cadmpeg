@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mark declared identity fields without interpreting names or expressions.
-use cadmpeg_core::{CodecError, decode::DecodeContext};
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
-    CadIr,
     document::{EntityRewrite, Model},
     schema::rewrite::{self, typed::RewriteIdentities},
+    CadIr,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};

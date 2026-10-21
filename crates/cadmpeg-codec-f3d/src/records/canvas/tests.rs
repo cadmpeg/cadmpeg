@@ -186,12 +186,10 @@ fn canvas_content_edits_are_independent_of_source_payloads() {
     ] {
         let mut invalid = base.clone();
         invalid[field] = serde_json::json!(0);
-        assert!(
-            serde_json::from_value::<super::DesignCanvasImage>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-        );
+        assert!(serde_json::from_value::<super::DesignCanvasImage>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
 }
 #[test]
@@ -269,18 +267,16 @@ fn source_canvas_admission_checks_actual_scope_envelopes_and_overflow() {
         );
     }
     let content = canvas_image_fixture();
-    assert!(
-        super::DesignCanvasGeometry::new(
-            content.geometry.class_tags.clone(),
-            content.geometry.record_index,
-            u64::MAX,
-            content.geometry.label,
-            content.geometry.prologue,
-            content.geometry.boundary,
-            content.geometry.payload
-        )
-        .is_err()
-    );
+    assert!(super::DesignCanvasGeometry::new(
+        content.geometry.class_tags.clone(),
+        content.geometry.record_index,
+        u64::MAX,
+        content.geometry.label,
+        content.geometry.prologue,
+        content.geometry.boundary,
+        content.geometry.payload
+    )
+    .is_err());
 }
 
 #[test]
