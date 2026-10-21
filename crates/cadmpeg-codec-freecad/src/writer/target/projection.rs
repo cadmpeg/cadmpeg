@@ -45,7 +45,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     let mut projected = CadIr::empty();
     projected.scope = ir.scope;
     projected.native.clone_from(&ir.native);
-    projected.source = ir.source.clone();
+    projected.source.clone_from(&ir.source);
     let mut curves = brep::transfer_text_curves(ctx, &payloads, &properties)?;
     let surfaces = brep::transfer_text_surfaces(ctx, &payloads, &properties, &mut curves)?;
     projected.model.curves = curves.curves;
