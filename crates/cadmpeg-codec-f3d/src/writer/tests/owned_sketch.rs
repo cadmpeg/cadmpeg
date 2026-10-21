@@ -38,6 +38,11 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
     ir.set_parameter_expression(&parameter_id, Expression::literal(&value), Some(value))
         .unwrap();
     let native = crate::test_support::native_test::f3d_native(&ir);
+    assert_eq!(native.design_parameters.len(), 2);
+    assert!(native
+        .design_parameters
+        .iter()
+        .all(|parameter| parameter.source_ordinal == 9));
     assert_eq!(
         native
             .design_parameters
@@ -80,6 +85,11 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         Some(ParameterValue::Length(Length::new(15.0).unwrap()))
     );
     let native = crate::test_support::native_test::f3d_native(written.ir());
+    assert_eq!(native.design_parameters.len(), 2);
+    assert!(native
+        .design_parameters
+        .iter()
+        .all(|parameter| parameter.source_ordinal == 9));
     let record = native
         .design_parameters
         .iter()

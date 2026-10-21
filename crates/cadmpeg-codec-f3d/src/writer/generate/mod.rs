@@ -68,12 +68,14 @@ pub(crate) fn write_new(
     if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
-        parameter_bytes = encode_document_parameters(&native.design_parameters)?;
-        parameter_links::encode(
-            &mut parameter_bytes,
-            &native.design_parameter_owners,
-            &native.design_parameter_companions,
-        )?;
+        if native.design_parameter_scopes.is_empty() {
+            parameter_bytes = encode_document_parameters(&native.design_parameters)?;
+            parameter_links::encode(
+                &mut parameter_bytes,
+                &native.design_parameter_owners,
+                &native.design_parameter_companions,
+            )?;
+        }
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_recipes(&native)?;
