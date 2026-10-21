@@ -573,12 +573,14 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
     // is checked only for a fidelity-backed patch, whose refusal selects synthesis.
     let namespace = decoded.ir().native.namespace("sldprt").unwrap();
     let edited = crate::native::SldprtNative::load(namespace).unwrap();
-    assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
-        decoded.ir(),
-    )
-    .unwrap()
-    .is_empty());
+    assert!(
+        crate::resolved_features::validate::validate_native(
+            &cadmpeg_test_support::service_decode_context(),
+            decoded.ir(),
+        )
+        .unwrap()
+        .is_empty()
+    );
     let error = crate::native::source::load(namespace, decoded.source_fidelity()).unwrap_err();
     assert!(error.to_string().contains("scalar index does not match"));
     let plan = SldprtCodec
@@ -597,7 +599,22 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         scalar.feature_ref.is_none(),
         "fixture scalar is independent native content"
     );
-    assert_ne!(
+    assert_eq!(scalar.entity_indices(), [0, 2]);
+    assert!(
+        scalar
+            .operands
+            .iter()
+            .any(|operand| operand.entity_ref.is_none()),
+        "the original source has no complete marker binding"
+    );
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterNativeRecordsOmitted.kind()
+            && loss.message.contains(&scalar.id)
+            && loss
+                .message
+                .contains("typed scalar operand no longer resolves")
+    }));
+    assert_eq!(
         plan.report().native_dispositions.record_disposition(
             "sldprt",
             "feature_input_scalars",
@@ -617,7 +634,15 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         .flat_map(|lane| &lane.scalars)
         .map(|scalar| scalar.value.get())
         .collect::<Vec<_>>();
-    assert_eq!(values, [0.050], "the old source scalar must not return");
+    assert!(
+        values.is_empty(),
+        "an edited unresolved relation cannot revive its old source scalar: {values:?}"
+    );
+    assert_eq!(
+        scalar.value.get(),
+        0.050,
+        "the current edited input is retained unchanged"
+    );
 }
 
 #[test]
