@@ -70,6 +70,23 @@ fn top_level_manifest_accepts_a_terminal_export_flag_without_a_marker() {
 }
 
 #[test]
+fn top_level_manifest_export_flag_can_carry_a_lineage_urn() {
+    let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut marker = Vec::new();
+    push_utf16(&mut marker, "NA_EXPORT").unwrap();
+    bytes.truncate(bytes.len() - marker.len());
+    let flagged = bytes.clone();
+
+    push_utf16(&mut bytes, "urn:synthetic:dm.lineage:key").unwrap();
+    let manifest = parse_top_level(&bytes).unwrap();
+    assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+
+    let mut not_urn = flagged;
+    push_utf16(&mut not_urn, "NA_IMPORT").unwrap();
+    assert!(parse_top_level(&not_urn).is_err());
+}
+
+#[test]
 fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
     let manifest =
         parse_top_level(&encode_top_level(OTHER_GUID, &["Simulation", "Design Base"]).unwrap())
