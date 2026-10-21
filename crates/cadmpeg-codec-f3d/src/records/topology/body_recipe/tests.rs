@@ -204,6 +204,47 @@ fn body_recipe_semantic_wire_rejects_broken_identities_and_chain() {
 }
 
 #[test]
+fn body_recipe_owner_fields_are_exclusive_and_unknown_keys_are_rejected() {
+    let scoped = serde_json::to_value(source_record()).unwrap();
+    let restored: DesignBodyRecipeOperand = serde_json::from_value(scoped.clone()).unwrap();
+    assert_eq!(
+        restored.owner,
+        DesignOperandOwner::ScopeReference {
+            scope_reference_ordinal: 0,
+        }
+    );
+    let mut grouped = scoped.clone();
+    grouped
+        .as_object_mut()
+        .unwrap()
+        .remove("scope_reference_ordinal");
+    grouped["group_record_index"] = 50.into();
+    grouped["group_member_ordinal"] = 2.into();
+    let restored: DesignBodyRecipeOperand = serde_json::from_value(grouped.clone()).unwrap();
+    assert_eq!(
+        restored.owner,
+        DesignOperandOwner::Group {
+            group_record_index: 50,
+            group_member_ordinal: 2,
+        }
+    );
+    assert_eq!(serde_json::to_value(restored).unwrap(), grouped);
+    for (base, key, value) in [
+        (scoped.clone(), "group_record_index", json!(50)),
+        (scoped.clone(), "scope_reference_ordinal", Value::Null),
+        (scoped, "unknown_owner", json!(0)),
+        (grouped, "scope_reference_ordinal", json!(0)),
+    ] {
+        let mut invalid = base;
+        invalid[key] = value;
+        assert!(
+            serde_json::from_value::<DesignBodyRecipeOperand>(invalid).is_err(),
+            "{key}"
+        );
+    }
+}
+
+#[test]
 fn body_recipe_source_admission_checks_real_frame_positions() {
     let source = source_record();
     assert_eq!(source.clone().into_draft().unwrap(), source_draft());
