@@ -1201,8 +1201,9 @@ fn reference_images_require_valid_assets_and_plane_placements() {
                     Point2::new(10.0, 5.0),
                 ])
                 .unwrap(),
-                opacity: (Some(crate::scalar::Fraction::new(0.75).unwrap()))
-                    .map(crate::features::Dimension::Literal),
+                opacity: Some(crate::features::Dimension::Literal(
+                    crate::scalar::Fraction::new(0.75).unwrap(),
+                )),
             }),
         ),
         native_ref: None,
@@ -1265,8 +1266,9 @@ fn decals_require_valid_assets_faces_and_opacity() {
                 asset: asset_id,
                 faces: FaceSelection::Faces(vec![face_id]),
                 mapping: DecalMapping::FitToFaces,
-                opacity: (Some(crate::scalar::Fraction::new(0.75).unwrap()))
-                    .map(crate::features::Dimension::Literal),
+                opacity: Some(crate::features::Dimension::Literal(
+                    crate::scalar::Fraction::new(0.75).unwrap(),
+                )),
             }),
         ),
         native_ref: None,

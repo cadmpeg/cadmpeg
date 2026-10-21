@@ -20,7 +20,7 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     .is_err());
     let treatment = HoleConstruction::form(HoleKind::Counterbore {
         diameter: crate::features::Dimension::Literal(positive(4.0)),
-        depth: crate::features::Dimension::Literal(positive(2.0)).into(),
+        depth: crate::features::Dimension::Literal(positive(2.0)),
     });
     assert!(HoleShape::new(treatment.clone(), None, None).is_err());
     assert!(HoleShape::new(
@@ -45,7 +45,7 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     assert!(HoleShape::new(
         HoleConstruction::form(HoleKind::Simple),
         Some(HoleKind::Countersink {
-            diameter: crate::features::Dimension::Literal(positive(2.0)).into(),
+            diameter: crate::features::Dimension::Literal(positive(2.0)),
             angle: crate::features::Dimension::Literal(InteriorAngle::new(1.0).unwrap()),
         }),
         Some(crate::features::Dimension::Literal(positive(2.0)))

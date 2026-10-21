@@ -203,7 +203,7 @@ fn written_comparison_does_not_treat_excluded_design_as_known_empty() {
     before
         .native
         .namespace_mut("test")
-        .set_arena(&ctx, "parameters", &[parameter.clone()])
+        .set_arena(&ctx, "parameters", std::slice::from_ref(&parameter))
         .expect("retain typed native parameter");
     let retained = before
         .native

@@ -16,7 +16,7 @@ fn parameter(id: ParameterId) -> DesignParameter {
         driving: true,
         display: None,
         value: Some(value),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     }
@@ -50,12 +50,12 @@ fn diameter_keeps_its_only_control_and_derives_radius_from_the_current_parameter
 fn circular_wall_admission_compares_against_the_derived_radius() {
     let diameter = RadialDimension::Diameter(Dimension::Literal(PositiveLength::new(8.0).unwrap()));
     assert!(SweepCircularRegion::new(
-        (diameter.clone()).into(),
+        (diameter.clone()),
         Some(Dimension::Literal(PositiveLength::new(4.0).unwrap()))
     )
     .is_err());
     assert!(SweepCircularRegion::new(
-        (diameter).into(),
+        (diameter),
         Some(Dimension::Literal(PositiveLength::new(3.0).unwrap()))
     )
     .is_ok());

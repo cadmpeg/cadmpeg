@@ -1073,7 +1073,8 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
         normal: Vector3::new(0.0, 0.0, 1.0),
         distance: crate::features::Dimension::Literal(Length::new(1.0).unwrap()),
     };
-    for distance in [0.0] {
+    {
+        let distance = 0.0;
         let mut kind = offset.clone();
         if let Kind::Offset {
             distance: crate::features::Dimension::Literal(value),
