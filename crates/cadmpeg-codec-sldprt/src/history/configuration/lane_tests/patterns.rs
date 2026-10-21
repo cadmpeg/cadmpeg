@@ -85,3 +85,36 @@ fn active_scoped_pattern_keeps_its_unresolved_plane() {
     assert_eq!(*ir.model.features[0].evaluation.definition(), definition);
     assert!(ir.model.configurations[0].feature_states.is_empty());
 }
+
+#[test]
+fn active_unscoped_declared_mirror_inherits_its_late_plane() {
+    let mut ir = document(FeatureDefinition::Operation(FeatureOperation::Pattern {
+        seeds: Vec::new(),
+        pattern: PatternKind::UNRESOLVED_MIRROR,
+    }));
+    super::super::normalize_configuration_differences(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+    )
+    .unwrap();
+    assert_eq!(*ir.model.features[0].evaluation.definition(), mirror(1.0));
+    assert!(ir.model.configurations[0].feature_states.is_empty());
+}
+
+#[test]
+fn active_unscoped_declared_linear_does_not_inherit_a_mirror_plane() {
+    let definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
+        seeds: vec![PatternSeed::Feature(
+            FeatureId::mint("test:model:feature#seed").unwrap(),
+        )],
+        pattern: PatternKind::UNRESOLVED_LINEAR,
+    });
+    let mut ir = document(definition.clone());
+    super::super::normalize_configuration_differences(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+    )
+    .unwrap();
+    assert_eq!(*ir.model.features[0].evaluation.definition(), definition);
+    assert!(ir.model.configurations[0].feature_states.is_empty());
+}

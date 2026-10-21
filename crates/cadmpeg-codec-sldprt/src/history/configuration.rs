@@ -968,7 +968,48 @@ fn inherit_configuration_shared_semantics(
         }),
     ) = (&mut *definition, base_definition)
     {
-        if pattern.is_unresolved() {
+        use cadmpeg_ir::features::patterns::{PatternForm, PatternTransform};
+        let compatible = matches!(
+            (pattern.definition(), base_pattern.definition()),
+            (PatternTransform::Unresolved { form: None }, _)
+                | (
+                    PatternTransform::Unresolved {
+                        form: Some(PatternForm::Linear)
+                    },
+                    PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. }
+                )
+                | (
+                    PatternTransform::Unresolved {
+                        form: Some(PatternForm::Circular)
+                    },
+                    PatternTransform::Circular { .. } | PatternTransform::CircularAngles { .. }
+                )
+                | (
+                    PatternTransform::Unresolved {
+                        form: Some(PatternForm::CurveDriven)
+                    },
+                    PatternTransform::CurveDriven { .. }
+                )
+                | (
+                    PatternTransform::Unresolved {
+                        form: Some(PatternForm::Mirror)
+                    },
+                    PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. }
+                )
+                | (
+                    PatternTransform::Unresolved {
+                        form: Some(PatternForm::Scale)
+                    },
+                    PatternTransform::Scale { .. }
+                )
+                | (
+                    PatternTransform::Unresolved {
+                        form: Some(PatternForm::Composite)
+                    },
+                    PatternTransform::Composite { .. }
+                )
+        );
+        if compatible {
             pattern.clone_from(base_pattern);
         }
         if seeds.is_empty() {
