@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use super::{face, start_geometry_fixture};
 use crate::design::face_resolve::{
     extrude_start_plane_geometry_candidates, extrude_target_plane_candidate,
     retain_face_operand_resolution, ExtrudeFaceResolution,
 };
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::identity::Located;
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+    DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
+};
+use crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding;
+use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
     face::DesignFaceOperand,
@@ -56,9 +64,9 @@ fn start_binder_fixture(
         PlanarProfileRef, ProfileRef,
     };
     let (nested_operand, mut group, faces) = start_geometry_fixture();
-    group.operand_role = crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeFaces {
-        encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::SelectedStart,
-        usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start,
+    group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+        encoding: DesignExtrudeFaceEncoding::SelectedStart,
+        usage: DesignExtrudeFaceRole::Start,
     };
     let operand = if nested {
         nested_operand
@@ -184,11 +192,10 @@ fn extrude_target_face_binds_resolved_face() {
 
     let (mut feature, sketch, mut group, operand, faces, mut surfaces) =
         start_binder_fixture(false);
-    group.operand_role =
-        crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeFaces {
-            encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
-            usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
-        };
+    group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+        encoding: DesignExtrudeFaceEncoding::Faces,
+        usage: DesignExtrudeFaceRole::Termination,
+    };
     surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 3.0),
@@ -370,38 +377,44 @@ fn target_plane_operand(candidates: &[i64]) -> DesignFaceOperand {
 }
 
 fn target_face_group() -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:construction-group#150",
-        "scope_record_index": 100,
-        "scope_reference_ordinal": 0,
-        "record_index": 150,
-        "byte_offset": 0,
-        "class_tag": "338",
-        "members": [200],
-        "member_offsets": [0],
-        "frame": {
-            "member_count_offset": 0,
-            "auxiliary_record_indices": [],
-            "auxiliary_record_offsets": [],
-            "auxiliary_paths": [],
-            "trailing_record_indices": [],
-            "trailing_record_offsets": [],
-            "trailing_transforms": [],
-            "trailing_dual_transforms": [],
-            "trailing_flags": [],
-            "opaque_index": 1,
-            "opaque_index_offset": 18,
-            "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 22,
-            "variant": false
+    DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        scope_record_index: 100,
+        scope_reference_ordinal: 0,
+        record_index: 150,
+        byte_offset: 0,
+        role_offset: 0,
+        paired_byte_offset: 0,
+        id: "f3d:test:construction-group#150".to_owned(),
+        class_tag: "338".to_owned().try_into().expect("source class tag"),
+        paired_class_tag: "261".to_owned().try_into().expect("source class tag"),
+        members: [200]
+            .into_iter()
+            .zip([0])
+            .map(|(value, offset)| Located { value, offset })
+            .collect(),
+        lost_edge_references: Vec::new(),
+        operand_role: DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
         },
-        "role": DesignOperandRole::FACES.raw(),
-        "extrude_role": "faces",
-        "extrude_face_role": "termination",
-        "role_offset": 0,
-        "paired_class_tag": "261",
-        "paired_byte_offset": 0
-    }))
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 0,
+                opaque_index: 1,
+                opaque_index_offset: 18,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 22,
+                variant: false,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+            },
+        )
+        .expect("source construction frame"),
+    })
     .expect("target face group")
 }
 
@@ -488,36 +501,49 @@ fn extrude_root_fixture() -> (DesignParameterScope, [DesignConstructionOperandGr
         crate::records::feature::scope::DesignFeatureKind::Extrude,
         12,
     );
-    let root: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:group#100",
-        "scope_record_index": 12,
-        "scope_reference_ordinal": 0,
-        "record_index": 100,
-        "byte_offset": 1000,
-        "class_tag": "332",
-        "members": [101],
-        "member_offsets": [1026],
-        "frame": {
-            "member_count_offset": 1021,
-            "opaque_index": 1,
-            "opaque_index_offset": 1072,
-            "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 1076,
-            "variant": false
-        },
-        "role": DesignOperandRole::PROFILE.raw(),
-        "extrude_role": "profile",
-        "role_offset": 1054,
-        "paired_class_tag": "259",
-        "paired_byte_offset": 1125
-    }))
-    .unwrap();
+    let root: DesignConstructionOperandGroup =
+        DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+            scope_record_index: 12,
+            scope_reference_ordinal: 0,
+            record_index: 100,
+            byte_offset: 1000,
+            role_offset: 1054,
+            paired_byte_offset: 1125,
+            id: "f3d:test:group#100".to_owned(),
+            class_tag: "332".to_owned().try_into().expect("source class tag"),
+            paired_class_tag: "259".to_owned().try_into().expect("source class tag"),
+            members: [101]
+                .into_iter()
+                .zip([1026])
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            lost_edge_references: Vec::new(),
+            operand_role: DesignConstructionOperandRole::ExtrudeProfile,
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1021,
+                    opaque_index: 1,
+                    opaque_index_offset: 1072,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 1076,
+                    variant: false,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                },
+            )
+            .expect("source construction frame"),
+        })
+        .unwrap();
     let mut child = root.clone();
     child.id = "f3d:test:group#101".into();
     child.record_index = 101;
     child.scope_reference_ordinal = 1;
     child
-        .try_set_members(vec![crate::records::identity::Located {
+        .try_set_members(vec![Located {
             value: 200,
             offset: 1026,
         }])

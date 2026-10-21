@@ -2522,6 +2522,13 @@ pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::records::identity::Located;
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
+    };
+    use crate::records::topology::extrude_selection::DesignOperandRole as SourceOperandRole;
+
     mod candidate_lanes;
     mod extrude;
 
@@ -2668,29 +2675,45 @@ mod tests {
             "paired_byte_offset": 407
         }))
         .expect("legacy SplitFace scope");
-        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:construction-group#150",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 1,
-            "record_index": 150,
-            "byte_offset": 0,
-            "class_tag": "262",
-            "members": [200, 201, 202],
-            "member_offsets": [0, 11, 22],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 0x0000_0010_0000_0000_u64,
-            "role_offset": 0,
-            "paired_class_tag": "258",
-            "paired_byte_offset": 0
-        }))
-        .expect("legacy SplitFace target group");
+        let group: DesignConstructionOperandGroup =
+            DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+                scope_record_index: 100,
+                scope_reference_ordinal: 1,
+                record_index: 150,
+                byte_offset: 0,
+                role_offset: 0,
+                paired_byte_offset: 0,
+                id: "f3d:test:construction-group#150".to_owned(),
+                class_tag: "262".to_owned().try_into().expect("source class tag"),
+                paired_class_tag: "258".to_owned().try_into().expect("source class tag"),
+                members: [200, 201, 202]
+                    .into_iter()
+                    .zip([0, 11, 22])
+                    .map(|(value, offset)| Located { value, offset })
+                    .collect(),
+                lost_edge_references: Vec::new(),
+                operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                    0x0000_0010_0000_0000_u64,
+                )),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                    },
+                )
+                .expect("source construction frame"),
+            })
+            .expect("legacy SplitFace target group");
         let operands = vec![
             operand(200, 0, &[10, 20]),
             operand(201, 1, &[20, 30]),
@@ -2754,29 +2777,45 @@ mod tests {
             crate::records::feature::scope::DesignFeatureKind::SplitFace,
             100,
         );
-        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:construction-group#150",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 1,
-            "record_index": 150,
-            "byte_offset": 0,
-            "class_tag": "262",
-            "members": [200],
-            "member_offsets": [0],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 0x0000_0010_0000_0000_u64,
-            "role_offset": 0,
-            "paired_class_tag": "258",
-            "paired_byte_offset": 0
-        }))
-        .unwrap();
+        let group: DesignConstructionOperandGroup =
+            DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+                scope_record_index: 100,
+                scope_reference_ordinal: 1,
+                record_index: 150,
+                byte_offset: 0,
+                role_offset: 0,
+                paired_byte_offset: 0,
+                id: "f3d:test:construction-group#150".to_owned(),
+                class_tag: "262".to_owned().try_into().expect("source class tag"),
+                paired_class_tag: "258".to_owned().try_into().expect("source class tag"),
+                members: [200]
+                    .into_iter()
+                    .zip([0])
+                    .map(|(value, offset)| Located { value, offset })
+                    .collect(),
+                lost_edge_references: Vec::new(),
+                operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                    0x0000_0010_0000_0000_u64,
+                )),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                    },
+                )
+                .expect("source construction frame"),
+            })
+            .unwrap();
         let operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
@@ -3028,28 +3067,43 @@ mod tests {
     }
 
     fn loft_group() -> DesignConstructionOperandGroup {
-        serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:group#111045",
-            "scope_record_index": 1811,
-            "scope_reference_ordinal": 2,
-            "record_index": 1819,
-            "byte_offset": 0,
-            "class_tag": "267",
-            "members": [1, 2, 3],
-            "member_offsets": [0, 11, 22],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 252,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 287_762_808_832_i64,
-            "role_offset": 0,
-            "paired_class_tag": "260",
-            "paired_byte_offset": 0
-        }))
+        DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+            scope_record_index: 1811,
+            scope_reference_ordinal: 2,
+            record_index: 1819,
+            byte_offset: 0,
+            role_offset: 0,
+            paired_byte_offset: 0,
+            id: "f3d:test:group#111045".to_owned(),
+            class_tag: "267".to_owned().try_into().expect("source class tag"),
+            paired_class_tag: "260".to_owned().try_into().expect("source class tag"),
+            members: [1, 2, 3]
+                .into_iter()
+                .zip([0, 11, 22])
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            lost_edge_references: Vec::new(),
+            operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                287_762_808_832_i64,
+            )),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    opaque_index: 252,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                },
+            )
+            .expect("source construction frame"),
+        })
         .expect("Loft group")
     }
 
@@ -3365,7 +3419,7 @@ mod tests {
     }
 
     fn start_geometry_fixture() -> (DesignFaceOperand, DesignConstructionOperandGroup, Vec<Face>) {
-        let operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -3381,15 +3435,7 @@ mod tests {
             "recipe_id": "f3d:test:recipe#201",
             "recipe_prefix_offset": 352,
             "recipe_prefix_bytes": "",
-            "recipe_references": [{
-                "selector": 1,
-                "selector_offset": 0,
-                "token": "support",
-                "token_offset": 0,
-                "design_reference": 201,
-                "design_reference_offset": 0,
-                "candidate_faces": ["f3d:brep:entity#10"]
-            }],
+            "recipe_references": [],
             "recipe_kind": "bounded_face",
             "recipe_program_offset": 0,
             "recipe_program": [0, -1, 1],
@@ -3419,29 +3465,46 @@ mod tests {
             "next_byte_offset": 469
         }))
         .expect("nested bounded-face operand");
-        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:construction-group#150",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 0,
-            "record_index": 150,
-            "byte_offset": 0,
-            "class_tag": "338",
-            "role": 0,
-            "members": [200],
-            "member_offsets": [0],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role_offset": 0,
-            "paired_class_tag": "261",
-            "paired_byte_offset": 0
-        }))
-        .expect("FromFace group");
+        // This fixture has one source operand clause. Use its typed source
+        // constructor so all three original zero offsets survive wire skips.
+        operand.recipe_references = vec![reference(10, "support", 201)];
+        let group: DesignConstructionOperandGroup =
+            DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+                scope_record_index: 100,
+                scope_reference_ordinal: 0,
+                record_index: 150,
+                byte_offset: 0,
+                role_offset: 0,
+                paired_byte_offset: 0,
+                id: "f3d:test:construction-group#150".to_owned(),
+                class_tag: "338".to_owned().try_into().expect("source class tag"),
+                paired_class_tag: "261".to_owned().try_into().expect("source class tag"),
+                members: [200]
+                    .into_iter()
+                    .zip([0])
+                    .map(|(value, offset)| Located { value, offset })
+                    .collect(),
+                lost_edge_references: Vec::new(),
+                operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(0)),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                    },
+                )
+                .expect("source construction frame"),
+            })
+            .expect("FromFace group");
         let faces = vec![Face {
             id: face(10),
             shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
