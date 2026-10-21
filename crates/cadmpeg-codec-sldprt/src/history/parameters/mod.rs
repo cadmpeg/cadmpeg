@@ -418,6 +418,13 @@ pub(crate) fn render_parameter_expression(
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
 ) -> Option<String> {
+    if let Some(value) = &parameter.value {
+        if parameter.expression == value.literal_expression()
+            && parameter.expression.literal_value_as(value).as_ref() == Some(value)
+        {
+            return Some(format_parameter_value(value));
+        }
+    }
     parameter.expression.render_with(|id| {
         let target = parameters.iter().find(|target| &target.id == id)?;
         let mut name = target.name.to_string();
