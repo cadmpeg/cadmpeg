@@ -9,7 +9,7 @@ use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
-use super::sketch_relations::{SketchConstraintKind, constraint_kinds_from_state};
+use super::sketch_relations::{constraint_kinds_from_state, SketchConstraintKind};
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::num::NonZeroU32;
@@ -320,10 +320,10 @@ impl DesignDimensionLocusPair {
     /// Recover the payload with derived frame and locus offsets.
     #[cfg(test)]
     pub(crate) fn into_draft(self) -> Result<DesignDimensionLocusPairDraft, String> {
-        let opaque_index = self
+        let opaque_index: Option<Located<u32>> = self
             .opaque_index()
             .map(|field| {
-                Ok(Located {
+                Ok::<_, String>(Located {
                     value: field.value,
                     offset: field
                         .offset
