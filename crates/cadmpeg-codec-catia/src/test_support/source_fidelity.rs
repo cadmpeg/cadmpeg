@@ -58,14 +58,6 @@ fn restore(value: &mut Value, path: &str, fidelity: &SourceFidelity) {
     }
     match value {
         Value::Object(fields) => {
-            // Binary64's semantic value is exact; the scanner's transient
-            // bits wrapper is reconstructed only inside this test view.
-            if let Some(Value::Object(scalar)) = fields.get_mut("Binary64") {
-                scalar.remove("non_finite");
-                if let Some(number) = scalar.remove("value").and_then(|value| value.as_f64()) {
-                    scalar.insert("bits".into(), Value::from(number.to_bits()));
-                }
-            }
             for (key, child) in fields {
                 restore(child, &format!("{path}.{key}"), fidelity);
             }
