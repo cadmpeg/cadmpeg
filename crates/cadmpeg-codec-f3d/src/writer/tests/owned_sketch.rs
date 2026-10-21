@@ -119,7 +119,7 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
     assert_eq!(entities.len(), 6);
     let omitted_ids = entities
         .iter()
-        .map(|id| id.as_str())
+        .map(cadmpeg_ir::SketchEntityId::as_str)
         .collect::<Vec<_>>()
         .join(", ");
     let reduction = format!(

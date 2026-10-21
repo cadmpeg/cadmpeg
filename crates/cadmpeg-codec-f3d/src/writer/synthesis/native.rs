@@ -80,10 +80,13 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                         && state.owner_ref < 0
                         && state.partner_ref.is_none()
                         && state.transition.as_ref().is_none_or(|transition| {
-                            transition.records == Default::default()
-                                && transition.topology == Default::default()
+                            transition.records
+                                == crate::history_records::AsmHistoricalEntityDelta::default()
+                                && transition.topology
+                                    == crate::history_records::AsmHistoricalTopologyDelta::default()
                                 && transition.record_revisions.is_empty()
-                                && transition.rows == Default::default()
+                                && transition.rows
+                                    == crate::history_records::AsmHistoricalRowsDelta::default()
                         })
                 })
         })
@@ -323,13 +326,13 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 native
                     .design_parameter_owners
                     .iter()
-                    .map(|owner| owner.record_index()),
+                    .map(crate::records::parameters::DesignParameterOwner::record_index),
             )
             .chain(
                 native
                     .design_parameter_companions
                     .iter()
-                    .map(|companion| companion.record_index()),
+                    .map(crate::records::parameters::DesignParameterCompanion::record_index),
             )
             .collect::<std::collections::BTreeSet<_>>();
         native

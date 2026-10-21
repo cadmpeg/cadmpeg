@@ -428,7 +428,7 @@ impl TryFrom<ActEntitySerde> for ActEntity {
         if wire
             .class_tail_frame
             .as_ref()
-            .is_some_and(|frame| frame.is_empty())
+            .is_some_and(super::source_frame::SourceFrame::is_empty)
         {
             return Err("ACT class tail evidence must describe nonempty bytes".into());
         }

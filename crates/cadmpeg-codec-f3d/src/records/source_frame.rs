@@ -123,7 +123,7 @@ mod tests {
                 "f3d:source:frame#one",
                 "Design",
                 None,
-                Default::default(),
+                cadmpeg_ir::ArenaClasses::default(),
             )
             .unwrap();
         assert!(fidelity.retained_records().is_empty());

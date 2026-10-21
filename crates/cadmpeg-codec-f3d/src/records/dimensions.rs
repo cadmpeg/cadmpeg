@@ -1063,7 +1063,7 @@ impl DesignDimensionAnnotationFrame {
                     )
                 })?;
             let untyped = if frame.is_empty() {
-                Default::default()
+                cadmpeg_ir::ArenaClasses::default()
             } else {
                 [cadmpeg_ir::document::ArenaClass::Design].into()
             };
@@ -1394,7 +1394,7 @@ impl DesignDimensionPresentationFrame {
                     )
                 })?;
             let untyped = if frame.is_empty() {
-                Default::default()
+                cadmpeg_ir::ArenaClasses::default()
             } else {
                 [cadmpeg_ir::document::ArenaClass::Design].into()
             };

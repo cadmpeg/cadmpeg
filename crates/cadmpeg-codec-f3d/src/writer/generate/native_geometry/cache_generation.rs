@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reconstruct a writer cache from authoritative typed construction geometry.
 
-use super::*;
+use super::{
+    f64_from_index, native_increasing_interval_curve, truncate_f64_to_usize, CadIr, CodecError,
+    CurveGeometry, NurbsCurve, NurbsSurface, Point3, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, Vector3,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_ir::geometry::ProceduralSurface;
@@ -23,8 +27,7 @@ fn profile(
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => curve
             .parameter_range
             .map(|range| {
-                native_increasing_interval_curve(&SolvedCurveGeometry::Line(line.clone()), range)
-                    .map(Some)
+                native_increasing_interval_curve(&SolvedCurveGeometry::Line(line), range).map(Some)
             })
             .unwrap_or(Ok(None)),
         // Rational conic conversion preserves a locus, not its angle parameter.

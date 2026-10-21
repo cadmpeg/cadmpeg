@@ -499,12 +499,12 @@ fn rectangular_pattern_directions(
         let distance = match distance_form {
             RectangularPatternDistanceForm::AdjacentSpacing => {
                 cadmpeg_ir::sketches::SketchPatternDistance::Spacing {
-                    distance: (dimension).into(),
+                    distance: dimension,
                 }
             }
             RectangularPatternDistanceForm::SeedToFinalSpan => {
                 cadmpeg_ir::sketches::SketchPatternDistance::Span {
-                    distance: (dimension).into(),
+                    distance: dimension,
                 }
             }
         };

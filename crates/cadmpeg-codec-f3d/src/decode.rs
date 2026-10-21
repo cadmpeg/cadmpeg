@@ -3167,7 +3167,7 @@ fn decode_scanned_document<'a>(
             report,
             RetainedArtifacts {
                 annotations,
-                native_fidelity: Default::default(),
+                native_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 native_layout: None,
                 untyped,
                 unknowns,

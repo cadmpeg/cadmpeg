@@ -109,6 +109,6 @@ fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::Distance { distance },
-            }] if selection == &group.id && super::super::dimension_value(&distance, &parameters).get() == 1.0)
+            }] if selection == &group.id && super::super::dimension_value(distance, &parameters).get() == 1.0)
     ));
 }

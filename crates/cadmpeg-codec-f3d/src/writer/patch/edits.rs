@@ -2062,7 +2062,7 @@ pub(super) fn validate_construction_recipe_edits(
             .zip(after.design.as_ref())
             .map(|(old, new)| {
                 let mut old = old.clone();
-                old.id.value = new.id.value.clone();
+                clone_from();
                 old
             });
         if !normalized.content_eq(after) {

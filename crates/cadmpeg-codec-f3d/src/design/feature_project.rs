@@ -692,7 +692,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: (BTreeMap::new()).into(),
+                            parameters: BTreeMap::new(),
                         })
                     }),
                 Some(DesignFeatureFamily::Draft) => project_draft(
@@ -706,7 +706,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: (BTreeMap::new()).into(),
+                        parameters: BTreeMap::new(),
                     })
                 }),
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
@@ -727,14 +727,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: (BTreeMap::new()).into(),
+                        parameters: BTreeMap::new(),
                     })
                 }),
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: (BTreeMap::new()).into(),
+                            parameters: BTreeMap::new(),
                         })
                     }),
                 Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(
@@ -749,7 +749,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: (BTreeMap::new()).into(),
+                        parameters: BTreeMap::new(),
                     })
                 }),
                 Some(DesignFeatureFamily::Pipe) => project_fixed_pipe(
@@ -771,7 +771,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
-                        parameters: (BTreeMap::new()).into(),
+                        parameters: BTreeMap::new(),
                     })
                 }),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
@@ -804,7 +804,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: (BTreeMap::new()).into(),
+                            parameters: BTreeMap::new(),
                         })
                     }
                 }
@@ -818,7 +818,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: (BTreeMap::new()).into(),
+                            parameters: BTreeMap::new(),
                         })
                     }),
                 Some(DesignFeatureFamily::SurfaceRuled) => project_ruled_surface(
@@ -836,7 +836,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: (BTreeMap::new()).into(),
+                                parameters: BTreeMap::new(),
                             })
                         })
                 }
@@ -844,7 +844,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: (BTreeMap::new()).into(),
+                            parameters: BTreeMap::new(),
                         })
                     })
                 }
@@ -854,7 +854,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_split(scope, construction_groups, face_operands)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: (BTreeMap::new()).into(),
+                            parameters: BTreeMap::new(),
                         })
                     })
                 }
@@ -945,7 +945,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
-                            parameters: (BTreeMap::new()).into(),
+                            parameters: BTreeMap::new(),
                         })
                     }
                 }
@@ -1127,7 +1127,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             || {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
-                                    parameters: (BTreeMap::new()).into(),
+                                    parameters: BTreeMap::new(),
                                 })
                             },
                         )
@@ -1137,7 +1137,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         project_remove_body(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: (BTreeMap::new()).into(),
+                                parameters: BTreeMap::new(),
                             })
                         })
                     } else if scope.kind()
@@ -1146,7 +1146,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: (BTreeMap::new()).into(),
+                                parameters: BTreeMap::new(),
                             })
                         })
                     } else if scope.kind()
@@ -1163,7 +1163,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: (BTreeMap::new()).into(),
+                                parameters: BTreeMap::new(),
                             })
                         })
                     } else if matches!(
@@ -1175,7 +1175,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .unwrap_or_else(|| {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
-                                    parameters: (BTreeMap::new()).into(),
+                                    parameters: BTreeMap::new(),
                                 })
                             })
                     } else if scope.kind()
@@ -1204,7 +1204,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         } else {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: (BTreeMap::new()).into(),
+                                parameters: BTreeMap::new(),
                             })
                         }
                     } else if scope.kind()
@@ -1214,7 +1214,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             || {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
-                                    parameters: (BTreeMap::new()).into(),
+                                    parameters: BTreeMap::new(),
                                 })
                             },
                             |operation| {
@@ -1239,7 +1239,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         } else {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
-                                parameters: (BTreeMap::new()).into(),
+                                parameters: BTreeMap::new(),
                             })
                         }
                     } else {
@@ -2126,7 +2126,7 @@ fn native_scope_definition(
 
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
         kind: scope.kind_name().to_owned().into(),
-        parameters: (properties).into(),
+        parameters: properties,
     }))
 }
 
@@ -2178,7 +2178,7 @@ fn project_fillet_arm(
                             .iter()
                             .map(|(_, source)| *source)
                             .find(|source| crate::ids::neutral_parameter_id(source) == *id)?;
-                        design_positive_length(source).map(|value| value.get())
+                        design_positive_length(source).map(cadmpeg_ir::scalar::PositiveLength::get)
                     })
                 }
                 _ => None,
@@ -2207,7 +2207,7 @@ fn project_fillet_arm(
             groups.push(FilletGroup {
                 edges,
                 radius: resolved.radius,
-                tangency_weight: (resolved.tangency_weight).map(Into::into),
+                tangency_weight: (resolved.tangency_weight),
             });
         }
         let groups = groups.try_into().ok();
@@ -2249,7 +2249,7 @@ fn project_fillet_arm(
         groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
             edges: EdgeSelection::Native(scope.id.clone()),
             radius: RadiusSpec::Constant {
-                radius: (dimension_bindings::parameter(parameter)).into(),
+                radius: (dimension_bindings::parameter(parameter)),
             },
             tangency_weight: None,
         }),
@@ -2309,19 +2309,19 @@ fn resolved_fillet_assignments<'a>(
             DesignFilletRadiusLaw::Constant {
                 radius_parameter_record_index,
             } => RadiusSpec::Constant {
-                radius: (length(*radius_parameter_record_index, "Radius")?).into(),
+                radius: (length(*radius_parameter_record_index, "Radius")?),
             },
             DesignFilletRadiusLaw::Chordal {
                 chord_length_parameter_record_index,
             } => RadiusSpec::Chordal {
-                chord_length: (length(*chord_length_parameter_record_index, "ChordLen")?).into(),
+                chord_length: (length(*chord_length_parameter_record_index, "ChordLen")?),
             },
             DesignFilletRadiusLaw::Asymmetric {
                 offset_one_parameter_record_index,
                 offset_two_parameter_record_index,
             } => RadiusSpec::Asymmetric {
-                offset_one: (length(*offset_one_parameter_record_index, "EdgeOffset1")?).into(),
-                offset_two: (length(*offset_two_parameter_record_index, "EdgeOffset2")?).into(),
+                offset_one: (length(*offset_one_parameter_record_index, "EdgeOffset1")?),
+                offset_two: (length(*offset_two_parameter_record_index, "EdgeOffset2")?),
             },
             DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index,
@@ -4117,15 +4117,13 @@ fn project_hem(
         (
             SheetMetalHemForm::GapLength { gap: _, length },
             Some(crate::history::HemGapLengthForm::Flat),
-        ) => SheetMetalHemForm::Flat {
-            length: (length).into(),
-        },
+        ) => SheetMetalHemForm::Flat { length: length },
         (
             SheetMetalHemForm::GapLength { gap, length },
             Some(crate::history::HemGapLengthForm::Open),
         ) => SheetMetalHemForm::Open {
-            gap: (gap).into(),
-            length: (length).into(),
+            gap: gap,
+            length: length,
         },
         (form, _) => form,
     };
@@ -4852,7 +4850,7 @@ fn project_variable_fillet(
                     ctx,
                 )?,
                 radius: RadiusSpec::Variable { points },
-                tangency_weight: (tangency_weight).map(Into::into),
+                tangency_weight: tangency_weight,
             }),
         },
     )))
@@ -4912,19 +4910,19 @@ fn variable_fillet_law(
     let mut points = Vec::new();
     points.push(VariableRadius {
         parameter: 0.0,
-        radius: (dimension_bindings::parameter(start)).into(),
+        radius: (dimension_bindings::parameter(start)),
     });
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
         design_length(radius)?;
         let parameter = parameter.evaluated_value().get();
         points.push(VariableRadius {
             parameter,
-            radius: (dimension_bindings::parameter(radius)).into(),
+            radius: (dimension_bindings::parameter(radius)),
         });
     }
     points.push(VariableRadius {
         parameter: 1.0,
-        radius: (dimension_bindings::parameter(end)).into(),
+        radius: (dimension_bindings::parameter(end)),
     });
     cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
         .ok()
@@ -5114,14 +5112,14 @@ fn project_chamfer(
         let spec = match lanes {
             Lanes::Distance(distance) => {
                 design_positive_length(distance[ordinal]).map(|_| ChamferSpec::Distance {
-                    distance: (dimension_bindings::parameter(distance[ordinal])).into(),
+                    distance: (dimension_bindings::parameter(distance[ordinal])),
                 })
             }
             Lanes::TwoDistances(first, second) => design_positive_length(first[ordinal])
                 .zip(design_positive_length(second[ordinal]))
                 .map(|_| ChamferSpec::TwoDistances {
-                    first: (dimension_bindings::parameter(first[ordinal])).into(),
-                    second: (dimension_bindings::parameter(second[ordinal])).into(),
+                    first: (dimension_bindings::parameter(first[ordinal])),
+                    second: (dimension_bindings::parameter(second[ordinal])),
                 }),
             Lanes::DistanceAngle(distance, angle) => design_positive_length(distance[ordinal])
                 .zip(
@@ -5129,8 +5127,8 @@ fn project_chamfer(
                         .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()),
                 )
                 .map(|_| ChamferSpec::DistanceAngle {
-                    distance: (dimension_bindings::parameter(distance[ordinal])).into(),
-                    angle: (dimension_bindings::parameter(angle[ordinal])).into(),
+                    distance: (dimension_bindings::parameter(distance[ordinal])),
+                    angle: (dimension_bindings::parameter(angle[ordinal])),
                 }),
         };
         let spec = or_none!(spec);
@@ -7008,15 +7006,15 @@ fn project_hole(
         ),
         (Some((_diameter, _depth)), None) => (
             HoleKind::Counterbore {
-                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))).into(),
-                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))).into(),
+                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))),
+                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))),
             },
             Some(HoleBottom::Flat),
         ),
         (Some((_diameter, _depth)), Some(_drill_point_angle)) => (
             HoleKind::CounterboreDrilled {
-                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))).into(),
-                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))).into(),
+                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))),
+                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))),
                 drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle"))))
                     .into(),
             },
@@ -7062,7 +7060,7 @@ fn project_hole(
         .ok()),
 
         extent: Some(LinearTermination::Blind {
-            length: (dimension_bindings::parameter(or_none!(parameter("HoleDepth")))).into(),
+            length: (dimension_bindings::parameter(or_none!(parameter("HoleDepth")))),
         }),
         bottom,
         taper_angle: None,

@@ -188,7 +188,10 @@ fn segment_base_guid_preserves_absent_empty_and_named_content() {
             serde_json::from_value(wire.clone()).unwrap();
         assert!(record.base_type_guid.offset().is_none());
         assert_eq!(
-            record.base_type_guid.value().map(|value| value.as_str()),
+            record
+                .base_type_guid
+                .value()
+                .map(super::mesh::DesignRelaxedGuidText::as_str),
             value.filter(|value| !value.is_empty())
         );
         assert_eq!(serde_json::to_value(record).unwrap(), wire);

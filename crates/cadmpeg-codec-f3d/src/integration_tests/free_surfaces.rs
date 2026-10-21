@@ -167,11 +167,11 @@ fn mixed_wire_omits_unsupported_free_surface_before_record_layout() {
         actual
             .points
             .iter()
-            .map(|point| point.position())
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>(),
         wire.points
             .iter()
-            .map(|point| point.position())
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>()
     );
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &source, decoded.ir());

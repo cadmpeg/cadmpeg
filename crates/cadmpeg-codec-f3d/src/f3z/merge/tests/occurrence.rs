@@ -38,7 +38,7 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "test".into(),
-                parameters: (std::collections::BTreeMap::new()).into(),
+                parameters: (std::collections::BTreeMap::new()),
             }),
         ),
         native_ref: None,

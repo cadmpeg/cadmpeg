@@ -613,7 +613,7 @@ fn project_all_dimension_constraints(
                 };
                 return Some(Definition::Offset {
                     pairs,
-                    distance: (distance).into(),
+                    distance: distance,
                 });
             }
             let copied = parameter_id.clone();

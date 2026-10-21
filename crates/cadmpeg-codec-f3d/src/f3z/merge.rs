@@ -35,7 +35,7 @@ pub(super) fn merge_archive(
         scan,
         archive,
         stack,
-        untyped: Default::default(),
+        untyped: cadmpeg_ir::ArenaClasses::default(),
     };
     let merged = session.merge(ir, report, fidelity, &table)?;
     if !session.untyped.is_empty() {

@@ -27,7 +27,7 @@ pub(super) fn standalone_product(ir: &mut CadIr, native: &F3dNative) {
         label: (!label.is_empty()).then(|| label.to_owned()),
         description: None,
         part_number: None,
-        bom_properties: Default::default(),
+        bom_properties: std::collections::BTreeMap::default(),
         bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
         native_ref: Some(root.id().as_str().to_owned()),
     });
