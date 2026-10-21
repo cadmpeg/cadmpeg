@@ -970,6 +970,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_and_reports_oth
 
 #[test]
 fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::tessellation::Tessellation;
     use cadmpeg_ir::SourceObjectAssociation;
@@ -991,6 +992,33 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         instance_path: Vec::new(),
     };
 
+    let original_attribute_count = source_less.model.attributes.len();
+    let presentation = |target: AttributeTarget| {
+        [
+            SourceAttribute {
+                id: "generated:test:attribute#association-name"
+                    .try_into()
+                    .unwrap(),
+                target: target.clone(),
+                name: "name".into(),
+                values: vec![AttributeValue::String("exact carrier".into())],
+            },
+            SourceAttribute {
+                id: "generated:test:attribute#association-visible"
+                    .try_into()
+                    .unwrap(),
+                target,
+                name: "visible".into(),
+                values: vec![AttributeValue::Boolean(true)],
+            },
+        ]
+    };
+    source_less
+        .model
+        .attributes
+        .extend(presentation(AttributeTarget::Surface(
+            source_less.model.surfaces[0].id.clone(),
+        )));
     source_less.model.surfaces[0].source_object = Some(association.clone());
     let (output, report) = synthesize_document(&source_less, None);
     assert_eq!(
@@ -1023,6 +1051,16 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         )),
         source_object: Some(association),
     });
+    source_less
+        .model
+        .attributes
+        .truncate(original_attribute_count);
+    source_less
+        .model
+        .attributes
+        .extend(presentation(AttributeTarget::Curve(
+            source_less.model.curves.last().unwrap().id.clone(),
+        )));
     let (output, report) = synthesize_document(&source_less, None);
     assert_eq!(
         output.ir().model.bodies.len(),
@@ -1040,6 +1078,10 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::WriterSourceAssociationOmitted.kind()));
 
     source_less.model.curves.pop();
+    source_less
+        .model
+        .attributes
+        .truncate(original_attribute_count);
     source_less.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("generated:test:tessellation#0")
