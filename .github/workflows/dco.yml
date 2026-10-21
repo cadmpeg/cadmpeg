@@ -10,6 +10,7 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, edited]
+  merge_group:
 
 permissions:
   contents: read
@@ -28,11 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        if: github.event_name != 'merge_group'
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - name: Check Signed-off-by on the PR or its commits
+        if: github.event_name != 'merge_group'
         # bash for here-string (`<<<`) support; see the SIGPIPE note below.
         shell: bash
         env:

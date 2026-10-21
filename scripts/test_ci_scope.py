@@ -7,7 +7,7 @@ import unittest
 import tempfile
 from unittest.mock import patch
 
-from scripts.ci_scope import select
+from scripts.ci_scope import lock_dependents, select
 from scripts.ci_cargo import command, main as cargo_main
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -129,7 +129,8 @@ class ScopeTests(unittest.TestCase):
     def test_shared_and_unknown_inputs_use_full_gate(self):
         for path in ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
                      '.cargo/config.toml', '.github/workflows/ci.yml',
-                     'docs/layouts/iges.toml', 'corpus/iges-envelope-a.toml',
+                     '.github/actions/pinned-rust/action.yml',
+                     'docs/formats-index.toml', 'corpus/iges-envelope-a.toml',
                      'scripts/generator.sh', 'scripts/check-unclassified.py',
                      'scripts/set-workspace-version.py',
                      'scripts/ci_scope.py', 'scripts/test_ci_scope.py', 'unknown.txt']:
@@ -141,6 +142,79 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(scope['full'])
         self.assertTrue(scope['rust'])
         self.assertTrue(scope['schema'])
+
+    def test_layout_tables_and_specifications_select_the_layout_table_test(self):
+        for path in ('docs/layouts/iges.toml', 'docs/formats/step.md'):
+            with self.subTest(path=path):
+                scope = select(ROOT, [path])
+                self.assertFalse(scope['full'])
+                self.assertEqual(scope['packages'], ['cadmpeg'])
+
+    def test_embedded_document_selects_its_reader(self):
+        scope = select(ROOT, ['docs/dialect-id-conformance.toml'])
+        self.assertFalse(scope['full'])
+        self.assertIn('cadmpeg-core', scope['packages'])
+
+    def test_prose_and_static_tables_skip_rust(self):
+        for path in ('docs/architecture.md', 'README.md', 'docs/codec-facade.toml',
+                     '.github/dependabot.yml'):
+            with self.subTest(path=path):
+                scope = select(ROOT, [path])
+                self.assertFalse(scope['rust'])
+                self.assertFalse(scope['features'])
+                self.assertTrue(scope['static'])
+
+    def test_workflows_outside_the_gate_skip_rust(self):
+        for name in ('release.yml', 'cut-release.yml', 'audit.yml', 'dco.yml'):
+            with self.subTest(name=name):
+                self.assertFalse(select(ROOT, [f'.github/workflows/{name}'])['rust'])
+
+    def test_lock_dependents_follow_the_resolved_graph(self):
+        old = (
+            'version = 4\n'
+            '[[package]]\nname = "app"\nversion = "1.0.0"\ndependencies = ["lib"]\n'
+            '[[package]]\nname = "lib"\nversion = "1.0.0"\ndependencies = ["leaf"]\n'
+            '[[package]]\nname = "other"\nversion = "1.0.0"\ndependencies = ["unrelated"]\n'
+            '[[package]]\nname = "leaf"\nversion = "0.1.0"\n'
+            'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+            '[[package]]\nname = "unrelated"\nversion = "0.1.0"\n'
+            'source = "registry+https://github.com/rust-lang/crates.io-index"\n')
+        names = {'app', 'lib', 'other'}
+        bumped = old.replace('name = "leaf"\nversion = "0.1.0"', 'name = "leaf"\nversion = "0.1.1"')
+        self.assertEqual(lock_dependents(old, bumped, names), {'app', 'lib'})
+        member_version = old.replace('name = "lib"\nversion = "1.0.0"', 'name = "lib"\nversion = "1.1.0"')
+        self.assertEqual(lock_dependents(old, member_version, names), set())
+        self.assertEqual(lock_dependents(old, old, names), set())
+
+    def test_lock_without_a_base_uses_full_gate(self):
+        self.assertTrue(select(ROOT, ['Cargo.lock'])['full'])
+
+    def test_unchanged_lock_entries_select_no_package(self):
+        lock = (ROOT / 'Cargo.lock').read_text()
+        scope = select(ROOT, ['Cargo.lock'], base_lock=lock)
+        self.assertFalse(scope['full'])
+        self.assertEqual(scope['packages'], [])
+        self.assertTrue(scope['audit'])
+
+    def test_audit_follows_dependency_inputs(self):
+        self.assertFalse(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['audit'])
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-step/Cargo.toml'])['audit'])
+
+    def test_cache_writer_widens_cache_key_changes_to_full_gate(self):
+        lock = (ROOT / 'Cargo.lock').read_text()
+        self.assertTrue(select(ROOT, ['Cargo.lock'], base_lock=lock, cache_writer=True)['full'])
+        self.assertTrue(select(ROOT, ['rust-toolchain.toml'], cache_writer=True)['full'])
+        scope = select(ROOT, ['crates/cadmpeg-codec-rhino/src/reader.rs'], cache_writer=True)
+        self.assertFalse(scope['full'])
+        self.assertIn('cadmpeg-codec-rhino', scope['packages'])
+
+    def test_tested_commit_only_refreshes_cache(self):
+        scope = select(ROOT, ['crates/cadmpeg-codec-rhino/src/reader.rs'], tested=True)
+        self.assertFalse(scope['rust'])
+        self.assertFalse(scope['features'])
+        self.assertFalse(scope['static'])
+        self.assertFalse(scope['audit'])
+        self.assertTrue(select(ROOT, ['Cargo.toml'], tested=True)['full'])
 
 
 if __name__ == '__main__':
