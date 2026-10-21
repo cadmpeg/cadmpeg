@@ -1186,19 +1186,6 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     else {
         panic!("typed extrusion feature");
     };
-    assert_eq!(
-        extent,
-        &cadmpeg_ir::features::ExtrudeExtent::OneSided {
-            side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::Dimension::Literal(
-                        cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap()
-                    ),
-                },
-                draft: None,
-            }
-        }
-    );
     let parameter = decoded
         .ir()
         .model
@@ -1206,7 +1193,18 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
-    assert_eq!(parameter.expression, "25mm".into());
+    assert_eq!(
+        extent,
+        &cadmpeg_ir::features::ExtrudeExtent::OneSided {
+            side: cadmpeg_ir::features::ExtrudeSide {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
+                    length: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
+                },
+                draft: None,
+            }
+        }
+    );
+    assert_eq!(parameter.expression, "25 mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -1310,7 +1308,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
-    assert_eq!(parameter.expression, "25mm".into());
+    assert_eq!(parameter.expression, "25 mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
