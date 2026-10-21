@@ -404,10 +404,9 @@ pub(super) fn encode_design_bulkstream(
         primary_records.push(primary_record(text.record_index, out.len())?);
         encode_sketch_text(&mut out, text)?;
     }
-    for relation in &native.sketch_relations {
-        primary_records.push(primary_record(relation.record_index, out.len())?);
-        encode_sketch_relation(&mut out, relation)?;
-    }
+    // Relations require zero padding until the next indexed record. Keep
+    // independent reference bytes before them, outside both relation tails
+    // and the terminal parameter companion's owned interval.
     for reference in &native.persistent_references {
         out.extend_from_slice(persistent_reference_name(reference.kind));
         out.extend_from_slice(&2u32.to_le_bytes());
@@ -439,6 +438,10 @@ pub(super) fn encode_design_bulkstream(
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+    }
+    for relation in &native.sketch_relations {
+        primary_records.push(primary_record(relation.record_index, out.len())?);
+        encode_sketch_relation(&mut out, relation)?;
     }
     // A companion owns the bytes until the next parameter/owner or stream end.
     // Independent reference records must precede this run so they cannot become
