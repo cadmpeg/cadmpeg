@@ -351,14 +351,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             if let Some(side) = side {
                 let both_sides = matches!(side, ThickenSide::Both);
-                if both_sides || properties.contains_key("BothSides") {
+                if both_sides
+                    || existing.is_some_and(|record| record.properties.contains_key("BothSides"))
+                {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("BothSides"),
                         both_sides.to_string(),
                     );
                 }
                 let reverse = matches!(side, ThickenSide::Reverse);
-                if reverse || properties.contains_key("Reverse") {
+                if reverse
+                    || existing.is_some_and(|record| record.properties.contains_key("Reverse"))
+                {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Reverse"),
                         reverse.to_string(),

@@ -206,7 +206,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             };
             match extent {
                 ExtrudeExtent::OneSided { side } => match &side.termination {
-                    LinearTermination::Unresolved {} => {}
+                    LinearTermination::Unresolved {} => {
+                        if let Some(condition) =
+                            existing.and_then(|record| record.properties.get("EndCondition"))
+                        {
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("EndCondition"),
+                                condition.clone(),
+                            );
+                        }
+                    }
                     LinearTermination::Blind { length } => {
                         if existing
                             .is_none_or(|record| record.properties.contains_key("EndCondition"))

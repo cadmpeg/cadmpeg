@@ -195,7 +195,9 @@ pub(crate) fn visit_operation_roles(
             bind(&["Revolutions"], &["/shape/law/revolutions"])?;
             bind(&["StartAngle"], &["/start_angle"])?;
         }
-        FeatureOperation::Wrap { .. } => bind(&["Depth"], &["/mode/depth"])?,
+        FeatureOperation::Wrap { .. } => {
+            bind(&["Depth"], &["/mode/emboss/depth", "/mode/deboss/depth"])?
+        }
         FeatureOperation::RuledSurface { .. } => {
             bind(&["Distance", "D1"], &["/mode/distance"])?;
             bind(&["Angle"], &["/angle"])?;
