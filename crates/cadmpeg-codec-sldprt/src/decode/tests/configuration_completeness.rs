@@ -119,6 +119,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
 #[test]
 fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut ir = CadIr::empty();
+    let source_owner = native_scope_fixture(&mut ir);
     let feature_id = FeatureId::mint("synthetic:test:id#configured").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -126,10 +127,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         name: None,
         suppressed: Some(false),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("Scope"),
-            "Body1".into(),
-        )]),
+        source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -140,7 +138,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
         ),
-        native_ref: None,
+        native_ref: Some(source_owner),
     });
     for (ordinal, definition) in [
         (
@@ -201,14 +199,66 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     .unwrap();
 
     for expected in [
-        "1 feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 0 feature record(s) share regeneration ordinals.",
-        "2 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
-        "1 feature record(s) contain missing or repeated output body references.",
+        "4 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
         "1 feature(s) retain their native kind without a complete neutral operation definition.",
         "2 typed feature(s) retain native or unresolved required operation operands.",
         "1 body delete/keep feature(s) retain selected native body identities without a decoded retention mode.",
     ] {
         assert!(report.losses.iter().any(|loss| loss.message == expected));
+    }
+    // #209 D20 removed per-configuration outputs/dependencies. Preserve the
+    // exact identities deleted by WIP 8702b20bd in their canonical base homes;
+    // check base-only and inherited cases independently of unresolved Scope.
+    let missing_dependency = FeatureId::mint("synthetic:test:id#missing-dependency").unwrap();
+    let missing_output = BodyId::mint("test:model:entity#missing-output").unwrap();
+    let mut missing = ir.clone();
+    missing.model.features[0]
+        .dependencies
+        .insert(missing_dependency.clone());
+    missing.model.features[0].evaluation.set_outputs(
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![missing_output.clone()]).unwrap(),
+    );
+    assert_eq!(
+        missing.model.features[0].dependencies.as_slice(),
+        &[missing_dependency]
+    );
+    assert_eq!(
+        missing.model.features[0].evaluation.outputs().as_slice(),
+        &[missing_output]
+    );
+    assert_eq!(missing.model.configurations.len(), 3);
+    for configuration in &missing.model.configurations {
+        let state = &configuration.feature_states[&feature_id];
+        assert_eq!(
+            state.definition(),
+            ir.model
+                .configurations
+                .iter()
+                .find(|original| original.id == configuration.id)
+                .unwrap()
+                .feature_states[&feature_id]
+                .definition()
+        );
+        let wire = serde_json::to_value(state).unwrap();
+        assert!(wire.get("dependencies").is_none());
+        assert!(wire.get("outputs").is_none());
+    }
+    let mut base = missing.clone();
+    base.model.configurations.clear();
+    for (document, count) in [(&missing, 4), (&base, 1)] {
+        let mut report = super::empty_report(true);
+        append_design_losses(
+            &cadmpeg_test_support::service_decode_context(),
+            document,
+            &mut report,
+        )
+        .unwrap();
+        for expected in [
+            format!("{count} feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 0 feature record(s) share regeneration ordinals."),
+            format!("{count} feature record(s) contain missing or repeated output body references."),
+        ] {
+            assert!(report.losses.iter().any(|loss| loss.message == expected), "{expected}");
+        }
     }
 }
 
@@ -695,4 +745,31 @@ fn sparse_configuration_values_inherit_without_copied_base_caches() {
         ir.model.configurations[0].parameter_value(&ir, &dependent),
         None
     );
+}
+
+/// Scope comes from an actual parsed source record, never a synthetic owner.
+fn native_scope_fixture(ir: &mut CadIr) -> String {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="configured" Type="History" id="1" Scope="Body1"/></Keywords>"#,
+    ));
+    let decoded = crate::SldprtCodec
+        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(decoded.ir());
+    let feature = &native.feature_histories[0].features[0];
+    assert_eq!(feature.properties["Scope"], "Body1");
+    let owner = feature.id.clone();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            ir.native.namespace_mut("sldprt"),
+        )
+        .unwrap();
+    owner
 }
