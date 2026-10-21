@@ -62,6 +62,25 @@ pub(super) fn history_metadata_ids(histories: &[crate::records::FeatureHistory])
     ids
 }
 
+/// A derived cosmetic-thread object is the pattern's generated child, so
+/// the next independent feature object closes its physical source interval.
+pub(super) fn pattern_object_end<'a>(
+    mut following: impl Iterator<Item = (usize, &'a crate::records::Feature)>,
+    payload_len: usize,
+) -> usize {
+    let next = following.next();
+    if next.is_some_and(|(_, feature)| {
+        feature.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
+    }) {
+        following
+            .next()
+            .map(|(offset, _)| offset)
+            .unwrap_or(payload_len)
+    } else {
+        next.map(|(offset, _)| offset).unwrap_or(payload_len)
+    }
+}
+
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
     model_features: &mut [cadmpeg_ir::features::Feature],
@@ -133,11 +152,10 @@ pub(crate) fn bind_pattern_inputs(
             // payload bytes at its own offset, and `SldprtNative::load`
             // refuses a name whose offset the payload does not state.
             let pattern_object_end = || {
-                let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
-                match starts.get(next) {
-                    Some((offset, _)) => *offset,
-                    None => lane.native_payload.len(),
-                }
+                self::pattern_object_end(
+                    starts.iter().skip(start_index + 1).copied(),
+                    lane.native_payload.len(),
+                )
             };
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
