@@ -47,7 +47,13 @@ fn rational_extrusion_tensor_preserves_weights_and_true_points() {
         false,
     )
     .unwrap();
-    let cache = tensor(&directrix, &direction, Vector3::new(0.0, 0.0, 0.0)).unwrap();
+    let cache = tensor(
+        &cadmpeg_test_support::service_decode_context(),
+        &directrix,
+        &direction,
+        Vector3::new(0.0, 0.0, 0.0),
+    )
+    .unwrap();
     close(at(&cache, 0.5, 0.25), Point3::new(1.0, 4.0 / 3.0, 0.75));
     assert_eq!(
         cache.pole_grid().weights().unwrap(),
@@ -57,7 +63,13 @@ fn rational_extrusion_tensor_preserves_weights_and_true_points() {
 
 #[test]
 fn rational_sum_tensor_has_independent_directrix_parameters() {
-    let cache = tensor(&rational(), &rational(), Vector3::new(3.0, -1.0, 2.0)).unwrap();
+    let cache = tensor(
+        &cadmpeg_test_support::service_decode_context(),
+        &rational(),
+        &rational(),
+        Vector3::new(3.0, -1.0, 2.0),
+    )
+    .unwrap();
     close(
         at(&cache, 0.5, 0.25),
         Point3::new(-15.0 / 11.0, 113.0 / 33.0, -2.0),
@@ -184,5 +196,98 @@ fn revolution_cache_capacity_refuses_before_adaptive_allocation() {
     let error = generate(&ctx, &ir, &construction).unwrap_err();
     assert!(
         matches!(error,CodecError::ResourceLimit(limit) if limit.dimension==cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation=="generate F3D revolution cache output")
+    );
+}
+
+#[test]
+fn nonidentity_source_chart_is_not_assumed_to_be_a_natural_profile_chart() {
+    let (ir, construction) = revolution_control();
+    let changed = ProceduralSurface::new(
+        construction.id.clone(),
+        construction.definition().clone(),
+        Some(
+            cadmpeg_ir::geometry::RecordBounds::try_new([
+                Some(10.0),
+                Some(0.0),
+                Some(20.0),
+                Some(1.0),
+            ])
+            .unwrap(),
+        ),
+    );
+    assert!(generate(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &changed
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn exact_tensor_capacity_refuses_before_product_allocation() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = tensor(&ctx, &rational(), &rational(), Vector3::new(0.0, 0.0, 0.0)).unwrap_err();
+    assert!(
+        matches!(error,CodecError::ResourceLimit(limit) if limit.dimension==cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation=="generate F3D canonical cache output")
+    );
+}
+
+#[test]
+fn zero_fit_curved_revolution_preserves_the_unsupported_exact_cache_case() {
+    let (ir, mut construction) = revolution_control();
+    construction.set_cache_fit_tolerance(Some(0.0)).unwrap();
+    assert!(generate(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &construction
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn analytic_circle_angle_is_not_treated_as_rational_conic_parameter() {
+    let (mut ir, construction) = revolution_control();
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    ));
+    assert!(generate(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &construction
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn requested_fit_below_coordinate_precision_is_refused_without_increasing_it() {
+    let (ir, mut construction) = revolution_control();
+    construction
+        .set_cache_fit_tolerance(Some(f64::EPSILON))
+        .unwrap();
+    let error = generate(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &construction,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error,CodecError::UnsupportedContent(message) if message.contains("coordinate precision budget"))
+    );
+    assert_eq!(
+        construction.cache_fit_tolerance().unwrap().get(),
+        f64::EPSILON
     );
 }

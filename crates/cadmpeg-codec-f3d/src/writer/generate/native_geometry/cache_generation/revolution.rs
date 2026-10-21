@@ -18,7 +18,21 @@ pub(super) fn generate(
     {
         return Ok(None);
     }
-    let curve = profile(target, payload.directrix())?;
+    let Some(curve) = profile(target, payload.directrix())? else {
+        return Ok(None);
+    };
+    if target.model.curves.iter().any(|curve| {
+        curve.id == *payload.directrix()
+            && matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+            )
+            && payload
+                .parameter_interval()
+                .is_some_and(|range| curve.parameter_range != Some(range))
+    }) {
+        return Ok(None);
+    }
     let weights = curve.weights();
     if weights.as_ref().is_some_and(|weights| {
         !(weights.iter().all(|weight| weight.get() > 0.0)
@@ -42,6 +56,22 @@ pub(super) fn generate(
         .map_or(target.tolerances.linear.get(), |fit| fit.get());
     if !radius.is_finite() || (radius > 0.0 && tolerance <= 0.0) {
         return Ok(None);
+    }
+    let scale = points
+        .iter()
+        .map(|point| point.get())
+        .chain(std::iter::once(origin))
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .fold(radius, f64::max);
+    // Reject a requested fit below the precision budget of the finite affine
+    // rotation and rational-pole accumulation; never enlarge that fit.
+    let operations = f64_from_index(points.len())
+        .ok_or_else(|| CodecError::malformed("revolution profile count is not exact in f64"))?
+        * 128.0;
+    if scale * f64::EPSILON * operations > tolerance / 2.0 {
+        return Err(CodecError::UnsupportedContent(
+            "F3D revolution fit is below the coordinate precision budget".into(),
+        ));
     }
     let [start, end] = payload.angular_interval().endpoints();
     // Same-sign rational poles bound the radius of every directrix point.
@@ -135,13 +165,12 @@ pub(super) fn generate(
     )?;
     knots[1..=width].copy_from_slice(&angles);
     knots[width + 1] = end;
-    Ok(Some(
-        NurbsSurface::from_lanes(
-            NurbsSurfaceAxis::new(curve.degree(), curve.knots().to_vec(), curve.periodic()),
-            NurbsSurfaceAxis::new(1, knots, false),
-            NurbsSurfaceLanes::new(grid, weights),
-            false,
-        )
-        .map_err(CodecError::malformed)?,
-    ))
+    let generated = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(curve.degree(), curve.knots().to_vec(), curve.periodic()),
+        NurbsSurfaceAxis::new(1, knots, false),
+        NurbsSurfaceLanes::new(grid, weights),
+        false,
+    )
+    .map_err(CodecError::malformed)?;
+    Ok(chart_matches(construction, &generated).then_some(generated))
 }

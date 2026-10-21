@@ -1376,13 +1376,63 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     source_less.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.01))
         .unwrap();
-    let error = F3dCodec
+    // W1: a valid current construction can produce an exact canonical cache.
+    // The old unconditional cacheless-fit refusal prevented that supported
+    // write. Preserve this exact input and its requested fit in the output.
+    let expected_with_fit = source_less.model.procedural_surfaces[0]
+        .definition()
+        .clone();
+    let validation = cadmpeg_ir::validate_neutral(&source_less, vec![]).unwrap();
+    assert!(validation.is_ok(), "{validation:#?}");
+    let mut encoded_with_fit = Vec::new();
+    F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cache-less extrusion tolerance must be rejected");
-    assert!(error
-        .to_string()
-        .contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"));
+        .and_then(|plan| plan.write_to(&mut encoded_with_fit))
+        .expect("exact canonical cache preserves the requested fit");
+    let with_fit = F3dCodec
+        .decode(
+            &mut Cursor::new(encoded_with_fit),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let validation =
+        cadmpeg_ir::validate_neutral(with_fit.ir(), with_fit.report().losses.clone()).unwrap();
+    assert!(validation.is_ok(), "{validation:#?}");
+    assert_eq!(
+        with_fit.ir().model.procedural_surfaces[0].definition(),
+        &expected_with_fit
+    );
+    assert_eq!(
+        with_fit.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.01)
+    );
+    let surface = with_fit
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| {
+            with_fit
+                .ir()
+                .model
+                .procedural_surface_owner(&with_fit.ir().model.procedural_surfaces[0].id)
+                == Some(&surface.id)
+        })
+        .unwrap();
+    let Some(SolvedSurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache() else {
+        panic!("exact canonical cache");
+    };
+    let point = cadmpeg_ir::eval::decode::surface_point_solved(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &SolvedSurfaceGeometry::Nurbs(cache.clone()),
+        0.5,
+        0.25,
+    )
+    .unwrap()
+    .get();
+    assert_eq!(point, cadmpeg_ir::math::Point3::new(10.0, 10.0, 5.0));
 }
 
 #[test]
