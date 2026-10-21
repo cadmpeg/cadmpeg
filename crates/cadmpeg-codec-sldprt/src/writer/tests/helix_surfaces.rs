@@ -606,6 +606,10 @@ fn semantic_writer_round_trips_wrap() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(&id, "/mode/depth", PositiveLength::new(3.5).unwrap())
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Wrap {
                 profile,
@@ -617,8 +621,11 @@ fn semantic_writer_round_trips_wrap() {
             };
             *profile = cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face_id.clone()]);
             *face = FaceSelection::Faces(vec![face_id.clone()]);
+            let WrapMode::Emboss { depth } = mode else {
+                panic!("original embossed wrap");
+            };
             *mode = WrapMode::Deboss {
-                depth: cadmpeg_ir::Dimension::Literal(PositiveLength::new(3.5).unwrap()),
+                depth: depth.clone(),
             };
         });
     }
@@ -854,14 +861,17 @@ fn semantic_writer_round_trips_offset_surface() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(&id, "/distance", Length::new(-3.5).unwrap())
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) =
+            let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. }) =
                 definition
             else {
                 panic!("typed offset surface");
             };
             *faces = FaceSelection::Faces(vec![face_id.clone()]);
-            *distance = Some(cadmpeg_ir::Dimension::Literal(Length::new(-3.5).unwrap()));
         });
     }
 
@@ -1386,19 +1396,22 @@ fn semantic_writer_round_trips_extend_surface() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &id,
+                "/distance",
+                cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-                faces,
-                distance,
-                method,
+                faces, method, ..
             }) = definition
             else {
                 panic!("typed extended surface");
             };
             *faces = FaceSelection::Faces(vec![face_id.clone()]);
-            *distance = Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap(),
-            ));
             *method = SurfaceExtension::Linear;
         });
     }
@@ -1473,6 +1486,14 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &id,
+                "/mode/distance",
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::RuledSurface {
                 edges,
@@ -1485,10 +1506,11 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
             };
             *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
             *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+            let RuledSurfaceMode::Direction { distance, .. } = mode else {
+                panic!("prior ruled-surface mode");
+            };
             *mode = RuledSurfaceMode::Normal {
-                distance: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-                ),
+                distance: distance.clone(),
             };
         });
     }
@@ -1512,16 +1534,25 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 
     {
         let mut ir_edit = regenerated.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &id,
+                "/mode/distance",
+                cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::RuledSurface { mode, .. }) =
                 definition
             else {
                 panic!("typed ruled surface");
             };
+            let RuledSurfaceMode::Normal { distance, .. } = mode else {
+                panic!("prior ruled-surface mode");
+            };
             *mode = RuledSurfaceMode::Tangent {
-                distance: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
-                ),
+                distance: distance.clone(),
             };
         });
     }
@@ -1751,6 +1782,14 @@ fn semantic_writer_round_trips_typed_revolution() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &id,
+                "/construction/extent/termination/angle",
+                cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            )
+            .unwrap();
         let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
         let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
         let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) =
@@ -1764,13 +1803,6 @@ fn semantic_writer_round_trips_typed_revolution() {
         axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap();
         axis.direction =
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
-        *construction.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
-            termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
-                ),
-            },
-        };
         *op = BooleanOp::Cut;
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
