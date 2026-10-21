@@ -1420,7 +1420,7 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
     ] {
         let mut base = json!({
             "id": "point", "record_index": 1, "class_tag": "000",
-            "record_form": form,
+            "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
             "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0
         });
         base["companion"] = json!({"incident_curves": []});
@@ -1711,7 +1711,7 @@ fn sketch_pattern_count_enforces_both_bounds() {
 #[test]
 fn sketch_identity_sidecar_rejects_zero() {
     let point = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
-        "record_form": {"kind": "version8"},
+        "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 0, "closure": {"selector": 0, "state": 0},
         "companion": {"incident_curves": []}});
@@ -1737,7 +1737,7 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
         record_index: 1,
         owner_reference: None,
         class_tag: "000".to_owned().try_into().unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         coordinate_offset: 0,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
@@ -1785,7 +1785,7 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
 #[test]
 fn sketch_point_requires_a_distinct_companion_on_every_route() {
     let mut wire = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
-        "record_form": {"kind": "version8"},
+        "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 1, "closure": {"selector": 0, "state": 0},
         "companion": {"incident_curves": []}});
@@ -1815,7 +1815,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         record_index: 1,
         owner_reference: None,
         class_tag: "000".to_owned().try_into().unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         coordinate_offset: 0,
         record_form: original.record_form().clone().into_raw(),
         paired_reference: 2,

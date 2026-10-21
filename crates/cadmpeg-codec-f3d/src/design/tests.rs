@@ -277,7 +277,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             owner_reference: None,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             coordinate_offset: 89,
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),

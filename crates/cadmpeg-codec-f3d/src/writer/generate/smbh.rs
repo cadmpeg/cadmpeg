@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveMetadata},
     CurveGeometry, SolvedCurveGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{ShellId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{ShellId, VertexId};
 use cadmpeg_ir::topology::Sense;
 
 use super::{
@@ -38,17 +38,11 @@ use super::{
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
-mod free_surfaces;
-
 pub(super) fn encode_smbh(
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (cache_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let topology = NativeGenerationIndex::new(native);
     if target.model.faces.is_empty() {
         if !target
@@ -62,18 +56,21 @@ pub(super) fn encode_smbh(
                 && target.model.curves.is_empty()
                 && target.model.points.is_empty()
             {
-                let mut bytes = native_smbh_header(target, 0)?;
+                let mut bytes = native_smbh_header(target)?;
                 native_ident(&mut bytes, "asmheader")?;
                 native_string(&mut bytes, "231.6.3.65535")?;
                 bytes.push(0x11);
                 native_history_tail(&mut bytes, native)?;
                 return Ok(bytes);
             }
-            return free_surfaces::encode(&cache_ctx, target, native);
+            return Err(CodecError::UnsupportedContent(
+                "source-less F3D generation requires owned face topology or a nonempty wire shell"
+                    .into(),
+            ));
         }
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
-    encode_face_topology_smbh(&cache_ctx, target, native, attributes, &topology)
+    encode_face_topology_smbh(target, native, attributes, &topology)
 }
 
 #[derive(Debug)]
@@ -102,27 +99,19 @@ struct NativeRecordPlan<'a> {
     transform: i64,
     attribute: i64,
     pcurves: Vec<PlannedPcurve<'a>>,
-    free_surfaces: BTreeSet<SurfaceId>,
 }
 
 impl<'a> NativeRecordPlan<'a> {
-    fn for_model(
-        cache_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        model: &'a cadmpeg_ir::document::Model,
-    ) -> Result<Self, CodecError> {
+    fn for_model(model: &'a cadmpeg_ir::document::Model) -> Result<Self, CodecError> {
         let body_start = 1;
-        let free_surfaces = saved_free_surface_ids(cache_ctx, model)?;
-        let free_surface_count = free_surfaces.len();
-        let free_surface_start = native_record_index(body_start, model.bodies.len())?;
-        let region_start = native_record_index(free_surface_start, free_surface_count)?;
+        let region_start = native_record_index(body_start, model.bodies.len())?;
         let shell_start = native_record_index(region_start, model.regions.len())?;
         let wire_count = model.shells.iter().map(source_less_wire_count).sum();
         let wire_start = native_record_index(shell_start, model.shells.len())?;
         let face_start = native_record_index(wire_start, wire_count)?;
         let loop_start = native_record_index(face_start, model.faces.len())?;
         let surface_start = native_record_index(loop_start, model.loops.len())?;
-        let curve_start =
-            native_record_index(surface_start, model.surfaces.len() - free_surface_count)?;
+        let curve_start = native_record_index(surface_start, model.surfaces.len())?;
         let pcurve_start = native_record_index(curve_start, model.curves.len())?;
         let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
         let mut ref_pcurve_count = 0usize;
@@ -199,44 +188,8 @@ impl<'a> NativeRecordPlan<'a> {
             transform: transform_start,
             attribute: attribute_start,
             pcurves,
-            free_surfaces,
         })
     }
-}
-
-/// Top-level carriers exclude supports serialized inline through another
-/// current geometry owner. `EntitySchema` excludes each entity's declaration.
-fn saved_free_surface_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    model: &cadmpeg_ir::document::Model,
-) -> Result<BTreeSet<SurfaceId>, CodecError> {
-    use cadmpeg_ir::schema::EntitySchema;
-    let mut roots: BTreeSet<_> = model
-        .surfaces
-        .iter()
-        .filter(|surface| {
-            surface.geometry.procedural_construction().is_some()
-                && !model.faces.iter().any(|face| face.surface == surface.id)
-        })
-        .map(|surface| surface.id.clone())
-        .collect();
-    let mut remove_support = |id: &str| {
-        roots.retain(|candidate| candidate.as_str() != id);
-        Ok(())
-    };
-    macro_rules! visit { ($($field:ident),*) => {$({
-        for record in &model.$field {
-            record.visit_references(ctx, &mut remove_support)?;
-        }
-    })*}; }
-    visit!(
-        surfaces,
-        curves,
-        pcurves,
-        procedural_surfaces,
-        procedural_curves
-    );
-    Ok(roots)
 }
 
 fn source_less_wire_count(shell: &cadmpeg_ir::topology::Shell) -> usize {
@@ -588,7 +541,7 @@ fn encode_wire_body_smbh(
         },
     )?;
     native_history_tail(&mut records, native)?;
-    let mut bytes = native_smbh_header(target, 0)?;
+    let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
 }
@@ -701,12 +654,13 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
 }
 
 fn encode_face_topology_smbh(
-    cache_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
     let model = &target.model;
     let region_ordinals: HashMap<_, _> = model
         .regions
@@ -756,7 +710,7 @@ fn encode_face_topology_smbh(
     }
     validate_source_less_body_kinds(model)?;
 
-    let plan = NativeRecordPlan::for_model(cache_ctx, model)?;
+    let plan = NativeRecordPlan::for_model(model)?;
     let NativeRecordPlan {
         body: body_start,
         region: region_start,
@@ -775,7 +729,6 @@ fn encode_face_topology_smbh(
         transform: transform_start,
         attribute: attribute_start,
         pcurves,
-        free_surfaces,
     } = plan;
 
     let mut records = Vec::new();
@@ -846,13 +799,6 @@ fn encode_face_topology_smbh(
             },
         );
         records.push(0x11);
-    }
-    for surface in model
-        .surfaces
-        .iter()
-        .filter(|surface| free_surfaces.contains(&surface.id))
-    {
-        encode_surface_record(cache_ctx, &mut records, target, surface)?;
     }
     for region in &model.regions {
         let body_ordinal = model
@@ -1014,7 +960,6 @@ fn encode_face_topology_smbh(
         let surface_position = model
             .surfaces
             .iter()
-            .filter(|surface| !free_surfaces.contains(&surface.id))
             .position(|surface| surface.id == face.surface)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -1141,12 +1086,161 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
 
-    for surface in model
-        .surfaces
-        .iter()
-        .filter(|surface| !free_surfaces.contains(&surface.id))
-    {
-        encode_surface_record(cache_ctx, &mut records, target, surface)?;
+    for surface in &model.surfaces {
+        match surface.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+                let origin = plane_surface.origin().get();
+                let normal = *plane_surface.frame().axis().as_raw();
+                let u_axis = *plane_surface.frame().reference().as_raw();
+                native_surface_base(&mut records, "plane")?;
+                native_point(
+                    &mut records,
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
+                );
+                native_vector(&mut records, [normal.x, normal.y, normal.z]);
+                native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
+                records.push(0x0b);
+            }
+            Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+                let origin = cylinder_surface.origin().get();
+                let axis = *cylinder_surface.frame().axis().as_raw();
+                let ref_direction = *cylinder_surface.frame().reference().as_raw();
+                let radius = cylinder_surface.radius().get();
+                native_surface_base(&mut records, "cone")?;
+                native_point(
+                    &mut records,
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    &mut records,
+                    [
+                        ref_direction.x * radius / LEN_TO_MM,
+                        ref_direction.y * radius / LEN_TO_MM,
+                        ref_direction.z * radius / LEN_TO_MM,
+                    ],
+                );
+                native_f64(&mut records, 1.0);
+                records.extend_from_slice(&[0x0b, 0x0b]);
+                native_f64(&mut records, 0.0);
+                native_f64(&mut records, 1.0);
+                native_f64(&mut records, radius / LEN_TO_MM);
+                records.extend_from_slice(&[0x0b; 5]);
+            }
+            Some(SolvedSurfaceGeometry::Cone(cone_surface)) => {
+                let origin = cone_surface.origin().get();
+                let axis = *cone_surface.frame().axis().as_raw();
+                let ref_direction = *cone_surface.frame().reference().as_raw();
+                let radius = cone_surface.radius().get();
+                let ratio = cone_surface.ratio().get();
+                let half_angle = cone_surface.half_angle().get();
+                native_surface_base(&mut records, "cone")?;
+                native_point(
+                    &mut records,
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_vector(
+                    &mut records,
+                    [
+                        ref_direction.x * radius / LEN_TO_MM,
+                        ref_direction.y * radius / LEN_TO_MM,
+                        ref_direction.z * radius / LEN_TO_MM,
+                    ],
+                );
+                native_f64(&mut records, ratio);
+                records.extend_from_slice(&[0x0b, 0x0b]);
+                native_f64(&mut records, half_angle.sin());
+                native_f64(&mut records, half_angle.cos());
+                native_f64(&mut records, radius / LEN_TO_MM);
+                records.extend_from_slice(&[0x0b; 5]);
+            }
+            Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
+                let center = sphere_surface.center().get();
+                let axis = *sphere_surface.frame().axis().as_raw();
+                let ref_direction = *sphere_surface.frame().reference().as_raw();
+                let radius = sphere_surface.radius().get();
+                native_surface_base(&mut records, "sphere")?;
+                native_point(
+                    &mut records,
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
+                );
+                native_f64(&mut records, radius / LEN_TO_MM);
+                native_vector(
+                    &mut records,
+                    [ref_direction.x, ref_direction.y, ref_direction.z],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                records.extend_from_slice(&[0x0b; 5]);
+            }
+            Some(SolvedSurfaceGeometry::Nurbs(ref nurbs)) => {
+                if !native_procedural_surface(&mut records, target, surface, nurbs)? {
+                    native_surface_base(&mut records, "spline")?;
+                    native_nurbs_surface(&mut records, nurbs)?;
+                }
+            }
+            Some(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+                let center = torus_surface.center().get();
+                let axis = *torus_surface.frame().axis().as_raw();
+                let ref_direction = *torus_surface.frame().reference().as_raw();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
+                native_surface_base(&mut records, "torus")?;
+                native_point(
+                    &mut records,
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
+                );
+                native_vector(&mut records, [axis.x, axis.y, axis.z]);
+                native_f64(&mut records, major_radius / LEN_TO_MM);
+                native_f64(&mut records, minor_radius / LEN_TO_MM);
+                native_vector(
+                    &mut records,
+                    [ref_direction.x, ref_direction.y, ref_direction.z],
+                );
+                records.extend_from_slice(&[0x0b; 5]);
+            }
+            Some(SolvedSurfaceGeometry::Polygonal(_)) => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "source-less F3D face generation does not support polygonal surface carrier {}",
+                    surface.id
+                )));
+            }
+            Some(SolvedSurfaceGeometry::Transformed(_)) => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "source-less F3D face generation does not support transformed surface carrier {}",
+                    surface.id
+                )));
+            }
+            None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
+                if !native_cacheless_procedural_surface(&mut records, target, surface)? {
+                    return Err(CodecError::UnsupportedContent(format!(
+                        "source-less F3D face generation does not support surface carrier {}",
+                        surface.id
+                    )));
+                }
+            }
+        }
+        records.push(0x11);
     }
 
     encode_source_less_curves(&mut records, target)?;
@@ -1324,168 +1418,9 @@ fn encode_face_topology_smbh(
         },
     )?;
     native_history_tail(&mut records, native)?;
-    let mut bytes = native_smbh_header(target, free_surfaces.len())?;
+    let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
-}
-
-fn encode_surface_record(
-    cache_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    records: &mut Vec<u8>,
-    target: &CadIr,
-    surface: &cadmpeg_ir::geometry::Surface,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-
-    match surface.geometry.solved() {
-        Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin().get();
-            let normal = *plane_surface.frame().axis().as_raw();
-            let u_axis = *plane_surface.frame().reference().as_raw();
-            native_surface_base(records, "plane")?;
-            native_point(
-                records,
-                [
-                    origin.x / LEN_TO_MM,
-                    origin.y / LEN_TO_MM,
-                    origin.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(records, [normal.x, normal.y, normal.z]);
-            native_vector(records, [u_axis.x, u_axis.y, u_axis.z]);
-            records.push(0x0b);
-        }
-        Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin().get();
-            let axis = *cylinder_surface.frame().axis().as_raw();
-            let ref_direction = *cylinder_surface.frame().reference().as_raw();
-            let radius = cylinder_surface.radius().get();
-            native_surface_base(records, "cone")?;
-            native_point(
-                records,
-                [
-                    origin.x / LEN_TO_MM,
-                    origin.y / LEN_TO_MM,
-                    origin.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(records, [axis.x, axis.y, axis.z]);
-            native_vector(
-                records,
-                [
-                    ref_direction.x * radius / LEN_TO_MM,
-                    ref_direction.y * radius / LEN_TO_MM,
-                    ref_direction.z * radius / LEN_TO_MM,
-                ],
-            );
-            native_f64(records, 1.0);
-            records.extend_from_slice(&[0x0b, 0x0b]);
-            native_f64(records, 0.0);
-            native_f64(records, 1.0);
-            native_f64(records, radius / LEN_TO_MM);
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        Some(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin().get();
-            let axis = *cone_surface.frame().axis().as_raw();
-            let ref_direction = *cone_surface.frame().reference().as_raw();
-            let radius = cone_surface.radius().get();
-            let ratio = cone_surface.ratio().get();
-            let half_angle = cone_surface.half_angle().get();
-            native_surface_base(records, "cone")?;
-            native_point(
-                records,
-                [
-                    origin.x / LEN_TO_MM,
-                    origin.y / LEN_TO_MM,
-                    origin.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(records, [axis.x, axis.y, axis.z]);
-            native_vector(
-                records,
-                [
-                    ref_direction.x * radius / LEN_TO_MM,
-                    ref_direction.y * radius / LEN_TO_MM,
-                    ref_direction.z * radius / LEN_TO_MM,
-                ],
-            );
-            native_f64(records, ratio);
-            records.extend_from_slice(&[0x0b, 0x0b]);
-            native_f64(records, half_angle.sin());
-            native_f64(records, half_angle.cos());
-            native_f64(records, radius / LEN_TO_MM);
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center().get();
-            let axis = *sphere_surface.frame().axis().as_raw();
-            let ref_direction = *sphere_surface.frame().reference().as_raw();
-            let radius = sphere_surface.radius().get();
-            native_surface_base(records, "sphere")?;
-            native_point(
-                records,
-                [
-                    center.x / LEN_TO_MM,
-                    center.y / LEN_TO_MM,
-                    center.z / LEN_TO_MM,
-                ],
-            );
-            native_f64(records, radius / LEN_TO_MM);
-            native_vector(records, [ref_direction.x, ref_direction.y, ref_direction.z]);
-            native_vector(records, [axis.x, axis.y, axis.z]);
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        Some(SolvedSurfaceGeometry::Nurbs(ref nurbs)) => {
-            if !native_procedural_surface(records, target, surface, nurbs)? {
-                native_surface_base(records, "spline")?;
-                native_nurbs_surface(records, nurbs)?;
-            }
-        }
-        Some(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center().get();
-            let axis = *torus_surface.frame().axis().as_raw();
-            let ref_direction = *torus_surface.frame().reference().as_raw();
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            native_surface_base(records, "torus")?;
-            native_point(
-                records,
-                [
-                    center.x / LEN_TO_MM,
-                    center.y / LEN_TO_MM,
-                    center.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(records, [axis.x, axis.y, axis.z]);
-            native_f64(records, major_radius / LEN_TO_MM);
-            native_f64(records, minor_radius / LEN_TO_MM);
-            native_vector(records, [ref_direction.x, ref_direction.y, ref_direction.z]);
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        Some(SolvedSurfaceGeometry::Polygonal(_)) => {
-            return Err(CodecError::UnsupportedContent(format!(
-                "source-less F3D face generation does not support polygonal surface carrier {}",
-                surface.id
-            )));
-        }
-        Some(SolvedSurfaceGeometry::Transformed(_)) => {
-            return Err(CodecError::UnsupportedContent(format!(
-                "source-less F3D face generation does not support transformed surface carrier {}",
-                surface.id
-            )));
-        }
-        None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
-            if !native_cacheless_procedural_surface(cache_ctx, records, target, surface)? {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "source-less F3D face generation does not support surface carrier {}",
-                    surface.id
-                )));
-            }
-        }
-    }
-    records.push(0x11);
-    Ok(())
 }
 
 /// Base record indices for the source-less stream sections that
@@ -1986,71 +1921,5 @@ mod tests {
             assert!(error.to_string().contains(reason), "{error}");
             assert_eq!(output, [0x93, 0x2a], "failed write changed caller output");
         }
-    }
-
-    #[test]
-    fn saved_surface_roots_exclude_inline_geometry_dependencies() {
-        use cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction;
-        use cadmpeg_ir::geometry::{
-            ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-        };
-        let mut target = cadmpeg_ir::examples::unit_cube().unwrap();
-        let mut support = target.model.surfaces[0].id.clone();
-        let mut ids = Vec::new();
-        for index in [1, 2] {
-            let surface = cadmpeg_ir::ids::SurfaceId::mint(format!(
-                "synthetic:root-control:surface#offset{index}"
-            ))
-            .unwrap();
-            let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint(format!(
-                "synthetic:root-control:construction#offset{index}"
-            ))
-            .unwrap();
-            target
-                .model
-                .procedural_surfaces
-                .push(ProceduralSurface::new(
-                    construction.clone(),
-                    ProceduralSurfaceDefinition::ParallelOffset(
-                        ParallelOffsetSurfaceConstruction::try_new(support, 1.0, None).unwrap(),
-                    ),
-                    None,
-                ));
-            target.model.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Procedural {
-                    construction,
-                    cache: None,
-                },
-                source_object: None,
-            });
-            ids.push(surface.clone());
-            support = surface;
-        }
-        target.finalize();
-        let validity = cadmpeg_ir::validate_neutral(&target, vec![]).unwrap();
-        assert!(validity.is_ok(), "{validity:#?}");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .unwrap();
-        // Both offsets are current typed geometry, but the first is serialized
-        // inline through the second; only the standalone second is a save root.
-        assert_eq!(
-            super::saved_free_surface_ids(&ctx, &target.model).unwrap(),
-            std::collections::BTreeSet::from([ids[1].clone()])
-        );
-        target.model.surfaces.retain(|surface| surface.id != ids[1]);
-        target.model.procedural_surfaces.pop();
-        target.finalize();
-        let validity = cadmpeg_ir::validate_neutral(&target, vec![]).unwrap();
-        assert!(validity.is_ok(), "{validity:#?}");
-        assert_eq!(
-            super::saved_free_surface_ids(&ctx, &target.model).unwrap(),
-            std::collections::BTreeSet::from([ids[0].clone()])
-        );
     }
 }

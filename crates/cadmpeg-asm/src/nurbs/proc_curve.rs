@@ -3484,8 +3484,7 @@ mod cache_form_tests {
                 context.into_intersection(nurbs_curve_parameter_domain(&solved).unwrap());
             let parameterization = match form.cache {
                 cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(value) => value,
-                cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { .. }
-                | cadmpeg_ir::geometry::RevisionCacheForm::Absent {} => {
+                cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { .. } => {
                     panic!("parameterized cache-first context")
                 }
             };

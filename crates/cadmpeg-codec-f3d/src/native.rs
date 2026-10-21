@@ -1711,9 +1711,6 @@ impl F3dNative {
         for bounds in &self.design_body_bounds {
             bounds.retain_source(&mut fidelity);
         }
-        for motion in &self.design_joint_motions {
-            motion.retain_source(&mut fidelity);
-        }
         for binding in &self.design_body_bindings {
             binding.retain_source(&mut fidelity);
         }
@@ -1761,9 +1758,6 @@ impl F3dNative {
         }
         for relation in &self.sketch_relations {
             relation.retain_source(&mut fidelity)?;
-        }
-        for point in &self.sketch_points {
-            point.retain_source(&mut fidelity);
         }
         for header in &self.design_entity_headers {
             header.retain_source(&mut fidelity);

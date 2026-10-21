@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
+use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_test_support::golden::snapshots_agree;
 
@@ -312,10 +313,13 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 }
 
 fn encoder_generated_unit_cube() -> Vec<u8> {
-    frozen_cube::fixture()
+    let ir = examples::unit_cube().expect("unit cube fixture is admitted");
+    let mut bytes = Vec::new();
+    F3dCodec
+        .encode(&ir, &mut bytes)
+        .expect("encode neutral unit-cube IR");
+    bytes
 }
-
-mod frozen_cube;
 
 fn golden_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
@@ -1137,67 +1141,11 @@ fn geometry_depth_agrees_with_full_depth() {
         |result| {
             crate::decode::assert_projection_records_are_reported(result);
             let native = crate::test_support::native_test::f3d_native(result.ir());
-            // Actual opaque geometry records and historical payloads are
-            // source content. Diagnostics about typed values are not an
-            // independent source record (#209 section 1.3).
-            for unknown in result
-                .ir()
-                .native_unknowns("f3d")
-                .expect("valid typed native unknown stubs")
-            {
-                // A zero-payload mesh_surface states absence, represented by
-                // its typed sentinel. It has no unread exact-surface payload.
-                let typed_absence = result.ir().model.surfaces.iter().any(|surface| {
-                    matches!(&surface.geometry,
-                        cadmpeg_ir::geometry::SurfaceGeometry::Solved(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: Some(record) })
-                            if record == &unknown.id)
-                        && native.mesh_surface_sentinels.iter().any(|sentinel| sentinel.surface == surface.id)
-                });
-                if !typed_absence {
-                    assert!(
-                        result
-                            .source_fidelity()
-                            .unrepresented()
-                            .contains(&cadmpeg_ir::ArenaClass::Model),
-                        "opaque ASM record {} must declare omitted model content",
-                        unknown.id
-                    );
-                }
-            }
-            let raw_recipe = native.design_edge_operands.iter().any(|operand| {
-                !operand.recipe_program.is_empty()
-                    && operand.recipe_structure.is_none()
-                    && operand.surface_patch_recipe_structure.is_none()
-            }) || native.design_face_operands.iter().any(|operand| {
-                !operand.recipe_program.is_empty()
-                    && (operand.recipe_nodes.is_empty()
-                        || operand
-                            .recipe_nodes
-                            .iter()
-                            .any(|node| node.recipe_structure.is_none()))
-            });
-            if raw_recipe
-                || native
-                    .asm_histories
-                    .iter()
-                    .flat_map(crate::history_records::AsmHistory::states)
-                    .flat_map(|state| &state.records)
-                    .any(|record| !record.raw_bytes.is_empty())
-                || native
-                    .design_parameter_scopes
-                    .iter()
-                    .any(|scope| scope.payload().is_uninterpreted())
-                || native
-                    .sketch_curve_identities
-                    .iter()
-                    .any(|curve| curve.geometry.is_none())
-            {
+            let expected = crate::loss::unrepresented(&result.report().losses, &native);
+            for class in expected {
                 assert!(
-                    result
-                        .source_fidelity()
-                        .unrepresented()
-                        .contains(&cadmpeg_ir::ArenaClass::Design),
-                    "uninterpreted design payload must declare omitted design content"
+                    result.source_fidelity().unrepresented().contains(&class),
+                    "F3D report has a source-only {class} record without declaring its class"
                 );
             }
         },

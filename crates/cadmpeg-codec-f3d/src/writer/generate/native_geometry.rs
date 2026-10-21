@@ -16,8 +16,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
 
-pub(in crate::writer) mod cache_generation;
-
 use super::native_bytes::{
     native_curve_base, native_enum, native_f64, native_i64, native_ident,
     native_length_prefixed_string, native_point, native_ref, native_string, native_subident,
@@ -29,20 +27,16 @@ use cadmpeg_asm::nurbs::support_chart::NativeChart;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
-pub(super) fn native_smbh_header(
-    target: &CadIr,
-    free_surface_count: usize,
-) -> Result<Vec<u8>, CodecError> {
+pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     let mut bytes = b"ASM BinaryFile8".to_vec();
     // Release word matching the product string, the zero region, then the
     // entity-count and flags words (bit 0: history partition present).
     bytes.extend_from_slice(&23100u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 12]);
-    // Current top-level bodies and free procedural surfaces follow asmheader;
-    // their first owned record follows that saved-root prefix.
+    // Top-level bodies follow asmheader; their first owned record follows
+    // that entire prefix. This is an index, not a fixed prototype count.
     let first_owned = cadmpeg_core::decode::u64_from_index(target.model.bodies.len())
-        .checked_add(cadmpeg_core::decode::u64_from_index(free_surface_count))
-        .and_then(|count| count.checked_add(1))
+        .checked_add(1)
         .ok_or_else(|| CodecError::InvalidInput("F3D top-level entity index exceeds u64".into()))?;
     bytes.extend_from_slice(&first_owned.to_le_bytes());
     bytes.extend_from_slice(&3u64.to_le_bytes());
@@ -1654,29 +1648,6 @@ fn native_loft_curve(
     )
 }
 
-/// Encode the current finite profile without using a solved surface cache to
-/// supply its domain. NURBS retain their knot domain; analytic profiles use
-/// their own canonical parameter range.
-fn native_cacheless_profile_curve(
-    target: &CadIr,
-    id: &cadmpeg_ir::ids::CurveId,
-) -> Result<NurbsCurve, CodecError> {
-    let curve = target
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *id)
-        .ok_or_else(|| CodecError::malformed(format_args!("surface profile {id} is missing")))?;
-    native_spline_field_curve(
-        curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("surface profile has no solved geometry".into())
-        })?,
-        curve
-            .parameter_range
-            .map(IncreasingParameterInterval::endpoints),
-    )
-}
-
 fn native_compound_loft_scale(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -1974,12 +1945,11 @@ fn encode_native_scaled_compound_loft(
 }
 
 pub(super) fn native_cacheless_procedural_surface(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &mut Vec<u8>,
     target: &CadIr,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let written = native_cacheless_procedural_surface_definition(ctx, bytes, target, surface)?;
+    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)?;
     if written {
         native_record_bounds(bytes, target, &surface.id);
     }
@@ -1987,7 +1957,6 @@ pub(super) fn native_cacheless_procedural_surface(
 }
 
 fn native_cacheless_procedural_surface_definition(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &mut Vec<u8>,
     target: &CadIr,
     surface: &Surface,
@@ -2007,9 +1976,6 @@ fn native_cacheless_procedural_surface_definition(
             "surface {} has multiple procedural constructions",
             surface.id
         )));
-    }
-    if let Some(cache) = cache_generation::generate(ctx, target, procedural)? {
-        return native_procedural_surface_definition(bytes, target, surface, &cache);
     }
     if let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() {
         let directrix = definition_payload.directrix();
@@ -2133,8 +2099,8 @@ fn native_cacheless_procedural_surface_definition(
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "rule_sur")?;
-        native_nurbs_curve(bytes, &native_cacheless_profile_curve(target, first)?)?;
-        native_nurbs_curve(bytes, &native_cacheless_profile_curve(target, second)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, first, None)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, second, None)?)?;
         bytes.push(0x10);
         return Ok(true);
     }
@@ -2151,11 +2117,11 @@ fn native_cacheless_procedural_surface_definition(
             native_ident(bytes, "sum_spl_sur")?;
             native_nurbs_curve(
                 bytes,
-                &native_cacheless_profile_curve(target, definition_payload.first())?,
+                &native_loft_curve(target, definition_payload.first(), None)?,
             )?;
             native_nurbs_curve(
                 bytes,
-                &native_cacheless_profile_curve(target, definition_payload.second())?,
+                &native_loft_curve(target, definition_payload.second(), None)?,
             )?;
             native_point(
                 bytes,
@@ -4908,7 +4874,6 @@ mod native_interval_curve_tests {
     fn source_less_sweep_reduces_locally_bounded_conic_intervals() {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
-        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
         use cadmpeg_ir::geometry::{analytic::CircleCurve, SweepSurfaceLayout};
         use std::io::Cursor;
@@ -4924,7 +4889,7 @@ mod native_interval_curve_tests {
         let (mut target, _, _) = decoded.into_parts();
         target.source = None;
         target.native = cadmpeg_ir::native::Native::default();
-
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         let held = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
@@ -6679,11 +6644,6 @@ fn native_revision_tail_head(
     solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
 ) -> Result<(), CodecError> {
     match cache {
-        cadmpeg_ir::geometry::RevisionCacheForm::Absent {} => {
-            return Err(CodecError::UnsupportedContent(format!(
-                "{carrier} has no fitted cache; no native cache-form selector can be emitted"
-            )));
-        }
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
@@ -6794,11 +6754,6 @@ fn native_cache_first_curve_context(
 ) -> Result<(), CodecError> {
     native_i64(bytes, form.revision.get());
     match &form.cache {
-        cadmpeg_ir::geometry::RevisionCacheForm::Absent {} => {
-            return Err(CodecError::UnsupportedContent(
-                "cache-first intcurve has no fitted cache or native cache-form selector".into(),
-            ));
-        }
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {

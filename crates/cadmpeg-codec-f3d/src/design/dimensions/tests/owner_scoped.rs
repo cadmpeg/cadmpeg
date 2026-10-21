@@ -437,7 +437,10 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         })
         .unwrap()
     };
-    let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
+    let points = vec![
+        point(20, Some(30), vec![10, 11]),
+        point(21, Some(130), vec![12, 13]),
+    ];
     let entity = |record_index, angle: f64| {
         SketchEntity::new(
             SketchEntityId::mint(format!("f3d:model:sketch-entity#line-{record_index}")).unwrap(),

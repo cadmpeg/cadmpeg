@@ -477,7 +477,7 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
             output.ir().model.appearances[0]
                 .properties
                 .keys()
-                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .map(|key| key.as_str())
                 .collect::<std::collections::BTreeSet<_>>(),
             supported.iter().copied().collect()
         );

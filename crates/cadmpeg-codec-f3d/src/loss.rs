@@ -28,8 +28,6 @@ pub(crate) enum F3dLossCode {
     DimensionCompanionUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
-    /// An active override has no evaluated cache for its changed expression.
-    ConfigurationActiveCacheUnavailable,
     /// Design configuration rules have no unambiguous activation target.
     ConfigurationRuleUnbound,
     /// Design configuration parameter overrides have no parameter identity.
@@ -168,8 +166,6 @@ pub(crate) enum F3dLossCode {
     NurbsSurfaceCarrier,
     /// Procedural curve records were decoded into NURBS carriers from cache.
     NurbsCurveCarrier,
-    /// A stored solved surface cache contradicts its independently evaluated construction.
-    SurfaceCacheRejected,
     /// Faces were omitted because their required surface reference was dangling.
     FaceSurfaceReferenceDangling,
     /// Faces rest on spline or procedural surfaces whose shape was not decoded.
@@ -226,16 +222,12 @@ pub(crate) enum F3dLossCode {
     ManifestMetadataUnresolved,
     /// An optional bounded archive payload is unreadable.
     ArchiveEntryUnreadable,
-    /// Dependent ACT records cannot form a stream with one current document root.
-    WriterActStreamOmitted,
     /// Typed native content without a supported synthesized record form.
     WriterNativeRecordsOmitted,
     /// Content that the synthesized writer cannot represent.
     WriterDesignRecordsOmitted,
     /// Content that the synthesized writer cannot represent.
     WriterGeometryOmitted,
-    /// A target cache was generated from an unchanged current construction.
-    WriterSurfaceCacheGenerated,
     /// Content that the synthesized writer cannot represent.
     WriterAuxiliaryOmitted,
     /// Content that the synthesized writer cannot represent.
@@ -267,7 +259,6 @@ impl F3dLossCode {
     const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::ConfigurationMemberUnassigned,
-        Self::ConfigurationActiveCacheUnavailable,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
@@ -336,7 +327,6 @@ impl F3dLossCode {
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
         Self::NurbsCurveCarrier,
-        Self::SurfaceCacheRejected,
         Self::FaceSurfaceReferenceDangling,
         Self::SurfaceShapeNotDecoded,
         Self::MeshSurfaceSentinel,
@@ -365,11 +355,9 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::ArchiveEntryUnreadable,
-        Self::WriterActStreamOmitted,
         Self::WriterNativeRecordsOmitted,
         Self::WriterDesignRecordsOmitted,
         Self::WriterGeometryOmitted,
-        Self::WriterSurfaceCacheGenerated,
         Self::WriterAuxiliaryOmitted,
         Self::WriterProceduralReduced,
         Self::WriterNoExportableSolids,
@@ -389,7 +377,6 @@ impl F3dLossCode {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
-            Self::ConfigurationActiveCacheUnavailable => "configuration.active-cache-unavailable",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
                 "configuration.parameter-override-unbound"
@@ -464,7 +451,6 @@ impl F3dLossCode {
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
             Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
-            Self::SurfaceCacheRejected => "geometry.surface-cache-rejected",
             Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
@@ -493,11 +479,9 @@ impl F3dLossCode {
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
-            Self::WriterActStreamOmitted => "writer.act-stream-omitted",
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterDesignRecordsOmitted => "writer.design-records-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
-            Self::WriterSurfaceCacheGenerated => "writer.surface-cache-generated",
             Self::WriterAuxiliaryOmitted => "writer.auxiliary-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::WriterNoExportableSolids => "writer.no-exportable-solids",
@@ -517,13 +501,10 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::SurfaceCacheRejected => Severity::Error,
-            Self::WriterActStreamOmitted => Severity::Error,
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::ImageAssetUntransferred => Severity::Warning,
             Self::WriterDesignRecordsOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Error,
-            Self::WriterSurfaceCacheGenerated => Severity::Info,
             Self::WriterAuxiliaryOmitted => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterNoExportableSolids => Severity::Warning,
@@ -559,7 +540,6 @@ impl F3dLossCode {
             Self::DimensionCompanionUntyped
             | Self::RecipePrefixUntyped
             | Self::ConfigurationMemberUnassigned
-            | Self::ConfigurationActiveCacheUnavailable
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
@@ -640,11 +620,9 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::WriterActStreamOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
-            Self::WriterSurfaceCacheGenerated => LossTaxonomy::CarrierSummary,
             Self::WriterAuxiliaryOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -664,7 +642,6 @@ impl F3dLossCode {
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ConfigurationMemberUnassigned
-            | Self::ConfigurationActiveCacheUnavailable
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
@@ -735,7 +712,6 @@ impl F3dLossCode {
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
             }
-            Self::SurfaceCacheRejected => LossTaxonomy::DecodeDiagnostic,
             Self::MeshContainerUndecoded
             | Self::DialectLayerCollision
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
@@ -823,10 +799,6 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
     (
         F3dLossCode::DimensionCompanionUntyped,
         Representation::Design,
-    ),
-    (
-        F3dLossCode::ConfigurationActiveCacheUnavailable,
-        Representation::Typed,
     ),
     (
         F3dLossCode::ConfigurationMemberUnassigned,
@@ -1025,7 +997,6 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
     ),
     (F3dLossCode::NurbsSurfaceCarrier, Representation::Typed),
     (F3dLossCode::NurbsCurveCarrier, Representation::Typed),
-    (F3dLossCode::SurfaceCacheRejected, Representation::Model),
     (
         F3dLossCode::FaceSurfaceReferenceDangling,
         Representation::Model,
@@ -1084,7 +1055,6 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
         Representation::Metadata,
     ),
     (F3dLossCode::ArchiveEntryUnreadable, Representation::Both),
-    (F3dLossCode::WriterActStreamOmitted, Representation::Export),
     (
         F3dLossCode::WriterNativeRecordsOmitted,
         Representation::Export,
@@ -1094,10 +1064,6 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
         Representation::Export,
     ),
     (F3dLossCode::WriterGeometryOmitted, Representation::Export),
-    (
-        F3dLossCode::WriterSurfaceCacheGenerated,
-        Representation::Export,
-    ),
     (F3dLossCode::WriterAuxiliaryOmitted, Representation::Export),
     (F3dLossCode::WriterProceduralReduced, Representation::Export),
     (F3dLossCode::WriterSubdOmitted, Representation::Export),
@@ -1247,7 +1213,6 @@ mod tests {
             [
                 "dimension.companion-untyped",
                 "configuration.member-unassigned",
-                "configuration.active-cache-unavailable",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
@@ -1316,7 +1281,6 @@ mod tests {
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",
                 "geometry.nurbs-curve-carrier",
-                "geometry.surface-cache-rejected",
                 "geometry.face-surface-dangling",
                 "geometry.surface-shape-not-decoded",
                 "geometry.mesh-surface-sentinel",
@@ -1345,11 +1309,9 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
-                "writer.act-stream-omitted",
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
                 "writer.geometry-omitted",
-                "writer.surface-cache-generated",
                 "writer.auxiliary-omitted",
                 "writer.procedural-reduced",
                 "writer.no-exportable-solids",

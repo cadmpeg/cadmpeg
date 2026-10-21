@@ -48,13 +48,7 @@ fn source_free_synthesis_preserves_face_keys_and_drops_only_unresolved_targets()
     let plan = F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    let surviving = input_native
-        .face_native_keys
-        .iter()
-        .filter(|record| faces.contains(&record.face))
-        .collect::<Vec<_>>();
-    assert_eq!(surviving.len(), faces.len());
-    for row in surviving {
+    for row in &input_native.face_native_keys[..faces.len()] {
         assert_eq!(
             plan.report().native_dispositions.record_disposition(
                 "f3d",
@@ -64,11 +58,7 @@ fn source_free_synthesis_preserves_face_keys_and_drops_only_unresolved_targets()
             NativeDisposition::Written
         );
     }
-    let orphan = input_native
-        .face_native_keys
-        .iter()
-        .find(|record| record.face.as_str() == "authored:model:face#absent")
-        .unwrap();
+    let orphan = input_native.face_native_keys.last().unwrap();
     assert_eq!(
         plan.report().native_dispositions.record_disposition(
             "f3d",
@@ -114,8 +104,9 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             .face_native_keys
             .push(record(face.clone(), 1, Some(8)));
     }
-    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
-        panic!("one face has only one native key slot")
+    let error = match F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) {
+        Ok(_) => panic!("one face has only one native key slot"),
+        Err(error) => error,
     };
     assert!(
         error
@@ -127,8 +118,9 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
         let mut native = f3d_native_mut(&mut ir);
         native.face_native_keys = vec![record(face, 0, Some(u64::MAX))];
     }
-    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
-        panic!("the signed native field cannot hold u64::MAX")
+    let error = match F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) {
+        Ok(_) => panic!("the signed native field cannot hold u64::MAX"),
+        Err(error) => error,
     };
     assert!(
         error.to_string().contains("signed 64-bit native slot"),

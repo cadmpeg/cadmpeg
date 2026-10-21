@@ -2431,9 +2431,6 @@ impl<'a> F3dDecodeSession<'a> {
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
         let (mut ir, source_attributes, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
-        if cache_admission::recover(ctx, &mut ir, &mut native, &mut report.losses)? {
-            untyped.insert(cadmpeg_ir::ArenaClass::Model);
-        }
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
         ir.scope = cadmpeg_ir::document::ContentScope::geometry();
@@ -4114,48 +4111,15 @@ fn decode_result(
             )));
     }
     let mut untyped = retained.untyped;
-    // Optional payload admission failures retain bytes but no document value.
-    // Preview, image and OGS payloads belong to model; an unclassified member
-    // can also contain design content and cannot authorize source replay.
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| entry.attributes.contains_key("payload_error"))
-    {
-        untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-        if entry.role == ContainerRole::Other {
-            untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
-        }
-    }
-    // The manifest selector remains usable when an authored metadata field
-    // cannot be read, but that field has no typed document value. Retaining
-    // its original container bytes cannot authorize replay of that content.
-    if !scan.manifest_diagnostics.is_empty() {
-        untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-    }
     if missing_images != 0 {
         untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
     }
-    // Indexed recipe envelopes do not supply their construction semantics.
-    let raw_recipe = native.design_edge_operands.iter().any(|operand| {
-        !operand.recipe_program.is_empty()
-            && operand.recipe_structure.is_none()
-            && operand.surface_patch_recipe_structure.is_none()
-    }) || native.design_face_operands.iter().any(|operand| {
-        !operand.recipe_program.is_empty()
-            && (operand.recipe_nodes.is_empty()
-                || operand
-                    .recipe_nodes
-                    .iter()
-                    .any(|node| node.recipe_structure.is_none()))
-    });
     // These typed source envelopes explicitly contain uninterpreted payloads;
     // their raw frames travel in fidelity, never as synthesized content.
-    if raw_recipe
-        || native
-            .design_parameter_scopes
-            .iter()
-            .any(|scope| scope.payload().is_uninterpreted())
+    if native
+        .design_parameter_scopes
+        .iter()
+        .any(|scope| scope.payload().is_uninterpreted())
         || native
             .sketch_curve_identities
             .iter()
@@ -5260,7 +5224,6 @@ pub(crate) fn resolve_face_appearance_bindings(
     Ok(())
 }
 
-pub(crate) mod cache_admission;
 pub(crate) mod design_intent;
 mod prereqs;
 mod projection_records;

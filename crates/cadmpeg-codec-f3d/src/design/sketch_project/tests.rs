@@ -163,7 +163,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         record_index: 14,
         owner_reference: Some(42),
         class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned()).unwrap(),
-        byte_offset: 14,
+        byte_offset: Some(14),
         coordinate_offset: 0,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
@@ -309,7 +309,7 @@ fn point_closure_does_not_mark_construction_geometry() {
         record_index: 10,
         owner_reference: Some(42),
         class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned()).unwrap(),
-        byte_offset: 10,
+        byte_offset: Some(10),
         coordinate_offset: 0,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
@@ -331,7 +331,7 @@ fn point_closure_does_not_mark_construction_geometry() {
             owner_reference: Some(42),
             class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned())
                 .unwrap(),
-            byte_offset: 11,
+            byte_offset: Some(11),
             coordinate_offset: 0,
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
@@ -420,7 +420,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         record_index: 175,
         owner_reference: Some(172),
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 400,
+        byte_offset: Some(400),
         coordinate_offset: 89,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
@@ -989,7 +989,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         record_index: 106,
         owner_reference: Some(42),
         class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        byte_offset: 106,
+        byte_offset: Some(106),
         coordinate_offset: 0,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),

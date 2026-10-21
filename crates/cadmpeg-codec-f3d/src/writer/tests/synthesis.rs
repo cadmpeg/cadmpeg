@@ -23,7 +23,7 @@ fn parameter(name: &str, ordinal: u32, value: ParameterValue) -> DesignParameter
         display: None,
         value: Some(value),
 
-        properties: std::collections::BTreeMap::default(),
+        properties: Default::default(),
         pmi: None,
         native_ref: None,
     }
@@ -165,8 +165,8 @@ fn neutral_configurations_and_parameters_are_authored_together() {
             .into(),
             parameter_overrides: [(ir.model.parameters[0].id.clone(), "24 mm".into())].into(),
             bodies: None,
-            parameter_values: std::collections::BTreeMap::default(),
-            feature_states: std::collections::BTreeMap::default(),
+            parameter_values: Default::default(),
+            feature_states: Default::default(),
             native_ref: None,
         });
     let mut bytes = Vec::new();
@@ -179,100 +179,23 @@ fn neutral_configurations_and_parameters_are_authored_together() {
         .expect("read configuration archive");
     assert_eq!(output.ir().model.bodies.len(), 1);
     assert_eq!(output.ir().model.parameters.len(), 1);
-    assert_eq!(
-        ir.model.parameters[0].value,
-        Some(ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(12.0).unwrap()
-        ))
-    );
     let configuration = &output.ir().model.configurations[0];
     assert_eq!(configuration.name.as_deref(), Some("Wide"));
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert!(configuration.active);
-    assert!(configuration.parameter_overrides.is_empty());
-    let parameter = &output.ir().model.parameters[0];
-    assert_eq!(parameter.name, "width");
-    let native = crate::test_support::native_test::f3d_native(output.ir());
-    let record = native
-        .design_parameters
-        .iter()
-        .find(|record| record.name() == "width")
-        .unwrap();
-    assert_eq!(parameter.id, crate::ids::neutral_parameter_id(record));
     assert_eq!(
-        parameter.expression.tokens,
-        vec![cadmpeg_ir::features::ExpressionToken::Text("24 mm".into())]
-    );
-    assert_eq!(
-        parameter.expression.render_with(|_| None).as_deref(),
+        configuration
+            .parameter_overrides
+            .values()
+            .next()
+            .and_then(cadmpeg_ir::features::Expression::literal_text)
+            .as_deref(),
         Some("24 mm")
-    );
-    assert_eq!(
-        parameter
-            .expression
-            .literal_value_as(&ParameterValue::Length(
-                cadmpeg_ir::scalar::Length::new(12.0).unwrap()
-            )),
-        Some(ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(24.0).unwrap()
-        ))
-    );
-    assert_eq!(
-        parameter.value,
-        Some(ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(24.0).unwrap()
-        ))
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(output.ir(), Vec::new())
-            .unwrap()
-            .is_ok()
     );
     assert!(configuration
         .properties
         .values()
         .any(|value| value == "width > 10"));
-}
-
-#[test]
-fn source_free_parameter_without_cache_evaluates_only_its_current_literal() {
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let mut width = parameter(
-        "width",
-        0,
-        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(24.0).unwrap()),
-    );
-    width.expression = cadmpeg_ir::features::Expression::text("24 mm");
-    width.value = None;
-    ir.model.parameters.push(width);
-    assert!(ir.native.namespace("f3d").is_none());
-    let mut bytes = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap()
-        .write_to(&mut bytes)
-        .unwrap();
-    assert!(ir.model.parameters[0].value.is_none());
-    let output = F3dCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(output.ir().model.parameters.len(), 1);
-    assert_eq!(output.ir().model.parameters[0].name, "width");
-    assert_eq!(
-        output.ir().model.parameters[0].expression,
-        cadmpeg_ir::features::Expression::text("24 mm")
-    );
-    assert_eq!(
-        output.ir().model.parameters[0].value,
-        Some(ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(24.0).unwrap()
-        ))
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(output.ir(), Vec::new())
-            .unwrap()
-            .is_ok()
-    );
 }
 
 #[test]
@@ -387,9 +310,9 @@ fn unsupported_typed_histories_reduce_without_losing_neutral_geometry() {
             inserted: vec![3],
             ..Default::default()
         },
-        topology: crate::history_records::AsmHistoricalTopologyDelta::default(),
+        topology: Default::default(),
         record_revisions: vec![],
-        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
+        rows: Default::default(),
     });
     let mut external_owner = history(0);
     external_owner.states_mut()[0].owner_ref = 7;
@@ -407,28 +330,21 @@ fn unsupported_typed_histories_reduce_without_losing_neutral_geometry() {
         ),
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
-        let history_ids = histories
-            .iter()
-            .map(|history| history.id.clone())
-            .collect::<Vec<_>>();
         f3d_native_mut(&mut ir).asm_histories = histories;
         let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
         assert_eq!(output.ir().model.bodies.len(), 1);
         assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
         assert_eq!(f3d_native(output.ir()).asm_histories.len(), expected);
-        for (ordinal, id) in history_ids.iter().enumerate() {
-            assert_eq!(
-                report
-                    .native_dispositions
-                    .record_disposition("f3d", "asm_histories", id),
-                if ordinal < expected {
-                    cadmpeg_ir::codec::write::NativeDisposition::Written
-                } else {
-                    cadmpeg_ir::codec::write::NativeDisposition::Dropped
-                },
-                "original history {id}",
-            );
-        }
+        assert_eq!(
+            report
+                .native_dispositions
+                .disposition("f3d", "asm_histories"),
+            if expected == 0 {
+                cadmpeg_ir::codec::write::NativeDisposition::Dropped
+            } else {
+                cadmpeg_ir::codec::write::NativeDisposition::Written
+            }
+        );
         assert!(report.losses.iter().any(|loss| {
             matches!(
                 loss.code.local_code(),
@@ -679,12 +595,12 @@ fn historical_bulletin_slots_are_omitted_when_their_revisions_have_no_typed_writ
         assert!(native
             .asm_histories
             .iter()
-            .flat_map(crate::history_records::AsmHistory::states)
+            .flat_map(|history| history.states())
             .any(|state| !state.bulletin_boards.is_empty()));
         for state in native
             .asm_histories
             .iter_mut()
-            .flat_map(crate::history_records::AsmHistory::states_mut)
+            .flat_map(|history| history.states_mut())
         {
             state.records.clear();
             state.transition = None;

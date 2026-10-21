@@ -1714,7 +1714,7 @@ fn decode_sketch_points_from_stream(
                 record_index,
                 owner_reference: decoded.owner_reference,
                 class_tag: frame.class_tag.clone(),
-                byte_offset: u64_from_index(frame.start),
+                byte_offset: Some(u64_from_index(frame.start)),
                 coordinate_offset: decoded.coordinate_offset,
                 record_form,
                 companion,

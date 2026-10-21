@@ -27,33 +27,17 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated Design decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let source_offset = |id: &str, field: &str| {
-        fidelity.metadata[&format!("{id}.{field}")]
-            .parse::<u64>()
-            .expect("retained actual source position")
-    };
     let mut native = f3d_native(&edited);
     let reference = native
         .persistent_references
         .iter_mut()
         .find(|reference| reference.value == 439)
         .expect("generated persistent reference");
-    for field in ["byte_offset", "value_offset"] {
-        assert!(
-            fidelity.metadata[&format!("{}.{field}", reference.id)]
-                .parse::<u64>()
-                .expect("retained actual source position")
-                > 0
-        );
-    }
+    assert!(reference.byte_offset > Some(0));
+    assert!(reference.value_offset > Some(0));
     reference.value = 9_001;
     let recipe = &mut native.construction_recipes[0];
-    assert!(
-        fidelity.metadata[&format!("{}.byte_offset", recipe.id)]
-            .parse::<u64>()
-            .expect("retained actual recipe source position")
-            > 0
-    );
+    assert!(recipe.byte_offset > Some(0));
     assert!(recipe.record_index.is_some());
     assert!(recipe
         .design
@@ -96,26 +80,24 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .iter_mut()
         .find(|design_type| design_type.entities.values().copied().eq([33, 44]))
         .expect("generated relation design type");
-    assert!(
-        source_offset(object.id(), "byte_offset") < source_offset(object.id(), "version_offset")
-    );
-    assert_eq!(object.entities.values().count(), 2);
-    for index in 0..2 {
-        assert!(source_offset(object.id(), &format!("entity_id_offsets.{index}")) > 0);
-    }
+    assert!(object.byte_offset < object.version_offset);
+    let Some(entities) = object.entities.located_rows() else {
+        panic!("parsed entity locations");
+    };
+    assert_eq!(entities.len(), 2);
     object.set_type_guid(
         "91111111-2222-3333-4444-555555555555"
             .to_owned()
             .try_into()
             .expect("type GUID"),
     );
-    assert!(source_offset(object.id(), "base_type_guid_offset") > 0);
+    let base_offset = object.base_type_guid.offset().expect("located base GUID");
     object.set_base_type_guid(crate::records::entity_header::BaseTypeGuid::Guid {
         value: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef"
             .to_owned()
             .try_into()
             .expect("base GUID"),
-        offset: None,
+        offset: Some(base_offset),
     });
     object.set_version(9);
     let act_guid = native
@@ -123,9 +105,7 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .iter_mut()
         .find(|guid| guid.guid.as_str() == "eeeeeeee-1111-2222-3333-ffffffffffff")
         .expect("generated standalone ACT GUID");
-    assert!(
-        source_offset(act_guid.id(), "guid_offset") > source_offset(act_guid.id(), "byte_offset")
-    );
+    assert!(act_guid.guid_offset() > act_guid.byte_offset());
     act_guid.guid = String::from("ffffffff-1111-2222-3333-444444444444")
         .try_into()
         .unwrap();
@@ -141,8 +121,8 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .try_set_strings("1_3".into(), "(Renamed)".into())
         .unwrap();
     let act_entity = &mut native.act_entities[0];
-    assert!(source_offset(act_entity.id(), "table_entity_id_offset") > 0);
-    assert!(source_offset(act_entity.id(), "channel_entity_id_offset") > 0);
+    assert!(act_entity.table_entity_id_offset().is_some());
+    assert!(act_entity.channel_entity_id_offset().is_some());
     act_entity
         .set_channel_guid(
             "Appearance",
@@ -157,19 +137,13 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
     let lost_edge = &mut native.lost_edge_references[0];
-    assert!(
-        source_offset(&lost_edge.id, "class_tag_offset")
-            > source_offset(&lost_edge.id, "record_byte_offset")
-    );
-    assert!(
-        source_offset(&lost_edge.id, "class_tag_offset")
-            < source_offset(&lost_edge.id, "byte_offset")
-    );
+    assert!(lost_edge.class_tag_offset() > lost_edge.record_byte_offset());
+    assert!(lost_edge.class_tag_offset() < lost_edge.byte_offset());
     lost_edge.class_tag = "420".to_owned().try_into().unwrap();
     lost_edge.record_index = 4_700;
     let assignment = &mut native.design_material_assignments[0];
-    assert!(source_offset(&assignment.id, "entity_id_offset") > 0);
-    assert!(source_offset(&assignment.id, "asm_body_key_offset") > 0);
+    assert!(assignment.entity_id_offset > Some(0));
+    assert!(assignment.asm_body_key_offset > Some(0));
     assignment
         .physical_token
         .as_mut()

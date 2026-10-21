@@ -923,13 +923,8 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         procedural
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        None
+        Some(0.02)
     );
-    // The original cache-only fit is decode evidence after its cache is rejected.
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
-            && loss.message.contains("fit tolerance Some(0.02)")
-    }));
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected extrusion")
     };
@@ -979,18 +974,6 @@ fn decode_retains_versioned_nested_translational_extrusion() {
             .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.02)
     );
-    let carrier = result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.geometry.procedural_construction() == Some(&procedural.id))
-        .expect("the accepted construction has its actual carrier");
-    assert!(carrier.geometry.solved_cache().is_some());
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
-            && loss.message.contains(carrier.id.as_str())
-    }));
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected versioned extrusion")
     };
@@ -1135,53 +1118,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated NURBS surface decode");
-    // D9: preserve the original contradictory extrusion input as a negative
-    // source control. Physical NURBS edits use a separately authored Exact
-    // control, where the solved NURBS is the authoritative geometry.
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::SurfaceCacheRejected.kind()));
-    assert!(decoded
-        .source_fidelity()
-        .unrepresented()
-        .contains(&cadmpeg_ir::ArenaClass::Model));
-    assert!(decoded
-        .source_fidelity()
-        .retained_records()
-        .values()
-        .any(|record| record.data() == Some(source.as_slice())));
-    let rejected = decoded
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id.as_str() == "f3d:brep:entity#9")
-        .expect("retain the true procedural carrier");
-    assert!(matches!(
-        rejected.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
-    ));
-    assert_eq!(
-        decoded.ir().model.procedural_surfaces[0]
-            .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
-        None
-    );
-    // The original cache-only fit is decode evidence after its cache is rejected.
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
-            && loss.message.contains("fit tolerance Some(0.02)")
-    }));
-    let canonical_source =
-        f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(false));
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(canonical_source),
-            &DecodeOptions::default(),
-        )
-        .expect("separate authoritative Exact NURBS control");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let surface = edited
         .model
@@ -1311,53 +1247,6 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated rational surface decode");
-    // D9: preserve the original contradictory extrusion input as a negative
-    // source control. Physical NURBS edits use a separately authored Exact
-    // control, where the solved NURBS is the authoritative geometry.
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::SurfaceCacheRejected.kind()));
-    assert!(decoded
-        .source_fidelity()
-        .unrepresented()
-        .contains(&cadmpeg_ir::ArenaClass::Model));
-    assert!(decoded
-        .source_fidelity()
-        .retained_records()
-        .values()
-        .any(|record| record.data() == Some(source.as_slice())));
-    let rejected = decoded
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id.as_str() == "f3d:brep:entity#9")
-        .expect("retain the true procedural carrier");
-    assert!(matches!(
-        rejected.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
-    ));
-    assert_eq!(
-        decoded.ir().model.procedural_surfaces[0]
-            .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
-        None
-    );
-    // The original cache-only fit is decode evidence after its cache is rejected.
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
-            && loss.message.contains("fit tolerance Some(0.02)")
-    }));
-    let canonical_source =
-        f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(true));
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(canonical_source),
-            &DecodeOptions::default(),
-        )
-        .expect("separate authoritative Exact NURBS control");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let surface = edited
         .model
@@ -1477,20 +1366,12 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated extrusion decode");
-    // Recovered free construction is saved as a root. Native positional IDs
-    // change when its rejected face is omitted; follow the actual typed owner.
-    assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
-    let ProceduralSurfaceDefinition::Extrusion(payload) =
-        round_trip.ir().model.procedural_surfaces[0].definition()
-    else {
-        panic!("expected round-trip extrusion")
-    };
     let curve = round_trip
         .ir()
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == *payload.directrix())
+        .find(|curve| curve.id == directrix_id)
         .expect("round-trip directrix");
     assert_eq!(
         curve.geometry,
@@ -1510,13 +1391,8 @@ fn decode_resolves_generated_ref_translational_extrusion() {
         result.ir().model.procedural_surfaces[0]
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        None
+        Some(0.02)
     );
-    // The original cache-only fit is decode evidence after its cache is rejected.
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
-            && loss.message.contains("fit tolerance Some(0.02)")
-    }));
 }
 
 #[test]

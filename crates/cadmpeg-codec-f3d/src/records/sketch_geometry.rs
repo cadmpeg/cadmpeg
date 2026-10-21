@@ -16,6 +16,7 @@ use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_anchor, Point2, "anchor");
+cadmpeg_core::named_optional_field!(deserialize_point_byte_offset, u64, "byte_offset");
 cadmpeg_core::named_optional_field!(deserialize_base_id, u64, "base_id");
 cadmpeg_core::named_optional_field!(deserialize_closure, SketchPointClosureSerde, "closure");
 cadmpeg_core::named_optional_field!(deserialize_entity_genesis, u64, "entity_genesis");
@@ -912,7 +913,7 @@ pub(crate) struct SketchPoint {
     /// Byte offset of this record within its Design `BulkStream`.
     pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the first coordinate relative to the record start.
-    pub(crate) coordinate_offset: Option<u32>,
+    pub(crate) coordinate_offset: u32,
     /// Serialized point-record member sequence, identity, flags, and closure.
     record_form: SketchPointRecordForm<FiniteReal>,
     companion: SketchPointCompanion,
@@ -960,6 +961,9 @@ impl Serialize for SketchPoint {
             owner_reference: Option<u32>,
             class_tag: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
+            byte_offset: Option<u64>,
+            coordinate_offset: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
             entity_genesis: Option<u64>,
             record_form: SketchPointRecordFormSerde,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -1002,6 +1006,8 @@ impl Serialize for SketchPoint {
             record_index: self.record_index,
             owner_reference: self.owner_reference,
             class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            coordinate_offset: self.coordinate_offset,
             entity_genesis: self.entity_genesis(),
             record_form,
             persistent_id: self.persistent_id(),
@@ -1030,7 +1036,7 @@ pub(crate) struct SketchPointDraft {
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the first coordinate relative to the record start.
     pub(crate) coordinate_offset: u32,
     /// Serialized point-record member sequence, identity, flags, and closure.
@@ -1045,66 +1051,31 @@ pub(crate) struct SketchPointDraft {
 impl TryFrom<SketchPointDraft> for SketchPoint {
     type Error = String;
     fn try_from(draft: SketchPointDraft) -> Result<Self, Self::Error> {
-        let byte_offset = draft.byte_offset;
-        let coordinate_offset = draft.coordinate_offset;
-        let mut point = Self::authored(SketchPointContent {
+        let coordinates = FinitePoint2::new(draft.coordinates)
+            .ok_or_else(|| "sketch point coordinates must be finite".to_owned())?;
+        let record_form = draft.record_form.clone().try_checked()?;
+        draft.companion.validate()?;
+        Ok(Self::from_validated(draft, coordinates, record_form))
+    }
+}
+
+impl SketchPoint {
+    fn from_validated(
+        draft: SketchPointDraft,
+        coordinates: FinitePoint2,
+        record_form: SketchPointRecordForm<FiniteReal>,
+    ) -> Self {
+        Self {
             id: draft.id,
             record_index: draft.record_index,
             owner_reference: draft.owner_reference,
             class_tag: draft.class_tag,
-            record_form: draft.record_form,
+            byte_offset: draft.byte_offset,
+            coordinate_offset: draft.coordinate_offset,
+            record_form,
             companion: draft.companion,
             paired_reference: draft.paired_reference,
-            coordinates: draft.coordinates,
-        })?;
-        point.byte_offset = Some(byte_offset);
-        point.coordinate_offset = Some(coordinate_offset);
-        Ok(point)
-    }
-}
-
-/// Current sketch-point content without source byte positions.
-pub(crate) struct SketchPointContent {
-    pub(crate) id: String,
-    pub(crate) record_index: u32,
-    pub(crate) owner_reference: Option<u32>,
-    pub(crate) class_tag: DesignClassTag,
-    pub(crate) record_form: SketchPointRecordForm,
-    pub(crate) companion: SketchPointCompanion,
-    pub(crate) paired_reference: u32,
-    pub(crate) coordinates: Point2,
-}
-
-impl SketchPoint {
-    pub(crate) fn authored(content: SketchPointContent) -> Result<Self, String> {
-        let coordinates = FinitePoint2::new(content.coordinates)
-            .ok_or_else(|| "sketch point coordinates must be finite".to_owned())?;
-        let record_form = content.record_form.try_checked()?;
-        content.companion.validate()?;
-        Ok(Self {
-            id: content.id,
-            record_index: content.record_index,
-            owner_reference: content.owner_reference,
-            class_tag: content.class_tag,
-            byte_offset: None,
-            coordinate_offset: None,
-            record_form,
-            companion: content.companion,
-            paired_reference: content.paired_reference,
             coordinates,
-        })
-    }
-
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (field, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("coordinate_offset", self.coordinate_offset.map(u64::from)),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{field}", self.id), offset.to_string());
-            }
         }
     }
 }
@@ -1207,6 +1178,13 @@ pub(super) struct SketchPointSerde {
     )]
     owner_reference: Option<u32>,
     class_tag: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_point_byte_offset"
+    )]
+    byte_offset: Option<u64>,
+    coordinate_offset: u32,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1363,11 +1341,13 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         let companion = SketchPointCompanion {
             incident_curves: wire.companion.incident_curves,
         };
-        Self::authored(SketchPointContent {
+        Self::try_from(SketchPointDraft {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
             class_tag: wire.class_tag.try_into()?,
+            byte_offset: wire.byte_offset,
+            coordinate_offset: wire.coordinate_offset,
             record_form,
             companion,
             paired_reference: wire.paired_reference,
@@ -1416,6 +1396,8 @@ impl From<SketchPoint> for SketchPointSerde {
             record_index: point.record_index,
             owner_reference: point.owner_reference,
             class_tag: point.class_tag.into(),
+            byte_offset: point.byte_offset,
+            coordinate_offset: point.coordinate_offset,
             entity_genesis,
             record_form,
             persistent_id,
@@ -2527,7 +2509,7 @@ mod tests {
     fn native_point_wire(form: &serde_json::Value) -> serde_json::Value {
         let mut wire = json!({
             "id": "point", "record_index": 1, "class_tag": "000",
-            "record_form": form,
+            "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
             "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0},
             "depth": 0.0, "companion": {"incident_curves": [7, 2]}
         });
@@ -2536,45 +2518,6 @@ mod tests {
             wire["closure"] = json!({"selector": 0, "state": 0});
         }
         wire
-    }
-
-    #[test]
-    fn sketch_point_document_keeps_source_positions_only_in_fidelity() {
-        let wire = native_point_wire(&json!({
-            "kind": "version11", "padded_paired_reference": false,
-            "companion_prefix_present_zero": false
-        }));
-        let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
-        assert!(point.byte_offset.is_none());
-        assert!(point.coordinate_offset.is_none());
-        for field in ["byte_offset", "coordinate_offset"] {
-            let mut invalid = wire.clone();
-            invalid[field] = json!(0);
-            assert!(serde_json::from_value::<SketchPoint>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
-        }
-        let source = SketchPoint::try_from(super::SketchPointDraft {
-            id: point.id.clone(),
-            record_index: point.record_index,
-            owner_reference: point.owner_reference,
-            class_tag: point.class_tag.clone(),
-            byte_offset: 0,
-            coordinate_offset: 1,
-            record_form: point.record_form().clone().into_raw(),
-            companion: super::SketchPointCompanion {
-                incident_curves: point.companion().incident_curves.to_vec(),
-            },
-            paired_reference: point.paired_reference,
-            coordinates: point.coordinates(),
-        })
-        .unwrap();
-        assert_eq!(serde_json::to_value(&source).unwrap(), wire);
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        source.retain_source(&mut fidelity);
-        assert_eq!(fidelity.metadata["point.byte_offset"], "0");
-        assert_eq!(fidelity.metadata["point.coordinate_offset"], "1");
     }
 
     #[test]

@@ -296,7 +296,7 @@ pub(crate) fn canonicalize_active_configuration(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     features: &mut [cadmpeg_ir::features::Feature],
-) -> Result<usize, CodecError> {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::ConfigurationFeatureState;
     let mut active = configurations
         .iter()
@@ -313,20 +313,8 @@ pub(crate) fn canonicalize_active_configuration(
     let states = current
         .map(|configuration| configuration.feature_states.clone())
         .unwrap_or_default();
-    let active_values = current
-        .map(|configuration| configuration.parameter_values.clone())
-        .unwrap_or_default();
-    let mut unavailable_caches = 0;
     for parameter in parameters.iter_mut() {
         if let Some(expression) = overrides.get(&parameter.id) {
-            if parameter.expression != *expression {
-                parameter.value = active_values.get(&parameter.id).cloned();
-                if parameter.value.is_none() {
-                    unavailable_caches += 1;
-                }
-            } else if let Some(value) = active_values.get(&parameter.id) {
-                parameter.value = Some(value.clone());
-            }
             parameter.expression.clone_from(expression);
         }
     }
@@ -376,7 +364,7 @@ pub(crate) fn canonicalize_active_configuration(
             })
         });
     }
-    Ok(unavailable_caches)
+    Ok(())
 }
 
 /// Replace name-keyed suppression properties with stable feature references
@@ -756,69 +744,5 @@ mod tests {
             unresolved_configuration_suppressed_feature_count(&ambiguous),
             1
         );
-    }
-
-    #[test]
-    fn active_changed_expression_never_reuses_the_base_cache() {
-        use cadmpeg_ir::features::{DesignConfiguration, Expression, ParameterValue};
-        for active_value in [
-            None,
-            Some(ParameterValue::Length(
-                cadmpeg_ir::scalar::Length::new(24.0).unwrap(),
-            )),
-        ] {
-            let id = ParameterId::mint("f3d:model:parameter#width").unwrap();
-            let mut parameters = vec![NeutralParameter {
-                id: id.clone(),
-                owner: None,
-                ordinal: 0,
-                name: "width".into(),
-                expression: "12 mm".into(),
-                driving: true,
-                value: Some(ParameterValue::Length(
-                    cadmpeg_ir::scalar::Length::new(12.0).unwrap(),
-                )),
-                display: None,
-                pmi: None,
-                properties: std::collections::BTreeMap::default(),
-                native_ref: None,
-            }];
-            let mut configurations = vec![DesignConfiguration {
-                id: "f3d:model:configuration#wide".try_into().unwrap(),
-                ordinal: 0,
-                active: true,
-                source_index: None,
-                name: Some("Wide".into()),
-                material: None,
-                parameter_overrides: [(id.clone(), Expression::text("24 mm"))].into(),
-                parameter_values: active_value
-                    .clone()
-                    .map(|value| [(id.clone(), value)].into())
-                    .unwrap_or_default(),
-                properties: std::collections::BTreeMap::default(),
-                feature_states: std::collections::BTreeMap::default(),
-                bodies: None,
-                native_ref: None,
-            }];
-            let unavailable = super::canonicalize_active_configuration(
-                &mut configurations,
-                &mut parameters,
-                &mut [],
-            )
-            .unwrap();
-            assert_eq!(unavailable, usize::from(active_value.is_none()));
-            assert_eq!(parameters[0].value, active_value);
-            assert_eq!(parameters[0].expression, Expression::text("24 mm"));
-            assert!(configurations[0].parameter_overrides.is_empty());
-            assert!(configurations[0].parameter_values.is_empty());
-            let mut document = cadmpeg_ir::CadIr::empty();
-            document.model.parameters = parameters;
-            document.model.configurations = configurations;
-            assert!(
-                cadmpeg_ir::validate::validate_neutral(&document, Vec::new())
-                    .unwrap()
-                    .is_ok()
-            );
-        }
     }
 }

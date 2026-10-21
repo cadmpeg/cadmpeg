@@ -165,7 +165,7 @@ fn spatial_distance_projects_vertical_distance_and_skips_spatial_sketches() {
             owner_reference: Some(100),
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             coordinate_offset: 0,
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),

@@ -202,18 +202,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     })
     .collect();
 
-    let timestamps = native.creation_timestamps.clone();
     drop(native);
-    for (ordinal, timestamp) in timestamps.into_iter().enumerate() {
-        source_less
-            .model
-            .attributes
-            .push(crate::test_support::native_test::timestamp_attribute(
-                u32::try_from(ordinal).unwrap(),
-                timestamp.target,
-                timestamp.unix_microseconds,
-            ));
-    }
     let mut encoded = Vec::new();
     let export = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -344,36 +333,9 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     );
 
     let duplicate = f3d_native(&source_less).creation_timestamps[0].clone();
-    assert_eq!(
-        duplicate.target,
-        AttributeTarget::Body(source_less.model.bodies[0].id.clone())
-    );
     f3d_native_mut(&mut source_less)
         .creation_timestamps
-        .push(duplicate.clone());
-    let (canonical, _) = super::source_less_analytic::synthesize_document(&source_less, None);
-    let reconciled = f3d_native(canonical.ir());
-    assert_eq!(reconciled.creation_timestamps.len(), 5);
-    assert_eq!(
-        reconciled
-            .creation_timestamps
-            .iter()
-            .filter(|timestamp| {
-                timestamp.target == AttributeTarget::Body(canonical.ir().model.bodies[0].id.clone())
-                    && timestamp.unix_microseconds == duplicate.unix_microseconds
-            })
-            .count(),
-        1,
-        "one canonical timestamp wins over duplicate native hints"
-    );
-    source_less
-        .model
-        .attributes
-        .push(crate::test_support::native_test::timestamp_attribute(
-            999,
-            duplicate.target,
-            duplicate.unix_microseconds,
-        ));
+        .push(duplicate);
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -554,7 +516,7 @@ fn generated_source_less_drops_opaque_asm_history_payloads_with_a_loss() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated history decode");
-    let (mut source_less, _, fidelity) = decoded.into_parts();
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
@@ -585,27 +547,16 @@ fn generated_source_less_drops_opaque_asm_history_payloads_with_a_loss() {
         output.ir().model.bodies.len(),
         preambleless.model.bodies.len()
     );
-    // Stream preamble coordinates belong to source fidelity, so a document
-    // reload does not carry them into a writer plan. Validate the malformed
-    // source shape directly without inventing a document preamble.
-    let mut source_native = f3d_native(&source_less);
-    let history = &mut source_native.asm_histories[0];
-    let source_stream_size: i64 = fidelity.metadata[&format!("{}.stream_size", history.id)]
-        .parse()
-        .unwrap();
-    assert_eq!(source_stream_size, history.states()[0].state_id);
-    let history_entry_count = fidelity.metadata[&format!("{}.history_entry_count", history.id)]
-        .parse()
-        .unwrap();
-    history.preamble = Some(crate::history_records::AsmPreamble {
-        stream_size: 3,
-        history_entry_count,
-    });
-    let error = crate::writer::generate::preconditions::validate_source_less_history_graph(
-        &source_less,
-        &source_native,
-    )
-    .expect_err("incoherent generated history preamble must be rejected");
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        if let Some(preamble) = &mut native.asm_histories[0].preamble {
+            preamble.stream_size = 3;
+        }
+    }
+    let error = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("incoherent generated history preamble must be rejected");
     assert!(error
         .to_string()
         .contains("head state_id == stream_size and nonnegative history_entry_count"));

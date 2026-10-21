@@ -896,16 +896,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.configurations,
         &model.features,
     );
-    let unavailable_caches = crate::design::configurations::canonicalize_active_configuration(
+    crate::design::configurations::canonicalize_active_configuration(
         &mut model.configurations,
         &mut model.parameters,
         &mut model.features,
     )?;
-    if unavailable_caches != 0 {
-        losses.push(F3dLossCode::ConfigurationActiveCacheUnavailable.note(format!(
-            "{unavailable_caches} active configuration parameter expression(s) have no stated evaluated cache; base configuration caches remain typed native source facts",
-        )));
-    }
     if let Some(table) = prereqs.xref_table() {
         crate::xref::bind_component_insert_features(
             &mut model.features,

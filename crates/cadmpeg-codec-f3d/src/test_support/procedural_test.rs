@@ -83,23 +83,3 @@ pub(crate) fn generated_form_two_par_int_cur(first: [f64; 2], second: [f64; 2]) 
     scope.push(0x10);
     scope
 }
-
-/// Separate physical-cache edit control. Exact splines take their geometry
-/// from the solved NURBS; no unrelated extrusion definition competes with it.
-/// Existing source builders and committed inputs remain byte-for-byte intact.
-pub(crate) fn exact_nurbs_edit_control(rational: bool) -> Vec<u8> {
-    let mut bytes =
-        crate::test_support::smbh_surfaces_test::synthetic_exact_spl_sur_smbh("exact_spl_sur");
-    if rational {
-        let old = generated_surface_block();
-        let start = bytes
-            .windows(old.len())
-            .rposition(|window| window == old)
-            .expect("new exact control solved cache");
-        bytes.splice(
-            start..start + old.len(),
-            crate::test_support::smbh_blocks_test::generated_rational_surface_block(),
-        );
-    }
-    bytes
-}

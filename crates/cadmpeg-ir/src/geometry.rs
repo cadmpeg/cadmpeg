@@ -1249,8 +1249,6 @@ impl RevisionCacheWrite {
 /// Whether a tolerance write states the value or only raises to it.
 #[derive(Clone, Copy)]
 enum ToleranceWrite {
-    /// Remove a rejected solved cache and its dependent fit contract.
-    Clear,
     /// State the value in place of the tolerance the form carries.
     State(FitTolerance),
     /// Keep the tolerance the form carries unless the value exceeds it.
@@ -1277,9 +1275,7 @@ const fn clear_revision_form_tolerance<P>(
 ) -> Result<(), CacheContractError> {
     match form {
         Some(RevisionCacheForm::SolvedCache { .. }) => Err(CacheContractError::MissingSolved),
-        Some(RevisionCacheForm::Parameterization(_) | RevisionCacheForm::Absent {}) | None => {
-            Ok(())
-        }
+        Some(RevisionCacheForm::Parameterization(_)) | None => Ok(()),
     }
 }
 
@@ -1667,7 +1663,7 @@ impl ProceduralSurfaceDefinition {
         }
         match self.revision_cache() {
             Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => Some(*fit_tolerance),
-            Some(RevisionCacheForm::Parameterization(_) | RevisionCacheForm::Absent {}) => None,
+            Some(RevisionCacheForm::Parameterization(_)) => None,
             None => self.legacy_cache().map(|cache| cache.fit_tolerance),
         }
     }
@@ -1690,19 +1686,6 @@ impl ProceduralSurfaceDefinition {
             };
         }
         self.set_legacy_cache(value.map(LegacyCache::new))
-    }
-
-    /// Discard a rejected solved-cache contract while retaining every other
-    /// revision field and the exact construction. Parameterization is unchanged.
-    /// A legacy layout that requires a solved cache can refuse this transition.
-    pub fn clear_fitted_cache_contract(&mut self) -> Result<(), CacheContractError> {
-        match self.write_revision_fit_tolerance(ToleranceWrite::Clear) {
-            RevisionCacheWrite::Written | RevisionCacheWrite::Parameterized => Ok(()),
-            RevisionCacheWrite::NoForm => self.set_cache_fit_tolerance(None),
-            RevisionCacheWrite::InvalidValue(value) => {
-                Err(CacheContractError::InvalidValue { value })
-            }
-        }
     }
 
     /// Scale only the fit tolerance already carried by this construction.
@@ -1816,7 +1799,7 @@ impl ProceduralCurveDefinition {
     pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
         match self.revision_cache() {
             Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => Some(*fit_tolerance),
-            Some(RevisionCacheForm::Parameterization(_) | RevisionCacheForm::Absent {}) => None,
+            Some(RevisionCacheForm::Parameterization(_)) => None,
             None => self.legacy_cache().map(|cache| cache.fit_tolerance),
         }
     }
@@ -1981,11 +1964,6 @@ impl ProceduralSurface {
     ) -> Result<(), CacheContractError> {
         let value = value.map(FitTolerance::try_new).transpose()?;
         self.definition.set_cache_fit_tolerance(value)
-    }
-
-    /// Remove the fitted-cache contract and keep the admitted construction.
-    pub fn clear_fitted_cache_contract(&mut self) -> Result<(), CacheContractError> {
-        self.definition.clear_fitted_cache_contract()
     }
 
     /// Scale the effective cache-fit tolerance in place.
@@ -3396,9 +3374,6 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>, R = f64> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
-    /// No current fitted cache or fit contract. Other revision fields remain held.
-    /// This canonical state has no corresponding native serializer selector.
-    Absent {},
     /// A solved cache followed by its carrier-specific cache contract.
     SolvedCache {
         /// Carrier-specific solved-cache contract.
@@ -3412,17 +3387,6 @@ impl<P> RevisionCacheForm<P> {
     /// State the fit tolerance this form carries for its solved cache.
     fn write_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match (self, write) {
-            (form, ToleranceWrite::Clear) => {
-                if matches!(form, Self::SolvedCache { .. }) {
-                    *form = Self::Absent {};
-                }
-                RevisionCacheWrite::Written
-            }
-            (form @ Self::Absent {}, ToleranceWrite::State(fit_tolerance)) => {
-                *form = Self::SolvedCache { fit_tolerance };
-                RevisionCacheWrite::Written
-            }
-            (Self::Absent {}, _) => RevisionCacheWrite::Written,
             (Self::SolvedCache { fit_tolerance }, ToleranceWrite::State(value)) => {
                 *fit_tolerance = value;
                 RevisionCacheWrite::Written
@@ -3448,7 +3412,7 @@ impl<P> RevisionCacheForm<P> {
     #[must_use]
     pub const fn parameterization(&self) -> Option<&P> {
         match self {
-            Self::SolvedCache { .. } | Self::Absent {} => None,
+            Self::SolvedCache { .. } => None,
             Self::Parameterization(parameterization) => Some(parameterization),
         }
     }
@@ -3458,7 +3422,7 @@ impl<P> RevisionCacheForm<P> {
     pub const fn fit_tolerance(&self) -> Option<FitTolerance> {
         match self {
             Self::SolvedCache { fit_tolerance } => Some(*fit_tolerance),
-            Self::Parameterization(_) | Self::Absent {} => None,
+            Self::Parameterization(_) => None,
         }
     }
 }

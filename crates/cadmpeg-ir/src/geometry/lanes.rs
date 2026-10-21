@@ -116,7 +116,6 @@ impl<P> RevisionCacheForm<P> {
         map: impl FnOnce(P) -> Option<Q>,
     ) -> Option<RevisionCacheForm<Q>> {
         Some(match self {
-            Self::Absent {} => RevisionCacheForm::Absent {},
             Self::SolvedCache { fit_tolerance } => RevisionCacheForm::SolvedCache { fit_tolerance },
             Self::Parameterization(parameterization) => {
                 RevisionCacheForm::Parameterization(map(parameterization)?)
@@ -139,7 +138,6 @@ impl RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>> {
     #[must_use]
     pub fn to_raw(&self) -> RevisionCacheForm {
         match self {
-            Self::Absent {} => RevisionCacheForm::Absent {},
             Self::SolvedCache { fit_tolerance } => RevisionCacheForm::SolvedCache {
                 fit_tolerance: *fit_tolerance,
             },
@@ -164,7 +162,6 @@ impl RevisionCacheForm<CacheFirstCurveParameterization<FiniteReal>> {
     #[must_use]
     pub fn to_raw(&self) -> RevisionCacheForm<CacheFirstCurveParameterization> {
         match self {
-            Self::Absent {} => RevisionCacheForm::Absent {},
             Self::SolvedCache { fit_tolerance } => RevisionCacheForm::SolvedCache {
                 fit_tolerance: *fit_tolerance,
             },

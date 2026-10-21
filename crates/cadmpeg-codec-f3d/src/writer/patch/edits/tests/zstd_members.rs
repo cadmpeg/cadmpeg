@@ -59,15 +59,6 @@ fn stored_members(archive: &[u8]) -> Vec<(String, CompressionMethod, Vec<u8>)> {
 fn a_retained_f3d_with_zstandard_members_patches() {
     let mut source = cadmpeg_ir::examples::unit_cube().unwrap();
     let body = source.model.bodies[0].id.clone();
-    let timestamp_target = AttributeTarget::Body(body.clone());
-    source
-        .model
-        .attributes
-        .push(crate::test_support::native_test::timestamp_attribute(
-            0,
-            timestamp_target,
-            cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_001.0).unwrap(),
-        ));
     f3d_native_mut(&mut source).creation_timestamps = vec![CreationTimestamp {
         id: "f3d:generated:creation-timestamp#0".into(),
         target: AttributeTarget::Body(body),
@@ -95,13 +86,6 @@ fn a_retained_f3d_with_zstandard_members_patches() {
             cadmpeg_ir::scalar::FiniteReal::new(timestamp.unix_microseconds.get() + 100.0).unwrap();
         native.creation_timestamps.clone()
     };
-    for timestamp in &expected {
-        crate::test_support::native_test::edit_timestamp_attribute(
-            &mut target,
-            &timestamp.target,
-            timestamp.unix_microseconds,
-        );
-    }
 
     let mut patched = Vec::new();
     let report = F3dCodec
@@ -111,16 +95,10 @@ fn a_retained_f3d_with_zstandard_members_patches() {
         )
         .and_then(|plan| plan.write_to(&mut patched))
         .expect("patch an archive whose members are all Zstandard");
-    assert!(
-        matches!(
-            report.write_path(),
-            cadmpeg_ir::report::export::WritePath::Patched { .. }
-        ),
-        "path {:?}; cause {:?}; losses {:?}",
+    assert!(matches!(
         report.write_path(),
-        report.synthesis_cause(),
-        report.losses
-    );
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
 
     // A member still at method 93 was copied as stored, so its bytes are the source's; one
     // that an edit changed is Deflate, and the report says so by name.
@@ -159,27 +137,4 @@ fn a_retained_f3d_with_zstandard_members_patches() {
         .decode(&mut Cursor::new(patched), &DecodeOptions::default())
         .expect("decode the patched archive");
     assert_eq!(f3d_native(result.ir()).creation_timestamps, expected);
-
-    // An additional unsupported attribute must still decline preservation.
-    // The supported timestamp and all name carriers are the same as above.
-    let mut unsupported = target.clone();
-    let mut attribute = unsupported.model.attributes[0].clone();
-    attribute.id = cadmpeg_ir::ids::AttributeId::mint("authored:model:attribute#999").unwrap();
-    attribute.name = "unsupported-attribute".into();
-    unsupported.model.attributes.push(attribute);
-    let plan = F3dCodec
-        .plan(
-            EncodeInput::new(&unsupported, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
-        .unwrap();
-    assert!(matches!(
-        plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-    ));
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "writer.auxiliary-omitted"));
 }
