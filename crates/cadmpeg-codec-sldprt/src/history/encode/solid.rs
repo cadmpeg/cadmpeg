@@ -600,7 +600,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some((_, Some(selection))) => {
                     properties.insert(cadmpeg_core::nonblank_literal!("Face"), selection);
                 }
-                Some((FaceSelection::Unresolved, _)) if existing.is_some() => {}
+                Some((FaceSelection::Unresolved, _)) if existing.is_some() => {
+                    if let Some(value) = existing.and_then(|record| record.properties.get("Face")) {
+                        properties.insert(cadmpeg_core::nonblank_literal!("Face"), value.clone());
+                    }
+                }
                 Some((FaceSelection::Unresolved, _)) => {
                     return Err(CodecError::UnsupportedContent(format!(
                         "SLDPRT feature {} has an unresolved hole face selection",
@@ -635,7 +639,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.remove("Position");
                     properties.remove("Direction");
                 }
-                [] => {}
+                [] => {
+                    if placements.is_none() {
+                        for key in ["Position", "Direction"] {
+                            if let Some((name, value)) =
+                                existing.and_then(|record| record.properties.get_key_value(key))
+                            {
+                                properties.insert(name.clone(), value.clone());
+                            }
+                        }
+                    }
+                }
                 placements
                     if existing.is_some()
                         && placements.iter().all(|placement| {
@@ -675,7 +689,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     )))
                 }
-                None if existing.is_some() => {}
+                None if existing.is_some() => {
+                    if let Some(value) =
+                        existing.and_then(|record| record.properties.get("EndCondition"))
+                    {
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            value.clone(),
+                        );
+                    }
+                }
                 None => {
                     return Err(CodecError::UnsupportedContent(format!(
                         "SLDPRT feature {} has unresolved hole termination",
