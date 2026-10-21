@@ -67,11 +67,11 @@ fn property(
                 .iter()
                 .map(|value| match value {
                     AttributeValue::String(value) => {
-                        xml::element("String", &[("value", value.clone())])
+                        Some(xml::element("String", &[("value", value.clone())]))
                     }
-                    _ => unreachable!("homogeneous string list checked"),
+                    _ => None,
                 })
-                .collect::<String>();
+                .collect::<Option<String>>()?;
             xml::property(
                 name,
                 "App::PropertyStringList",

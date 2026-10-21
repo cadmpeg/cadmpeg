@@ -86,16 +86,16 @@ fn external(document: &ExternalDocument, losses: &mut Vec<LossNote>) -> String {
 }
 
 fn fresh_name(proposed: String, used: &mut HashSet<String>) -> String {
-    if used.insert(proposed.clone()) {
-        return proposed;
-    }
-    for index in 1_u64.. {
-        let candidate = format!("{proposed}_{index}");
+    let mut candidate = proposed.clone();
+    // With n occupied names, one of these n + 1 distinct candidates is free.
+    for index in 1..=used.len() {
         if used.insert(candidate.clone()) {
             return candidate;
         }
+        candidate = format!("{proposed}_{index}");
     }
-    unreachable!("finite document cannot exhaust output names")
+    used.insert(candidate.clone());
+    candidate
 }
 
 fn definitions(

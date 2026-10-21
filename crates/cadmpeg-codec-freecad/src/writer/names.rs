@@ -6,16 +6,16 @@ use cadmpeg_ir::document::CadIr;
 use std::collections::{HashMap, HashSet};
 
 fn reserve(proposed: String, used: &mut HashSet<String>) -> String {
-    if used.insert(proposed.clone()) {
-        return proposed;
-    }
-    for suffix in 1_u64.. {
-        let candidate = format!("{proposed}_{suffix}");
+    let mut candidate = proposed.clone();
+    // With n occupied names, one of these n + 1 distinct candidates is free.
+    for suffix in 1..=used.len() {
         if used.insert(candidate.clone()) {
             return candidate;
         }
+        candidate = format!("{proposed}_{suffix}");
     }
-    unreachable!("finite object population cannot exhaust u64 names")
+    used.insert(candidate.clone());
+    candidate
 }
 
 pub(super) fn prepare(

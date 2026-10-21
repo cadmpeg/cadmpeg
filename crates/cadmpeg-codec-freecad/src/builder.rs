@@ -2,7 +2,6 @@
 //! Source-less schema-4 document construction.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
@@ -312,13 +311,11 @@ pub(crate) fn document_xml(
     let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
     if schema != "2" {
         for object in objects {
-            write!(
-                result,
+            result.push_str(&format!(
                 "<ObjectDeps Name=\"{}\" Count=\"{}\">",
                 crate::writer::xml::escaped(&object.name),
                 object.dependencies.len()
-            )
-            .expect("writing to String cannot fail");
+            ));
             for dependency in &object.dependencies {
                 result.push_str(&crate::writer::xml::element(
                     "Dep",
@@ -329,8 +326,7 @@ pub(crate) fn document_xml(
         }
     }
     for (index, object) in objects.iter().enumerate() {
-        write!(
-            result,
+        result.push_str(&format!(
             "<{object_tag} name=\"{}\" type=\"{}\" id=\"{}\"{}/>",
             crate::writer::xml::escaped(&object.name),
             crate::writer::xml::escaped(&object.kind),
@@ -344,18 +340,14 @@ pub(crate) fn document_xml(
                     crate::writer::xml::escaped(value)
                 ))
                 .collect::<String>()
-        )
-        .expect("writing to String cannot fail");
+        ));
     }
-    write!(
-        result,
+    result.push_str(&format!(
         "</{objects_tag}><{data_tag} Count=\"{}\">",
         objects.len()
-    )
-    .expect("writing to String cannot fail");
+    ));
     for object in objects {
-        write!(
-            result,
+        result.push_str(&format!(
             "<{object_tag} name=\"{}\"{}>{}{}</{object_tag}>",
             crate::writer::xml::escaped(&object.name),
             if object.extensions.is_empty() {
@@ -373,9 +365,8 @@ pub(crate) fn document_xml(
                 )
             },
             properties_xml(&object.properties)
-        )
-        .expect("writing to String cannot fail");
+        ));
     }
-    write!(result, "</{data_tag}></Document>").expect("writing to String cannot fail");
+    result.push_str(&format!("</{data_tag}></Document>"));
     result
 }

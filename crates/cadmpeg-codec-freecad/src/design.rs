@@ -1193,25 +1193,23 @@ fn append_custom_parameters(
                 .parse::<f64>()
                 .ok()
                 .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-                .map(|value| {
+                .and_then(|value| {
                     if property.type_name.contains("Angle") {
-                        ParameterValue::Angle(
-                            cadmpeg_ir::scalar::Angle::new(value.get().to_radians())
-                                .expect("finite radians"),
-                        )
+                        cadmpeg_ir::scalar::Angle::new(value.get().to_radians())
+                            .map(ParameterValue::Angle)
                     } else if property.type_name.contains("Length") {
-                        ParameterValue::Length(Length::from_assigned_real(value))
+                        Some(ParameterValue::Length(Length::from_assigned_real(value)))
                     } else {
-                        ParameterValue::Real(value)
+                        Some(ParameterValue::Real(value))
                     }
                 }),
             _ => None,
         };
-        if value.is_none() {
+        let Some(value) = value else {
             continue;
-        }
+        };
         let expression = expression_binding(properties, &property.name).map_or_else(
-            || cadmpeg_ir::features::Expression::literal(value.as_ref().expect("value admitted")),
+            || cadmpeg_ir::features::Expression::literal(&value),
             |(_, expression)| expression.into(),
         );
         parameters.push(DesignParameter {
@@ -1229,7 +1227,7 @@ fn append_custom_parameters(
             name: property.name.clone(),
             expression: expression.into(),
             display: None,
-            value,
+            value: Some(value),
             driving: true,
             properties: BTreeMap::new(),
             pmi: None,
@@ -2598,15 +2596,13 @@ fn bind_parameter_dependencies(
                 names.push(format!("Constraints[{}]", parameter.ordinal));
             }
         }
-        candidates.push((parameter.id.clone(), parameter.owner.clone(), names));
+        candidates.push((parameter, names));
     }
     let mut local_candidates = HashMap::<(Option<FeatureId>, String), Vec<ParameterId>>::new();
     let mut qualified_candidates = HashMap::<String, Vec<ParameterId>>::new();
-    for (id, owner, aliases) in &candidates {
-        let parameter = parameters
-            .iter()
-            .find(|parameter| parameter.id == *id)
-            .expect("candidate came from parameters");
+    for (parameter, aliases) in &candidates {
+        let id = &parameter.id;
+        let owner = &parameter.owner;
         let object = owner
             .as_ref()
             .and_then(|owner| object_names.get(owner).copied())
@@ -2814,16 +2810,17 @@ fn expression_identifiers(
     let mut cursor = 0;
     while cursor < expression.len() {
         let rest = &expression[cursor..];
-        let character = rest.chars().next().expect("nonempty expression suffix");
+        let Some(character) = rest.chars().next() else {
+            break;
+        };
         if matches!(character, '\'' | '"') {
             let quote = character;
             cursor += character.len_utf8();
             let mut escaped = false;
             while cursor < expression.len() {
-                let character = expression[cursor..]
-                    .chars()
-                    .next()
-                    .expect("nonempty quoted suffix");
+                let Some(character) = expression[cursor..].chars().next() else {
+                    break;
+                };
                 cursor += character.len_utf8();
                 if !escaped && character == quote {
                     break;
@@ -2839,10 +2836,9 @@ fn expression_identifiers(
             }
         }
         while cursor < expression.len() {
-            let character = expression[cursor..]
-                .chars()
-                .next()
-                .expect("nonempty identifier suffix");
+            let Some(character) = expression[cursor..].chars().next() else {
+                break;
+            };
             if character == '[' {
                 if let Some(end) = expression[cursor + 1..].find(']') {
                     let digits = &expression[cursor + 1..cursor + 1 + end];

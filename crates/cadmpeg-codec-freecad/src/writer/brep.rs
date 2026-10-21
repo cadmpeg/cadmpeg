@@ -5,7 +5,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::{Body, BodyKind, Sense};
 use std::collections::HashMap;
-use std::fmt::Write as _;
 
 use super::geometry;
 mod reachable;
@@ -397,19 +396,15 @@ fn serialize_inner(
         for ((surface, location), mut rows) in pcurve_groups {
             rows.sort_by_key(|(_, _, sense)| *sense == Sense::Reversed);
             match rows.as_slice() {
-                [(curve, range, _)] => write!(
-                    representation,
+                [(curve, range, _)] => representation.push_str(&format!(
                     " 2 {curve} {surface} {location} {} {}",
                     range[0], range[1]
-                )
-                .expect("writing to String cannot fail"),
+                )),
                 [(first, range, _), (second, other_range, _)] if range == other_range => {
-                    write!(
-                        representation,
+                    representation.push_str(&format!(
                         " 3 {first} {second} C0 {surface} {location} {} {}",
                         range[0], range[1]
-                    )
-                    .expect("writing to String cannot fail");
+                    ));
                 }
                 _ => complete = false,
             }
@@ -679,16 +674,13 @@ fn serialize_inner(
     }
     let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {}\n{}\nTriangulations 0\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), surfaces.len(), surfaces.join("\n"), shapes.len());
     for shape in &shapes {
-        write!(output, "{}\n{}\n\n0101101\n", shape.kind, shape.geometry)
-            .expect("writing to String cannot fail");
+        output.push_str(&format!("{}\n{}\n\n0101101\n", shape.kind, shape.geometry));
         for (index, sense) in &shape.children {
-            write!(
-                output,
+            output.push_str(&format!(
                 "{}{} 0 ",
                 if *sense == Sense::Forward { '+' } else { '-' },
                 shapes.len() - index
-            )
-            .expect("writing to String cannot fail");
+            ));
         }
         output.push_str("*\n");
     }
@@ -696,8 +688,8 @@ fn serialize_inner(
         output.push_str("*\n");
     }
     for (root, location) in roots {
-        writeln!(output, "+{} {location}", shapes.len() - root)
-            .expect("writing to String cannot fail");
+        output.push_str(&format!("+{} {location}", shapes.len() - root));
+        output.push('\n');
     }
     Ok(Some(output.into_bytes()))
 }
