@@ -6656,6 +6656,11 @@ fn native_revision_tail_head(
     solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
 ) -> Result<(), CodecError> {
     match cache {
+        cadmpeg_ir::geometry::RevisionCacheForm::Absent {} => {
+            return Err(CodecError::UnsupportedContent(format!(
+                "{carrier} has no fitted cache; no native cache-form selector can be emitted"
+            )));
+        }
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
@@ -6766,6 +6771,11 @@ fn native_cache_first_curve_context(
 ) -> Result<(), CodecError> {
     native_i64(bytes, form.revision.get());
     match &form.cache {
+        cadmpeg_ir::geometry::RevisionCacheForm::Absent {} => {
+            return Err(CodecError::UnsupportedContent(
+                "cache-first intcurve has no fitted cache or native cache-form selector".into(),
+            ));
+        }
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {

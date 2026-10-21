@@ -27,8 +27,35 @@ pub(super) fn prepare(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<
             else {
                 continue;
             };
+            let construction_index = target
+                .model
+                .procedural_surfaces
+                .iter()
+                .position(|row| row.id == *construction)
+                .ok_or_else(|| CodecError::malformed("cache construction disappeared"))?;
+            let mut generated_contract = procedural.clone();
+            let contract_added = generated_contract.cache_fit_tolerance().is_none();
+            if contract_added {
+                // A target cache gets a new contract from the current document,
+                // never from a rejected source cache or an invented native form.
+                // Parameterized forms retain their own actual enums unchanged.
+                if let Err(error) =
+                    generated_contract.set_cache_fit_tolerance(Some(target.tolerances.linear.get()))
+                {
+                    if matches!(
+                        error,
+                        cadmpeg_ir::geometry::CacheContractError::Parameterized
+                            | cadmpeg_ir::geometry::CacheContractError::Layout(_)
+                    ) {
+                        continue;
+                    }
+                    return Err(CodecError::malformed(error));
+                }
+            }
             let cache = match super::super::generate::native_geometry::cache_generation::generate(
-                ctx, target, procedural,
+                ctx,
+                target,
+                &generated_contract,
             ) {
                 Ok(Some(cache)) => cache,
                 Ok(None) => continue,
@@ -37,10 +64,19 @@ pub(super) fn prepare(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<
                 Err(error) if super::declines(&error) => continue,
                 Err(error) => return Err(error),
             };
+            let fit = generated_contract
+                .cache_fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get);
+            let contract_detail = if contract_added {
+                "a new target fit contract is derived from the current document linear tolerance"
+            } else {
+                "the existing target fit contract is unchanged"
+            };
             losses.push(F3dLossCode::WriterSurfaceCacheGenerated.note(format!(
-                "surface {}: generated a NURBS target cache from its unchanged typed construction; original cache was absent, fit {:?} mm is unchanged",
-                surface.id, procedural.cache_fit_tolerance().map(cadmpeg_ir::geometry::FitTolerance::get),
+                "surface {}: generated a NURBS target cache from its unchanged typed construction; original cache was absent, fit {fit:?} mm; {contract_detail}",
+                surface.id,
             )));
+            target.model.procedural_surfaces[construction_index] = generated_contract;
             if let SurfaceGeometry::Procedural { cache: slot, .. } =
                 &mut target.model.surfaces[index].geometry
             {

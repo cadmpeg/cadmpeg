@@ -161,7 +161,7 @@ pub(crate) fn recover(
                     // The fit contract describes the rejected solved cache,
                     // not the exact construction that remains in the document.
                     definition
-                        .set_cache_fit_tolerance(None)
+                        .clear_fitted_cache_contract()
                         .map_err(CodecError::malformed)?;
                 }
             }
