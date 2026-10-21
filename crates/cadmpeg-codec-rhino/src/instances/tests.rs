@@ -924,9 +924,13 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .expect("fields")["definition_uuid"],
         Uuid::from_wire(definition_id).to_string()
     );
-    assert!(native.arenas()["product_occurrences"][0]
-        .field("transform")
-        .is_none());
+    // #213 retains the typed source transform alongside its neutral projection.
+    assert_eq!(
+        native.arenas()["product_occurrences"][0]
+            .field("transform")
+            .unwrap(),
+        serde_json::json!(transform(1.0, [10.0, 0.0, 0.0]))
+    );
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 3/3 Rhino object records")));

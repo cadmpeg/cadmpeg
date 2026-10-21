@@ -53,7 +53,7 @@ fn admitted_source_camera_and_view_name_have_one_neutral_home() {
     assert_eq!(camera.position.unwrap().get(), [1.0, 2.0, 3.0]);
     assert_eq!(camera.orientation.unwrap().get(), [0.0, 0.0, 1.0, 0.0]);
     let record = &ir.native.namespace("rhino").unwrap().arenas()["views"][0];
-    assert!(record.field("name").is_none());
+    assert_eq!(record.field("name").unwrap(), "Perspective");
     let viewport = record.field("viewport").unwrap();
     for name in [
         "camera_location_mm",
@@ -63,7 +63,8 @@ fn admitted_source_camera_and_view_name_have_one_neutral_home() {
         "camera_y_axis",
         "camera_z_axis",
     ] {
-        assert!(viewport.get(name).is_none());
+        // #213 keeps the exact typed source camera fields.
+        assert_eq!(viewport[name], fields()["viewport"][name]);
     }
     assert_eq!(viewport["neutral_camera"], document.id.as_str());
 }
