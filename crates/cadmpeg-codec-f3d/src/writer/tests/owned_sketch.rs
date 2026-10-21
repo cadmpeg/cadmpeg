@@ -102,6 +102,9 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         .sketch_curve_identities
         .iter()
         .any(|curve| curve.id == auxiliary_id && curve.owner_reference.is_none()));
+    let expected_constraint = owned_dimension_definition(&ir, "d1");
+    assert_eq!(expected_constraint["kind"], "native");
+    assert_eq!(expected_constraint["entities"].as_array().unwrap().len(), 6);
     let mut output = Vec::new();
     plan.write_to(&mut output).unwrap();
     let written = F3dCodec
@@ -125,6 +128,8 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
     );
     assert_eq!(written.ir().model.parameters.len(), 2);
     assert_eq!(written.ir().model.sketch_constraints.len(), 4);
+    assert_eq!(owned_dimension_definition(written.ir(), "d1"), expected_constraint,
+        "the owned dimension retains its complete canonical kind, state, flags, properties, ordered entities, parameter and recipe operands");
     for name in ["d1", "d2"] {
         let parameter = written
             .ir()
@@ -359,4 +364,80 @@ fn canonical_owned_parameter_order_updates_its_writable_owner_lane() {
         assert_eq!(owner.local_ordinal(), Some(expected));
         assert_eq!(owner.owned_ordinal(), 9);
     }
+}
+
+/// Compare content through proved typed targets; source offsets in native IDs
+/// may change while the graph's record identities and geometry remain exact.
+fn owned_dimension_definition(ir: &cadmpeg_ir::CadIr, name: &str) -> serde_json::Value {
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == name)
+        .unwrap();
+    let mut definitions = ir.model.sketch_constraints.iter().filter_map(|constraint| {
+        let value = serde_json::to_value(&constraint.definition).unwrap();
+        (value["parameter"] == serde_json::json!(parameter.id)
+            || value["parameter"] == serde_json::json!({"kind":"parameter", "value":parameter.id}))
+        .then_some(value)
+    });
+    let mut definition = definitions.next().expect("one owned dimension");
+    assert!(
+        definitions.next().is_none(),
+        "the parameter binds one dimension"
+    );
+    definition["parameter"] = serde_json::json!(name);
+    let native = crate::test_support::native_test::f3d_native(ir);
+    if let Some(entities) = definition
+        .get_mut("entities")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for identity in entities {
+            let entity = ir
+                .model
+                .sketch_entities
+                .iter()
+                .find(|entity| identity.as_str() == Some(entity.id().as_str()))
+                .expect("every dimension entity exists");
+            let native_ref = entity
+                .native_ref
+                .as_deref()
+                .expect("the source fixture entity has a typed native carrier");
+            let carrier = native
+                .sketch_points
+                .iter()
+                .find(|point| point.id == native_ref)
+                .map(|point| ("point", point.record_index))
+                .or_else(|| {
+                    native
+                        .sketch_curve_identities
+                        .iter()
+                        .find(|curve| curve.id == native_ref)
+                        .map(|curve| ("curve", curve.record_index))
+                })
+                .expect("the native carrier is a real point or curve");
+            *identity = serde_json::json!({"carrier_kind":carrier.0,"record_index":carrier.1,"construction":entity.construction,"geometry":entity.geometry});
+        }
+    }
+    if let Some(operands) = definition
+        .get_mut("operands")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for operand in operands {
+            let native_ref = operand["native_ref"]
+                .as_str()
+                .expect("the recipe operand has a typed target");
+            let record = native
+                .design_dimension_recipe_records
+                .iter()
+                .find(|record| record.id == native_ref)
+                .expect("the operand's typed recipe exists");
+            assert_eq!(operand["object_index"], record.record_index);
+            operand.as_object_mut().unwrap().remove("native_ref");
+            operand["recipe_kind"] = serde_json::to_value(record.recipe_kind).unwrap();
+            operand["recipe_program"] = serde_json::json!(record.program);
+            operand["recipe_references"] = serde_json::to_value(&record.references).unwrap();
+        }
+    }
+    definition
 }
