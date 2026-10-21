@@ -481,7 +481,7 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
             )
             .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
         assert!(
-            matches!(plan.report().write_path(), WritePath::Synthesized { .. }),
+            matches!(plan.report().write_path(), WritePath::Patched { .. }),
             "fixture {name}: path={:?}; losses={:?}",
             plan.report().write_path(),
             plan.report().losses,
@@ -491,6 +491,74 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        let synthesized = SldprtCodec
+            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(
+            matches!(
+                synthesized.report().write_path(),
+                WritePath::Synthesized { .. }
+            ),
+            "fixture {name}: source-free writer path"
+        );
+        let synthesized_report = synthesized.report().clone();
+        let mut synthesized_bytes = Vec::new();
+        synthesized.write_to(&mut synthesized_bytes).unwrap();
+        let source_free = SldprtCodec
+            .decode(
+                &mut Cursor::new(synthesized_bytes),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        cadmpeg_test_support::contract::assert_written_arenas_agree(
+            &synthesized_report,
+            written.ir(),
+            source_free.ir(),
+        );
+        let native = crate::test_support::native::sldprt_native(written.ir());
+        for feature in &written.ir().model.features {
+            let Some(dimension) = blind_depth(feature.definition()) else {
+                continue;
+            };
+            let parameter_id = dimension.parameter().expect("one canonical bound depth");
+            let parameter = written
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == *parameter_id)
+                .unwrap();
+            assert_eq!(
+                parameter.owner.as_ref(),
+                Some(&feature.id),
+                "fixture {name}: bound owner"
+            );
+            let cache = parameter
+                .value
+                .as_ref()
+                .expect("evaluated canonical length");
+            assert_eq!(
+                parameter.expression.literal_value_as(cache).as_ref(),
+                Some(cache),
+                "fixture {name}: exact expression/cache agreement"
+            );
+            let native_feature = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|native_feature| {
+                    Some(native_feature.id.as_str()) == feature.native_ref.as_deref()
+                })
+                .expect("native Keywords counterpart");
+            let native_text = &native_feature.parameters[parameter.name.as_str()];
+            assert_eq!(
+                cadmpeg_ir::features::Expression::text(native_text.as_str())
+                    .literal_value_as(cache)
+                    .as_ref(),
+                Some(cache),
+                "fixture {name}: native Keywords depth regenerated from canonical parameter"
+            );
+        }
         let mut written = written.ir().clone();
         assert!(
             !written.model.features.is_empty()
