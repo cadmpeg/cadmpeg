@@ -603,7 +603,7 @@ fn semantic_writer_round_trips_wrap() {
         let mut ir_edit = decoded.ir_mut();
         let id = ir_edit.model.features[0].id.clone();
         ir_edit
-            .set_dimension(&id, "/mode/depth", PositiveLength::new(3.5).unwrap())
+            .set_dimension(&id, "/mode/emboss/depth", PositiveLength::new(3.5).unwrap())
             .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Wrap {
