@@ -1628,11 +1628,11 @@ fn formula_output_expression_charges_its_retained_text() {
 
     let (fits, ir) = transfer(length);
     fits.expect("the output expression fits its retained text");
-    assert!(ir.model.parameters.iter().any(|parameter| parameter
-        .expression
-        .literal_text()
-        .as_deref()
-        == Some(expression.as_str())));
+    assert!(ir.model.parameters.iter().any(|parameter| {
+        crate::test_support::parameter_projection::expression_text_with_native(
+            &ir, parameter, &native,
+        ) == expression
+    }));
     let (refused, _) = transfer(length - 1);
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = refused else {
         panic!("the output expression exceeds the retained limit");
