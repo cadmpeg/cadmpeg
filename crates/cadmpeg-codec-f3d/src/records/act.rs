@@ -393,9 +393,18 @@ struct ActEntitySerde {
     channel_class_tag: String,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     channels: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_class_tail_frame"
+    )]
     class_tail_frame: Option<super::source_frame::SourceFrame>,
 }
+cadmpeg_core::named_optional_field!(
+    deserialize_class_tail_frame,
+    super::source_frame::SourceFrame,
+    "class_tail_frame"
+);
 impl TryFrom<ActEntitySerde> for ActEntity {
     type Error = String;
     fn try_from(wire: ActEntitySerde) -> Result<Self, String> {
