@@ -394,8 +394,7 @@ fn spatial_profile_class_projects_a_spatial_sketch() {
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&spatial),
-        )
-        .unwrap(),
+        ),
         FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
     );
 }
@@ -413,8 +412,7 @@ fn base_body_class_projects_stored_geometry_independently_of_display_name() {
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&base_body),
-        )
-        .unwrap(),
+        ),
         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     );
 }
@@ -1103,8 +1101,7 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&plane),
-        )
-        .unwrap(),
+        ),
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 70.0, 0.0),
@@ -1139,8 +1136,7 @@ fn length_plane_parameter_claims_offset_semantics() {
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&plane),
-        )
-        .unwrap(),
+        ),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance,
@@ -1160,8 +1156,7 @@ fn frameless_reference_plane_remains_typed_unresolved() {
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&plane),
-        )
-        .unwrap(),
+        ),
         FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
         })
