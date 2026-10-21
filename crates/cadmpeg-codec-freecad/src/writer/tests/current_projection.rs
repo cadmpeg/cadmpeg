@@ -11,18 +11,32 @@ use std::io::Cursor;
 
 #[test]
 fn coherent_array_reference_rename_declines_patch_and_regenerates_typed_values() {
+    for (bytes, owner, count) in [
+        (CORE_DESIGN_PRODUCT, "fcstd:native:object#Occurrence", 0),
+        (
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/product_assembly.FCStd"
+            ))
+            .as_slice(),
+            "fcstd:native:object#PinArray",
+            3,
+        ),
+    ] {
+        assert_coherent_reference_rename(bytes, owner, count);
+    }
+}
+
+fn assert_coherent_reference_rename(bytes: &[u8], owner: &str, count: usize) {
     let source = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let mut current = source.ir().clone();
     let namespace = current.native.namespace_mut("fcstd");
     let mut properties = namespace.arena_as::<PropertyRecord>("properties").unwrap();
     let property = properties
         .iter_mut()
-        .find(|property| property.name == "PlacementList")
+        .find(|property| property.name == "PlacementList" && property.owner == owner)
         .unwrap();
     let owner = property.owner.clone();
     let original = property.side_entries()[0].clone();
@@ -92,7 +106,11 @@ fn coherent_array_reference_rename_declines_patch_and_regenerates_typed_values()
         .unwrap();
     let before = before.iter().find(|node| node.object == owner).unwrap();
     let after = after.iter().find(|node| node.object == owner).unwrap();
-    assert!(!before.element_transforms().is_empty());
+    assert_eq!(before.element_transforms().len(), count);
+    assert_eq!(before.element_count(), Some(u64::try_from(count).unwrap()));
+    if count != 0 {
+        assert!(!before.element_transforms().is_empty());
+    }
     assert_eq!(after.element_count(), before.element_count());
     assert_eq!(after.element_transforms(), before.element_transforms());
     assert_eq!(after.element_scales(), before.element_scales());
