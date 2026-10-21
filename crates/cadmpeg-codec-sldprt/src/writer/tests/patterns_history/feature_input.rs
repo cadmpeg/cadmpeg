@@ -782,6 +782,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
     );
     // Operand 2 has no authored marker. This source relation does not create a
     // typed length use that could prohibit changing the independent parameter.
+    // A Native constraint can retain a generic parameter ID without imposing Q.
     assert!(
         decoded
             .ir()
@@ -792,12 +793,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
                 matches!(
                     constraint.definition.kind(),
                     cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
-                ) && constraint
-                    .definition
-                    .kind()
-                    .dimension_parameters()
-                    .unwrap()
-                    .is_empty()
+                )
             }),
         "constraints={:#?}",
         decoded.ir().model.sketch_constraints
