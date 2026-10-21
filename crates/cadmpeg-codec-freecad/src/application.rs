@@ -42,8 +42,8 @@ pub(crate) fn matches_native(
     Ok(actual.next().is_none())
 }
 
-// Census records refer to authoritative bytes through identities, ranges and digests.
-// Absent object data uses zero offsets and the empty-byte digest.
+// Census records refer to authoritative typed objects, properties and entries.
+// Source images, extents and digests belong to fidelity alone.
 #[derive(Serialize)]
 struct ApplicationRecordWire<'a> {
     id: String,
@@ -55,8 +55,6 @@ struct ApplicationRecordWire<'a> {
     side_entries: Vec<&'a str>,
     inert_payload: bool,
     order: usize,
-    byte_len: u64,
-    sha256: String,
     property_records: Vec<ApplicationPropertyWire<'a>>,
 }
 
@@ -69,8 +67,6 @@ struct ApplicationPropertyWire<'a> {
     family: PropertyFamily,
     order: usize,
     links: &'a [Option<LinkTarget>],
-    byte_len: u64,
-    sha256: String,
     payloads: Vec<ApplicationPayloadWire<'a>>,
     inert: bool,
 }
@@ -79,8 +75,6 @@ struct ApplicationPropertyWire<'a> {
 struct ApplicationPayloadWire<'a> {
     entry: &'a str,
     name: &'a str,
-    byte_len: u64,
-    sha256: &'a str,
 }
 
 fn wire_records<'a>(
@@ -116,8 +110,6 @@ fn wire_records<'a>(
                     payloads.push(ApplicationPayloadWire {
                         entry: entry.id(),
                         name: entry.name(),
-                        byte_len: entry.byte_len(),
-                        sha256: entry.sha256(),
                     });
                 }
             }
@@ -133,8 +125,6 @@ fn wire_records<'a>(
                 family: property.family,
                 order: property.order,
                 links: property.links(),
-                byte_len: property.xml.length(),
-                sha256: property.xml.sha256().to_owned(),
                 payloads,
                 inert: is_inert(property),
             });
@@ -152,14 +142,6 @@ fn wire_records<'a>(
             side_entries,
             inert_payload: property_records.iter().any(|property| property.inert),
             order: object.order,
-            byte_len: object
-                .data
-                .as_ref()
-                .map_or(0, crate::native::RetainedXml::length),
-            sha256: object.data.as_ref().map_or_else(
-                || cadmpeg_ir::hash::sha256_hex(&[]),
-                |data| data.sha256().to_owned(),
-            ),
             property_records,
         });
     }

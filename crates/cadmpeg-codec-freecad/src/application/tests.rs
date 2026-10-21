@@ -41,9 +41,12 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .arena_as::<serde_json::Value>("applications")
         .expect("applications");
     let xml_bytes = |record: &serde_json::Value| {
-        let start = usize::try_from(record["byte_start"].as_u64().unwrap()).unwrap();
-        let end = usize::try_from(record["byte_end"].as_u64().unwrap()).unwrap();
-        &document.as_bytes()[start..end]
+        let id = record
+            .get("property")
+            .unwrap_or(&record["object"])
+            .as_str()
+            .unwrap();
+        crate::test_support::source_fidelity::bytes(result.source_fidelity(), id)
     };
     assert_eq!(records.len(), 5);
     let by_domain = records
@@ -63,22 +66,33 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert_eq!(by_domain["Unqualified"]["type_name"], "LocalType");
     let report = &by_domain["Fem"]["property_records"][0];
     assert_eq!(report["object"], by_domain["Fem"]["object"]);
-    assert!(report["byte_start"].as_u64().unwrap() < report["byte_end"].as_u64().unwrap());
+    let report_source = result
+        .source_fidelity()
+        .retained_record(report["property"].as_str().unwrap())
+        .expect("property source");
+    assert!(report_source.offset() < report_source.end_offset());
     assert_eq!(
-        report["byte_len"],
+        report_source.byte_len(),
         cadmpeg_core::decode::u64_from_index(xml_bytes(report).len())
     );
     assert_eq!(
-        report["sha256"],
+        report_source.sha256(),
         cadmpeg_ir::hash::sha256_hex(xml_bytes(report))
     );
     assert_eq!(report["payloads"].as_array().unwrap().len(), 1);
     let payload = &report["payloads"][0];
     assert_eq!(payload["name"], "analysis.dat");
-    assert_eq!(payload["byte_len"], b"finite-element-results".len());
+    let payload_source = result
+        .source_fidelity()
+        .retained_record(payload["entry"].as_str().unwrap())
+        .expect("payload source");
+    assert_eq!(
+        payload_source.byte_len(),
+        cadmpeg_core::decode::u64_from_index(b"finite-element-results".len())
+    );
     assert!(payload.get("data").is_none());
     assert_eq!(
-        payload["sha256"],
+        payload_source.sha256(),
         cadmpeg_ir::hash::sha256_hex(b"finite-element-results")
     );
     let python = &by_domain["Path"]["property_records"][0];
@@ -91,9 +105,13 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             .unwrap()
             .iter()
             .all(|property| property.get("data").is_none()));
-        record["byte_start"].as_u64().unwrap() < record["byte_end"].as_u64().unwrap()
-            && record["byte_len"] == cadmpeg_core::decode::u64_from_index(xml_bytes(record).len())
-            && record["sha256"] == cadmpeg_ir::hash::sha256_hex(xml_bytes(record))
+        let source = result
+            .source_fidelity()
+            .retained_record(record["object"].as_str().unwrap())
+            .expect("object source");
+        source.offset() < source.end_offset()
+            && source.byte_len() == cadmpeg_core::decode::u64_from_index(xml_bytes(record).len())
+            && source.sha256() == cadmpeg_ir::hash::sha256_hex(xml_bytes(record))
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -103,9 +121,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .iter_mut()
         .find(|record| record["domain"] == "Fem")
         .unwrap()["property_records"][0]["payloads"][0];
-    let replacement = b"different internally consistent bytes";
-    payload["byte_len"] = serde_json::json!(replacement.len());
-    payload["sha256"] = serde_json::json!(cadmpeg_ir::hash::sha256_hex(replacement));
+    payload["entry"] = serde_json::json!("fcstd:native:entry#different-payload");
     let mut edited = result.ir().clone();
     edited
         .native
@@ -119,9 +135,8 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert!(crate::test_support::validate_native(&edited)
         .iter()
         .any(|finding| {
-            finding
-                .message
-                .contains("application preservation records do not match authoritative bytes")
+            finding.message
+                == "FCStd application records do not match their typed objects and entries"
         }));
 }
 
@@ -156,10 +171,10 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         .arena_as::<serde_json::Value>("applications")
         .unwrap();
     assert!(records[0].get("data").is_none());
-    assert_eq!(records[0]["byte_start"], 0);
-    assert_eq!(records[0]["byte_end"], 0);
-    assert_eq!(records[0]["byte_len"], 0);
-    assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
+    // §2.4: absence of source data does not put invented layout facts in CADIR.
+    for field in ["byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(records[0].get(field).is_none());
+    }
     assert!(super::matches_native(
         &cadmpeg_test_support::service_decode_context(),
         &namespace,
@@ -202,9 +217,8 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
         .iter()
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans: Vec<crate::native::LogicalSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = spans
         .iter()
         .find(|span| span.entry == entry.name())
@@ -216,7 +230,10 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
     );
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(entry.id()));
-    assert_eq!(entry.data(), payload);
+    assert_eq!(
+        crate::test_support::source_fidelity::bytes(result.source_fidelity(), entry.id()),
+        payload
+    );
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -327,15 +344,17 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans: Vec<crate::native::LogicalSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     for (name, _, _, payload) in cases {
         let entry = entries
             .iter()
             .find(|entry| entry.name() == name)
             .expect("side entry");
-        assert_eq!(entry.data(), payload);
+        assert_eq!(
+            crate::test_support::source_fidelity::bytes(result.source_fidelity(), entry.id()),
+            payload
+        );
         assert_eq!(
             entry.byte_len(),
             cadmpeg_core::decode::u64_from_index(payload.len())
@@ -395,12 +414,13 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         Vec::new(),
         vec![7; 4096],
     );
-    let digest = entry.sha256().as_ptr();
+    let identity = entry.id().as_ptr();
     let objects = [object];
     let entries = [entry];
     let records = super::wire_records(&objects, &properties, &entries);
     for property in &records[0].property_records {
-        assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
-        assert_eq!(property.payloads[0].sha256, entries[0].sha256());
+        // §2.4 moves the digest to fidelity; the census borrows the typed entry identity.
+        assert_eq!(property.payloads[0].entry.as_ptr(), identity);
+        assert_eq!(property.payloads[0].entry, entries[0].id());
     }
 }
