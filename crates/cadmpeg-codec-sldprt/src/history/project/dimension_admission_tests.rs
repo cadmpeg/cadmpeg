@@ -65,3 +65,15 @@ fn inadmissible_source_cache_does_not_complete_a_positive_length() {
         assert_eq!(source.parameters["Depth"], literal);
     }
 }
+
+#[test]
+fn explicit_angle_literal_cannot_supply_a_native_length_control() {
+    let mut source = feature("thread", Some("1"), 0);
+    source.input_class = Some("moCosmeticThread_c".into());
+    source.parameters.insert(
+        cadmpeg_core::nonblank_literal!("D1"),
+        "6.2831853071796rad".into(),
+    );
+    assert!(parameter_dimension::<PositiveLength>(&source, &["D1"]).is_none());
+    assert_eq!(source.parameters["D1"], "6.2831853071796rad");
+}

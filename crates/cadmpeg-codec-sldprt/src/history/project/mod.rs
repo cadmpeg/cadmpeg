@@ -1435,6 +1435,10 @@ pub(crate) fn parameter_dimension<Q: cadmpeg_ir::features::DimensionValue>(
             crate::history::parameters::source_parameter_value(feature, name)
         {
             Q::from_parameter_value(&value)?;
+        } else if let Some(value) = feature.parameters.get(*name)
+            .and_then(|expression| crate::history::literals::parse_parameter_literal(expression))
+        {
+            Q::from_parameter_value(&value)?;
         } else if feature.parameters.get(*name).is_some_and(|expression| {
             crate::history::literals::nonfinite_parameter_literal(expression)
         }) {
