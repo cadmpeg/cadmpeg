@@ -668,13 +668,14 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     // This frame has no local-ordinal lane. The parser's compatibility
     // placeholder is not a document-stated ordinal.
     assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.scope_record_index, 0);
     let parsed = parsed.into_record("Design/BulkStream.dat", 0).unwrap();
     assert_eq!(parsed.frame_length(), Some(68));
     assert_eq!(parsed.class_tag().as_str(), "284");
     assert_eq!(parsed.record_index(), 100);
     assert_eq!(parsed.parameter_record_index(), 101);
     assert_eq!(parsed.companion_record_index(), 102);
-    assert_eq!(parsed.scope_record_index(), Some(0));
+    assert_eq!(parsed.scope_record_index(), None);
     assert_eq!(parsed.local_ordinal(), None);
     assert_eq!(
         serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
