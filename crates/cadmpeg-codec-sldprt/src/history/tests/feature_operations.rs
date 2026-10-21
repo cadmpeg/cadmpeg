@@ -24,6 +24,43 @@ use crate::SldprtCodec;
 
 const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
 
+fn assert_active_config0_base(source: &[u8], ir: &cadmpeg_ir::CadIr) {
+    let scan = crate::test_support::container::scan(source);
+    assert_eq!(
+        crate::container::select_active_parasolid_site(&scan)
+            .expect("one actual Config-0 partition")
+            .section
+            .name(),
+        Some("Contents/Config-0-Partition")
+    );
+    assert_eq!(
+        ir.model
+            .configurations
+            .iter()
+            .filter(|row| row.active)
+            .count(),
+        1
+    );
+    let active = &ir.model.configurations[0];
+    assert!(active.active);
+    assert_eq!(active.source_index, Some(0));
+    assert!(active.feature_states.is_empty());
+    assert!(active.parameter_overrides.is_empty());
+    assert!(active.parameter_values.is_empty());
+    assert!(!ir.model.configurations[1].active);
+}
+
+fn with_missing_active_selector(source: &[u8]) -> Vec<u8> {
+    let mut unknown = source.to_vec();
+    unknown.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
+    ));
+    assert!(unknown.starts_with(source));
+    unknown
+}
+
 #[test]
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
@@ -577,17 +614,19 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
-    assert!(
-        matches!(
-            decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
-                operands,
-                ..
-            }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))),
-        "feature: {:?}",
-        decoded.ir().model.features[0].evaluation.definition()
-    );
+    assert_active_config0_base(&source, decoded.ir());
+    // D13: the proven active snapshot is the canonical base; only the other
+    // configuration retains its different, unresolved selection locally.
+    assert!(matches!(
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!((operands.target(), operands.tools()),
+                (BodySelection::Native(target), BodySelection::Native(tools))
+                    if target.starts_with("sldprt:feature-input:body-path:")
+                        && tools.starts_with("sldprt:feature-input:body-path:"))
+    ));
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature_id).expect("effective configuration definition"),
@@ -604,6 +643,41 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             operands,
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
+
+    // An explicit selector that names no configuration leaves both source
+    // snapshots local; the actual partition alone cannot override that choice.
+    let unknown = SldprtCodec
+        .decode(
+            &mut Cursor::new(with_missing_active_selector(&source)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(unknown
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .all(|row| !row.active));
+    let unknown_feature = &unknown.ir().model.features[0];
+    assert!(matches!(unknown_feature.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!((operands.target(), operands.tools()),
+                (BodySelection::Unresolved, BodySelection::Unresolved))
+    ));
+    assert!(matches!(
+        super::effective_definition(unknown.ir(), &unknown.ir().model.configurations[0], &unknown_feature.id).unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!((operands.target(), operands.tools()),
+                (BodySelection::Native(target), BodySelection::Native(tools))
+                    if target.starts_with("sldprt:feature-input:body-path:")
+                        && tools.starts_with("sldprt:feature-input:body-path:"))
+    ));
+    assert!(matches!(
+        super::effective_definition(unknown.ir(), &unknown.ir().model.configurations[1], &unknown_feature.id).unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!((operands.target(), operands.tools()),
+                (BodySelection::Unresolved, BodySelection::Unresolved))
+    ));
 
     let mut source = outer_header();
     source.extend(make_block(
@@ -792,11 +866,13 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
+    assert_active_config0_base(&source, decoded.ir());
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
+        FeatureDefinition::Operation(FeatureOperation::Sweep { path: Some(PathRef::Native(path)), .. })
+            if path.starts_with("sldprt:feature-input:general-curve-ref:")
     ));
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
@@ -813,6 +889,38 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
             &feature_id
         )
         .expect("effective configuration definition"),
+        FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
+    ));
+
+    let unknown = SldprtCodec
+        .decode(
+            &mut Cursor::new(with_missing_active_selector(&source)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(unknown
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .all(|row| !row.active));
+    let unknown_feature = &unknown.ir().model.features[0];
+    assert!(matches!(
+        unknown_feature.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
+    ));
+    assert!(matches!(
+        super::effective_definition(unknown.ir(), &unknown.ir().model.configurations[0], &unknown_feature.id).unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep { path: Some(PathRef::Native(path)), .. })
+            if path.starts_with("sldprt:feature-input:general-curve-ref:")
+    ));
+    assert!(matches!(
+        super::effective_definition(
+            unknown.ir(),
+            &unknown.ir().model.configurations[1],
+            &unknown_feature.id
+        )
+        .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
     ));
 }
