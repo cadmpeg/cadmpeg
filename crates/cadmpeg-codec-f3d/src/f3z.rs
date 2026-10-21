@@ -69,7 +69,7 @@ pub(crate) fn decode<'a>(
         native_layout: _,
     } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
     if let Some(root_image) = fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID) {
-        let id = cadmpeg_ir::ids::UnknownId::mint("f3d:file#root-source-image")
+        let id = cadmpeg_ir::ids::UnknownId::mint("f3d:file:source-image#root")
             .map_err(CodecError::malformed)?;
         fidelity.insert_retained_record(id, root_image)?;
     }
@@ -149,7 +149,7 @@ pub(crate) fn decode<'a>(
     )?;
     if merged > 0 {
         if let Some(image) = fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID) {
-            let id = cadmpeg_ir::ids::UnknownId::mint("f3d:file#archive-source-image")
+            let id = cadmpeg_ir::ids::UnknownId::mint("f3d:file:source-image#archive")
                 .map_err(CodecError::malformed)?;
             fidelity.insert_retained_record(id, image)?;
         }
