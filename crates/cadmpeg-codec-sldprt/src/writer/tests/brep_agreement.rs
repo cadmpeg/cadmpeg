@@ -4,6 +4,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
@@ -187,14 +188,25 @@ fn parameter_name_edit_keeps_retained_brep() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.parameters[0].name = "RenamedDepth".into();
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .unwrap();
+    let report = plan.report().clone();
+    plan.write_to(&mut output).unwrap();
     let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
         .section
         .payload();
-    assert_eq!(output_partition, source_partition);
+    assert_eq!(
+        output_partition,
+        source_partition,
+        "unchanged B-rep path: {report:?}; source classes: {:?}",
+        decoded.source_fidelity().unrepresented()
+    );
 }
 
 #[test]
@@ -212,14 +224,25 @@ fn feature_name_edit_keeps_retained_brep() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.features[0].name = Some("RenamedBoss".into());
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .unwrap();
+    let report = plan.report().clone();
+    plan.write_to(&mut output).unwrap();
     let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
         .section
         .payload();
-    assert_eq!(output_partition, source_partition);
+    assert_eq!(
+        output_partition,
+        source_partition,
+        "unchanged B-rep path: {report:?}; source classes: {:?}",
+        decoded.source_fidelity().unrepresented()
+    );
 }
 
 #[test]
@@ -239,18 +262,28 @@ fn native_feature_name_edit_keeps_retained_brep() {
         native.feature_histories[0].features[0].name = "RenamedBoss".into();
     });
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .unwrap();
+    let report = plan.report().clone();
+    plan.write_to(&mut output).unwrap();
     let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
         .section
         .payload();
-    assert_eq!(output_partition, source_partition);
+    assert_eq!(
+        output_partition,
+        source_partition,
+        "unchanged B-rep path: {report:?}; source classes: {:?}",
+        decoded.source_fidelity().unrepresented()
+    );
 }
 
 fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResult) {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
