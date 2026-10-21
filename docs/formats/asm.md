@@ -144,7 +144,7 @@ The class lineage is `Begin-of-ASM-History-Data`; `history_stream` is the second
 11
 ```
 
-`stream_size == stream_size_duplicate`.
+`stream_size == stream_size_duplicate`. `stream_size` is not always the `state_id` of the head `delta_state` (see `asm-open-items.md` HS-01).
 
 An ACIS 217/218 history partition begins directly with the first exact `delta_state` record. The record framer establishes the preceding solved-record boundary; identifier bytes inside payload strings do not select it.
 
@@ -154,7 +154,7 @@ Each history node is a linked construction state:
 
 ```
 11 0d 0b "delta_state"
-04 i64 state_id          (head node's state_id == history_stream preamble field[0])
+04 i64 state_id
 04 i64 = 1               (constant)
 04 i64 = 0               (constant)
 0c ref prev_state        (-1 on head)

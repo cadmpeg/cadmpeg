@@ -359,6 +359,25 @@ fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
 }
 
 #[test]
+fn asm_history_preamble_need_not_name_the_head_state() {
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    let mut history = f3d_native(result.ir()).asm_histories[0].clone();
+    assert!(crate::history::graph_is_coherent(&history));
+
+    // The first preamble field names the state after the head.
+    let after_head = history.states()[1].state_id;
+    let preamble = history.preamble.as_mut().unwrap();
+    preamble.stream_size = after_head;
+    assert!(crate::history::graph_is_coherent(&history));
+
+    history.preamble.as_mut().unwrap().history_entry_count = -1;
+    assert!(!crate::history::graph_is_coherent(&history));
+}
+
+#[test]
 fn decode_retains_generated_asm_history_graph() {
     let f3d = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
     let result = F3dCodec
