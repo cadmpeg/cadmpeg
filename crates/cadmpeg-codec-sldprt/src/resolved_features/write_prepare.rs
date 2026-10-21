@@ -1171,20 +1171,8 @@ pub(crate) fn synthesize_feature_classes(
     if payload.is_empty() {
         return Ok(());
     }
-    let mut lanes = Vec::new();
-    let lane = source_less_lane(&mut lanes, "0");
-    lane.id = LANE_ID.into();
-    lane.configuration = None;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    lane.classes = class_declarations(&payload, &lane.id)?;
-    lane.names = object_names(&ctx, &payload, &lane.id)?;
-    lane.native_payload = payload.into();
-    native.feature_input_lanes.extend(lanes);
+    let lane = generated_native_lane(&native.feature_histories, LANE_ID, None, payload)?;
+    native.feature_input_lanes.push(lane);
     Ok(())
 }
 
