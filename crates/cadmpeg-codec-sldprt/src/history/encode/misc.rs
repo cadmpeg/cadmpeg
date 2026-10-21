@@ -72,7 +72,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     |record| record.kind.clone(),
                 ),
                 parameters: self.base_parameters(),
-                properties: feature.source_properties.clone(),
+                properties: self.base_properties(),
             }
         })
     }
@@ -124,7 +124,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 None => {}
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(value) = face_selection_value(face) {
                 properties.insert(cadmpeg_core::nonblank_literal!("Face"), value);
             } else if !matches!(face, FaceSelection::Unresolved) {
@@ -186,7 +186,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok(NeutralFeatureEncoding {
             kind: kind.to_string(),
             parameters: rendered,
-            properties: self.feature.source_properties.clone(),
+            properties: self.self.base_properties(),
         })
     }
 
@@ -196,7 +196,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         NeutralFeatureEncoding {
             kind: existing.map_or_else(|| "Feature".into(), |record| record.kind.clone()),
             parameters: self.base_parameters(),
-            properties: feature.source_properties.clone(),
+            properties: self.base_properties(),
         }
     }
 
@@ -236,7 +236,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 &feature.id,
                 &["EquationDrivenCurve", "EquationCurve"],
             )?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Parameter"),
                 curve.parameter().to_owned(),
@@ -301,7 +301,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 &feature.id,
                 &["ProjectedCurve", "ProjectionCurve"],
             )?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Source"), source);
             properties.insert(cadmpeg_core::nonblank_literal!("TargetFaces"), target_faces);
             if let Some(bidirectional) = bidirectional {
@@ -364,7 +364,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Segments"),
                 segments.join(";"),
@@ -447,7 +447,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 cadmpeg_core::nonblank_literal!("StartAngle"),
                 format_angle_rad(self.dimension(start_angle)?),
             );
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisOrigin"),
                 format_point3_mm(axis_origin),

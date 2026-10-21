@@ -7,6 +7,7 @@ mod digests;
 mod flex_history;
 mod helix_surfaces;
 mod homogeneous_poles;
+mod native_properties;
 mod parameters_extrude;
 mod patterns_history;
 mod record_losses;

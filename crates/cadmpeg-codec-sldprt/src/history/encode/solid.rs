@@ -177,7 +177,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         .is_some_and(|names| names.contains("D1"))
                 }))
                 && !parameters.contains_key("Depth");
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if extent_is_unresolved && existing.is_none() {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} requires retained extrusion extent data",
@@ -584,7 +584,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     format_angle_rad(self.dimension(drill_point_angle)?.into()),
                 );
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             match face.as_ref().map(|face| (face, face_selection_value(face))) {
                 Some((_, Some(selection))) => {
                     properties.insert(cadmpeg_core::nonblank_literal!("Face"), selection);

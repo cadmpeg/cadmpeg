@@ -74,7 +74,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ))
             })?;
             require_same_family(existing, &feature.id, &["TrimSurface", "SurfaceTrim"])?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             properties.insert(cadmpeg_core::nonblank_literal!("Tool"), tool);
             properties.insert(cadmpeg_core::nonblank_literal!("Keep"), keep_token.into());
@@ -113,7 +113,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 cadmpeg_core::nonblank_literal!("Distance"),
                 format_length_mm(self.dimension(distance)?.into()),
             );
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             let method =
                 crate::feature_schema::surface_extension_token(method).ok_or_else(|| {
@@ -175,7 +175,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 cadmpeg_core::nonblank_literal!("Distance"),
                 format_length_mm(self.dimension(distance)?.into()),
             );
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Edges"), edges);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("SupportFaces"),
@@ -268,7 +268,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     ),
                 );
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 write_native_selection(
                     &mut properties,
@@ -340,7 +340,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     ),
                 );
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 write_native_selection(
                     &mut properties,
@@ -399,7 +399,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 cadmpeg_core::nonblank_literal!("Distance"),
                 format_length_mm(self.dimension(distance)?),
             );
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "OffsetSurface".into(), |record| record.kind.clone()),
@@ -452,7 +452,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("GapTolerance");
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("MergeEntities"),
@@ -523,7 +523,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ))
             })?;
             require_same_family(existing, &feature.id, &["FilledSurface", "FillSurface"])?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Boundary"), boundary);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("SupportFaces"),
@@ -593,7 +593,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     format_angle_rad(self.dimension(angle)?.into()),
                 );
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             let fallback = existing.map_or("", |record| record.id.as_str());
             if let Some(faces) = faces {
                 write_native_selection(

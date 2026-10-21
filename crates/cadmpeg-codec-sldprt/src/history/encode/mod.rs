@@ -59,6 +59,24 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             .unwrap_or_default()
     }
 
+    /// Preserve document-owned native detail while regenerating canonical fields.
+    fn base_properties(&self) -> BTreeMap<NonBlankString, String> {
+        let Some(existing) = self.existing else {
+            return self.feature.source_properties.clone();
+        };
+        let consumed =
+            crate::history::project::consumed::keys(self.feature.evaluation.definition());
+        existing
+            .properties
+            .iter()
+            .filter(|(key, _)| {
+                !consumed.contains(&key.as_str())
+                    && !crate::history::project::consumed::FEATURE_KEYS.contains(&key.as_str())
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
+
     /// Resolve a temporary target value from the document's single binding.
     fn dimension<Q: DimensionValue>(&self, dimension: &Dimension<Q>) -> Result<Q, CodecError> {
         match dimension {

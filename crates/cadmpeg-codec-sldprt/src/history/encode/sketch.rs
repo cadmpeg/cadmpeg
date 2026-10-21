@@ -116,7 +116,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("Depth");
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
             properties.insert(cadmpeg_core::nonblank_literal!("Face"), face);
             properties.insert(
@@ -144,7 +144,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
                 parameters: self.base_parameters(),
-                properties: feature.source_properties.clone(),
+                properties: self.base_properties(),
             }
         })
     }
@@ -157,7 +157,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             NeutralFeatureEncoding {
                 kind: "3DSketch".into(),
                 parameters: self.base_parameters(),
-                properties: feature.source_properties.clone(),
+                properties: self.base_properties(),
             }
         })
     }
