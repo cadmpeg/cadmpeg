@@ -264,16 +264,7 @@ pub(crate) fn patch_payload(
         let record = &positioned;
         let id = annotation_id(record)?;
         let annotation = ir.model.pmi.iter().find(|annotation| annotation.id == id);
-        let (value, precision, basic, inspection, reference_only, text) = if !ir.scope.model {
-            (
-                record.value.get(),
-                record.precision,
-                record.basic,
-                record.inspection,
-                record.reference_only,
-                record.display_text().map(str::to_owned),
-            )
-        } else {
+        let (value, precision, basic, inspection, reference_only, text) = if ir.scope.model {
             let Some(annotation) = annotation else {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT PMI deletion of {id} requires synthesis"
@@ -327,6 +318,15 @@ pub(crate) fn patch_payload(
                 flag("inspection"),
                 flag("reference_only"),
                 text,
+            )
+        } else {
+            (
+                record.value.get(),
+                record.precision,
+                record.basic,
+                record.inspection,
+                record.reference_only,
+                record.display_text().map(str::to_owned),
             )
         };
         FloatPatchSlot::read(

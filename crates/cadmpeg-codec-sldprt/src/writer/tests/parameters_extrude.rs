@@ -167,7 +167,7 @@ fn semantic_writer_renders_source_equation_aliases_from_current_parameter_names(
             result.expression.dependencies().collect::<Vec<_>>(),
             vec![&target.id]
         );
-        assert!(target.properties.get("EquationId").is_none());
+        assert!(!target.properties.contains_key("EquationId"));
         assert!(sldprt_native(decoded.ir())
             .feature_histories
             .iter()

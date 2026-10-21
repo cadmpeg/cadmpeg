@@ -101,7 +101,10 @@ fn run() {
     let mut features = ir.model.features.clone();
     let ctx = cadmpeg_test_support::service_decode_context();
     for feature in &mut features {
-        assert_eq!(feature.dependencies.as_slice(), [dependency.clone()]);
+        assert_eq!(
+            feature.dependencies.as_slice(),
+            std::slice::from_ref(&dependency)
+        );
         let mut references = Vec::new();
         feature
             .definition()

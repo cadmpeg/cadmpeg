@@ -7,9 +7,6 @@ use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 
 #[test]
 fn unheld_native_scalar_is_authored_from_typed_fields_after_wire_parse() {
-    let source = native_control_source(None);
-    // CADIR retains evidence and typed content, without native lane bytes.
-    let wire = serde_json::to_value(&source).expect("typed native serializes");
     fn no_physical_positions(value: &serde_json::Value) {
         match value {
             serde_json::Value::Object(fields) => {
@@ -25,6 +22,10 @@ fn unheld_native_scalar_is_authored_from_typed_fields_after_wire_parse() {
             _ => {}
         }
     }
+    let source = native_control_source(None);
+    // CADIR retains evidence and typed content, without native lane bytes.
+    let wire = serde_json::to_value(&source).expect("typed native serializes");
+
     no_physical_positions(&wire);
     let mut source: SldprtNative = serde_json::from_value(wire).expect("typed native parses");
     assert!(source.feature_input_lanes[0]
@@ -82,9 +83,9 @@ fn native_control_source(configuration: Option<String>) -> SldprtNative {
         kind: "Feature".into(),
         input_class: None,
         suppressed: false,
-        parameters: Default::default(),
-        dimension_properties: Default::default(),
-        properties: Default::default(),
+        parameters: std::collections::BTreeMap::default(),
+        dimension_properties: std::collections::BTreeMap::default(),
+        properties: std::collections::BTreeMap::default(),
         text: None,
         content: Vec::new(),
     };
@@ -93,7 +94,7 @@ fn native_control_source(configuration: Option<String>) -> SldprtNative {
     let history = crate::records::FeatureHistory {
         id: "sldprt:history#controls".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![feature],

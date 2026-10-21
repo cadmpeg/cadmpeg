@@ -495,6 +495,8 @@ fn semantic_writer_round_trips_native_axis_helix() {
 
 #[test]
 fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::report::export::WritePath;
     use cadmpeg_ir::{
         features::{FeatureOperation, ParameterValue},
         scalar::Length,
@@ -555,8 +557,6 @@ fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
         .unwrap();
     // E1 permits retained layout when its decoded content agrees with a
     // source-free write. An opaque carrier cannot supply an authoring law.
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-    use cadmpeg_ir::report::export::WritePath;
     let synthesis = SldprtCodec
         .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
         .unwrap();

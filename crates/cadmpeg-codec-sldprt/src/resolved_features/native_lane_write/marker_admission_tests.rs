@@ -7,7 +7,7 @@ fn source() -> SldprtNative {
     let history = crate::records::FeatureHistory {
         id: "sldprt:history#operand-control".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![crate::records::Feature {
@@ -21,9 +21,9 @@ fn source() -> SldprtNative {
             kind: "Sketch".into(),
             input_class: Some("moProfileFeature_c".into()),
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: std::collections::BTreeMap::default(),
+            dimension_properties: std::collections::BTreeMap::default(),
+            properties: std::collections::BTreeMap::default(),
             text: None,
             content: Vec::new(),
         }],
@@ -71,12 +71,10 @@ fn source() -> SldprtNative {
     .unwrap();
     assert_eq!(lane.sketch_entities.len(), 2);
     assert_eq!(lane.scalars.len(), 1);
-    assert!(
-        lane.scalars[0]
-            .operands
-            .iter()
-            .all(|operand| operand.entity_ref.is_some())
-    );
+    assert!(lane.scalars[0]
+        .operands
+        .iter()
+        .all(|operand| operand.entity_ref.is_some()));
     SldprtNative {
         feature_histories: vec![history],
         feature_input_lanes: vec![lane],
@@ -118,12 +116,10 @@ fn linked_native_scalar_requires_reconstructible_markers_but_keeps_independent_n
     assert_eq!(lane.sketch_entities.len(), 2);
     assert_eq!(lane.scalars[0].value.get(), 0.025);
     assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
-    assert!(
-        lane.scalars[0]
-            .operands
-            .iter()
-            .all(|operand| operand.entity_ref.is_some())
-    );
+    assert!(lane.scalars[0]
+        .operands
+        .iter()
+        .all(|operand| operand.entity_ref.is_some()));
     assert_eq!(
         dispositions.record_disposition(
             "sldprt",
@@ -185,11 +181,9 @@ fn linked_native_scalar_requires_reconstructible_markers_but_keeps_independent_n
                 ),
                 NativeDisposition::Dropped
             );
-            assert!(
-                losses
-                    .iter()
-                    .any(|loss| loss.message.contains(&operand.reference_ref))
-            );
+            assert!(losses
+                .iter()
+                .any(|loss| loss.message.contains(&operand.reference_ref)));
         }
     }
 }

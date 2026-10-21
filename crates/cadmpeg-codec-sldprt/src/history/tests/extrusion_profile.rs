@@ -141,6 +141,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_extrusion_termination() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::features::{
         ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
     };
@@ -365,7 +366,6 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         &mut edited,
     )
     .unwrap();
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(&edited, Some(decoded.source_fidelity())),
@@ -468,6 +468,7 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
 #[test]
 fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -523,7 +524,10 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)), ..
         }) if profile == &profile_a.id
     ));
-    assert_eq!(extrusion.dependencies.as_slice(), [profile_a.id.clone()]);
+    assert_eq!(
+        extrusion.dependencies.as_slice(),
+        std::slice::from_ref(&profile_a.id)
+    );
     let state_a = super::effective_definition(
         decoded.ir(),
         &decoded.ir().model.configurations[0],
@@ -550,7 +554,6 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
             ..
         }) if profile == &profile_b.id
     ));
-    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
     let ctx = cadmpeg_test_support::service_decode_context();
     let feature_references = |ir: &cadmpeg_ir::CadIr, state: &FeatureDefinition| {
         let mut references = Vec::new();
