@@ -46,14 +46,16 @@ impl Serialize for TokenValue {
             Omitted,
             Integer(i64),
             Real(FiniteReal),
-            String(crate::text::NativeText<&'a [u8]>),
+            String(cadmpeg_ir::native::bytes::NativeBytes<&'a [u8]>),
             Unreadable(ParameterDefect),
         }
         match self {
             Self::Omitted => Wire::Omitted,
             Self::Integer(value) => Wire::Integer(*value),
             Self::Real(value) => Wire::Real(*value),
-            Self::String(bytes) => Wire::String(crate::text::NativeText::from(bytes.as_ref())),
+            Self::String(bytes) => {
+                Wire::String(cadmpeg_ir::native::bytes::NativeBytes::from(bytes.as_ref()))
+            }
             Self::Unreadable(defect) => Wire::Unreadable(*defect),
         }
         .serialize(serializer)

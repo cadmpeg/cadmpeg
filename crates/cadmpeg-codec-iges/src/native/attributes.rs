@@ -29,7 +29,7 @@ pub(super) fn serialize_product_property<S: Serializer>(
         form: i64,
         property_kind: ProductPropertyKind,
         #[serde(skip_serializing_if = "Option::is_none")]
-        value: Option<&'a Option<crate::text::NativeText<Vec<u8>>>>,
+        value: Option<&'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>>,
         owners: &'a [String],
         #[serde(skip_serializing_if = "Option::is_none")]
         neutral_values: Option<&'a ProjectedValues>,
@@ -133,7 +133,7 @@ pub(super) fn serialize_definition<S: Serializer>(
         id: &'a str,
         source_entity: &'a str,
         form: i64,
-        name: &'a Option<crate::text::NativeText<Vec<u8>>>,
+        name: &'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
         attribute_list_type: Option<i64>,
         declared_attribute_count: Option<i64>,
         attributes: Vec<Schema<'a>>,
@@ -170,7 +170,7 @@ pub(super) fn serialize_definition<S: Serializer>(
             id: &'a str,
             source_entity: &'a str,
             form: i64,
-            name: &'a Option<crate::text::NativeText<Vec<u8>>>,
+            name: &'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
             attribute_list_type: Option<i64>,
             declared_attribute_count: Option<i64>,
             attributes: &'a [super::NativeAttributeDefinition],

@@ -56,7 +56,7 @@ pub(super) fn project(
         let id = ids::product(&Stem::directory(source_sequence(source)?));
         let label = name
             .as_ref()
-            .and_then(|value| value.text())
+            .and_then(crate::text::decoded)
             .filter(|value| !value.trim().is_empty())
             .map(str::to_owned);
         definitions.insert(

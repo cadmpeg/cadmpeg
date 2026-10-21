@@ -80,7 +80,7 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         json!({
             "source_entity":"iges:entity:directory#99", "kind":"visible_blank_pattern",
             "fallback_line_font_number": 1, "segment_count": 2, "lengths": [2.0, 1.0],
-            "hexadecimal_pattern": "A",
+            "hexadecimal_pattern": "41",
         }),
     );
     install(

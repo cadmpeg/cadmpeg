@@ -3,7 +3,7 @@
 
 use super::{AttributeValue, Fields, NativePropertyValue};
 use crate::parameter::TokenValue;
-use crate::text::NativeText;
+use cadmpeg_ir::native::bytes::NativeBytes;
 
 struct Builder(Fields);
 
@@ -32,13 +32,15 @@ impl Builder {
     fn text(
         &mut self,
         name: &str,
-        value: Option<&NativeText<Vec<u8>>>,
+        value: Option<&NativeBytes<Vec<u8>>>,
     ) -> Result<(), &'static str> {
         if let Some(value) = value {
             self.0.push((
                 name.to_owned(),
                 vec![AttributeValue::String(
-                    value.text().ok_or("property text is not UTF-8")?.to_owned(),
+                    crate::text::decoded(value)
+                        .ok_or("property text is not UTF-8")?
+                        .to_owned(),
                 )],
             ));
         }
@@ -354,7 +356,7 @@ pub(super) fn name(value: &NativePropertyValue) -> Result<String, &'static str> 
     match value {
         NativePropertyValue::GenericData { name, .. } => name
             .as_ref()
-            .and_then(NativeText::text)
+            .and_then(crate::text::decoded)
             .filter(|name| !name.trim().is_empty())
             .map(str::to_owned)
             .ok_or("generic attribute has no readable name"),

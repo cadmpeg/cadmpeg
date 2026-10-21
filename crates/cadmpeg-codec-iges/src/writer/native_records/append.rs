@@ -56,7 +56,7 @@ fn encode(arena: &str, record: &NativeRecord, targets: &Targets) -> Result<Entit
     if matches!(type_code, 304 | 310 | 312) {
         result.status = EntityStatus::Definition;
     }
-    result
+    Ok(result)
 }
 
 fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
@@ -69,32 +69,35 @@ fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
         .into_iter()
         .flatten()
     {
-        let Some(source) = record.field("source_entity").and_then(Value::as_str) else {
+        let Ok(fields) = record.fields() else {
             continue;
         };
-        let font = if let Some(definition) =
-            record.field("line_font_definition").and_then(Value::as_str)
-        {
-            let Some([index]) = targets.get(definition).map(Vec::as_slice) else {
-                continue;
-            };
-            if entities
-                .get(*index)
-                .is_none_or(|entity| entity.type_code != 304)
-            {
-                continue;
-            }
-            DirectoryLineFont::Definition(*index)
-        } else {
-            let Some(number) = record
-                .field("line_font_number")
-                .and_then(Value::as_i64)
-                .filter(|number| *number >= 0)
-            else {
-                continue;
-            };
-            DirectoryLineFont::Number(number)
+        let Some(source) = fields.get("source_entity").and_then(Value::as_str) else {
+            continue;
         };
+        let font =
+            if let Some(definition) = fields.get("line_font_definition").and_then(Value::as_str) {
+                let Some([index]) = targets.get(definition).map(Vec::as_slice) else {
+                    continue;
+                };
+                if entities
+                    .get(*index)
+                    .is_none_or(|entity| entity.type_code != 304)
+                {
+                    continue;
+                }
+                DirectoryLineFont::Definition(*index)
+            } else {
+                let Some(number) = record
+                    .field("line_font_number")
+                    .as_ref()
+                    .and_then(Value::as_i64)
+                    .filter(|number| *number >= 0)
+                else {
+                    continue;
+                };
+                DirectoryLineFont::Number(number)
+            };
         if let Some(indices) = targets.get(source) {
             for index in indices {
                 if let Some(entity) = entities.get_mut(*index) {
@@ -105,7 +108,7 @@ fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
     }
 }
 
-pub(super) fn append(
+pub(in crate::writer) fn append(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
     version: crate::IgesVersion,

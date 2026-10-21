@@ -62,7 +62,10 @@ impl Fields<'_> {
         } else if let Some(value) = value.as_f64() {
             AttributeValue::float(value).ok_or("native number is not finite")?
         } else if let Some(value) = value.as_str() {
-            AttributeValue::String(value.to_owned())
+            AttributeValue::String(
+                String::from_utf8(crate::text::field(&Value::String(value.to_owned()))?)
+                    .map_err(|_| "native text is not UTF-8")?,
+            )
         } else if let Some(value) = value.as_bool() {
             AttributeValue::Boolean(value)
         } else {
