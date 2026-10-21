@@ -899,7 +899,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "12.5"
     );
@@ -944,7 +944,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &boolean_parameter
+            boolean_parameter
         ),
         "true"
     );

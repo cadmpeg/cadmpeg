@@ -90,9 +90,7 @@ fn decode_over_routes(
             &matched,
             ir,
             report,
-            annotations,
-            unknowns,
-            cadmpeg_ir::ArenaClasses::default(),
+            (annotations, unknowns, cadmpeg_ir::ArenaClasses::default()),
         );
     }
 
@@ -3731,9 +3729,7 @@ fn finish_decode(
         matched,
         ir,
         report,
-        annotations,
-        unknowns,
-        source_untyped,
+        (annotations, unknowns, source_untyped),
     )
 }
 
@@ -3803,10 +3799,9 @@ fn decode_result(
     matched: &DialectMatch,
     mut ir: CadIr,
     mut body: DecodeBody,
-    annotations: Annotations,
-    unknowns: Vec<UnknownRecord>,
-    mut source_untyped: cadmpeg_ir::ArenaClasses,
+    source: (Annotations, Vec<UnknownRecord>, cadmpeg_ir::ArenaClasses),
 ) -> Result<Decoded, CodecError> {
+    let (annotations, unknowns, mut source_untyped) = source;
     ir.scope = if ctx.container_only() {
         cadmpeg_ir::ContentScope::container()
     } else {
