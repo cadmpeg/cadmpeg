@@ -207,17 +207,23 @@ fn genuinely_untyped_marker_only_lane_is_omitted() {
     for marker in &mut lane.sketch_entities {
         marker.reclassify(SketchInputKind::from_native_code(9));
     }
+    let lane_id = lane.id.clone();
+    let marker_ids = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| marker.id().to_owned())
+        .collect::<Vec<_>>();
     let (target, losses, dispositions) = regenerate_control(&source);
     assert!(target.feature_input_lanes.is_empty());
     assert_eq!(
-        dispositions.record_disposition("sldprt", "feature_input_lanes", &lane.id),
+        dispositions.record_disposition("sldprt", "feature_input_lanes", &lane_id),
         NativeDisposition::Dropped
     );
-    for marker in &lane.sketch_entities {
+    for marker_id in &marker_ids {
         assert_eq!(
-            dispositions.record_disposition("sldprt", "sketch_input_entities", marker.id()),
+            dispositions.record_disposition("sldprt", "sketch_input_entities", marker_id),
             NativeDisposition::Dropped
         );
-        assert!(losses.iter().any(|loss| loss.message.contains(marker.id())));
+        assert!(losses.iter().any(|loss| loss.message.contains(marker_id)));
     }
 }
