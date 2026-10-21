@@ -44,35 +44,27 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             .and_then(|row| *row);
         let class_matches = header
             .zip(primary_type)
-            .is_some_and(|(header, primary_type)| {
-                let ordinal = ctx
-                    .native
-                    .design_types
+            .is_some_and(|(header, primary_type)| header.class_tag == primary_type.class_tag);
+        let source_layout_matches = header.is_some_and(|header| {
+            header.byte_offset.is_none_or(|offset| {
+                let header_width =
+                    cadmpeg_core::decode::u64_from_index(header.class_tag.as_str().len()) + 8;
+                let optional_width: u64 = settings
+                    .inputs
+                    .slots()
                     .iter()
-                    .filter(|row| {
-                        design_stream(row.id()).strip_suffix("MetaStream.dat") == type_stream
-                            && row.byte_offset < primary_type.byte_offset
-                    })
-                    .count();
-                header.class_tag.as_str().parse::<usize>().ok() == ordinal.checked_add(256)
-            });
-        let expected_pair = header.and_then(|header| {
-            let header_width =
-                cadmpeg_core::decode::u64_from_index(header.class_tag.as_str().len()) + 8;
-            let optional_width: u64 = settings
-                .inputs
-                .slots()
-                .iter()
-                .map(|slot| if slot.is_some() { 11 } else { 1 })
-                .sum();
-            let version_flags = settings.inputs.rule_reference_tail_width();
-            let delta = header_width
-                + cadmpeg_core::decode::u64_from_index(settings_prefix::LEN)
-                + optional_width
-                + 33
-                + version_flags
-                + 1;
-            header.byte_offset.and_then(|offset| offset.checked_add(delta))
+                    .map(|slot| if slot.is_some() { 11 } else { 1 })
+                    .sum();
+                let version_flags = settings.inputs.rule_reference_tail_width();
+                let delta = header_width
+                    + cadmpeg_core::decode::u64_from_index(settings_prefix::LEN)
+                    + optional_width
+                    + 33
+                    + version_flags
+                    + 1;
+                offset == settings.byte_offset
+                    && offset.checked_add(delta) == Some(settings.paired_byte_offset)
+            })
         });
         let references_resolve = settings.record_references().all(|index| {
             u32::try_from(index)
@@ -81,8 +73,7 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         });
         let valid = unique
             && class_matches
-            && expected_pair == Some(settings.paired_byte_offset)
-            && header.is_some_and(|header| header.byte_offset == Some(settings.byte_offset))
+            && source_layout_matches
             && typed(
                 settings.record_index,
                 SETTINGS_GUID,

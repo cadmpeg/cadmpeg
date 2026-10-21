@@ -96,3 +96,28 @@ fn settings_native_links_reject_missing_references_wrong_types_and_duplicate_car
         });
     }
 }
+
+#[test]
+fn settings_native_links_use_typed_class_identity_without_source_offsets() {
+    let mut native = native();
+    for row in &mut native.design_types {
+        row.byte_offset = None;
+        row.type_guid_offset = None;
+        row.version_offset = None;
+    }
+    for header in &mut native.design_record_headers {
+        header.byte_offset = None;
+    }
+    for wrong_class in [false, true] {
+        if wrong_class {
+            native.design_record_headers[0].class_tag = "257".to_owned().try_into().unwrap();
+        }
+        crate::test_support::with_decode_context(|decode| {
+            let ir = cadmpeg_ir::CadIr::empty();
+            let ctx = crate::validate::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::validate(&ctx, &mut findings);
+            assert_eq!(findings.len(), usize::from(wrong_class));
+        });
+    }
+}
