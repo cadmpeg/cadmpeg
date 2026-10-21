@@ -554,6 +554,15 @@ fn unchanged_owned_dimension_retains_all_six_entity_links_without_source_bytes()
         .losses
         .iter()
         .any(|loss| loss.message.contains("ordered entity links reduce")));
+    assert!(
+        !plan.report().losses.iter().any(|loss| {
+            ir.model.sketch_constraints.iter().any(|constraint| {
+                loss.message
+                    .starts_with(&format!("Sketch constraint {} is omitted:", constraint.id))
+            })
+        }),
+        "all unchanged canonical constraints have an exact supported encoding"
+    );
     let mut output = Vec::new();
     plan.write_to(&mut output).unwrap();
     let written = F3dCodec
