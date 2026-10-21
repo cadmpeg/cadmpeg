@@ -66,6 +66,9 @@ pub(crate) struct SemanticOutput {
     pub(crate) dialect: cadmpeg_core::dialect::DialectId,
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
+    /// The emitted archive used retained layout or payload bytes. Merely
+    /// receiving source metadata does not make an authored write a patch.
+    pub(crate) source_consumed: bool,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -188,7 +191,7 @@ pub(super) fn write_semantic_at(
     } else {
         None
     };
-    let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
+    let coverage = semantic_coverage(retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
     if !retain_native_brep && requires_native_partition(ir) {
         return Err(CodecError::UnsupportedContent(
@@ -318,6 +321,11 @@ pub(super) fn write_semantic_at(
         &generated_partition_sections,
         retain_native_brep,
     )?;
+    // The source scan supplies the header, section type ids, directory fields
+    // and cache-cell layout below. Other source records count only when their
+    // payload was actually selected for output by a retained-byte branch.
+    let source_consumed =
+        source_scan.is_some() || retain_native_brep || replay_swobjects || !opaque.is_empty();
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -356,6 +364,7 @@ pub(super) fn write_semantic_at(
     Ok(SemanticOutput {
         dialect: written_dialect,
         coverage,
+        source_consumed,
     })
 }
 
@@ -363,8 +372,7 @@ pub(super) fn write_semantic_at(
 /// `subds` are `Dropped` because `check_semantic_support` refuses them when
 /// non-empty.
 ///
-/// `patched` states that retained source records fed the write; `retained_brep`
-/// states that the retained Parasolid partition was replayed because
+/// `retained_brep` states that the retained Parasolid partition was replayed because
 /// `brep_local_sha256` still matches. Only that partition carries pcurves and
 /// procedural constructions: the generated and patched partitions do not
 /// encode them. Retained semantic PMI is carried only by the retained
@@ -380,7 +388,7 @@ pub(super) fn write_semantic_at(
 /// `WriterSphereSeamCurvesOmitted` accounts for withheld degenerate sphere-seam curves.
 /// `tessellations` stays `Written`: every mesh is written, and
 /// `WriterTessellationMetadataOmitted` charges only fields of written meshes.
-fn semantic_coverage(_patched: bool, retained_brep: bool) -> ArenaDispositions {
+fn semantic_coverage(retained_brep: bool) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Reported, Written};
     let brep_carried = if retained_brep { Written } else { Dropped };
     ArenaDispositions {

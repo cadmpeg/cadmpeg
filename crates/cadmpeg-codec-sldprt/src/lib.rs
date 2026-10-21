@@ -237,8 +237,8 @@ impl SldprtCodec {
     }
 
     /// Runs the semantic writer and names the path it stands for: `Patched` when
-    /// retained source records fed the write, `Synthesized` when the document was
-    /// built from the neutral IR alone.
+    /// retained layout or payload bytes actually fed the output, `Synthesized`
+    /// when output was authored without those bytes.
     fn write_semantic(
         ir: &CadIr,
         annotations: &Annotations,
@@ -246,13 +246,16 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let writer::SemanticOutput { dialect, coverage } =
-            writer::write_semantic_with_records(ir, annotations, records, writer)?;
+        let writer::SemanticOutput {
+            dialect,
+            coverage,
+            source_consumed,
+        } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         Ok(Written::Semantic {
-            path: if records.is_empty() {
-                SemanticPath::Synthesized
-            } else {
+            path: if source_consumed {
                 SemanticPath::Patched
+            } else {
+                SemanticPath::Synthesized
             },
             dialect,
             fidelity,
@@ -449,6 +452,75 @@ mod test_support;
 #[cfg(test)]
 mod tests {
     use super::SOURCE_IMAGE_ID;
+
+    #[test]
+    fn semantic_path_requires_consumed_source_bytes_not_supplied_records() {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let metadata = std::collections::BTreeMap::new();
+        for data in [None, Some(b"unused source bytes".as_slice())] {
+            let records = [super::SourceRecord {
+                id: "sldprt:test:unused#0".to_owned().try_into().unwrap(),
+                sha256: cadmpeg_ir::hash::sha256_hex(b"unused source bytes"),
+                data,
+                metadata: &metadata,
+            }];
+            let mut output = Vec::new();
+            let written = super::SldprtCodec::write_semantic(
+                &ir,
+                &cadmpeg_ir::Annotations::default(),
+                &records,
+                super::SemanticFidelity::NotConsumed,
+                &mut output,
+            )
+            .unwrap();
+            assert!(matches!(
+                written,
+                super::Written::Semantic {
+                    path: super::SemanticPath::Synthesized,
+                    ..
+                }
+            ));
+            assert!(!output.is_empty());
+        }
+    }
+
+    #[test]
+    fn source_layout_consumption_does_not_supply_document_content() {
+        use cadmpeg_ir::{Codec, DecodeOptions};
+        // Use the ordinary existing native source builder unchanged. Its body
+        // must not enter the empty current document through layout selection.
+        let source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::triangle_body(),
+        );
+        let metadata = std::collections::BTreeMap::new();
+        let records = [super::SourceRecord {
+            id: SOURCE_IMAGE_ID.to_owned().try_into().unwrap(),
+            sha256: cadmpeg_ir::hash::sha256_hex(&source),
+            data: Some(source.as_slice()),
+            metadata: &metadata,
+        }];
+        let mut output = Vec::new();
+        let written = super::SldprtCodec::write_semantic(
+            &cadmpeg_ir::CadIr::empty(),
+            &cadmpeg_ir::Annotations::default(),
+            &records,
+            super::SemanticFidelity::NotConsumed,
+            &mut output,
+        )
+        .unwrap();
+        assert!(matches!(
+            written,
+            super::Written::Semantic {
+                path: super::SemanticPath::Patched,
+                ..
+            }
+        ));
+        let output = super::SldprtCodec
+            .decode(&mut std::io::Cursor::new(output), &DecodeOptions::default())
+            .unwrap();
+        assert!(output.ir().model.bodies.is_empty());
+        assert!(output.ir().model.faces.is_empty());
+    }
 
     #[test]
     fn source_record_join_borrows_the_retained_source_image() {
