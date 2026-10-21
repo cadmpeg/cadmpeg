@@ -701,12 +701,17 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    assert_eq!(parameter.expression, "50 mm".into());
+    // D5 preserves the original authored token, distinct from the API's
+    // canonical literal spelling. Both denote the exact same typed cache.
+    assert_eq!(parameter.expression, "50mm".into());
+    let expected_value = cadmpeg_ir::features::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+    );
+    assert_eq!(parameter.value, Some(expected_value.clone()));
+    assert_eq!(expected_value.literal_expression(), "50 mm".into());
     assert_eq!(
-        parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(50.0).unwrap()
-        ))
+        parameter.expression.literal_value_as(&expected_value),
+        Some(expected_value)
     );
     // W2: retain the typed native copy, regenerated from the canonical 50 mm
     // parameter. Its semantic scalar link identifies that copy, not authority.
