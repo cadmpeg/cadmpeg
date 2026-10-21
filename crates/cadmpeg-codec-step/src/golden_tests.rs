@@ -192,6 +192,7 @@ fn golden_output_is_deterministic() {
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
     let inputs = harness().fixture_inputs();
+    assert!(!inputs.is_empty(), "no STEP fixtures to compare");
     let mut summary = cadmpeg_test_support::depth::DepthSummary::default();
     for input in &inputs {
         let compared = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
