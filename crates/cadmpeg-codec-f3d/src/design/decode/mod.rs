@@ -8,6 +8,7 @@ pub(crate) mod components;
 pub(crate) mod decal;
 pub(crate) mod dimension_frames;
 mod image;
+pub(crate) mod joint_motion;
 pub(crate) mod mesh;
 pub(crate) mod meta;
 pub(crate) mod operands;
