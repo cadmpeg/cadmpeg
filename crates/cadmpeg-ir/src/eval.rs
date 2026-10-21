@@ -4091,7 +4091,7 @@ fn model_axis_revolution_jet(
 /// line carrier uses signed distance. Other curve carriers retain their native
 /// parameterization. A line used by more than one edge is only unambiguous
 /// when every retained edge range agrees, unless the construction stores its
-/// neutral carrier interval explicitly.
+/// finite carrier interval explicitly on the directrix.
 fn record_u_interval(
     record_bounds: Option<crate::geometry::RecordBounds>,
 ) -> Option<[FiniteReal; 2]> {
@@ -4213,8 +4213,8 @@ fn construction_curve_parameter(
     if !curve.geometry.solved().is_some_and(is_line_geometry) {
         return directed(parameter, surface_derivative);
     }
-    let line_interval = if let Some(carrier_interval) = carrier_interval {
-        carrier_interval
+    let line_interval = if let Some(interval) = curve.parameter_range {
+        crate::topology::ParameterInterval::from(interval).finite_components()
     } else {
         let mut ranges = index
             .ir()
