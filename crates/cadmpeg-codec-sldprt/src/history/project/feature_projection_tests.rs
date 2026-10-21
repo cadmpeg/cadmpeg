@@ -1411,7 +1411,7 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
         let name = cadmpeg_core::text::NonBlankString::new(name).unwrap();
         source_profile
             .dimension_properties
-            .entry(name)
+            .entry(name.to_string())
             .or_default()
             .insert(
                 cadmpeg_core::nonblank_literal!("Value"),
