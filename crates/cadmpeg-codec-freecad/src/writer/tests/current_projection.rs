@@ -73,8 +73,8 @@ fn geometry_source_patch_uses_its_scope_and_declines_a_neutral_body_edit() {
 
 #[test]
 fn coherent_array_reference_rename_declines_patch_and_regenerates_typed_values() {
-    for (bytes, owner, count) in [
-        (CORE_DESIGN_PRODUCT, "fcstd:native:object#Occurrence", 0),
+    for (bytes, owner, count, containers) in [
+        (CORE_DESIGN_PRODUCT, "fcstd:native:object#Occurrence", 0, 0),
         (
             include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -83,13 +83,14 @@ fn coherent_array_reference_rename_declines_patch_and_regenerates_typed_values()
             .as_slice(),
             "fcstd:native:object#PinArray",
             3,
+            1,
         ),
     ] {
-        assert_coherent_reference_rename(bytes, owner, count);
+        assert_coherent_reference_rename(bytes, owner, count, containers);
     }
 }
 
-fn assert_coherent_reference_rename(bytes: &[u8], owner: &str, count: usize) {
+fn assert_coherent_reference_rename(bytes: &[u8], owner: &str, count: usize, containers: usize) {
     let source = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
@@ -183,7 +184,15 @@ fn assert_coherent_reference_rename(bytes: &[u8], owner: &str, count: usize) {
         .collect::<Vec<_>>();
     expected.sort_by_key(|occurrence| occurrence.ordinal);
     actual.sort_by_key(|occurrence| occurrence.ordinal);
-    assert_eq!(expected.len(), count.max(1));
+    // The public PinArray is also a component of its source group, so it
+    // carries a separate definition/container occurrence beside its 3 uses.
+    let container_count = expected.iter().filter(|occurrence| {
+        matches!(&occurrence.prototype, cadmpeg_ir::products::PrototypeReference::Local { definition }
+            if current.model.product_definitions.iter().any(|record| record.id == *definition && record.native_ref.as_deref() == Some(owner.as_str())))
+    }).count();
+    assert_eq!(container_count, containers);
+    assert_eq!(expected.len() - container_count, count.max(1));
+    assert_eq!(expected.len(), count.max(1) + containers);
     assert_eq!(actual.len(), expected.len());
     assert_eq!(
         output.ir().model.occurrences.len(),
