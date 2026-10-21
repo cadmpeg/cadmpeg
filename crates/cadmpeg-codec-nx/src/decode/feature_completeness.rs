@@ -152,9 +152,7 @@ fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
     first.dot(second).abs() <= EPS_PERPENDICULAR * (first.norm() * second.norm())
 }
 
-pub(crate) fn incomplete_expression_parameters(
-    ir: &CadIr,
-) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
+pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
     use cadmpeg_ir::features::ParameterValue;
     use std::collections::BTreeMap;
     let ids = ir
@@ -228,7 +226,7 @@ pub(crate) fn incomplete_expression_parameters(
                             evaluated.get(&ir.model.parameters.get(index)?.id).copied()
                         })
                     })
-                    .map(|value| value.get())
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
             };
             let canonical = native_value.and_then(|value| {
                 unit.map_or(Some(value), |unit| match unit {
@@ -266,7 +264,7 @@ pub(crate) fn incomplete_expression_parameters(
             .filter(|parameter| !evaluated.contains_key(&parameter.id))
             .map(|parameter| parameter.id.clone()),
     );
-    Ok(incomplete)
+    incomplete
 }
 
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {

@@ -760,14 +760,14 @@ fn topology_retains_entity_attribute_list_references() {
             &DecodeOptions::default(),
         )
         .expect("required invariant");
-    let references = (&crate::test_support::source_fidelity::native_namespace(
+    let references = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<super::ParasolidTopologyAttributeListReference>(
-            "parasolid_topology_attribute_list_references",
-        )
-        .expect("required invariant");
+    )
+    .arena_as::<super::ParasolidTopologyAttributeListReference>(
+        "parasolid_topology_attribute_list_references",
+    )
+    .expect("required invariant");
     assert_eq!(references.len(), 5);
     assert_eq!(references[0].topology_type.code(), 14);
     assert_eq!(references[0].topology_xmt, 4);

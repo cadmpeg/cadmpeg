@@ -559,15 +559,13 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
             .map(String::as_str),
         Some("degree")
     );
-    assert!(feature_completeness::incomplete_expression_parameters(&ir)
-        .unwrap()
-        .is_empty());
+    assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
     ir.model.parameters[0]
         .properties
         .insert(cadmpeg_core::nonblank_literal!("unit"), "native".into());
     assert_eq!(
-        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir),
         [
             ir.model.parameters[0].id.clone(),
             ir.model.parameters[2].id.clone(),
@@ -670,30 +668,28 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
             cadmpeg_ir::scalar::Length::new(value).unwrap(),
         ));
     }
-    assert!(feature_completeness::incomplete_expression_parameters(&ir)
-        .unwrap()
-        .is_empty());
+    assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
     let mut inconsistent = ir.clone();
     inconsistent.model.parameters[1].value = Some(cadmpeg_ir::features::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
     ));
     assert_eq!(
-        feature_completeness::incomplete_expression_parameters(&inconsistent).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&inconsistent),
         [inconsistent.model.parameters[1].id.clone()].into()
     );
 
     let mut duplicate_name = ir.clone();
     duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
     assert_eq!(
-        feature_completeness::incomplete_expression_parameters(&duplicate_name).unwrap(),
-        Default::default(), // D3: token identities remain unambiguous after a display-name collision.
+        feature_completeness::incomplete_expression_parameters(&duplicate_name),
+        std::collections::BTreeSet::default(), // D3: token identities remain unambiguous after a display-name collision.
     );
 
     let mut unevaluated = ir.clone();
     unevaluated.model.parameters[1].value = None;
     assert_eq!(
-        feature_completeness::incomplete_expression_parameters(&unevaluated).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&unevaluated),
         [unevaluated.model.parameters[1].id.clone()].into()
     );
 
@@ -702,12 +698,12 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native {
                 kind: "TEST_OPERATION".into(),
-                parameters: (BTreeMap::default()).into(),
+                parameters: BTreeMap::default(),
             },
         ),
     );
     assert_eq!(
-        feature_completeness::incomplete_expression_parameters(&operation_owned).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&operation_owned),
         [operation_owned.model.parameters[1].id.clone()].into()
     );
 }
@@ -771,7 +767,7 @@ fn nx_cyclic_formula_table_retains_identity_dependency_edges() {
         vec![ir.model.parameters[0].id.clone()]
     );
     assert_eq!(
-        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir),
         ir.model
             .parameters
             .iter()
@@ -865,7 +861,7 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
         ));
     }
     assert_eq!(
-        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir),
         ir.model.parameters[2..]
             .iter()
             .map(|parameter| parameter.id.clone())

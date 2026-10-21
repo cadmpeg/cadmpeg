@@ -521,7 +521,7 @@ pub(crate) fn append_design_intent_losses(
         );
     }
 
-    let incomplete_expression_count = incomplete_expression_parameters(ir)?.len();
+    let incomplete_expression_count = incomplete_expression_parameters(ir).len();
     if incomplete_expression_count != 0 {
         push_report_loss(
             losses,

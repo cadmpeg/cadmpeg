@@ -532,7 +532,7 @@ mod tests {
     #[test]
     fn unchanged_stream_views_borrow_the_inflated_bytes() {
         let scan = crate::decode::Scan {
-            source_untyped: Default::default(),
+            source_untyped: std::cell::RefCell::default(),
             container: crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,
@@ -589,7 +589,7 @@ mod tests {
             }
         };
         let scan = crate::decode::Scan {
-            source_untyped: Default::default(),
+            source_untyped: std::cell::RefCell::default(),
             container: crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,

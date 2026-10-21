@@ -1028,7 +1028,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
-            },) if cadmpeg_ir::CadIr::empty().dimension_value(&actual_diameter).expect("dimension value").get() == 8.0)));
+            },) if cadmpeg_ir::CadIr::empty().dimension_value(actual_diameter).expect("dimension value").get() == 8.0)));
     assert!(matches!(
         non_boolean_feature_definition("RIB", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Rib {

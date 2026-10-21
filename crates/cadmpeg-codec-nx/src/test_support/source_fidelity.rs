@@ -6,6 +6,7 @@
 
 use cadmpeg_ir::{CadIr, NativeNamespace, NativeRecord, SourceFidelity};
 use serde_json::Value;
+use std::fmt::Write;
 
 pub(crate) fn native_namespace(ir: &CadIr, fidelity: &SourceFidelity) -> NativeNamespace {
     let mut namespace = ir.native.namespace("nx").expect("codec namespace").clone();
@@ -49,7 +50,10 @@ fn restore(value: &mut Value, path: &str, fidelity: &SourceFidelity) {
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             record.byte_len()
         );
-        *value = Value::String(bytes.iter().map(|byte| format!("{byte:02x}")).collect());
+        *value = Value::String(bytes.iter().fold(String::new(), |mut text, byte| {
+            write!(&mut text, "{byte:02x}").expect("formatting hexadecimal into a String");
+            text
+        }));
         return;
     }
     match value {
@@ -87,7 +91,11 @@ fn restore(value: &mut Value, path: &str, fidelity: &SourceFidelity) {
                             })
                             .collect();
                         *child =
-                            Value::String(bytes.iter().map(|byte| format!("{byte:02x}")).collect());
+                            Value::String(bytes.iter().fold(String::new(), |mut text, byte| {
+                                write!(&mut text, "{byte:02x}")
+                                    .expect("formatting hexadecimal into a String");
+                                text
+                            }));
                         continue;
                     }
                 }

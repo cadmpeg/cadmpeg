@@ -89,7 +89,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     Ok(Scan {
         container,
         streams,
-        source_untyped: Default::default(),
+        source_untyped: std::cell::RefCell::default(),
     })
 }
 
@@ -169,8 +169,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         &scan,
         ir,
         body,
-        annotations,
-        unknowns,
+        (annotations, unknowns),
         &mut admitted_entities,
     )
 }
@@ -181,10 +180,10 @@ fn decoded(
     scan: &Scan<'_>,
     mut ir: CadIr,
     mut body: DecodeBody,
-    annotations: cadmpeg_ir::Annotations,
-    unknowns: Vec<UnknownRecord>,
+    source: (cadmpeg_ir::Annotations, Vec<UnknownRecord>),
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
+    let (annotations, unknowns) = source;
     if ctx.container_only() {
         ir.scope = cadmpeg_ir::ContentScope::container();
     } else {

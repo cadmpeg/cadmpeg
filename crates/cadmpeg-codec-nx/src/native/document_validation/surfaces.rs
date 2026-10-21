@@ -5,7 +5,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde_json::Value;
 
-use super::values::*;
+use super::values::{array, fail, field, index, sized_array, uint, unique};
 
 pub(super) fn validate(
     ctx: &DecodeContext<'_>,
