@@ -425,7 +425,7 @@ fn inherit_replays_a_fully_typed_off_catalog_dialect() {
     let plan = plan(&result, true, TargetRequest::Inherit).unwrap();
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::VerbatimReplay
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
@@ -532,7 +532,7 @@ fn a_same_dialect_request_replays_under_both_spellings() {
         let plan = plan(&result, true, request).expect("the source's own dialect is writable");
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::VerbatimReplay
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
         ));
         assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
         assert!(plan.report().synthesis_cause().is_none(), "{request:?}");
@@ -632,7 +632,7 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         if label == "inherited" {
             assert!(matches!(
                 plan.report().write_path(),
-                cadmpeg_ir::report::export::WritePath::VerbatimReplay
+                cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
             ));
         } else {
             assert!(matches!(
