@@ -7,7 +7,6 @@ use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterValue};
 use std::collections::{BTreeSet, HashMap};
 
 use super::features::generated_feature_record_id;
-use crate::history::literals::format_parameter_value;
 use crate::history::parameters::{
     global_parameter_owners, parameters_with_incoherent_dependencies, render_parameter_expression,
 };
@@ -173,7 +172,7 @@ fn sync_neutral_parameters(
                 if let Some(value) = &parameter.value {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Value"),
-                        format_parameter_value(value),
+                        crate::history::literals::format_parameter_cache_value(value),
                     );
                 }
                 properties.insert(

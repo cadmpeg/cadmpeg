@@ -343,6 +343,15 @@ pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
     }
 }
 
+/// Preserve the cache's quantity when no operation-specific native role supplies
+/// it. An integral real needs a decimal point to distinguish it from an integer.
+pub(crate) fn format_parameter_cache_value(value: &ParameterValue) -> String {
+    match value {
+        ParameterValue::Real(value) => format!("{:?}", value.get()),
+        _ => format_parameter_value(value),
+    }
+}
+
 #[cfg(test)]
 mod direction_tests {
     use super::parse_valid_direction;
@@ -365,6 +374,26 @@ mod direction_tests {
 mod literal_tests {
     use super::{format_length_mm, LengthLiteral};
     use cadmpeg_ir::scalar::Length;
+
+    #[test]
+    fn native_cache_literals_keep_integral_real_distinct_from_integer() {
+        use cadmpeg_ir::{features::ParameterValue, scalar::FiniteReal};
+        for value in [
+            ParameterValue::Real(FiniteReal::new(2.0).unwrap()),
+            ParameterValue::Real(FiniteReal::new(-0.0).unwrap()),
+            ParameterValue::Real(FiniteReal::new(0.5).unwrap()),
+            ParameterValue::Integer(2),
+        ] {
+            let text = super::format_parameter_cache_value(&value);
+            assert_eq!(super::parse_parameter_literal(&text), Some(value));
+        }
+        assert_eq!(
+            super::format_parameter_cache_value(&ParameterValue::Real(
+                FiniteReal::new(2.0).unwrap()
+            )),
+            "2.0"
+        );
+    }
 
     #[test]
     fn length_literal_keeps_decimal_and_scientific_boundaries() {
