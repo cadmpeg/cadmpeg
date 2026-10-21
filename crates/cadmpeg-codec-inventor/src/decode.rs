@@ -1238,7 +1238,7 @@ fn decode_container<'a>(
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer {
             scope: ir.scope,
-            geometry_transferred: geometry_transferred,
+            geometry_transferred,
         },
         coverage,
         losses,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Neutral document content from the typed property and UFRx inventories.
+//! Neutral document content from the typed property and `UFRx` inventories.
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
@@ -263,7 +263,7 @@ fn project_properties(
     Ok(())
 }
 
-/// UFRx model-state values are source expressions. Resolve their identifier
+/// `UFRx` model-state values are source expressions. Resolve their identifier
 /// incidences to the same neutral parameter identities as the base document.
 fn configuration_expression(
     text: &str,

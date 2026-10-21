@@ -1296,11 +1296,10 @@ fn project_extrusion(
         cadmpeg_ir::scalar::SlopeAngle::try_from(angle_parameter(source, 5, index)?).ok()?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
         1 => LinearTermination::Blind {
-            length: ({
+            length: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(length).ok()?;
                 parameter_binding(source, 4, index)?
-            })
-            .into(),
+            },
         },
         4 => LinearTermination::ThroughNext {},
         5 => LinearTermination::ThroughAll {},
@@ -1308,10 +1307,9 @@ fn project_extrusion(
     };
     let side = ExtrudeSide {
         termination,
-        draft: ((taper.get() != 0.0)
+        draft: (taper.get() != 0.0)
             .then(|| parameter_binding(source, 5, index))
-            .flatten())
-        .map(Into::into),
+            .flatten(),
     };
     let extent = if boolean(source, 7, index)? {
         ExtrudeExtent::Symmetric { side }
@@ -1436,12 +1434,11 @@ fn project_fillet(
         groups.push(FilletGroup {
             edges: EdgeSelection::Native(edge_collection.id()),
             radius: RadiusSpec::Constant {
-                radius: (reference_binding(
+                radius: reference_binding(
                     source.identity.segment_token.as_str(),
                     radius_reference,
                     index,
-                )?)
-                .into(),
+                )?,
             },
             tangency_weight: None,
         });
@@ -1529,9 +1526,7 @@ fn project_chamfer(
                 FeatureDefinition::Operation(FeatureOperation::Chamfer {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                         edges: EdgeSelection::Native(edges.id()),
-                        spec: ChamferSpec::Distance {
-                            distance: (distance).into(),
-                        },
+                        spec: ChamferSpec::Distance { distance },
                     }),
                     flip_direction,
                 }),
@@ -1561,62 +1556,53 @@ fn project_hole(
     let kind = match hole_form {
         0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
-            drill_point_angle: ({
+            drill_point_angle: {
                 cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
                 parameter_binding(source, 6, index)?
-            })
-            .into(),
+            },
         },
         1 => HoleKind::Countersink {
-            diameter: ({
+            diameter: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
                 parameter_binding(source, 3, index)?
-            })
-            .into(),
-            angle: ({
+            },
+            angle: {
                 cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?;
                 parameter_binding(source, 5, index)?
-            })
-            .into(),
+            },
         },
         2 if point_angle.get() == 0.0 => HoleKind::Counterbore {
-            diameter: ({
+            diameter: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
                 parameter_binding(source, 3, index)?
-            })
-            .into(),
-            depth: ({
+            },
+            depth: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
                 parameter_binding(source, 4, index)?
-            })
-            .into(),
+            },
         },
         2 => HoleKind::CounterboreDrilled {
-            diameter: ({
+            diameter: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
                 parameter_binding(source, 3, index)?
-            })
-            .into(),
-            depth: ({
+            },
+            depth: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
                 parameter_binding(source, 4, index)?
-            })
-            .into(),
-            drill_point_angle: ({
+            },
+            drill_point_angle: {
                 cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
                 parameter_binding(source, 6, index)?
-            })
-            .into(),
+            },
         },
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
         1 => LinearTermination::Blind {
-            length: ({
+            length: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(depth).ok()?;
                 parameter_binding(source, 2, index)?
-            })
-            .into(),
+            },
         },
         4 => LinearTermination::ThroughNext {},
         5 => LinearTermination::ThroughAll {},
@@ -2900,10 +2886,12 @@ mod tests {
         ));
     }
 
+    type GeneratedExtrusion = (Feature, FeatureResultTopology, Vec<DesignParameter>);
+
     fn generated_extrusion(
         selections: &[u32],
         policy: DecodePolicy,
-    ) -> Option<Result<(Feature, FeatureResultTopology, Vec<DesignParameter>), CodecError>> {
+    ) -> Option<Result<GeneratedExtrusion, CodecError>> {
         let raw_length = raw_parameter(70);
         let raw_taper = raw_parameter(71);
         let neutral_parameters = vec![

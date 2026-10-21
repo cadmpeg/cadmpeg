@@ -79,16 +79,17 @@ pub(crate) fn fixture_with_ufrx(ufrx: &[u8]) -> Vec<u8> {
     file
 }
 
-/// The existing field-authored RSe envelope plus a schema-15 model-state stream.
+/// The existing field-authored `RSe` envelope plus a schema-15 model-state stream.
 pub(crate) fn model_state_envelope_fixture() -> Vec<u8> {
-    let mut file = primary_envelope_fixture();
-    let bytes = crate::external_reference::model_state_fixture();
     const STREAM_LEN: usize = 4096;
     const DIRECTORY_INDEX: usize = 10;
+    let mut file = primary_envelope_fixture();
+    let bytes = crate::external_reference::model_state_fixture();
     assert!(bytes.len() <= STREAM_LEN);
     let start = file.len() / SECTOR_SIZE - 1;
-    let fat_sector = u32::from_le_bytes(file[76..80].try_into().unwrap());
-    let fat_start = SECTOR_SIZE * (usize::try_from(fat_sector).unwrap() + 1);
+    let fat_sector = u32::from_le_bytes(file[76..80].try_into().expect("fixture value is valid"));
+    let fat_start =
+        SECTOR_SIZE * (usize::try_from(fat_sector).expect("fixture value is valid") + 1);
     for ordinal in 0..STREAM_LEN / SECTOR_SIZE {
         put_u32(
             &mut file,
@@ -96,7 +97,7 @@ pub(crate) fn model_state_envelope_fixture() -> Vec<u8> {
             if ordinal + 1 == STREAM_LEN / SECTOR_SIZE {
                 END_OF_CHAIN
             } else {
-                u32::try_from(start + ordinal + 1).unwrap()
+                u32::try_from(start + ordinal + 1).expect("fixture value is valid")
             },
         );
     }
@@ -105,7 +106,7 @@ pub(crate) fn model_state_envelope_fixture() -> Vec<u8> {
     put_u32(
         &mut file,
         SECTOR_SIZE + 128 + 68,
-        u32::try_from(DIRECTORY_INDEX).unwrap(),
+        u32::try_from(DIRECTORY_INDEX).expect("fixture value is valid"),
     );
     directory_node(
         &mut file[SECTOR_SIZE..4 * SECTOR_SIZE],
@@ -115,8 +116,8 @@ pub(crate) fn model_state_envelope_fixture() -> Vec<u8> {
         NO_STREAM,
         NO_STREAM,
         NO_STREAM,
-        u32::try_from(start).unwrap(),
-        u64::try_from(STREAM_LEN).unwrap(),
+        u32::try_from(start).expect("fixture value is valid"),
+        u64::try_from(STREAM_LEN).expect("fixture value is valid"),
     );
     file[SECTOR_SIZE + DIRECTORY_INDEX * 128 + 67] = 0;
     let old_len = file.len();
