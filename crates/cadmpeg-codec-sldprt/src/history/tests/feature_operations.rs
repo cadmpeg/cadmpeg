@@ -390,12 +390,12 @@ fn decode_dispatches_typed_features_by_xml_family() {
             ..
         }] if decoded.ir().dimension_value(&actual_radius).unwrap().get() == 2.0)
     ));
+    // D26: this fillet has no definition references. Its original authored
+    // ordering text remains a native fact, not an extra canonical operand edge.
+    assert!(decoded.ir().model.features[2].dependencies.is_empty());
     assert_eq!(
-        decoded.ir().model.features[2].dependencies.as_slice(),
-        vec![
-            decoded.ir().model.features[0].id.clone(),
-            decoded.ir().model.features[1].id.clone(),
-        ]
+        sldprt_native(decoded.ir()).feature_histories[0].features[2].properties["Dependencies"],
+        "51,52,51"
     );
     assert_eq!(
         sldprt_native(decoded.ir()).feature_histories[0].features[2].properties["Algorithm"],
@@ -455,15 +455,11 @@ fn decode_dispatches_typed_features_by_xml_family() {
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
     assert_eq!(native[2].properties["Algorithm"], "FaceBlend");
 
-    assert_eq!(
-        regenerated.ir().model.features[2].dependencies.as_slice(),
-        vec![
-            regenerated.ir().model.features[0].id.clone(),
-            regenerated.ir().model.features[1].id.clone(),
-        ]
-    );
-    let mut dependencies = regenerated.ir().model.features[2].dependencies.to_vec();
-    dependencies.pop();
+    assert!(regenerated.ir().model.features[2].dependencies.is_empty());
+    assert_eq!(native[2].properties["Dependencies"], "51,52,51");
+    // Keep the original adversarial input after removing one old duplicate edge:
+    // the unrelated Profile dependency alone must still be refused.
+    let dependencies = vec![regenerated.ir().model.features[0].id.clone()];
     regenerated.ir_mut().model.features[2].dependencies =
         cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
     let error = crate::test_support::plan_inherited_write(
