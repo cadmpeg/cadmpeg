@@ -605,4 +605,6 @@ fn reduce_feature_to_solved(feature: &mut cadmpeg_ir::features::Feature) -> Resu
 }
 
 #[cfg(test)]
+mod configuration_associations_tests;
+#[cfg(test)]
 mod tests;

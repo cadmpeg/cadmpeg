@@ -13,8 +13,8 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
     Severity,
+    loss::{LossKind, LossNote, LossTaxonomy},
 };
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
@@ -175,6 +175,8 @@ pub(crate) enum SldprtLossCode {
     WriterNoExportableSolids,
     /// Export degrades records identified by the loss message.
     WriterDesignReduced,
+    /// Export authored a native configuration counterpart without losing content.
+    WriterConfigurationAssociationGenerated,
     /// Source content remains only in untyped retained container payloads.
     SourceOpaqueRecordsUnrepresented,
     /// Export degrades the records named by the loss message.
@@ -255,6 +257,7 @@ impl SldprtLossCode {
         Self::WriterNativeRecordsOmitted,
         Self::WriterNoExportableSolids,
         Self::WriterDesignReduced,
+        Self::WriterConfigurationAssociationGenerated,
         Self::SourceOpaqueRecordsUnrepresented,
         Self::WriterProceduralReduced,
         Self::SourcePropertyKeyBlank,
@@ -332,6 +335,9 @@ impl SldprtLossCode {
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterNoExportableSolids => "export.no-exportable-solids",
             Self::WriterDesignReduced => "writer.design-reduced",
+            Self::WriterConfigurationAssociationGenerated => {
+                "writer.configuration-association-generated"
+            }
             Self::SourceOpaqueRecordsUnrepresented => "source.opaque-records-unrepresented",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
@@ -348,6 +354,7 @@ impl SldprtLossCode {
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::WriterNoExportableSolids => Severity::Error,
             Self::WriterDesignReduced => Severity::Error,
+            Self::WriterConfigurationAssociationGenerated => Severity::Info,
             Self::SourceOpaqueRecordsUnrepresented => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
@@ -424,6 +431,7 @@ impl SldprtLossCode {
             Self::WriterNativeRecordsOmitted => LossTaxonomy::RecordNotTyped,
             Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::WriterDesignReduced => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterConfigurationAssociationGenerated => LossTaxonomy::CarrierSummary,
             Self::SourceOpaqueRecordsUnrepresented | Self::PmiSemanticRecordUntyped => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -792,6 +800,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (SldprtLossCode::WriterDesignReduced, Representation::Writer),
     (
+        SldprtLossCode::WriterConfigurationAssociationGenerated,
+        Representation::Writer,
+    ),
+    (
         SldprtLossCode::SourceOpaqueRecordsUnrepresented,
         Representation::Diagnostic,
     ),
@@ -1006,7 +1018,10 @@ mod tests {
     #[test]
     fn spline_lane_loss_names_the_record() {
         let note = super::spline_lane_refusal("carrier attribute 9");
-        assert_eq!(note.message, "carrier attribute 9; the carrier is not emitted and the entities that reference it fall back to an untyped support.");
+        assert_eq!(
+            note.message,
+            "carrier attribute 9; the carrier is not emitted and the entities that reference it fall back to an untyped support."
+        );
     }
 
     #[test]
