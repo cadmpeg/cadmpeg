@@ -257,7 +257,9 @@ pub(super) fn write(
                 defaults.insert(name.clone(), packed(color));
             }
         }
-        material(provider, appearance, losses)?;
+        if selection(&binding.target).is_none() {
+            material(provider, appearance, losses)?;
+        }
         if binding.visible.is_some() || !binding.channels.is_empty() {
             losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
                 "appearance binding {} independent visibility/channel gates are reduced to the effective native provider state", binding.id
@@ -277,7 +279,7 @@ pub(super) fn write(
                     "Float",
                     value.get(),
                 ),
-                "shininess" | "material_transparency" => {}
+                "shininess" | "material_transparency" if selection(&binding.target).is_none() => {}
                 _ => losses.push(
                     FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
                         "appearance {} property {key} has no FreeCAD GUI encoding",
