@@ -284,6 +284,7 @@ fn native_feature_name_edit_keeps_retained_brep() {
     );
 }
 
+#[derive(Clone, Copy)]
 enum ExpectedPath {
     Patched,
     Synthesized,

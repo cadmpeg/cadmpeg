@@ -270,6 +270,7 @@ fn native_validation_rejects_edited_relation_binding() {
 
 #[test]
 fn native_validation_rejects_edited_relation_instance() {
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     let mut source = sldprt_with_compact_relation_pair(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -316,7 +317,6 @@ fn native_validation_rejects_edited_relation_instance() {
         plan.report().write_path(),
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
-    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     let omitted = decoded
         .ir()
         .model
