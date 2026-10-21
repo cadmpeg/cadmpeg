@@ -919,6 +919,10 @@ impl ActRootComponent {
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }
+    /// Returns the current dynamic ACT class identity.
+    pub(crate) fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
+    }
     /// Returns the ACT root source layout.
     pub(crate) fn layout(&self) -> &ActRootLayout {
         &self.layout
