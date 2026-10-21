@@ -301,7 +301,7 @@ pub(crate) fn enrich_history_hole_constructions(
                         .source_value()
                         .is_some_and(|candidate| source < candidate && candidate < upper)
                     || classify(candidate) != Some(FeatureClass::Sketch)
-                    || !crate::history::project::solid::is_hole_profile_construction(candidate)?
+                    || !crate::history::project::solid::is_hole_profile_construction(candidate)
                 {
                     continue;
                 }
@@ -420,7 +420,7 @@ fn hole_profile_from_position_source<'a>(
                 };
                 if ambiguous
                     || classify(successor) != Some(FeatureClass::Sketch)
-                    || !crate::history::project::solid::is_hole_profile_construction(successor)?
+                    || !crate::history::project::solid::is_hole_profile_construction(successor)
                 {
                     return Ok(None);
                 }
@@ -444,7 +444,7 @@ fn hole_profile_from_position_source<'a>(
             .source_value()
             .is_some_and(|source| adjacent_sources.contains(&Some(source)))
             || classify(candidate) != Some(FeatureClass::Sketch)
-            || !crate::history::project::solid::is_hole_profile_construction(candidate)?
+            || !crate::history::project::solid::is_hole_profile_construction(candidate)
         {
             continue;
         }
@@ -473,7 +473,7 @@ fn hole_profile_from_position_source<'a>(
             .source_value()
             .is_some_and(|source| lower < source && source < upper)
             || classify(candidate) != Some(FeatureClass::Sketch)
-            || !crate::history::project::solid::is_hole_profile_construction(candidate)?
+            || !crate::history::project::solid::is_hole_profile_construction(candidate)
         {
             continue;
         }
@@ -497,7 +497,7 @@ fn hole_profile_from_position_source<'a>(
         if !adjacent_ordinals.contains(&Some(candidate.ordinal))
             || candidate.id == position.id
             || classify(candidate) != Some(FeatureClass::Sketch)
-            || !crate::history::project::solid::is_hole_profile_construction(candidate)?
+            || !crate::history::project::solid::is_hole_profile_construction(candidate)
         {
             continue;
         }
@@ -542,7 +542,7 @@ fn hole_profile_from_child_order<'a>(
     }
     let mut first = None;
     for child in children {
-        if !crate::history::project::solid::is_hole_profile_construction(child)? {
+        if !crate::history::project::solid::is_hole_profile_construction(child) {
             continue;
         }
         if first.is_some() {
@@ -790,7 +790,7 @@ fn profiled_hole_construction_with_evidence(
     angles.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_EXACT_GEOMETRY);
     lengths.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
     lengths.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
-    let dimension_only = if crate::history::project::solid::is_hole_profile_construction(profile)? {
+    let dimension_only = if crate::history::project::solid::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
             ([diameter], [depth], []) => Some(DimensionOnlyHole {
                 diameter: *diameter,

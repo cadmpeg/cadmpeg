@@ -284,7 +284,7 @@ pub(crate) fn parse_native_parameter_literal(
         return parse_dimension_display_length(expression).map(ParameterValue::Length);
     }
     if classify(feature) == Some(FeatureClass::Sketch) {
-        if let Ok(Some(controls)) =
+        if let Some(controls) =
             crate::history::project::solid::hole_profile_parameter_values(feature)
         {
             if let Some(role) = controls.get(name) {

@@ -100,7 +100,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
-            let records = source_records(input.ir, value)?;
+            let records = source_records(input.ir, value);
             SldprtCodec::write_preserved_with_annotations(
                 input.ir,
                 &value.annotations,

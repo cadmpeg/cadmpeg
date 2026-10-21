@@ -578,11 +578,8 @@ impl FeatureInputLaneWire {
         let entities = self
             .sketch_entities
             .into_iter()
-            .map(|entity| {
-                SketchInputEntity::try_from_wire(entity, &self.native_payload)
-                    .map_err(cadmpeg_core::CodecError::malformed)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|entity| SketchInputEntity::from_wire(entity, &self.native_payload))
+            .collect();
         Ok(FeatureInputLane {
             id: self.id,
             configuration: self.configuration,
@@ -608,8 +605,8 @@ impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
         let sketch_entities = wire
             .sketch_entities
             .into_iter()
-            .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|entity| SketchInputEntity::from_wire(entity, &wire.native_payload))
+            .collect();
         let relation_instances = wire
             .relation_instances
             .into_iter()
@@ -1592,14 +1589,11 @@ impl SketchInputEntity {
         updated
     }
 
-    pub(crate) fn try_from_wire(
-        wire: SketchInputEntityWire,
-        _payload: &[u8],
-    ) -> Result<Self, String> {
+    pub(crate) fn from_wire(wire: SketchInputEntityWire, _payload: &[u8]) -> Self {
         // Source scanners validate marker framing before constructing typed
         // records. CADIR admission validates their semantic fields and links;
         // the document does not carry a byte position or reload source bytes.
-        Ok(Self {
+        Self {
             id: wire.id,
             parent: wire.parent,
             feature_ref: wire.feature_ref,
@@ -1612,7 +1606,7 @@ impl SketchInputEntity {
             state_value: wire.state_value,
             coordinates_m: wire.coordinates_m,
             links: wire.links,
-        })
+        }
     }
 
     pub(crate) fn try_new(
