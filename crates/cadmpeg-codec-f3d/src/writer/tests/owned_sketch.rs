@@ -381,7 +381,13 @@ fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_report
         .unwrap(),
         definition
     );
-    assert_eq!(written.ir().model.sketch_constraints.len(), 3);
+    assert_eq!(
+        written.ir().model.sketch_constraints.len(),
+        3,
+        "actual constraints: {:#?}; actual companions: {:#?}",
+        written.ir().model.sketch_constraints,
+        crate::test_support::native_test::f3d_native(written.ir()).design_parameter_companions,
+    );
     assert_eq!(owned_dimension_definition(written.ir(), "d1"), expected_d1);
     assert_eq!(
         ["parallel", "concentric"].map(|kind| native_relation_content(written.ir(), kind)),
