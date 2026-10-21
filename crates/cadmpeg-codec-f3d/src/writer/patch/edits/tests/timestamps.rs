@@ -115,7 +115,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         .expect("patch timestamps after record-list reordering");
     assert!(matches!(
         report.write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let result = F3dCodec
         .decode(&mut Cursor::new(patched), &DecodeOptions::default())
@@ -125,7 +125,10 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         .into_iter()
         .map(|timestamp| (timestamp.id.clone(), timestamp))
         .collect::<BTreeMap<_, _>>();
-    // Native record identities and positions may be reminted by synthesis.
+    // A supported patch preserves the complete timestamp records, including
+    // their identities, despite canonical native arena reordering.
+    assert_eq!(&actual, &expected);
+    // Keep the scalar/target agreement assertion independently.
     let values = |records: BTreeMap<_, CreationTimestamp>| {
         records
             .into_values()
