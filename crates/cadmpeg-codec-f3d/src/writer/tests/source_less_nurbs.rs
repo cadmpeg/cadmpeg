@@ -1213,10 +1213,33 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("reversed-directrix extrusion round trip");
+    let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].definition(),
-        expected.definition()
+        expected
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
     );
+    assert_eq!(actual.cache_fit_tolerance(), None);
+    let carrier = round_trip
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.geometry.procedural_construction() == Some(&actual.id))
+        .expect("the exact edited extrusion remains a carrier");
+    assert!(carrier.geometry.solved_cache().is_none());
+    assert!(round_trip.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::SurfaceCacheRejected.kind()
+            && loss.message.contains(carrier.id.as_str())
+            && loss.message.contains("fit tolerance Some(0.02)")
+    }));
+    let mut uncached = expected.clone();
+    uncached
+        .clear_fitted_cache_contract()
+        .expect("discard only the cache contract contradicted by the edited directrix sense");
+    assert_eq!(actual.definition(), uncached.definition());
+    assert_eq!(source_less.model.procedural_surfaces[0], expected);
 }
 
 /// A form-`2` extrusion stores its parameterization in place of a solved cache.
