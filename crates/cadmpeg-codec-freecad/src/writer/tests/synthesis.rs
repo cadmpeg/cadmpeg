@@ -62,6 +62,65 @@ fn source_less_synthesis_keeps_neutral_brep_and_history() {
 }
 
 #[test]
+fn source_less_tolerance_modes_keep_the_sixteen_authored_history_parameters() {
+    use cadmpeg_ir::features::{FeatureDefinition, FuzzyTolerance};
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/design_history.FCStd"
+    ));
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.parameters.len(), 16);
+    for mode in [FuzzyTolerance::KernelDefault, FuzzyTolerance::Automatic] {
+        let mut current = decoded.ir().clone();
+        let mut changed = Vec::new();
+        for feature in &mut current.model.features {
+            if let FeatureDefinition::PostProcess {
+                operation, refine, ..
+            } = feature.definition()
+            {
+                let definition = FeatureDefinition::PostProcess {
+                    operation: operation.clone(),
+                    refine: *refine,
+                    fuzzy_tolerance: mode.clone(),
+                };
+                feature.evaluation.set_definition(definition);
+                changed.push(feature.id.clone());
+            }
+        }
+        assert_eq!(changed.len(), 3);
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&current, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.parameters.len(), 16);
+        assert!(!output
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .any(|parameter| parameter.name == "FuzzyTolerance"));
+        for id in &changed {
+            let feature = output
+                .ir()
+                .model
+                .features
+                .iter()
+                .find(|feature| &feature.id == id)
+                .unwrap();
+            assert!(
+                matches!(feature.definition(), FeatureDefinition::PostProcess { fuzzy_tolerance, .. } if fuzzy_tolerance == &mode)
+            );
+        }
+    }
+}
+
+#[test]
 fn forbidden_xml_label_characters_reduce_and_report_instead_of_refusing() {
     let decoded = FcstdCodec
         .decode(
