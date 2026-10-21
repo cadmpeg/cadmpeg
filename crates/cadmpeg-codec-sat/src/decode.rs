@@ -578,7 +578,7 @@ fn build_result(
         losses,
         ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
             scope: ir.scope,
-            geometry_transferred: geometry_transferred,
+            geometry_transferred,
         })
     };
 
