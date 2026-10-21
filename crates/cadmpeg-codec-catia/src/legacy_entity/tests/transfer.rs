@@ -177,13 +177,12 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         2
     );
 
-    let native = crate::native::CatiaNative::load(
-        (&crate::test_support::source_fidelity::native_namespace(
+    let native =
+        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
             decoded.ir(),
             decoded.source_fidelity(),
-        )),
-    )
-    .expect("load compound legacy fields");
+        ))
+        .expect("load compound legacy fields");
     assert!(native.legacy_entity_runs[0]
         .text_fields
         .iter()
@@ -290,13 +289,12 @@ fn decode_retains_legacy_relation_synchronous_states() {
         ),
         4
     );
-    let native = crate::native::CatiaNative::load(
-        (&crate::test_support::source_fidelity::native_namespace(
+    let native =
+        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
             decoded.ir(),
             decoded.source_fidelity(),
-        )),
-    )
-    .expect("load retained update states");
+        ))
+        .expect("load retained update states");
     assert_eq!(
         native.legacy_entity_runs[0]
             .synchronous_states
