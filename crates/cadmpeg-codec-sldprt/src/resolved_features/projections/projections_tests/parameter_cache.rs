@@ -44,7 +44,7 @@ fn agreeing_scalar_cache_keeps_authored_literal_spelling() {
         ),
         (
             "1.25",
-            ParameterValue::Real(FiniteReal::new(1.25).unwrap()),
+            ParameterValue::Length(Length::new(1.25).unwrap()),
             ParameterValue::Length(Length::new(1.25).unwrap()),
         ),
     ] {
@@ -80,4 +80,23 @@ fn scalar_cache_does_not_replace_authored_parameter_reference() {
     set_typed_parameter_cache(&mut control, admitted.clone());
     assert_eq!(control.expression, authored);
     assert_eq!(control.value, Some(admitted));
+}
+
+#[test]
+fn scalar_quantity_promotions_author_canonical_units() {
+    for (text, old, length) in [
+        ("25", ParameterValue::Integer(25), 25.0),
+        ("1", ParameterValue::Boolean(true), 1.0),
+        (
+            "12",
+            ParameterValue::Real(FiniteReal::new(12.0).unwrap()),
+            12.0,
+        ),
+    ] {
+        let admitted = ParameterValue::Length(Length::new(length).unwrap());
+        let mut control = parameter(Expression::text(text), old);
+        set_typed_parameter_cache(&mut control, admitted.clone());
+        assert_eq!(control.expression, admitted.literal_expression());
+        assert_eq!(control.value, Some(admitted));
+    }
 }
