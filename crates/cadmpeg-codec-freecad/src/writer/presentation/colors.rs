@@ -42,9 +42,15 @@ fn object_color(provider: &mut Provider, color: Color) -> Result<(), CodecError>
     Ok(())
 }
 
+// App::Material's native constructor defaults (the required fields are
+// present on every PropertyMaterial carrier).
+const DEFAULT_MATERIAL_SHININESS: f64 = 0.9;
+const DEFAULT_MATERIAL_TRANSPARENCY: f64 = 0.0;
+
 fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let scalar = |name: &str| {
         appearance
@@ -55,6 +61,13 @@ fn material(
     };
     let shininess = scalar("shininess");
     let transparency = scalar("material_transparency");
+    if shininess.is_none() || transparency.is_none() {
+        losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+            "appearance {} uses required native material defaults for unauthored shininess/transparency", appearance.id
+        )));
+    }
+    let shininess = shininess.unwrap_or(DEFAULT_MATERIAL_SHININESS);
+    let transparency = transparency.unwrap_or(DEFAULT_MATERIAL_TRANSPARENCY);
     if let Some(original) = provider.native.get("ShapeMaterial") {
         let mut property = original.clone();
         for value in &mut property.values {
@@ -66,16 +79,12 @@ fn material(
                 } else {
                     value.attributes.remove("diffuseColor");
                 }
-                if let Some(number) = shininess {
-                    value
-                        .attributes
-                        .insert("shininess".into(), number.to_string());
-                }
-                if let Some(number) = transparency {
-                    value
-                        .attributes
-                        .insert("transparency".into(), number.to_string());
-                }
+                value
+                    .attributes
+                    .insert("shininess".into(), shininess.to_string());
+                value
+                    .attributes
+                    .insert("transparency".into(), transparency.to_string());
             }
         }
         if let Some(value) = native_property(&property)? {
@@ -90,12 +99,8 @@ fn material(
         if let Some(color) = appearance.base_color {
             attributes.push(("diffuseColor", packed(color).to_string()));
         }
-        if let Some(value) = shininess {
-            attributes.push(("shininess", value.to_string()));
-        }
-        if let Some(value) = transparency {
-            attributes.push(("transparency", value.to_string()));
-        }
+        attributes.push(("shininess", shininess.to_string()));
+        attributes.push(("transparency", transparency.to_string()));
         provider.properties.insert(
             "ShapeMaterial".into(),
             xml::property(
@@ -245,7 +250,7 @@ pub(super) fn write(
                 defaults.insert(name.clone(), packed(color));
             }
         }
-        material(provider, appearance)?;
+        material(provider, appearance, losses)?;
         if binding.visible.is_some() || !binding.channels.is_empty() {
             losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
                 "appearance binding {} independent visibility/channel gates are reduced to the effective native provider state", binding.id
