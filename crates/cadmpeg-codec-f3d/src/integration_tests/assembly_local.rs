@@ -47,7 +47,46 @@ fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies()
             ("component.f3d", component.as_slice()),
         ],
     ));
-    let model = &merged.ir().model;
+    assert!(
+        merged
+            .report()
+            .losses
+            .iter()
+            .any(|loss| { loss.code.local_code() == "xref.placement-undecoded" }),
+        "the nonuniform source matrix is outside the rigid XREF grammar"
+    );
+    assert!(merged
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model,));
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let plan = crate::F3dCodec
+        .plan(
+            EncodeInput::new(merged.ir(), Some(merged.source_fidelity())),
+            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        )
+        .expect("a supported target synthesizes independently of the malformed source placement");
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    // The general affine occurrence is authored in its canonical neutral home.
+    // It cannot be admitted as an F3D source proper-rigid placement matrix.
+    let expected_outer = Transform::affine([
+        [0.0, -2.0, 0.0, 10.0],
+        [3.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 4.0, 30.0],
+    ])
+    .unwrap();
+    let mut authored = merged.ir().clone();
+    authored
+        .model
+        .occurrences
+        .iter_mut()
+        .find(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        .expect("the archive root's component occurrence")
+        .transform = expected_outer;
+    let model = &authored.model;
     assert_eq!(model.bodies.len(), local.ir().model.bodies.len());
     for (merged_body, local_body) in model.bodies.iter().zip(&local.ir().model.bodies) {
         assert_eq!(merged_body.transform, local_body.transform);
@@ -67,12 +106,7 @@ fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies()
         .expect("the nested component occurrence");
     // Source placement translations are centimetres; the sole canonical
     // occurrence matrix stores millimetres and retains its nonuniform scale.
-    let expected_outer = Transform::affine([
-        [0.0, -2.0, 0.0, 10.0],
-        [3.0, 0.0, 0.0, 20.0],
-        [0.0, 0.0, 4.0, 30.0],
-    ])
-    .unwrap();
+
     let expected_inner = Transform::affine([
         [1.0, 0.0, 0.0, 40.0],
         [0.0, 1.0, 0.0, 50.0],
@@ -90,4 +124,42 @@ fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies()
         expected_outer.compose(expected_inner).unwrap(),
         expected_inner.compose(expected_outer).unwrap()
     );
+}
+
+#[test]
+fn rigid_source_occurrence_retains_its_actual_matrix_and_translation_scale() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let rows = [
+        [0.0, -1.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 2.0],
+        [0.0, 0.0, 1.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let root = f3d_without_brep_with_xref_placement(
+        "assembly-design",
+        "root.f3d",
+        "component.f3d",
+        XREF_ROLE,
+        rows,
+    );
+    let merged = decode(f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    ));
+    assert!(!merged
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "xref.placement-undecoded" }));
+    assert_eq!(merged.ir().model.occurrences.len(), 1);
+    let expected = Transform::affine([
+        [0.0, -1.0, 0.0, 10.0],
+        [1.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 30.0],
+    ])
+    .unwrap();
+    assert_eq!(merged.ir().model.occurrences[0].transform, expected);
 }
