@@ -656,6 +656,15 @@ fn semantic_writer_round_trips_wrap() {
 
     let scribed = regenerated;
     let mut scribed = EditableDecodeResult::from(scribed);
+    let depth_id = scribed
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap()
+        .id
+        .clone();
     {
         let mut ir_edit = scribed.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
@@ -678,7 +687,22 @@ fn semantic_writer_round_trips_wrap() {
         .unwrap();
     let native = &sldprt_native(scribed.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Mode"], "Scribe");
-    assert!(!native.parameters.contains_key("Depth"));
+    // D1: removing the operation use retains the independently authored parameter.
+    assert!(native.parameters.contains_key("Depth"));
+    let depth = scribed
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == depth_id)
+        .expect("same independent depth parameter");
+    assert_eq!(depth.name, "Depth");
+    assert_eq!(
+        depth.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(3.5).unwrap()
+        ))
+    );
     assert!(matches!(
         scribed.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Wrap {
@@ -1971,6 +1995,15 @@ fn semantic_writer_round_trips_all_revolution_extents() {
                         < EPS_TWO_SIDED_REVOLUTION_SECOND_ANGLE)
     ));
 
+    let angle2_id = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Angle2")
+        .unwrap()
+        .id
+        .clone();
     {
         let mut ir_edit = decoded.ir_mut();
         let owner = ir_edit.model.features[3].id.clone();
@@ -2015,5 +2048,25 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     assert_eq!(native[3].properties["Operation"], "Intersect");
     assert_eq!(native[3].properties["Profile"], "40");
     assert_eq!(native[3].parameters["Angle"], "0.75rad");
-    assert!(!native[3].parameters.contains_key("Angle2"));
+    // D1: explicit OneSided removes its use, not the independent authored angle.
+    assert!(native[3].parameters.contains_key("Angle2"));
+    let angle2 = regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == angle2_id)
+        .expect("same independent second-angle parameter");
+    assert_eq!(angle2.name, "Angle2");
+    assert!(
+        matches!(&angle2.value, Some(cadmpeg_ir::features::ParameterValue::Angle(value))
+        if (value.get() - 60.0_f64.to_radians()).abs() < EPS_TWO_SIDED_REVOLUTION_SECOND_ANGLE)
+    );
+    assert!(
+        matches!(regenerated.ir().model.features[3].definition().operation(),
+        FeatureOperation::Revolve { construction, op: BooleanOp::Intersect }
+        if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+            termination: AngularTermination::Angle { angle }
+        }) if regenerated.ir().dimension_value(angle).unwrap().get() == 0.75))
+    );
 }
