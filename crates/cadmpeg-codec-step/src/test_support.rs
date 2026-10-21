@@ -37,3 +37,19 @@ pub(crate) fn lex(
     }
     Ok(tokens)
 }
+
+/// The canonical name attribute projected from a geometric representation item.
+pub(crate) fn geometry_name<'a>(
+    ir: &'a cadmpeg_ir::CadIr,
+    target: &cadmpeg_ir::attributes::AttributeTarget,
+) -> Option<&'a str> {
+    ir.model.attributes.iter().find_map(|attribute| {
+        if attribute.target != *target || attribute.name != "name" {
+            return None;
+        }
+        match attribute.values.as_slice() {
+            [cadmpeg_ir::attributes::AttributeValue::String(value)] => Some(value.as_str()),
+            _ => None,
+        }
+    })
+}

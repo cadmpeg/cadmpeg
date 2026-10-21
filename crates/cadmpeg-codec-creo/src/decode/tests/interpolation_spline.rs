@@ -451,8 +451,10 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
             ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                            .expect("nonzero length fixture")
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                                .expect("nonzero length fixture")
+                        )
                     },
                     draft: None,
                 }
@@ -751,7 +753,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
-        }) if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.get() == 6.0
+        }) if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.literal().expect("literal dimension").get() == 6.0
     ));
 }
 
@@ -1168,7 +1170,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             ..
         }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value },
-                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
+                }) if (value.literal().expect("literal dimension").get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
 
     let sketch = SketchId::mint("creo:model:sketch#822".to_string()).expect("valid test fixture");
@@ -1284,7 +1286,9 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         length,
-        cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("nonzero length fixture")
+        cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("nonzero length fixture")
+        )
     );
 }
 

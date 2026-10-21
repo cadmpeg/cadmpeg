@@ -30,8 +30,10 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -74,8 +76,10 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(10.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -89,8 +93,10 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(10.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -169,8 +175,10 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(6.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(6.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -280,8 +288,10 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
                 ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
-                                .expect("nonzero length fixture"),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(42.0)
+                                    .expect("nonzero length fixture")
+                            ),
                         },
                         draft: None,
                     },
@@ -303,8 +313,10 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
                 ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
-                                .expect("nonzero length fixture"),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(42.0)
+                                    .expect("nonzero length fixture")
+                            ),
                         },
                         draft: None,
                     },
@@ -326,8 +338,10 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
                 ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
-                                .expect("nonzero length fixture"),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(42.0)
+                                    .expect("nonzero length fixture")
+                            ),
                         },
                         draft: None,
                     },

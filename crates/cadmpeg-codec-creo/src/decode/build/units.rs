@@ -1434,7 +1434,7 @@ mod tests {
         else {
             panic!("admitted feature changed family");
         };
-        assert_close(offset.get(), 50.8);
+        assert_close(offset.literal().expect("literal dimension").get(), 50.8);
         let Some(ParameterValue::Length(length)) = ir.model.parameters[0].value.as_ref() else {
             panic!("admitted parameter changed family");
         };
@@ -1448,14 +1448,14 @@ mod tests {
         let ExtrudeStart::OffsetProfilePlane { offset } = start else {
             panic!("test start changed family");
         };
-        assert_close(offset.get(), 50.8);
+        assert_close(offset.literal().expect("literal dimension").get(), 50.8);
         let ExtrudeExtent::TwoSided { first, second } = extent else {
             panic!("test extent changed family");
         };
         let LinearTermination::Blind { length } = &first.termination else {
             panic!("test termination changed family");
         };
-        assert_close(length.get(), 76.2);
+        assert_close(length.literal().expect("literal dimension").get(), 76.2);
         let LinearTermination::ToFace {
             offset: Some(offset),
             ..
@@ -1463,7 +1463,7 @@ mod tests {
         else {
             panic!("test offset termination changed family");
         };
-        assert_close(offset.get(), 101.6);
+        assert_close(offset.literal().expect("literal dimension").get(), 101.6);
         let Some(ParameterValue::Length(length)) = ir.model.parameters[0].value.as_ref() else {
             panic!("test parameter changed family");
         };
@@ -1555,7 +1555,7 @@ mod tests {
             panic!("test motion changed family");
         };
         assert_eq!(direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
-        assert_close(distance.get(), 50.8);
+        assert_close(distance.literal().expect("literal dimension").get(), 50.8);
 
         let mut rotate = FaceMotion::Rotate {
             axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
@@ -1577,7 +1577,7 @@ mod tests {
         };
         assert_point3(axis_origin.get(), [25.4, 50.8, 76.2]);
         assert_eq!(axis_dir, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-        assert_close(angle.get(), 0.5);
+        assert_close(angle.literal().expect("literal dimension").get(), 0.5);
     }
 
     #[test]
@@ -1588,8 +1588,8 @@ mod tests {
                     cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                         .expect("finite point fixture"),
                 ),
-                final_factor: positive(2.0),
-                count: 3,
+                final_factor: cadmpeg_ir::Dimension::Literal(positive(2.0)),
+                count: cadmpeg_ir::Dimension::Literal(3),
             },
         )
         .expect("valid test fixture");
@@ -1609,8 +1609,11 @@ mod tests {
             panic!("test pattern center changed family");
         };
         assert_point3(point.get(), [25.4, 50.8, 76.2]);
-        assert_close(final_factor.get(), 2.0);
-        assert_eq!(count, 3);
+        assert_close(
+            final_factor.literal().expect("literal dimension").get(),
+            2.0,
+        );
+        assert_eq!(count, cadmpeg_ir::Dimension::Literal(3));
     }
 
     #[test]
@@ -1621,7 +1624,9 @@ mod tests {
                 parameters: (BTreeMap::new()).into(),
             },
             refine: false,
-            fuzzy_tolerance: FuzzyTolerance::Explicit(positive_length(2.0)),
+            fuzzy_tolerance: FuzzyTolerance::Explicit(cadmpeg_ir::Dimension::Literal(
+                positive_length(2.0),
+            )),
         };
 
         crate::decode::with_service_context(|ctx| {
@@ -1638,7 +1643,7 @@ mod tests {
         let FuzzyTolerance::Explicit(value) = fuzzy_tolerance else {
             panic!("test tolerance changed family");
         };
-        assert_close(value.get(), 50.8);
+        assert_close(value.literal().expect("literal dimension").get(), 50.8);
     }
 
     #[test]
@@ -2047,8 +2052,8 @@ mod tests {
         let [low, high] = collapsing_pair();
         let kind = cadmpeg_ir::features::holes::HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                positive_length(low),
-                Some(positive_length(high)),
+                cadmpeg_ir::Dimension::Literal(positive_length(low)),
+                Some(cadmpeg_ir::Dimension::Literal(positive_length(high))),
             )
             .expect("an entry above the bore"),
             depth: (positive_length(1.0)).into(),
@@ -2082,7 +2087,7 @@ mod tests {
                 specification: None,
             },
             None,
-            Some(positive_length(low)),
+            Some(cadmpeg_ir::Dimension::Literal(positive_length(low))),
         )
         .expect("a counterbore above the bore");
         let error = { super::scale_hole_shape(&mut shape, positive(25.4)) }
@@ -2101,8 +2106,8 @@ mod tests {
         let [low, high] = collapsing_pair();
         let mut section = cadmpeg_ir::features::GeneratedSweepSection::CircularRegion {
             region: cadmpeg_ir::features::SweepCircularRegion::new(
-                positive_length(high),
-                Some(positive_length(low)),
+                positive_length(high).into(),
+                Some(cadmpeg_ir::Dimension::Literal(positive_length(low))),
             )
             .expect("a wall below the radius"),
         };
@@ -2125,7 +2130,7 @@ mod tests {
                 direction: None,
                 offsets: [0.0, low, high]
                     .into_iter()
-                    .map(|offset| Length::new(offset).expect("a finite offset"))
+                    .map(|offset| Length::new(offset).expect("a finite offset").into())
                     .collect(),
             },
         )
@@ -2240,7 +2245,7 @@ mod tests {
                 PatternTransform::LinearOffsets {
                     direction: None,
                     offsets: [0.0, 1.0, 2.0]
-                        .map(|x| Length::new(x).expect("length"))
+                        .map(|x| Length::new(x).expect("length").into())
                         .to_vec(),
                 },
             )
@@ -2314,7 +2319,7 @@ mod tests {
                 })),
             },
             None,
-            Some(positive_length(2.0)),
+            Some(cadmpeg_ir::Dimension::Literal(positive_length(2.0))),
         )
         .expect("hole");
         let specification_ptr = match shape.construction() {
@@ -2336,11 +2341,19 @@ mod tests {
             std::ptr::from_ref(specification.as_ref()),
             specification_ptr
         );
-        assert_eq!(shape.diameter().expect("bore").get(), 4.0);
+        assert_eq!(
+            shape
+                .diameter()
+                .expect("bore")
+                .literal()
+                .expect("literal dimension")
+                .get(),
+            4.0
+        );
         assert!(
             matches!(specification.as_ref(), HoleSpecification::Clearance {
             standard, designation: Some(designation), fit: Some(fit), depth: HoleThreadDepth::Blind { depth }, clearance: Some(clearance), ..
-        } if standard.as_str() == "test-standard" && designation == "test-size" && fit == "test-fit" && depth.get() == 6.0 && clearance.get() == 2.0)
+        } if standard.as_str() == "test-standard" && designation == "test-size" && fit == "test-fit" && depth.literal().expect("literal depth").get() == 6.0 && clearance.literal().expect("literal clearance").get() == 2.0)
         );
     }
 
@@ -2422,7 +2435,7 @@ mod tests {
             sections: vec![cadmpeg_ir::features::SweepSection::Generated(
                 cadmpeg_ir::features::GeneratedSweepSection::CircularRegion {
                     region: cadmpeg_ir::features::SweepCircularRegion::new(
-                        positive_length(1.0),
+                        positive_length(1.0).into(),
                         None,
                     )
                     .expect("region"),
@@ -2488,7 +2501,7 @@ mod tests {
             groups: vec![FilletGroup {
                 edges: cadmpeg_ir::features::EdgeSelection::All,
                 radius: RadiusSpec::Constant {
-                    radius: positive_length(1.0),
+                    radius: cadmpeg_ir::Dimension::Literal(positive_length(1.0)),
                 },
                 tangency_weight: None,
             }]
@@ -2497,13 +2510,13 @@ mod tests {
         }));
         assert!(
             matches!(fillet, FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-            if matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 2.0))
+            if matches!(&groups[0].radius, RadiusSpec::Constant { radius } if radius.literal().expect("literal dimension").get() == 2.0))
         );
         let chamfer = scaled_definition(FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: vec![ChamferGroup {
                 edges: cadmpeg_ir::features::EdgeSelection::All,
                 spec: ChamferSpec::Distance {
-                    distance: positive_length(1.0),
+                    distance: cadmpeg_ir::Dimension::Literal(positive_length(1.0)),
                 },
             }]
             .try_into()
@@ -2512,7 +2525,7 @@ mod tests {
         }));
         assert!(
             matches!(chamfer, FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
-            if matches!(groups[0].spec, ChamferSpec::Distance { distance } if distance.get() == 2.0))
+            if matches!(&groups[0].spec, ChamferSpec::Distance { distance } if distance.literal().expect("literal dimension").get() == 2.0))
         );
     }
 

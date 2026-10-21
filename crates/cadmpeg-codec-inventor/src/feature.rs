@@ -2806,7 +2806,7 @@ mod tests {
         assert!(matches!(
             projected.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-                if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
+                if matches!(&groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.value_from(std::slice::from_ref(&neutral_radius)).expect("bound radius").get() == 2.5)
         ));
         assert_eq!(
             result
@@ -2896,14 +2896,14 @@ mod tests {
             FeatureDefinition::Operation(FeatureOperation::Chamfer {
                 groups,
                 flip_direction: true
-            }) if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
+            }) if matches!(&groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.value_from(std::slice::from_ref(&neutral_distance)).expect("bound distance").get() == 1.25)
         ));
     }
 
     fn generated_extrusion(
         selections: &[u32],
         policy: DecodePolicy,
-    ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    ) -> Option<Result<(Feature, FeatureResultTopology, Vec<DesignParameter>), CodecError>> {
         let raw_length = raw_parameter(70);
         let raw_taper = raw_parameter(71);
         let neutral_parameters = vec![
@@ -3082,6 +3082,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         project_extrusion(&ctx, &feature, &label, &index)
+            .map(|result| result.map(|(feature, topology)| (feature, topology, neutral_parameters)))
     }
 
     #[test]
@@ -3093,7 +3094,7 @@ mod tests {
 
     #[test]
     fn projects_generated_extrusion() {
-        let (projected, _) = generated_extrusion(&[4], DecodePolicy::service())
+        let (projected, _, neutral_parameters) = generated_extrusion(&[4], DecodePolicy::service())
             .expect("extrusion candidate")
             .expect("extrusion projection");
         assert!(matches!(
@@ -3114,7 +3115,7 @@ mod tests {
                 },
                 op: BooleanOp::NewBody,
                 ..
-            }) if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
+            }) if ( actual_length.value_from(&neutral_parameters).expect("bound extrusion length").get() == 12.0 && actual_draft.value_from(&neutral_parameters).expect("bound draft").get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
         ));
     }
 
@@ -3280,7 +3281,7 @@ mod tests {
                     position: geometry_1,
                     direction: geometry_2
                 }])
-             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
+             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.value_from(&neutral_parameters).expect("bound hole dimension").get() == 9.0 && actual_depth.value_from(&neutral_parameters).expect("bound hole dimension").get() == 3.0 && actual_drill_point_angle.value_from(&neutral_parameters).expect("bound hole dimension").get() == 2.0 && actual_diameter_2.value_from(&neutral_parameters).expect("bound hole dimension").get() == 5.0)));
     }
 
     #[test]

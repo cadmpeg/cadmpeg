@@ -971,7 +971,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius,
             }, ..
-        }] if (radius.get() - 0.249_999_999_951_747_04).abs() < 1.0e-12)
+        }] if (radius.literal().expect("literal dimension").get() - 0.249_999_999_951_747_04).abs() < 1.0e-12)
     ));
 
     let cylinder_panel = [
@@ -1116,7 +1116,7 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius,
             }, ..
-        }] if radius.get().to_bits() == 0.199_999_999_999_999_98_f64.to_bits())
+        }] if radius.literal().expect("literal dimension").get().to_bits() == 0.199_999_999_999_999_98_f64.to_bits())
     ));
 }
 

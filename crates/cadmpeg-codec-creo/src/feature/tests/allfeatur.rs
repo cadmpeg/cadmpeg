@@ -730,9 +730,18 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     else {
         panic!("native feature");
     };
-    assert_eq!(parameters["loop_restore.direction"], "0");
-    assert_eq!(parameters["loop_restore.direction#2"], "1");
-    assert_eq!(parameters["loop_restore.direction2"], "167");
+    assert_eq!(
+        parameters["loop_restore.direction"],
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("0"))
+    );
+    assert_eq!(
+        parameters["loop_restore.direction#2"],
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("1"))
+    );
+    assert_eq!(
+        parameters["loop_restore.direction2"],
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("167"))
+    );
     assert_eq!(
         wire::coverage_count(
             result.report(),

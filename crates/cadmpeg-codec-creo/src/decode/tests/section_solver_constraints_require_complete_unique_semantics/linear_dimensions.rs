@@ -113,8 +113,10 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string())
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut conflicting_spanning_distance = distance_definition.clone();
@@ -400,8 +402,10 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string())
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut incomplete_skamps = incidence_oriented_distance.clone();
@@ -620,8 +624,10 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string())
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut duplicate_relation_id = distance_definition.clone();

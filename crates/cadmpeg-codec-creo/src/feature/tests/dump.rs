@@ -466,14 +466,14 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(parameter.name, "d917_42_1");
     assert_eq!(repeated.name, "d917_42_2");
     assert_ne!(parameter.id, repeated.id);
-    assert_eq!(parameter.expression, "1");
+    assert_eq!(parameter.expression, "1".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
             cadmpeg_ir::scalar::Angle::new(1.0).unwrap()
         ))
     );
-    assert!(relation.dependencies.is_empty());
+    assert!(relation.expression.dependencies().next().is_none());
     assert_eq!(relation.properties["external_dependencies"], "d42");
     assert_eq!(
         relation.value,

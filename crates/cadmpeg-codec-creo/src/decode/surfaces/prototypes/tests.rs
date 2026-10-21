@@ -498,10 +498,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         })
     );
     assert_eq!(
-        nonvisible_surface
-            .source_object
-            .as_ref()
-            .and_then(|source| source.visible),
+        nonvisible_result.ir().effective_visibility(
+            &cadmpeg_ir::appearance::AppearanceTarget::Surface(nonvisible_surface.id.clone())
+        ),
         Some(false)
     );
 }

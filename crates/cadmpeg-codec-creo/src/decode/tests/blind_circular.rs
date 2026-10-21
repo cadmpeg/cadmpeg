@@ -279,8 +279,10 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                        .expect("nonzero length fixture"),
+                    length: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture")
+                    ),
                 },
                 draft: None,
             },
@@ -1380,15 +1382,19 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -1410,8 +1416,10 @@ fn one_negative_cap_offset_reverses_blind_direction() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(48.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -1436,8 +1444,10 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(48.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -1463,8 +1473,10 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(38.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(38.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },

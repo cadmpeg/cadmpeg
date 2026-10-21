@@ -82,8 +82,10 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string(),)
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     assert_eq!(
@@ -162,8 +164,10 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                         .expect("valid test fixture")
                 })
                 .to_vec(),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut incomplete_triples = incidence_distance.clone();
@@ -243,8 +247,10 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string(),)
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut solver_only_incidence = incidence_distance.clone();
@@ -277,8 +283,10 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:999".to_string(),)
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut angular_dimension = definition.clone();
@@ -347,8 +355,10 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 .expect("valid test fixture"),
             second: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut incomplete_angle_order = angular_dimension.clone();
@@ -543,8 +553,10 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:102".to_string(),)
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     vector_native.relations.as_mut().expect("relations").rows[0].used = 34;

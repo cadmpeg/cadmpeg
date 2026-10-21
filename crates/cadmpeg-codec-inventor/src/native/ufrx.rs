@@ -3,6 +3,7 @@
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, ser::SerializeStruct, Deserialize, Serialize};

@@ -68,8 +68,7 @@ fn decode_preserves_counted_curve_expression_programs() {
             axis_origin,
             axis_direction,
             radius,
-            shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-            revolutions,
+            shape: cadmpeg_ir::features::HelixShape::Cylindrical { law },
             start_angle,
             clockwise,
             ..
@@ -84,10 +83,27 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(axis_direction.x.abs() <= EPS_HELIX_FEATURE);
     assert!(axis_direction.y.abs() <= EPS_HELIX_FEATURE);
     assert!((axis_direction.z + 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((radius.get() - 5.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((pitch.get() - 71.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((revolutions.get() - 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!(start_angle.get().abs() <= EPS_HELIX_FEATURE);
+    assert!((radius.literal().expect("literal dimension").get() - 5.0).abs() <= EPS_HELIX_FEATURE);
+    assert!(
+        (law.resolved_pitch(result.ir()).expect("helix pitch").get() - 71.0).abs()
+            <= EPS_HELIX_FEATURE
+    );
+    assert!(
+        (law.resolved_revolutions(result.ir())
+            .expect("helix turns")
+            .get()
+            - 1.0)
+            .abs()
+            <= EPS_HELIX_FEATURE
+    );
+    assert!(
+        start_angle
+            .literal()
+            .expect("literal dimension")
+            .get()
+            .abs()
+            <= EPS_HELIX_FEATURE
+    );
     assert!(!clockwise);
     assert_eq!(
         wire::coverage_count(
@@ -118,7 +134,12 @@ fn decode_preserves_counted_curve_expression_programs() {
     );
     assert_eq!(result.ir().model.parameters[2].name, "theta");
     assert_eq!(
-        result.ir().model.parameters[2].dependencies.as_slice(),
+        result.ir().model.parameters[2]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [result.ir().model.parameters[1].id.clone()]
     );
     assert_eq!(
@@ -194,7 +215,14 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
     assert_eq!(r.name, "r");
     assert_eq!(r.ordinal, 1);
     assert_eq!(r.value, None);
-    assert_eq!(r.dependencies.as_slice(), std::slice::from_ref(&a.id));
+    assert_eq!(
+        r.expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        std::slice::from_ref(&a.id)
+    );
     assert_eq!(a.ordinal, 0);
     assert!(!r.properties.contains_key("external_dependencies"));
     assert_eq!(theta.properties["independent_variables"], "T");
@@ -735,9 +763,9 @@ fn decode_retains_scoped_model_name_call_as_model_context() {
     };
 
     assert_eq!(parameter.name, "component_name");
-    assert_eq!(parameter.expression, "rel_model_name:27()");
+    assert_eq!(parameter.expression, "rel_model_name:27()".into());
     assert_eq!(parameter.value, None);
-    assert!(parameter.dependencies.is_empty());
+    assert!(parameter.expression.dependencies().next().is_none());
     assert!(!parameter.properties.contains_key("external_dependencies"));
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert!(native.fields().unwrap()["assignments"][0]["dependencies"]
@@ -1022,7 +1050,12 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         .expect("relation parameter");
 
     assert_eq!(
-        relation.dependencies.as_slice(),
+        relation
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         std::slice::from_ref(&dimension.id)
     );
     assert!(!relation.properties.contains_key("external_dependencies"));
@@ -1102,8 +1135,8 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         "rtos(123.456,2)"
     );
     assert!(native.fields().unwrap()["assignments"][5]["value"].is_null());
-    assert_eq!(parameters[4].expression, "rtos(123.456,2)");
-    assert_eq!(parameters[5].expression, "rel_model_type()");
+    assert_eq!(parameters[4].expression, "rtos(123.456,2)".into());
+    assert_eq!(parameters[5].expression, "rel_model_type()".into());
     assert_eq!(parameters[5].value, None);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -1225,7 +1258,12 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(parameters[3].properties["activation"], "active");
     assert_eq!(parameters[3].value, None);
     assert_eq!(
-        parameters[3].dependencies.as_slice(),
+        parameters[3]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [parameters[1].id.clone()]
     );
     assert!(!parameters[3]
@@ -1308,9 +1346,9 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
         panic!("four curve-expression parameters");
     };
 
-    assert!(r.dependencies.is_empty());
+    assert!(r.expression.dependencies().next().is_none());
     assert_eq!(r.properties["cyclic_dependencies"], "a");
-    assert!(a.dependencies.is_empty());
+    assert!(a.expression.dependencies().next().is_none());
     assert_eq!(a.properties["cyclic_dependencies"], "r");
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -1354,7 +1392,11 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
         result.ir().model.parameters[3].properties["ambiguous_dependencies"],
         "r"
     );
-    assert!(result.ir().model.parameters[3].dependencies.is_empty());
+    assert!(result.ir().model.parameters[3]
+        .expression
+        .dependencies()
+        .next()
+        .is_none());
     assert!(!result.ir().model.parameters[3]
         .properties
         .contains_key("external_dependencies"));
