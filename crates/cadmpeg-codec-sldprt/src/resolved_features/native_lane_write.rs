@@ -4,9 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::CadIr;
 
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
@@ -124,11 +124,42 @@ pub(crate) fn regenerate(
             .flat_map(|history| &history.features)
             .map(|feature| feature.id.as_str())
             .collect::<BTreeSet<_>>();
-        let marker_ids = lane
+        // Scalar indices are valid only when their typed marker is actually
+        // reconstructible. Propagate missing marker links through the graph;
+        // source framing identities alone cannot make a dangling index valid.
+        let mut marker_ids = lane
             .sketch_entities
             .iter()
+            .filter(|marker| {
+                marker_bytes(marker).is_some()
+                    && marker
+                        .feature_ref
+                        .as_deref()
+                        .is_none_or(|id| feature_ids.contains(id))
+            })
             .map(|marker| marker.id())
             .collect::<BTreeSet<_>>();
+        let mut dependents = BTreeMap::<&str, Vec<&str>>::new();
+        let mut unavailable = Vec::new();
+        for marker in &lane.sketch_entities {
+            if !marker_ids.contains(marker.id()) {
+                unavailable.push(marker.id());
+            }
+            for link in marker.links() {
+                dependents
+                    .entry(link.entity_ref.as_str())
+                    .or_default()
+                    .push(marker.id());
+                if !marker_ids.contains(link.entity_ref.as_str()) {
+                    unavailable.push(marker.id());
+                }
+            }
+        }
+        while let Some(id) = unavailable.pop() {
+            if marker_ids.remove(id) {
+                unavailable.extend(dependents.get(id).into_iter().flatten().copied());
+            }
+        }
         let mut events = Vec::new();
         let mut omitted = Vec::new();
         for class in &lane.classes {
@@ -150,24 +181,33 @@ pub(crate) fn regenerate(
                     .as_deref()
                     .is_some_and(|id| !feature_ids.contains(id))
                 {
-                    omitted.push(Omission {
-                        arena: "feature_input_scalars",
-                        id: scalar.id.clone(),
-                        reason: "owning native feature no longer resolves".into(),
-                    });
+                    omit_scalar(
+                        &mut omitted,
+                        scalar,
+                        name,
+                        "owning native feature no longer resolves",
+                    );
                     continue;
                 }
+                let value = match scalar_value(ir, lane, scalar, name, &neutral_owners) {
+                    Ok(value) => value.unwrap_or(scalar.value.get()),
+                    Err(reason) => {
+                        omit_scalar(&mut omitted, scalar, name, reason);
+                        continue;
+                    }
+                };
                 if scalar.operands.iter().any(|operand| {
                     operand
                         .entity_ref
                         .as_deref()
-                        .is_some_and(|id| !marker_ids.contains(id))
+                        .is_none_or(|id| !marker_ids.contains(id))
                 }) {
-                    omitted.push(Omission {
-                        arena: "feature_input_scalars",
-                        id: scalar.id.clone(),
-                        reason: "typed scalar operand no longer resolves".into(),
-                    });
+                    omit_scalar(
+                        &mut omitted,
+                        scalar,
+                        name,
+                        "typed scalar operand no longer resolves",
+                    );
                     continue;
                 }
                 let operands = scalar
@@ -176,17 +216,6 @@ pub(crate) fn regenerate(
                     .map(|operand| (operand.kind, operand.entity_index))
                     .collect::<Vec<_>>();
                 let mut bytes = Vec::new();
-                let value = match scalar_value(ir, lane, scalar, name, &neutral_owners) {
-                    Ok(value) => value.unwrap_or(scalar.value.get()),
-                    Err(reason) => {
-                        omitted.push(Omission {
-                            arena: "feature_input_scalars",
-                            id: scalar.id.clone(),
-                            reason: reason.into(),
-                        });
-                        continue;
-                    }
-                };
                 append_scalar_fields(&mut bytes, &name.value, value, scalar.object_id, &operands)?;
                 // The typed class is a separate event. No guessed quantity
                 // or family is introduced when a scalar has no declaration.
@@ -673,6 +702,29 @@ fn append_class(bytes: &mut Vec<u8>, name: &str) -> Result<(), CodecError> {
     Ok(())
 }
 
+fn omit_scalar(
+    omitted: &mut Vec<Omission>,
+    scalar: &crate::records::FeatureInputScalar,
+    name: &crate::records::FeatureInputName,
+    reason: &str,
+) {
+    for (arena, id) in std::iter::once(("feature_input_scalars", scalar.id.as_str()))
+        .chain(std::iter::once(("feature_input_names", name.id.as_str())))
+        .chain(
+            scalar
+                .operands
+                .iter()
+                .map(|operand| ("feature_input_references", operand.reference_ref.as_str())),
+        )
+    {
+        omitted.push(Omission {
+            arena,
+            id: id.into(),
+            reason: reason.into(),
+        });
+    }
+}
+
 fn marker_bytes(marker: &crate::records::SketchInputEntity) -> Option<Vec<u8>> {
     if matches!(
         marker.kind(),
@@ -731,5 +783,7 @@ fn marker_bytes(marker: &crate::records::SketchInputEntity) -> Option<Vec<u8>> {
 mod coverage;
 mod sketches;
 
+#[cfg(test)]
+mod marker_admission_tests;
 #[cfg(test)]
 mod tests;
