@@ -525,6 +525,7 @@
         "design_feature_timelines": [],
         "design_fillet_radius_groups": [],
         "design_intent_failures": [],
+        "design_joint_motions": [],
         "design_loft_legacy_body_carriers": [],
         "design_material_assignments": [
           {
