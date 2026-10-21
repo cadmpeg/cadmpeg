@@ -38,7 +38,7 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &input
+            input
         ),
         "35 mm"
     );
@@ -149,7 +149,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &input
+            input
         ),
         "35 mm"
     );
@@ -166,7 +166,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "#1_ /2-2mm"
     );
@@ -393,7 +393,7 @@ fn decode_transfers_a_closed_constant_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "10mm+2mm"
     );
@@ -597,7 +597,7 @@ fn decode_transfers_typed_integer_to_angle_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &input
+            input
         ),
         "2"
     );
@@ -640,7 +640,7 @@ fn decode_transfers_dimensionless_real_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &input
+            input
         ),
         "2.5"
     );
@@ -699,7 +699,7 @@ fn decode_transfers_an_unset_typed_formula_result() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "#1_ /2+1mm"
     );
@@ -734,7 +734,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "(#1_ /2>#2_ /2) and (#1_ /2>=0)"
     );
@@ -793,7 +793,7 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "#1_ /2+1mm"
     );
@@ -875,7 +875,7 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "#1_"
     );
@@ -956,7 +956,7 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &input
+            input
         ),
         "0.25 rad"
     );
@@ -1043,7 +1043,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "#1_-2mm"
     );
@@ -1313,7 +1313,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &intermediate
+            intermediate
         ),
         "#1_ /2+1mm"
     );
@@ -1325,7 +1325,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "#2_ /3+1mm"
     );
@@ -1379,7 +1379,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &intermediate
+            intermediate
         ),
         "2 mm"
     );
@@ -1394,7 +1394,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &output
+            output
         ),
         "#2_ /3+1mm"
     );
@@ -1430,7 +1430,7 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &intermediate
+            intermediate
         ),
         "#1_ /2+1mm"
     );

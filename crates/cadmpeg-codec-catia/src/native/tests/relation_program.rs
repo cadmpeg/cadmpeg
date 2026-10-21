@@ -434,7 +434,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
     assert_eq!(parameter.name, "Thickness");
     assert_eq!(
         crate::test_support::parameter_projection::expression_text_with_native(
-            &ir, &parameter, &native
+            &ir, parameter, &native
         ),
         "35 mm"
     );
@@ -570,9 +570,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     assert_eq!(transfer.relation_program_parameter_count, 1);
     assert_eq!(input.name, "Thickness");
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text_with_native(
-            &ir, &input, &native
-        ),
+        crate::test_support::parameter_projection::expression_text_with_native(&ir, input, &native),
         "35 mm"
     );
     assert_eq!(
@@ -582,7 +580,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     assert_eq!(output.name, "Result");
     assert_eq!(
         crate::test_support::parameter_projection::expression_text_with_native(
-            &ir, &output, &native
+            &ir, output, &native
         ),
         "#1_ /2-2mm"
     );

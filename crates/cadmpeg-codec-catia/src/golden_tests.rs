@@ -106,8 +106,10 @@ fn geometry_depth_agrees_with_full_depth() {
                 .flat_map(|record| record.untyped().iter().copied())
                 .collect();
             assert_eq!(fidelity.unrepresented(), expected);
-            let restored: cadmpeg_ir::SourceFidelity =
-                serde_json::from_value(serde_json::to_value(fidelity).unwrap()).unwrap();
+            let restored: cadmpeg_ir::SourceFidelity = serde_json::from_value(
+                serde_json::to_value(fidelity).expect("fixture value is valid"),
+            )
+            .expect("fixture value is valid");
             assert_eq!(restored.retained_records(), fidelity.retained_records());
             assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
@@ -121,20 +123,20 @@ fn independently_decoded_preview_has_a_neutral_asset_home() {
     let (_, bytes) = inputs()
         .into_iter()
         .find(|(name, _)| name == "external_preview")
-        .unwrap();
+        .expect("fixture value is valid");
     let result = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("authored preview document decodes");
     assert!(result.ir().model.assets.iter().any(|asset| asset
         .media_type
         .as_ref()
-        .map(|media_type| media_type.as_str())
+        .map(cadmpeg_core::text::NonBlankString::as_str)
         == Some("image/jpeg")));
     assert!(result
         .ir()
         .native
         .namespace("catia")
-        .unwrap()
+        .expect("fixture value is valid")
         .arenas()
         .get("external_references")
         .is_some_and(|records| !records.is_empty()));

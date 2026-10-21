@@ -385,7 +385,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "12.5 mm"
     );
@@ -445,7 +445,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "\"Cilas Evans\""
     );
@@ -533,7 +533,7 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &result
+            result
         ),
         "#1_ + \"-\" + #2_"
     );
@@ -598,7 +598,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "11"
     );
@@ -745,7 +745,7 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &string
+            string
         ),
         "\"Revision-1\""
     );
@@ -966,7 +966,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "2+3"
     );
@@ -1016,7 +1016,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "2+3"
     );
@@ -1065,7 +1065,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "not false"
     );
@@ -1100,7 +1100,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "true ? 5 ; 1 / 0"
     );
@@ -1186,7 +1186,7 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
         crate::test_support::parameter_projection::expression_text(
             transferred.ir(),
             transferred.source_fidelity(),
-            &parameter
+            parameter
         ),
         "2+3"
     );
@@ -1318,7 +1318,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")"
     );
@@ -1380,7 +1380,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         crate::test_support::parameter_projection::expression_text(
             decoded.ir(),
             decoded.source_fidelity(),
-            &parameter
+            parameter
         ),
         "ToLower(\"MIXED\").Extract(1,4) - \"x\""
     );

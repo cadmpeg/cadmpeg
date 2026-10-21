@@ -119,15 +119,15 @@ fn is_layout_key(key: &str) -> bool {
 }
 
 fn decode_hex(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return None;
     }
     text.as_bytes()
         .chunks_exact(2)
         .map(|pair| {
-            let high = (pair[0] as char).to_digit(16)?;
-            let low = (pair[1] as char).to_digit(16)?;
-            Some(((high << 4) | low) as u8)
+            let high = char::from(pair[0]).to_digit(16)?;
+            let low = char::from(pair[1]).to_digit(16)?;
+            u8::try_from((high << 4) | low).ok()
         })
         .collect()
 }
@@ -140,7 +140,7 @@ mod tests {
     fn source_bytes_and_positions_leave_typed_records() {
         let mut value = json!({"payload":"0001ff", "payload_offset":17, "radius":3.0, "program":{"kind":"sum"}});
         let mut fidelity = SourceFidelity::default();
-        extract(&mut value, "native.catia.record", &mut fidelity).unwrap();
+        extract(&mut value, "native.catia.record", &mut fidelity).expect("fixture value is valid");
         assert_eq!(value["payload"]["byte_len"], 3);
         assert!(value.get("payload_offset").is_none());
         assert_eq!(value["radius"], 3.0);
