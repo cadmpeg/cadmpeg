@@ -773,12 +773,14 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let report = plan.report().clone();
+    plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -796,6 +798,11 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
             ..
         }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 50.0
     ));
+    let native = sldprt_native(regenerated.ir());
+    assert!(
+        !native.feature_input_lanes[0].scalars.is_empty(),
+        "first output lane must carry the original scalar assertion; report={report:?}; native={native:?}"
+    );
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0]
             .value
