@@ -960,6 +960,21 @@ fn inherit_configuration_shared_semantics(
         }
         return Ok(());
     }
+    if let (
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: base_seeds,
+            pattern: base_pattern,
+        }),
+    ) = (&mut *definition, base_definition)
+    {
+        if pattern.is_unresolved() {
+            pattern.clone_from(base_pattern);
+        }
+        if seeds.is_empty() {
+            seeds.clone_from(base_seeds);
+        }
+    }
     inherit_configuration_hole_semantics(definition, base_definition, true)?;
 
     Ok(())
@@ -1439,12 +1454,22 @@ pub(crate) fn normalize_configuration_differences(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let scoped = if let Some(namespace) = ir.native.namespace("sldprt") {
+        let lanes: Vec<crate::records::FeatureInputLane> =
+            namespace.arena_as_for_decode(ctx, "feature_input_lanes")?;
+        configuration_lane_assignments(&ir.model.configurations, &lanes)
+    } else {
+        Vec::new()
+    };
     let mut active = ir
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active);
-    if let Some(configuration) = active.next().filter(|_| active.next().is_none()) {
+        .enumerate()
+        .filter(|(_, configuration)| configuration.active);
+    if let Some((configuration_index, configuration)) =
+        active.next().filter(|_| active.next().is_none())
+    {
         for parameter in &mut ir.model.parameters {
             if let Some(expression) = configuration.parameter_overrides.get(&parameter.id) {
                 parameter.expression = expression.clone();
@@ -1455,7 +1480,21 @@ pub(crate) fn normalize_configuration_differences(
         }
         for feature in &mut ir.model.features {
             if let Some(state) = configuration.feature_states.get(&feature.id) {
-                apply_configuration_state(feature, state);
+                let mut state = state.clone();
+                // Late neutral bindings refine unscoped snapshots. A real
+                // scoped lane owns its unresolved fields (DI-55).
+                if !scoped
+                    .iter()
+                    .any(|(index, _)| *index == configuration_index)
+                {
+                    if let ConfigurationFeatureState::Definition { definition } = &mut state {
+                        inherit_configuration_shared_semantics(
+                            definition,
+                            feature.evaluation.definition(),
+                        )?;
+                    }
+                }
+                apply_configuration_state(feature, &state);
             }
         }
         crate::history::project::refresh_definition_dependencies(ctx, &mut ir.model.features)?;
