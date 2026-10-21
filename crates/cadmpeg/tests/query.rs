@@ -1344,11 +1344,11 @@ const FIDELITY_SIDECAR: &str = r#"{
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
     "retained_records": {
-      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
+      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0, "untyped": [],
              "bytes": {"retention": "inline", "data": "QUJDRA=="}},
-      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
+      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4, "untyped": [],
              "bytes": {"retention": "inline", "data": "RUY="}},
-      "f3d:source:record#r3": {"stream": "Other", "offset": 0,
+      "f3d:source:record#r3": {"stream": "Other", "offset": 0, "untyped": [],
              "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}
     }
   }
