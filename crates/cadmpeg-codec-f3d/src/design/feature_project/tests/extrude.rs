@@ -1901,7 +1901,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 start: ExtrudeStart::FromFace {
                     face: FaceSelection::Native(ref id),
-                    offset: None,
+                    offset: Some(ref offset),
                 },
                 extent: ExtrudeExtent::TwoSided {
                     first: ExtrudeSide {
@@ -1914,7 +1914,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &start_group.id) && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == 0.5
+            }) if (id == &start_group.id)
+                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id)
+                && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
+                && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == 0.5
         ));
     });
 }

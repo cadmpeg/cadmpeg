@@ -366,6 +366,19 @@ fn asm_history_preamble_need_not_name_the_head_state() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
     let mut history = f3d_native(result.ir()).asm_histories[0].clone();
+    assert!(
+        history.preamble.is_none(),
+        "document content excludes the source preamble"
+    );
+    let source_value = |field: &str| {
+        result.source_fidelity().metadata[&format!("{}.{field}", history.id)]
+            .parse::<i64>()
+            .expect("exact source preamble value")
+    };
+    history.preamble = Some(crate::history_records::AsmPreamble {
+        stream_size: source_value("stream_size"),
+        history_entry_count: source_value("history_entry_count"),
+    });
     assert!(crate::history::graph_is_coherent(&history));
 
     // The first preamble field names the state after the head.
