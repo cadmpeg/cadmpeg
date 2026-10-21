@@ -18,14 +18,36 @@ fn decode(smbh: &[u8]) -> CadIr {
 
 #[test]
 fn generated_cache_is_reported_without_reducing_the_construction() {
+    use crate::test_support::smbh_blocks_test::generated_curve_block;
+    use crate::test_support::smbh_revision_test::{
+        push_revision_surface_tail, synthetic_revision_surface_smbh,
+    };
+    use crate::test_support::tokens_test::{t_dbl, t_ident, t_pos, t_vec};
+
+    // This revision-gated form requires a native solved cache. The unrelated
+    // source cache is rejected, leaving an actual Absent canonical contract.
+    // Legacy cacheless extrusion has its own direct encoding and needs no fit.
+    let smbh = synthetic_revision_surface_smbh("cyl_spl_sur", |surface| {
+        t_ident(surface, "intcurve");
+        surface.push(0x0b);
+        surface.push(0x0f);
+        t_ident(surface, "exact_int_cur");
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x10);
+        for endpoint in [0.25, 0.75] {
+            surface.push(0x0a);
+            t_dbl(surface, endpoint);
+        }
+        t_vec(surface, [0.0, 0.0, 2.0]);
+        t_pos(surface, [4.0, 5.0, 6.0]);
+        push_revision_surface_tail(surface);
+    });
     let decoded = crate::F3dCodec
         .decode(
-            &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
-                &crate::test_support::smbh_surfaces_test::synthetic_cyl_spl_sur_smbh(),
-            )),
+            &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(&smbh)),
             &DecodeOptions::default(),
         )
-        .expect("decode the unchanged extrusion with its rejected source cache");
+        .expect("decode the revision-gated extrusion with its rejected source cache");
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == F3dLossCode::SurfaceCacheRejected.kind()
             && loss.message.contains("fit tolerance Some(0.02)")
@@ -44,6 +66,15 @@ fn generated_cache_is_reported_without_reducing_the_construction() {
         None
     );
     let input_construction = source.model.procedural_surfaces[0].clone();
+    let ProceduralSurfaceDefinition::Extrusion(payload) = input_construction.definition() else {
+        panic!("expected the current extrusion construction");
+    };
+    let revision = payload
+        .revision_form()
+        .expect("actual source revision form");
+    assert!(matches!(revision.cache, RevisionCacheForm::Absent {}));
+    assert_eq!(revision.revision.get(), 23100);
+    assert_eq!(revision.flags, vec![false]);
     let before = cadmpeg_ir::validate_neutral(&source, vec![]).unwrap();
     assert!(before.is_ok(), "{before:#?}");
     let mut prepared = source.clone();
