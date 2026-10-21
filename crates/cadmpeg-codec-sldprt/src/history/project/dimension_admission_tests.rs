@@ -136,3 +136,82 @@ fn supported_hole_profile_roles_type_the_canonical_unitless_depth() {
         ))
     );
 }
+
+#[test]
+fn operation_real_controls_preserve_integral_literal_spelling_and_quantity() {
+    use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+    for (kind, name) in [
+        ("Scale", "Factor"),
+        ("Scale", "ScaleX"),
+        ("Flex", "Factor"),
+        ("Helix", "Revolutions"),
+    ] {
+        let mut source = feature(kind, Some("1"), 0);
+        source.kind = kind.into();
+        source.parameters.insert(
+            cadmpeg_core::text::NonBlankString::new(name).unwrap(),
+            "2".into(),
+        );
+        assert_eq!(
+            crate::history::parameters::source_parameter_value(&source, name),
+            Some(ParameterValue::Real(FiniteReal::new(2.0).unwrap()))
+        );
+        assert!(matches!(
+            parameter_dimension::<PositiveReal>(&source, &[name]),
+            Some(Dimension::Parameter(_))
+        ));
+        assert_eq!(source.parameters[name], "2");
+        source.parameters.insert(
+            cadmpeg_core::text::NonBlankString::new(name).unwrap(),
+            "-2".into(),
+        );
+        assert_eq!(
+            crate::history::parameters::source_parameter_value(&source, name),
+            Some(ParameterValue::Real(FiniteReal::new(-2.0).unwrap()))
+        );
+        assert!(parameter_dimension::<PositiveReal>(&source, &[name]).is_none());
+    }
+    let mut ordinary = feature("ordinary", Some("2"), 0);
+    ordinary
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Factor"), "2".into());
+    assert_eq!(
+        crate::history::parameters::source_parameter_value(&ordinary, "Factor"),
+        Some(ParameterValue::Integer(2))
+    );
+}
+
+#[test]
+fn sole_authored_extrusion_depth_does_not_retype_auxiliary_parameters() {
+    use crate::records::FeatureContent;
+    let mut source = feature("extrusion", Some("20"), 1);
+    source.xml_tag = "Extrusion".into();
+    for (name, value) in [("m", "6.8"), ("aux-1", "1.2"), ("aux-2", "3.4")] {
+        source.parameters.insert(
+            cadmpeg_core::text::NonBlankString::new(name).unwrap(),
+            value.into(),
+        );
+    }
+    source.content = vec![
+        FeatureContent::Dimension("m".into()),
+        FeatureContent::Dimension("m".into()),
+    ];
+    assert_eq!(
+        crate::history::parameters::source_parameter_value(&source, "m"),
+        Some(ParameterValue::Length(Length::new(6.8).unwrap()))
+    );
+    assert!(matches!(
+        parameter_dimension::<PositiveLength>(&source, &["m"]),
+        Some(Dimension::Parameter(_))
+    ));
+    assert_eq!(
+        crate::history::parameters::source_parameter_value(&source, "aux-1"),
+        Some(ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(1.2).unwrap()
+        ))
+    );
+    source
+        .content
+        .push(FeatureContent::Dimension("aux-1".into()));
+    assert!(parameter_dimension::<PositiveLength>(&source, &["m"]).is_none());
+}
