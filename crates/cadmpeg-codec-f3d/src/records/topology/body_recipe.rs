@@ -532,7 +532,7 @@ pub(crate) struct DesignOperandGroup {
 }
 
 /// Exact owner of a construction operand.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(untagged)]
 pub(crate) enum DesignOperandOwner {
     /// Operand named by a counted construction-operand group.
@@ -548,6 +548,58 @@ pub(crate) enum DesignOperandOwner {
         scope_reference_ordinal: u32,
     },
 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DesignOperandOwnerFields {
+    #[serde(default, deserialize_with = "deserialize_owner_group_record_index")]
+    group_record_index: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_owner_group_member_ordinal")]
+    group_member_ordinal: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_owner_scope_reference_ordinal"
+    )]
+    scope_reference_ordinal: Option<u32>,
+}
+
+impl<'de> Deserialize<'de> for DesignOperandOwner {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let fields = DesignOperandOwnerFields::deserialize(deserializer)?;
+        match (
+            fields.group_record_index,
+            fields.group_member_ordinal,
+            fields.scope_reference_ordinal,
+        ) {
+            (Some(group_record_index), Some(group_member_ordinal), None) => Ok(Self::Group {
+                group_record_index,
+                group_member_ordinal,
+            }),
+            (None, None, Some(scope_reference_ordinal)) => Ok(Self::ScopeReference {
+                scope_reference_ordinal,
+            }),
+            _ => Err(serde::de::Error::custom(
+                "construction operand owner requires exactly one scope reference or complete group membership",
+            )),
+        }
+    }
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_owner_group_record_index,
+    u32,
+    "group_record_index"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_owner_group_member_ordinal,
+    u32,
+    "group_member_ordinal"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_owner_scope_reference_ordinal,
+    u32,
+    "scope_reference_ordinal"
+);
 
 impl DesignOperandOwner {
     /// Return the construction-group record and member position, when grouped.
