@@ -750,6 +750,7 @@ pub(crate) enum FeatureInputSurfaceSelectionKind {
     ExtrusionEndpoint { endpoint_selector: u32 },
 }
 
+#[cfg(test)]
 impl FeatureInputSurfaceSelection {
     pub(crate) fn endpoint_selector(&self) -> Option<u32> {
         match self.kind {
@@ -1415,9 +1416,6 @@ pub(crate) struct SketchInputEntityWire {
     ordinal: u32,
     /// Order among the lane\'s typed content records.
     sequence: u32,
-    /// Byte offset of this marker within `FeatureInputLane::native_payload`.
-    #[serde(skip)]
-    offset: Option<u64>,
     /// Feature-local object index stored immediately before the marker.
     #[serde(
         default,

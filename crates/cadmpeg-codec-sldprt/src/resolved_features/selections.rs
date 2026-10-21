@@ -177,54 +177,6 @@ fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
     View::u16_le_at(&lane.native_payload, offset + 8 + class.name.len())
 }
 
-pub(crate) fn compact_body_state_ids_for_selection(
-    lane: &FeatureInputLane,
-    selection: &FeatureInputBodySelection,
-) -> Vec<u32> {
-    let Some(token) = compact_body_state_token(lane) else {
-        return Vec::new();
-    };
-    let mut start = None;
-    for name in &lane.names {
-        if name.id == selection.object_name_ref {
-            start = name.offset.and_then(|offset| usize::try_from(offset).ok());
-            break;
-        }
-    }
-    let (Some(start), Some(end)) = (
-        start,
-        selection
-            .offset
-            .and_then(|offset| usize::try_from(offset).ok()),
-    ) else {
-        return Vec::new();
-    };
-    compact_body_state_ids(&lane.native_payload, start, end, token)
-}
-
-pub(crate) fn compact_body_retention_mode_for_selection(
-    lane: &FeatureInputLane,
-    selection: &FeatureInputBodySelection,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
-    let token = compact_body_state_token(lane)?;
-    let mut start = None;
-    for name in &lane.names {
-        if name.id == selection.object_name_ref {
-            start = name.offset.and_then(|offset| usize::try_from(offset).ok());
-            break;
-        }
-    }
-    let (Some(start), Some(end)) = (
-        start,
-        selection
-            .offset
-            .and_then(|offset| usize::try_from(offset).ok()),
-    ) else {
-        return None;
-    };
-    compact_body_retention_mode(&lane.native_payload, start, end, token)
-}
-
 fn compact_body_retention_mode(
     payload: &[u8],
     start: usize,
@@ -1889,6 +1841,7 @@ fn compact_surface_reference_at(
     Ok(inline_surface_reference_at(payload, marker))
 }
 
+#[cfg(test)]
 pub(crate) fn surface_reference_matches_at(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -3415,6 +3368,7 @@ fn compact_body_selection_vector(
     None
 }
 
+#[cfg(test)]
 pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
     let header_end = offset.checked_add(12)?;
     let schema_end = offset.checked_add(4)?;
