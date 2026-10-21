@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::writer::{encode_file, generated_minimum_resolution};
 use cadmpeg_ir::ids::Identity;
 use serde_json::json;
 use std::collections::BTreeMap;
