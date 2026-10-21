@@ -94,14 +94,28 @@ fn edit_document(ir: &CadIr) -> CadIr {
             })
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        paths.len(),
-        1,
-        "the extrusion consumes its one canonical Length parameter"
-    );
-    edited
-        .set_dimension(&feature_id, &paths[0], Length::new(37.0).unwrap())
-        .unwrap();
+    if feature.id.as_str().ends_with("#Pad") {
+        assert_eq!(
+            paths.len(),
+            1,
+            "the extrusion consumes its one canonical Length parameter"
+        );
+        edited
+            .set_dimension(&feature_id, &paths[0], Length::new(37.0).unwrap())
+            .unwrap();
+    } else {
+        // PartDesign::Feature retains evaluated geometry and an independent
+        // Length property. That property does not assert an extrusion recipe.
+        assert!(matches!(
+            feature.definition().operation(),
+            cadmpeg_ir::features::FeatureOperation::StoredGeometry {}
+        ));
+        assert!(paths.is_empty());
+        let value = ParameterValue::Length(Length::new(37.0).unwrap());
+        edited
+            .set_parameter_expression(&length, Expression::literal(&value), Some(value))
+            .unwrap();
+    }
     edited
         .model
         .features
@@ -154,7 +168,7 @@ fn edit_document(ir: &CadIr) -> CadIr {
         .expect("the canonical design and display edits form a valid document")
 }
 
-fn assert_edits(ir: &CadIr) {
+fn assert_edits(ir: &CadIr, fixture_name: &str) {
     assert!(ir
         .model
         .features
@@ -176,17 +190,34 @@ fn assert_edits(ir: &CadIr) {
         .find(|feature| feature.name.as_deref() == Some(FEATURE_NAME))
         .unwrap();
     let definition = serde_json::to_value(feature.definition()).unwrap();
-    assert!(
-        feature
-            .definition()
-            .dimension_paths()
-            .iter()
-            .any(|path| definition.pointer(path).is_some_and(|dimension| {
+    let bindings = feature
+        .definition()
+        .dimension_paths()
+        .into_iter()
+        .filter(|path| {
+            definition.pointer(path).is_some_and(|dimension| {
                 dimension["kind"] == "parameter"
                     && dimension["value"].as_str() == Some(length.id.as_str())
-            })),
-        "the extrusion keeps its canonical parameter binding"
-    );
+            })
+        })
+        .count();
+    if fixture_name == "core_design_product.FCStd" {
+        assert!(matches!(
+            feature.definition().operation(),
+            cadmpeg_ir::features::FeatureOperation::StoredGeometry {}
+        ));
+        assert_eq!(bindings, 0, "a stored result invents no extrusion recipe");
+        assert_eq!(length.owner.as_ref(), Some(&feature.id));
+    } else {
+        assert!(matches!(
+            feature.definition().operation(),
+            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+        ));
+        assert_eq!(
+            bindings, 1,
+            "the extrusion keeps its canonical parameter binding"
+        );
+    }
     assert!(
         feature.needs_recompute,
         "FreeCAD must retain the edited feature's Touched state"
@@ -229,6 +260,94 @@ fn counts(ir: &CadIr) -> [usize; 9] {
     ]
 }
 
+fn assert_history_parameters(ir: &CadIr) {
+    use cadmpeg_ir::features::ParameterValue;
+    use std::collections::BTreeSet;
+
+    let original = BTreeSet::from([
+        "Fillet:Radius",
+        "Pad:Length",
+        "Pad:Length2",
+        "PadSketch:constraint:3",
+        "PadSketch:constraint:4",
+        "Pocket:Length",
+        "Pocket:Length2",
+        "PocketSketch:constraint:1",
+    ]);
+    let suffix = |parameter: &cadmpeg_ir::features::DesignParameter| {
+        parameter
+            .id
+            .as_str()
+            .strip_prefix("fcstd:design:parameter#")
+            .unwrap()
+            .to_owned()
+    };
+    let retained = ir
+        .model
+        .parameters
+        .iter()
+        .map(suffix)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        retained.len(),
+        ir.model.parameters.len(),
+        "parameter identities are unique"
+    );
+    assert_eq!(
+        retained
+            .iter()
+            .filter(|id| original.contains(id.as_str()))
+            .count(),
+        8
+    );
+    let mut additional = BTreeSet::new();
+    // These eight source properties were absent from the old neutral projection.
+    // They are separate controls, not copies of Length or sketch dimensions.
+    for owner in ["Pad", "Pocket"] {
+        for name in ["Offset", "Offset2", "TaperAngle", "TaperAngle2"] {
+            let id = format!("{owner}:{name}");
+            additional.insert(id.clone());
+            let parameter = ir
+                .model
+                .parameters
+                .iter()
+                .find(|p| suffix(p) == id)
+                .unwrap();
+            assert_eq!(parameter.name, name);
+            assert_eq!(
+                parameter.owner.as_ref().unwrap().as_str(),
+                format!("fcstd:design:feature#{owner}")
+            );
+            assert_eq!(
+                parameter.native_ref.as_deref(),
+                Some(format!("fcstd:native:property#{id}").as_str())
+            );
+            if name.starts_with("TaperAngle") {
+                assert!(
+                    matches!(&parameter.value, Some(ParameterValue::Angle(value)) if value.get() == 0.0)
+                );
+                assert_eq!(
+                    parameter.expression.literal_text().as_deref(),
+                    Some("0 rad")
+                );
+            } else {
+                assert!(
+                    matches!(&parameter.value, Some(ParameterValue::Length(value)) if value.get() == 0.0)
+                );
+                assert_eq!(parameter.expression.literal_text().as_deref(), Some("0 mm"));
+            }
+        }
+    }
+    assert_eq!(
+        retained,
+        original
+            .into_iter()
+            .map(str::to_owned)
+            .chain(additional)
+            .collect()
+    );
+}
+
 fn assert_full_decode(ir: &CadIr, sidecar: &DecodeSidecar) {
     assert_eq!(ir.scope, ContentScope::full());
     assert_eq!(sidecar.report.scope(), ir.scope);
@@ -251,7 +370,8 @@ fn cadir_edits_with_deleted_sidecar_synthesize_the_edited_document() {
         assert_full_decode(&before, &sidecar);
         assert!(sidecar.report.losses.is_empty(), "{name}");
         if name == "design_history.FCStd" {
-            assert_eq!(counts(&before)[..6], [6, 2, 5, 5, 8, 8]);
+            assert_history_parameters(&before);
+            assert_eq!(counts(&before)[..6], [6, 2, 5, 5, 16, 8]);
         }
         let edited = edit_document(&before);
         fs::write(&cadir, edited.to_canonical_json().unwrap()).unwrap();
@@ -282,7 +402,7 @@ fn cadir_edits_with_deleted_sidecar_synthesize_the_edited_document() {
         run_dump(&output, &redump);
         let written = read_ir(&redump);
         assert_full_decode(&written, &read_sidecar(&redump));
-        assert_edits(&written);
+        assert_edits(&written, name);
         assert_eq!(counts(&written), counts(&edited), "{name}");
         let library_report = FcstdCodec
             .plan(
@@ -393,7 +513,7 @@ fn library_editor_rebinds_history_before_synthesizing_its_edits() {
             Some(result.source_fidelity()),
             None,
         );
-        assert_edits(written.ir());
+        assert_edits(written.ir(), name);
         assert_eq!(counts(written.ir()), counts(&edited));
         cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
         let native_output = dir.path().join("rebound.FCStd");
