@@ -175,6 +175,34 @@ fn original_bad_cache_omits_only_proven_invalid_face_and_preserves_source() {
         .any(|row| row.id == *payload.directrix()));
 }
 
+#[test]
+fn original_rejected_cache_round_trips_cadir_without_its_fit_contract() {
+    let (_, decoded) = original();
+    let ir = decoded.ir();
+    let construction = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|row| row.id.as_str() == "f3d:brep:procedural_surface#9")
+        .expect("original extrusion construction");
+    assert!(construction.cache_fit_tolerance().is_none());
+    assert!(
+        decoded.report().losses.iter().any(|loss| {
+            loss.code == F3dLossCode::SurfaceCacheRejected.kind()
+                && loss.message.contains("fit tolerance Some(0.02)")
+        }),
+        "source cache fit remains explicit decode evidence"
+    );
+    let wire = serde_json::to_string(ir).expect("serialize original recovered fixture");
+    let parsed = CadIr::from_json(&wire).expect("read recovered fixture CADIR");
+    assert_eq!(&parsed, ir);
+    assert_eq!(
+        &serde_json::from_str::<CadIr>(&wire).expect("serde recovered fixture"),
+        ir
+    );
+    check(&parsed);
+}
+
 /// A separate exact XY extrusion control, using the source fixture's untouched
 /// surviving planar triangle. Its real construction admits every boundary.
 fn planar_control(ir: &mut CadIr, cache_z: f64) {
@@ -254,6 +282,61 @@ fn exact_new_cache_control_is_retained() {
     assert_eq!(ir.model, before);
     assert!(losses.is_empty());
     check(&ir);
+}
+
+#[test]
+fn supported_cache_retains_fit_contract_through_cadir_round_trip() {
+    const FIT_TOLERANCE_MM: f64 = 0.02;
+    let (_, mut decoded) = original();
+    let mut ir = decoded.ir_mut();
+    planar_control(&mut ir, 0.0);
+    let construction_id = ir
+        .model
+        .surfaces
+        .iter()
+        .find_map(|row| {
+            if row.id.as_str() != "f3d:brep:entity#8" {
+                return None;
+            }
+            match &row.geometry {
+                SurfaceGeometry::Procedural { construction, .. } => Some(construction.clone()),
+                SurfaceGeometry::Solved(_) => None,
+            }
+        })
+        .expect("exact planar control construction");
+    ir.model
+        .procedural_surfaces
+        .iter_mut()
+        .find(|row| row.id == construction_id)
+        .unwrap()
+        .set_cache_fit_tolerance(Some(FIT_TOLERANCE_MM))
+        .unwrap();
+    let before = ir.model.clone();
+    let mut native = F3dNative::default();
+    let mut losses = vec![];
+    assert!(!recover(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        &mut native,
+        &mut losses
+    )
+    .unwrap());
+    assert_eq!(ir.model, before);
+    assert!(losses.is_empty());
+    let wire = serde_json::to_string(&*ir).expect("serialize supported cache");
+    let parsed = CadIr::from_json(&wire).expect("read supported cache CADIR");
+    assert_eq!(&parsed, &*ir);
+    let construction = parsed
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|row| row.id == construction_id)
+        .unwrap();
+    assert_eq!(
+        construction.cache_fit_tolerance().unwrap().get(),
+        FIT_TOLERANCE_MM
+    );
+    check(&parsed);
 }
 
 #[test]
