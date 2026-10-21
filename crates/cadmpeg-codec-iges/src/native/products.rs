@@ -128,7 +128,7 @@ pub(super) fn project(
             continue;
         };
         for link in &record.neutral_links {
-            let bodies =
+            let mut bodies =
                 if let Some(body) = ir.model.bodies.iter().find(|body| body.id.as_str() == link) {
                     vec![body.id.clone()]
                 } else {
