@@ -339,7 +339,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         matches!(
             &error,
             cadmpeg_core::CodecError::Malformed(message)
-                if message.contains("conflicting positions")
+                if message == "solved loci disagree with their coincidence constraint"
         ),
         "{error}"
     );
