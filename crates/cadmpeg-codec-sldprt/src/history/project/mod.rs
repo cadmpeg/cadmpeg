@@ -230,7 +230,7 @@ pub(crate) fn project_feature_model(
                     &native_by_source,
                     &features_by_source,
                     &history.features,
-                )?;
+                );
                 let projected = cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id)?,
                     ordinal: source_ordered
@@ -1223,22 +1223,20 @@ fn project_definition(
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<FeatureDefinition, CodecError> {
+) -> FeatureDefinition {
     if feature.input_class.as_deref() == Some("moBaseBody_c") {
-        return Ok(FeatureDefinition::Operation(
-            FeatureOperation::StoredGeometry {},
-        ));
+        return FeatureDefinition::Operation(FeatureOperation::StoredGeometry {});
     }
     if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
-        return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+        return FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        }));
+        });
     }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
-        return Ok(FeatureDefinition::Operation(FeatureOperation::TreeNode {
+        return FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role,
             children: cadmpeg_ir::features::TreeChildren::default(),
-        }));
+        });
     }
     let class = classify(feature);
     let projected_pattern = if class == Some(FeatureClass::Pattern) {
@@ -1247,50 +1245,43 @@ fn project_definition(
         None
     };
     if class == Some(FeatureClass::CosmeticThread) {
-        return Ok(project_cosmetic_thread(feature));
+        return project_cosmetic_thread(feature);
     }
     if class == Some(FeatureClass::Sketch) {
-        return Ok(
-            if feature.kind.eq_ignore_ascii_case("3DSketch")
-                || feature.input_class.as_deref() == Some("mo3DProfileFeature_c")
-            {
-                FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
-            } else {
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                })
-            },
-        );
+        return if feature.kind.eq_ignore_ascii_case("3DSketch")
+            || feature.input_class.as_deref() == Some("mo3DProfileFeature_c")
+        {
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
+        } else {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            })
+        };
     }
     if class == Some(FeatureClass::SketchBlockDefinition) {
-        return Ok(FeatureDefinition::Operation(
-            FeatureOperation::SketchBlockDefinition { sketch: None },
-        ));
+        return FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition {
+            sketch: None,
+        });
     }
     if class == Some(FeatureClass::SketchBlockInstance) {
-        return Ok(FeatureDefinition::Operation(
-            FeatureOperation::SketchBlockInstance {
-                block: feature
-                    .properties
-                    .get("BlockDefinition")
-                    .and_then(|source| by_source.get(source.as_str()))
-                    .cloned(),
-                placement: sketch_block_placement(feature),
-            },
-        ));
+        return FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+            block: feature
+                .properties
+                .get("BlockDefinition")
+                .and_then(|source| by_source.get(source.as_str()))
+                .cloned(),
+            placement: sketch_block_placement(feature),
+        });
     }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
-        return Ok(
-            project_offset_plane(feature, by_source).unwrap_or_else(|| native_definition(feature))
-        );
+        return project_offset_plane(feature, by_source)
+            .unwrap_or_else(|| native_definition(feature));
     }
     if let Some(plane) = principal_plane_in_history(feature, features_by_source, history_features) {
-        return Ok(FeatureDefinition::Operation(
-            FeatureOperation::DatumPrincipalPlane { plane },
-        ));
+        return FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane });
     }
     if class == Some(FeatureClass::ReferencePlane) {
-        return Ok(project_datum_plane(feature).unwrap_or_else(|| {
+        return project_datum_plane(feature).unwrap_or_else(|| {
             if feature.properties.contains_key("NativeRole") {
                 native_definition(feature)
             } else {
@@ -1298,46 +1289,45 @@ fn project_definition(
                     family: UnresolvedFamily::DatumPlane,
                 })
             }
-        }));
+        });
     }
     if class == Some(FeatureClass::ReferenceAxis) {
-        return Ok(project_datum_axis(feature).unwrap_or_else(|| native_definition(feature)));
+        return project_datum_axis(feature).unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::ReferencePoint) {
-        return Ok(project_datum_point(feature).unwrap_or_else(|| native_definition(feature)));
+        return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::CoordinateSystem) {
-        return Ok(project_datum_coordinate_system(feature).unwrap_or(
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+        return project_datum_coordinate_system(feature).unwrap_or(FeatureDefinition::Operation(
+            FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumCoordinateSystem,
-            }),
+            },
         ));
     }
     if class == Some(FeatureClass::EquationCurve) {
-        return Ok(project_equation_curve(feature).unwrap_or_else(|| native_definition(feature)));
+        return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::ProjectedCurve) {
-        return Ok(project_projected_curve(feature, native_by_source)
-            .unwrap_or_else(|| native_definition(feature)));
+        return project_projected_curve(feature, native_by_source)
+            .unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::CompositeCurve) {
-        return Ok(project_composite_curve(feature, native_by_source)
-            .unwrap_or_else(|| native_definition(feature)));
+        return project_composite_curve(feature, native_by_source)
+            .unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::Helix) {
-        return Ok(match project_helix(feature) {
+        return match project_helix(feature) {
             Some(definition) => definition,
             None => {
                 project_native_axis_helix(feature).unwrap_or_else(|| native_definition(feature))
             }
-        });
+        };
     }
     if class == Some(FeatureClass::Wrap) {
-        return Ok(
-            project_wrap(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-        );
+        return project_wrap(feature, native_by_source)
+            .unwrap_or_else(|| native_definition(feature));
     }
-    Ok(if class == Some(FeatureClass::Extrude) {
+    if class == Some(FeatureClass::Extrude) {
         project_extrude(feature, native_by_source, features_by_source)
             .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Fillet) {
@@ -1399,7 +1389,7 @@ fn project_definition(
         project_rib(feature, native_by_source)
     } else {
         native_definition(feature)
-    })
+    }
 }
 
 fn parameter_names(feature: &Feature) -> Vec<String> {
