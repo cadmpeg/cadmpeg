@@ -516,6 +516,11 @@ pub(crate) fn sync_feature_scalars(
                 )
             })
             .map(|index| &model.configurations[index]);
+        if lane.configuration.is_some() && configuration.is_none() {
+            // A scoped native statement without a unique canonical slot is
+            // independent content. A global cache cannot replace its value.
+            continue;
+        }
         let names_by_id = lane
             .names
             .iter()
