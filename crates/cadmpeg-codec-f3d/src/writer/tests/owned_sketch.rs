@@ -328,8 +328,16 @@ fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_report
     let expected_references = original_native
         .persistent_references
         .iter()
-        .map(|reference| (reference.kind, reference.value))
-        .collect::<Vec<_>>();
+        .map(|reference| {
+            (
+                serde_json::to_string(&reference.kind).unwrap(),
+                reference.value,
+            )
+        })
+        .fold(std::collections::BTreeMap::new(), |mut counts, key| {
+            *counts.entry(key).or_insert(0usize) += 1;
+            counts
+        });
     let expected_lost_edges = original_native
         .lost_edge_references
         .iter()
@@ -458,13 +466,32 @@ fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_report
         .find(|owner| Some(owner.record_index()) == parameter.owner_record_index())
         .unwrap();
     assert_eq!(owner.evaluated_value().get(), 1.5);
+    assert_eq!(native.persistent_references.len(), 12);
     assert_eq!(
         native
             .persistent_references
             .iter()
-            .map(|reference| (reference.kind, reference.value))
-            .collect::<Vec<_>>(),
+            .map(|reference| (
+                serde_json::to_string(&reference.kind).unwrap(),
+                reference.value
+            ))
+            .fold(std::collections::BTreeMap::new(), |mut counts, key| {
+                *counts.entry(key).or_insert(0usize) += 1;
+                counts
+            }),
         expected_references
+    );
+    assert_eq!(
+        native
+            .persistent_references
+            .iter()
+            .filter(|reference| {
+                reference.kind
+                    == crate::records::references::PersistentReferenceKind::CurveSecondary
+                    && reference.value == 0
+            })
+            .count(),
+        2
     );
     assert_eq!(
         native

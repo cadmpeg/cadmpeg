@@ -240,7 +240,7 @@ pub(super) fn encode_design_bulkstream(
     let mut primary_records = Vec::new();
     // Independent references have no indexed owner. Emit them before every
     // indexed frame so no curve, text, relation or companion owns their bytes.
-    for reference in &native.persistent_references {
+    for reference in independent_persistent_references(native) {
         out.extend_from_slice(persistent_reference_name(reference.kind));
         out.extend_from_slice(&2u32.to_le_bytes());
         out.extend_from_slice(&14u32.to_le_bytes());
@@ -499,6 +499,57 @@ pub(super) fn encode_design_bulkstream(
         bytes: out,
         primary_records,
     }))
+}
+
+fn independent_persistent_references(
+    native: &F3dNative,
+) -> Vec<&crate::records::references::PersistentReference> {
+    // The flat observation arena also names fields encoded inside retained
+    // Sketch records. Consume one occurrence per actual typed field, within
+    // the same stream; equal independent observations keep their multiplicity.
+    let mut owned = native
+        .sketch_points
+        .iter()
+        .filter_map(|point| {
+            Some((
+                crate::ids::native_stream(&point.id)?,
+                PersistentReferenceKind::Point,
+                point.persistent_id()?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    for curve in &native.sketch_curve_identities {
+        if let Some(scope) = crate::ids::native_stream(&curve.id) {
+            owned.push((
+                scope,
+                PersistentReferenceKind::CurvePrimary,
+                curve.primary_id.get(),
+            ));
+            owned.push((
+                scope,
+                PersistentReferenceKind::CurveSecondary,
+                curve.secondary_id,
+            ));
+        }
+    }
+    native
+        .persistent_references
+        .iter()
+        .filter(|reference| {
+            let Some(scope) = crate::ids::native_stream(&reference.id) else {
+                return true;
+            };
+            let owned_at = owned
+                .iter()
+                .position(|candidate| *candidate == (scope, reference.kind, reference.value));
+            if let Some(index) = owned_at {
+                owned.swap_remove(index);
+                false
+            } else {
+                true
+            }
+        })
+        .collect()
 }
 
 fn primary_record(
@@ -1241,3 +1292,6 @@ mod relation_ordinal_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod persistent_references_tests;
