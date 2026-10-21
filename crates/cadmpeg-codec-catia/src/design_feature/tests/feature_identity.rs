@@ -296,11 +296,10 @@ fn decode_does_not_promote_field_class_names_to_features() {
 
         assert!(decoded.ir().model.features.is_empty());
         let native = crate::native::CatiaNative::load(
-            decoded
-                .ir()
-                .native
-                .namespace("catia")
-                .expect("CATIA native namespace"),
+            (&crate::test_support::source_fidelity::native_namespace(
+                decoded.ir(),
+                decoded.source_fidelity(),
+            )),
         )
         .expect("load retained field-class vocabulary");
         assert_eq!(

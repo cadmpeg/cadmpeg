@@ -1869,7 +1869,10 @@ fn display_jt_lane_above_the_arithmetic_work_bound_reports_its_loss() {
         .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
         .expect("a bounded JT lane is not a decode error");
 
-    let namespace = result.ir().native.namespace("nx").expect("NX records");
+    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ));
     assert!(!namespace.arenas()["display_jt_shape_lod_elements"].is_empty());
     assert!(namespace
         .arenas()
