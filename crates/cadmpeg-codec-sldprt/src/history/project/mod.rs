@@ -28,29 +28,15 @@ use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame
 use crate::records::FeatureSource;
 
 pub(crate) mod consumed;
-#[cfg(test)]
-mod content_tests;
-#[cfg(test)]
-mod custom_property_tests;
 mod datum;
-#[cfg(test)]
-mod dependency_projection_tests;
-#[cfg(test)]
-mod dimension_admission_tests;
-#[cfg(test)]
-mod dimension_projection_tests;
-#[cfg(test)]
-mod feature_projection_tests;
 pub(crate) mod modify;
 pub(crate) mod pattern;
-#[cfg(test)]
-mod regeneration_tests;
 pub(super) mod sketch;
 pub(crate) mod solid;
 mod spin;
-#[cfg(test)]
-mod split_and_identity_tests;
 mod surface;
+#[cfg(test)]
+mod tests;
 
 use self::datum::{
     project_composite_curve, project_datum_axis, project_datum_coordinate_system,

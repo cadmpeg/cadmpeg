@@ -3,8 +3,8 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
-use crate::decode::assign_configuration_bodies;
 use crate::decode::mark_active_configuration;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
@@ -16,6 +16,13 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::BTreeMap;
+
+fn assign_configuration_bodies(
+    ir: &mut CadIr,
+    configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+) -> Result<(), CodecError> {
+    crate::decode::assign_configuration_bodies_with_lanes(ir, configuration_bodies, &[])
+}
 
 #[test]
 fn configuration_partitions_require_explicit_source_identity() {

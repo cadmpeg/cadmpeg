@@ -8,6 +8,8 @@
 //! rejects, so one over a clean tree leaves the tree clean. Fixture
 //! regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
 
+mod source_representation;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -1141,7 +1143,7 @@ fn geometry_depth_agrees_with_full_depth() {
         |result| {
             crate::decode::assert_projection_records_are_reported(result);
             let native = crate::test_support::native_test::f3d_native(result.ir());
-            let expected = crate::loss::unrepresented(&result.report().losses, &native);
+            let expected = source_representation::unrepresented(&result.report().losses, &native);
             for class in expected {
                 assert!(
                     result.source_fidelity().unrepresented().contains(&class),

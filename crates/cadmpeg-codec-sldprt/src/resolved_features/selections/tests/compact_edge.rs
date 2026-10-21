@@ -4,6 +4,8 @@ use super::super::super::component_paths::{
     compact_edge_path_value, compact_edge_selection_set_value,
 };
 use super::super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
+use super::helpers::compact_body_selection_at;
+use super::helpers::surface_reference_matches_at;
 use crate::classification::FeatureClass;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -12,7 +14,6 @@ use crate::records::{
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
 use crate::resolved_features::selections::compact_body_retention_mode;
-use crate::resolved_features::selections::compact_body_selection_at;
 use crate::resolved_features::selections::compact_body_selection_vector;
 use crate::resolved_features::selections::compact_body_state_ids;
 use crate::resolved_features::selections::compact_component_reference_list;
@@ -29,7 +30,6 @@ use crate::resolved_features::selections::fillet_edge_roster_end;
 use crate::resolved_features::selections::is_component_vector_selector;
 use crate::resolved_features::selections::marker_local_links;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
-use crate::resolved_features::selections::surface_reference_matches_at;
 use crate::resolved_features::selections::unique_marker_candidate;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::BTreeMap;

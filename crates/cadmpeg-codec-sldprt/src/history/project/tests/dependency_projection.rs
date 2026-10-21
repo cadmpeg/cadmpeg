@@ -49,7 +49,7 @@ fn actual_profile_reference_wins_over_stale_authored_dependency_edges() {
         configurations: Vec::new(),
         features: vec![first, second, extrusion, fillet],
     };
-    let projected = super::project_features(
+    let projected = super::super::project_features(
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&history),
     )
@@ -82,7 +82,7 @@ fn dependency_projection_preserves_the_callers_recursion_refusal() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::project_features(&ctx, &[history]),
+        super::super::project_features(&ctx, &[history]),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }

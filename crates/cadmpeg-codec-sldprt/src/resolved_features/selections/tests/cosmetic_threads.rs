@@ -1,7 +1,7 @@
 //! Cosmetic-thread selection and child-reference tests.
 
 use super::super::super::CLASS_MARKER;
-use super::super::selection_vector_tail;
+use super::helpers::selection_vector_tail;
 use crate::records::{
     Feature, FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole, FeatureSource, ObjectId,

@@ -1132,11 +1132,6 @@ fn cell_address(address: &str) -> Option<(u32, u32)> {
     Some((row, column))
 }
 
-#[cfg(test)]
-fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
-    CellAddress::parse(address).is_some_and(|address| range.contains(address))
-}
-
 /// `VarSet` globals and dynamic properties are scalar document content. They
 /// retain their owning feature where one exists, without inventing history
 /// nodes for the parameter container itself.
@@ -8376,10 +8371,11 @@ mod profile_tests {
     };
     use cadmpeg_ir::spreadsheets::{CellAddress, SpreadsheetRange};
 
-    use super::{
-        cell_address, endpoints_match_by_roundoff, merged_range, offset_cell_address,
-        range_contains_address,
-    };
+    use super::{cell_address, endpoints_match_by_roundoff, merged_range, offset_cell_address};
+
+    fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
+        CellAddress::parse(address).is_some_and(|address| range.contains(address))
+    }
 
     fn build_profiles(
         entities: &[SketchEntity],

@@ -56,7 +56,7 @@ fn source_value<Q: cadmpeg_ir::features::DimensionValue>(
     dimension: &cadmpeg_ir::Dimension<Q>,
     features: &[Feature],
 ) -> Q {
-    super::source_dimension_value(
+    super::super::source_dimension_value(
         dimension,
         &[FeatureHistory {
             id: "source-test".into(),
@@ -74,7 +74,7 @@ fn source_binding<Q: cadmpeg_ir::features::DimensionValue>(
     feature: &Feature,
     name: &str,
 ) -> cadmpeg_ir::Dimension<Q> {
-    super::parameter_dimension(feature, &[name])
+    super::super::parameter_dimension(feature, &[name])
         .expect("source dimension has its canonical parameter identity")
 }
 
@@ -1375,7 +1375,7 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     // Sketch class. Expand that proven source context for the generic binding
     // resolver without changing the authored feature or its expressions.
     let mut source_profile = profile.clone();
-    for (name, value) in super::solid::hole_profile_parameter_values(&profile)
+    for (name, value) in super::super::solid::hole_profile_parameter_values(&profile)
         .expect("supported hole-profile quantity roles")
     {
         let name = cadmpeg_core::text::NonBlankString::new(name).unwrap();

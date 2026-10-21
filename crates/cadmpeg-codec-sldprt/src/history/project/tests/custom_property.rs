@@ -2,7 +2,7 @@
 //! Custom-property projection tests.
 #![allow(clippy::unwrap_used)]
 
-use super::{custom_property_attributes, project_features};
+use super::super::{custom_property_attributes, project_features};
 use crate::history::tests::feature;
 use crate::history::write::features::sync_neutral_features;
 use crate::records::FeatureHistory;

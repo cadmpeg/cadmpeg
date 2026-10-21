@@ -1,7 +1,8 @@
 //! Surface-selection and component-path tests.
 
 use super::super::super::CLASS_MARKER;
-use super::super::selection_vector_tail;
+use super::helpers::selection_vector_tail;
+use super::helpers::surface_reference_matches_at;
 use crate::classification::FeatureClass;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -28,7 +29,6 @@ use crate::resolved_features::selections::inline_surface_reference_at;
 use crate::resolved_features::selections::mirror_pattern_component_path_at;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
 use crate::resolved_features::selections::planar_surface_selection_candidates;
-use crate::resolved_features::selections::surface_reference_matches_at;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::BTreeMap;
 

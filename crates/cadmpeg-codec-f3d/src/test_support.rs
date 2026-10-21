@@ -189,3 +189,5 @@ pub(crate) mod component_insert_test;
 pub(crate) mod lost_edge_test;
 
 pub(crate) mod step_conversion;
+
+pub(crate) mod loss_codes;

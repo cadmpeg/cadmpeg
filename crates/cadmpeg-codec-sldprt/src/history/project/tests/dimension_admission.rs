@@ -2,7 +2,7 @@
 //! A known bad cache cannot claim a complete typed control; missing caches retain identity.
 #![allow(clippy::unwrap_used)]
 
-use super::parameter_dimension;
+use super::super::parameter_dimension;
 use crate::history::tests::feature;
 use cadmpeg_ir::features::{Dimension, ParameterValue};
 use cadmpeg_ir::scalar::{Length, PositiveLength};
@@ -231,7 +231,7 @@ fn retained_rotation_parameter_does_not_reactivate_a_removed_body_motion() {
         "0.25rad".into(),
     );
     assert!(matches!(
-        super::modify::project_move_body(&source),
+        super::super::modify::project_move_body(&source),
         Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
             rotation: None,
             ..
@@ -243,7 +243,7 @@ fn retained_rotation_parameter_does_not_reactivate_a_removed_body_motion() {
         "0mm,0mm,0mm".into(),
     );
     assert!(
-        super::modify::project_move_body(&source).is_none(),
+        super::super::modify::project_move_body(&source).is_none(),
         "partial rotation construction stays malformed"
     );
     source.properties.insert(
@@ -251,7 +251,7 @@ fn retained_rotation_parameter_does_not_reactivate_a_removed_body_motion() {
         "0,1,0".into(),
     );
     assert!(
-        matches!(super::modify::project_move_body(&source), Some(FeatureDefinition::Operation(FeatureOperation::MoveBody { rotation: Some(rotation), .. })) if matches!(rotation.angle, Dimension::Parameter(_)))
+        matches!(super::super::modify::project_move_body(&source), Some(FeatureDefinition::Operation(FeatureOperation::MoveBody { rotation: Some(rotation), .. })) if matches!(rotation.angle, Dimension::Parameter(_)))
     );
 }
 
@@ -264,7 +264,7 @@ fn known_invalid_sweep_scale_does_not_become_an_absent_optional_control() {
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Scale"), value.into());
         assert!(
-            super::project_sweep(&source, &std::collections::HashMap::new()).is_none(),
+            super::super::project_sweep(&source, &std::collections::HashMap::new()).is_none(),
             "{value}"
         );
         assert_eq!(source.parameters["Scale"], value);
@@ -274,7 +274,7 @@ fn known_invalid_sweep_scale_does_not_become_an_absent_optional_control() {
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Scale"), value.into());
         assert!(matches!(
-            super::project_sweep(&source, &std::collections::HashMap::new()),
+            super::super::project_sweep(&source, &std::collections::HashMap::new()),
             Some(cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Sweep {
                     scale: Some(Dimension::Parameter(_)),
