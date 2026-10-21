@@ -1,7 +1,9 @@
 //! Borrowed history features with lane-local source identities.
 
 use super::scalars::FeatureObjectNames;
-use crate::records::{Feature, FeatureInputLane, FeatureSource, ObjectId};
+#[cfg(test)]
+use crate::records::FeatureInputLane;
+use crate::records::{Feature, FeatureSource, ObjectId};
 use std::collections::HashMap;
 
 /// The source one lane adds to `feature`, given that lane's object names.
@@ -36,10 +38,12 @@ impl<'a> FeatureSources<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn for_lane(features: &'a [Feature], lane: &FeatureInputLane) -> Self {
         Self::for_lane_iter(features.iter(), lane)
     }
 
+    #[cfg(test)]
     pub(crate) fn for_lane_iter(
         features: impl IntoIterator<Item = &'a Feature>,
         lane: &FeatureInputLane,

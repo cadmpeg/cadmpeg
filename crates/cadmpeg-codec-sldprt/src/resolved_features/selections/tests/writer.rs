@@ -70,7 +70,8 @@ fn semantic_writer_synthesizes_compact_edge_selection_edits() {
                 .push(crate::records::FeatureInputEdgeSelection {
                     id: "sldprt:test:edge-selection#0".into(),
                     parent: lane.id.clone(),
-                    ordinal: 0, sequence: 0,
+                    ordinal: 0,
+                    sequence: 0,
                     offset: Some(cadmpeg_core::decode::u64_from_index(marker)),
                     object_name_ref: lane.names[0].id.clone(),
                     feature_ref,
@@ -149,7 +150,8 @@ fn semantic_writer_synthesizes_compact_surface_selection_edits() {
                 .push(crate::records::FeatureInputSurfaceSelection {
                     id: "sldprt:test:surface-selection#0".into(),
                     parent: lane.id.clone(),
-                    ordinal: 0, sequence: 0,
+                    ordinal: 0,
+                    sequence: 0,
                     offset: Some(cadmpeg_core::decode::u64_from_index(marker)),
                     selector: 0,
                     kind: crate::records::FeatureInputSurfaceSelectionKind::Component,

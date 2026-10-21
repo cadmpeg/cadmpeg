@@ -136,6 +136,7 @@ pub(super) fn move_body_translation_record(
     candidate
 }
 
+#[cfg(test)]
 pub(super) fn move_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
     move_body_translation_record(payload, offset, payload.len(), u64_from_index(offset))
         .filter(|record| record.selection_offset == offset)
