@@ -827,7 +827,7 @@ fn encoder_writes_source_less_neutral_parameters() {
     assert_eq!(decoded.ir().model.parameters.len(), 1);
     assert_eq!(
         decoded.ir().model.parameters[0].expression,
-        "D1@Sketch1 * 2"
+        "D1@Sketch1 * 2".into()
     );
     assert_eq!(
         decoded.ir().model.features[0]
@@ -1898,7 +1898,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
             .find(|parameter| parameter.name == "Depth")
             .unwrap()
             .expression,
-        "20mm"
+        "20mm".into()
     );
 }
 
@@ -1961,7 +1961,7 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
-        assert_eq!(parameter.expression, "Width * 2");
+        assert_eq!(parameter.expression, "Width * 2".into());
         assert_eq!(
             parameter.value,
             Some(ParameterValue::Length(Length::new(24.0).unwrap()))
@@ -1982,7 +1982,7 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let parameter = &regenerated.ir().model.parameters[0];
-    assert_eq!(parameter.expression, "Width * 3");
+    assert_eq!(parameter.expression, "Width * 3".into());
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(36.0).unwrap()))

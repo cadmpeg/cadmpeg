@@ -58,7 +58,8 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     let relation = FeatureInputRelationInstance {
         id: "dimension".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -175,7 +176,8 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
         id: format!("selection-{ordinal}"),
         parent: "lane".into(),
-        ordinal, sequence: ordinal,
+        ordinal,
+        sequence: ordinal,
         offset: Some(offset),
         object_name_ref: "name".into(),
         feature_ref: "target-native".into(),
@@ -243,7 +245,8 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
     let selection = |ordinal, producer: Option<&str>| FeatureInputEdgeSelection {
         id: format!("selection-{ordinal}"),
         parent: "lane".into(),
-        ordinal, sequence: ordinal,
+        ordinal,
+        sequence: ordinal,
         offset: Some(u64::from(ordinal)),
         object_name_ref: "name".into(),
         feature_ref: "consumer".into(),
@@ -292,7 +295,8 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -304,7 +308,7 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::D6,
             entity_index: 0,
@@ -532,18 +536,22 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "plane-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
+                offset: Some(0),
                 value: "Front Plane".into(),
                 object_id: ObjectId::from_value(2),
             },
             FeatureInputName {
+                sequence: 100,
+                feature_ref: None,
                 id: "sketch-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 100,
+                offset: Some(100),
                 value: "Sketch1".into(),
                 object_id: ObjectId::from_value(7),
             },
@@ -931,7 +939,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         owner: Some(feature.id.clone()),
         name: format!("D{}", ordinal + 1),
         ordinal,
-        expression: diameter.to_string(),
+        expression: diameter.to_string().into(),
         value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
         display: Some(DimensionDisplay::Diameter),
         properties: BTreeMap::new(),
@@ -1162,7 +1170,9 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                                length: cadmpeg_ir::Dimension::Literal(
+                                    cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                                ),
                             },
                             draft: None,
                         },

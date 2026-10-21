@@ -198,7 +198,9 @@ fn encoder_reports_source_less_unresolved_extrusion_profile() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                            ),
                         },
                         draft: None,
                     },
@@ -521,7 +523,9 @@ fn encoder_writes_source_less_line_sketches() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                            ),
                         },
                         draft: None,
                     },

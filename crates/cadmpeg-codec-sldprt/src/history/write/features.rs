@@ -54,7 +54,7 @@ fn synchronize_feature_input_names(
                 record.name.clone(),
                 new_name.to_string(),
                 record.id.clone(),
-                record.source_id?,
+                record.source_value()?,
             ))
         })
         .collect::<Vec<_>>();
@@ -65,7 +65,7 @@ fn synchronize_feature_input_names(
         for (lane_index, lane) in native.feature_input_lanes.iter().enumerate() {
             for (name_index, name) in lane.names.iter().enumerate() {
                 if name.feature_ref.as_deref() == Some(owner_id.as_str())
-                    && name.object_id.and_then(|id| id.value()) == Some(object_id.value())
+                    && name.object_id.and_then(|id| id.value()) == Some(object_id)
                     && name.value == old_name
                 {
                     matches.push((lane_index, name_index));

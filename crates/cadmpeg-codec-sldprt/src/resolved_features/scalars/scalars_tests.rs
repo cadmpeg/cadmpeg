@@ -33,11 +33,12 @@ fn named_scalar_identity_decodes_record_fields() {
     assert_eq!(
         named_scalars(&payload, "lane", &names).unwrap(),
         vec![crate::records::FeatureInputScalar {
+            sequence: 32,
             id: "sldprt:feature-input:scalar#lane:32".into(),
             parent: "lane".into(),
             feature_ref: None,
             ordinal: 0,
-            offset: 32,
+            offset: Some(32),
             object_id: 42,
             name: names[0].id.clone(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.025).unwrap(),
@@ -180,7 +181,7 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     assert_eq!(scalar.operands.len(), 1);
     assert_eq!(
         scalar.operands[0].offset,
-        cadmpeg_core::decode::u64_from_index(trailer + 36)
+        Some(cadmpeg_core::decode::u64_from_index(trailer + 36))
     );
     assert_eq!(
         scalar.operands[0].kind,
@@ -221,7 +222,7 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
     };
     assert_eq!(
         scalar.offset,
-        cadmpeg_core::decode::u64_from_index(value_offset)
+        Some(cadmpeg_core::decode::u64_from_index(value_offset))
     );
     assert_eq!(scalar.object_id, 70);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
@@ -251,10 +252,12 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
     use crate::records::{FeatureInputName, ObjectId};
 
     let mut names = (0u32..1000)
-        .map(|index| FeatureInputName { feature_ref: None,
+        .map(|index| FeatureInputName {
+            feature_ref: None,
             id: format!("name#{index}"),
             parent: "lane".into(),
-            ordinal: index, sequence: index,
+            ordinal: index,
+            sequence: index,
             offset: Some(u64::from(index)),
             object_id: ObjectId::from_value(index + 1),
             value: format!("F{index}"),
@@ -293,10 +296,12 @@ fn indexed_feature_objects_match_the_linear_scans() {
         native_payload: vec![0; PAYLOAD_LEN].into(),
         classes: Vec::new(),
         names: (0u32..400)
-            .map(|index| FeatureInputName { feature_ref: None,
+            .map(|index| FeatureInputName {
+                feature_ref: None,
                 id: format!("name#{index}"),
                 parent: "lane".into(),
-                ordinal: index, sequence: index,
+                ordinal: index,
+                sequence: index,
                 offset: Some(u64::from(next(2_000))),
                 object_id: if next(4) == 0 {
                     None

@@ -30,7 +30,10 @@ fn dimension_nominal(annotations: &[PmiAnnotation], id: &str) -> Option<PmiValue
     else {
         panic!("dimension definition");
     };
-    relation.nominal().copied()
+    relation
+        .nominal()
+        .and_then(cadmpeg_ir::Dimension::literal)
+        .copied()
 }
 
 fn reference(id: &str, class: &str) -> Reference {

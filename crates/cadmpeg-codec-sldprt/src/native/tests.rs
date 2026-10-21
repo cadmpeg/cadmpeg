@@ -65,7 +65,8 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
             .push(crate::records::FeatureInputBodySelection {
                 id: "sldprt:native:body-selection#0".into(),
                 parent: parent.clone(),
-                ordinal: 0, sequence: 0,
+                ordinal: 0,
+                sequence: 0,
                 offset: Some(0),
                 object_name_ref: object_name_ref.clone(),
                 feature_ref: feature_ref.clone(),
@@ -77,7 +78,8 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
             .push(crate::records::FeatureInputEdgeSelection {
                 id: "sldprt:native:edge-selection#0".into(),
                 parent: parent.clone(),
-                ordinal: 0, sequence: 0,
+                ordinal: 0,
+                sequence: 0,
                 offset: Some(0),
                 object_name_ref: object_name_ref.clone(),
                 feature_ref: feature_ref.clone(),
@@ -91,7 +93,8 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
             .push(crate::records::FeatureInputSurfaceSelection {
                 id: "sldprt:native:surface-selection#0".into(),
                 parent: parent.clone(),
-                ordinal: 0, sequence: 0,
+                ordinal: 0,
+                sequence: 0,
                 offset: Some(0),
                 selector: 0,
                 kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -105,7 +108,8 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
             crate::records::FeatureInputGeneratedSurfaceIdentity {
                 id: "sldprt:native:generated-surface#0".into(),
                 parent: parent.clone(),
-                ordinal: 0, sequence: 0,
+                ordinal: 0,
+                sequence: 0,
                 offset: Some(0),
                 type_prefix: (*b"FACE").into(),
                 feature_source_id: crate::brep::feature_source::FeatureSourceId::try_from(1_u32)
@@ -118,7 +122,8 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
             .push(crate::records::FeatureInputRelationInstance {
                 id: "sldprt:native:relation-instance#0".into(),
                 parent,
-                ordinal: 0, sequence: 0,
+                ordinal: 0,
+                sequence: 0,
                 offset: Some(0),
                 family: crate::records::FeatureInputRelationFamily::CircleDiameter,
                 class_ref: "sldprt:native:class#0".into(),
@@ -1190,10 +1195,12 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
         FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
     };
 
-    let names = [FeatureInputName { feature_ref: None,
+    let names = [FeatureInputName {
+        feature_ref: None,
         id: "name".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         object_id: None,
         value: "D1".into(),
@@ -1202,14 +1209,15 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
         id: format!("scalar-{ordinal}"),
         parent: "lane".into(),
         feature_ref: Some("sketch".into()),
-        ordinal, sequence: ordinal,
+        ordinal,
+        sequence: ordinal,
         offset: Some(100 + u64::from(ordinal)),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         role: FeatureInputScalarRole::Display,
         operands: vec![FeatureInputOperand {
-            offset: 200 + u64::from(ordinal),
+            offset: Some(200 + u64::from(ordinal)),
             reference_ref: format!("reference-{ordinal}"),
             kind: FeatureInputOperandKind::E1,
             entity_index,
@@ -1219,7 +1227,8 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
     let record = |scalars: &[FeatureInputScalar]| FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(100),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),

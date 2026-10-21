@@ -1870,7 +1870,7 @@ mod relation_records_tests {
                         ),
                     ),
                 };
-                let scope_end = [next_class, feature_end, unknown_feature_limit]
+                let scope_end = [next_class, Some(feature_end), unknown_feature_limit]
                     .into_iter()
                     .flatten()
                     .min();
@@ -1990,7 +1990,7 @@ mod relation_records_tests {
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role,
             operands: vec![FeatureInputOperand {
-                offset: offset + 1,
+                offset: Some(offset + 1),
                 reference_ref: format!("reference-{offset}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x1234).unwrap()),
                 entity_index: 0,
@@ -2357,18 +2357,22 @@ mod relation_records_tests {
         );
         lane.names = vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name-first".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
+                offset: Some(0),
                 object_id: None,
                 value: "First".into(),
             },
             FeatureInputName {
+                sequence: 200,
+                feature_ref: None,
                 id: "name-second".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 200,
+                offset: Some(200),
                 object_id: None,
                 value: "Second".into(),
             },
@@ -2383,7 +2387,7 @@ mod relation_records_tests {
             ]
         );
         // 150 is past 10 + UNKNOWN_FEATURE_SPAN and inside the interval.
-        assert!(relation_scalar.offset > 10 + UNKNOWN_FEATURE_SPAN);
+        assert!(relation_scalar.offset > Some(10 + UNKNOWN_FEATURE_SPAN));
         assert_eq!(
             relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
             1
@@ -2396,16 +2400,18 @@ mod relation_records_tests {
     fn a_class_in_the_open_last_interval_reaches_the_highest_scalar_offset() {
         let history = sketch_history();
         let mut relation_scalar = scalar(10, FeatureInputScalarRole::Driving);
-        relation_scalar.offset = u64::MAX;
+        relation_scalar.offset = Some(u64::MAX);
         let mut lane = lane(
             vec![class(u64::MAX - 1, "sgPntPntHorDist")],
             vec![relation_scalar],
         );
         lane.names = vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "name-sketch".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: None,
             value: "Sketch".into(),
         }];
@@ -2435,18 +2441,22 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![relation_scalar]);
         lane.names = vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name-first".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
+                offset: Some(0),
                 object_id: None,
                 value: "First".into(),
             },
             FeatureInputName {
+                sequence: 100,
+                feature_ref: None,
                 id: "name-second".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 100,
+                offset: Some(100),
                 object_id: None,
                 value: "Second".into(),
             },
@@ -2473,18 +2483,22 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(110, "sgPntPntDist")], vec![relation_scalar]);
         lane.names = vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name-sketch".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
+                offset: Some(0),
                 object_id: None,
                 value: "Sketch".into(),
             },
             FeatureInputName {
+                sequence: 100,
+                feature_ref: None,
                 id: "name-attribute".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 100,
+                offset: Some(100),
                 object_id: None,
                 value: "Attribute-Definition".into(),
             },
@@ -2535,10 +2549,11 @@ mod relation_records_tests {
         bound.role = FeatureInputScalarRole::Display;
         let mut lane = lane(vec![class(10, "sgLLDist")], vec![dynamic, bound.clone()]);
         lane.relation_bindings = vec![FeatureInputRelationBinding {
+            sequence: 10,
             id: "binding-10".into(),
             parent: lane.id.clone(),
             ordinal: 0,
-            offset: 10,
+            offset: Some(10),
             class_ref: "class-10".into(),
             family: FeatureInputRelationFamily::LineLineDistance,
             scalar_ref: bound.id,
@@ -2558,7 +2573,7 @@ mod relation_records_tests {
 
         let instances = relation_instances(&sketch_history(), &lane).unwrap();
         assert_eq!(instances.len(), 2);
-        assert_eq!(instances[1].offset, 30);
+        assert_eq!(instances[1].offset, Some(30));
         assert_eq!(
             instances[1].family,
             FeatureInputRelationFamily::LineLineDistance
@@ -2579,18 +2594,22 @@ mod relation_records_tests {
         );
         lane.names = vec![
             FeatureInputName {
+                sequence: 20,
+                feature_ref: None,
                 id: "name-first".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 20,
+                offset: Some(20),
                 object_id: None,
                 value: "D1".into(),
             },
             FeatureInputName {
+                sequence: 40,
+                feature_ref: None,
                 id: "name-nested".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 40,
+                offset: Some(40),
                 object_id: None,
                 value: "D4".into(),
             },
@@ -2904,18 +2923,22 @@ mod relation_records_tests {
         );
         lane.names = vec![
             FeatureInputName {
+                sequence: 20,
+                feature_ref: None,
                 id: "name-d1".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 20,
+                offset: Some(20),
                 object_id: None,
                 value: "D1".into(),
             },
             FeatureInputName {
+                sequence: 50,
+                feature_ref: None,
                 id: "name-d2".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 50,
+                offset: Some(50),
                 object_id: None,
                 value: "D2".into(),
             },

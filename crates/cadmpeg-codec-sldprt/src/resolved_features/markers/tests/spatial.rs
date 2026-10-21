@@ -69,7 +69,8 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         id: "scalar".into(),
         parent: parent.into(),
         feature_ref: None,
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(100),
         object_id: 1,
         name: "name".into(),
@@ -77,10 +78,12 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         role: FeatureInputScalarRole::Driving,
         operands: vec![reference(143), reference(287)],
     }];
-    let classes = [FeatureInputClass { feature_ref: None,
+    let classes = [FeatureInputClass {
+        feature_ref: None,
         id: "sldprt:feature-input:class#synthetic:155".into(),
         parent: parent.into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(155),
         name: "sgEntHandle".into(),
     }];
@@ -93,10 +96,12 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         .all(|reference| { reference.class_ref.as_deref() == Some(classes[0].id.as_str()) }));
 
     let mut ambiguous_classes = classes.to_vec();
-    ambiguous_classes.push(FeatureInputClass { feature_ref: None,
+    ambiguous_classes.push(FeatureInputClass {
+        feature_ref: None,
         id: "sldprt:feature-input:class#synthetic:299".into(),
         parent: parent.into(),
-        ordinal: 1, sequence: 1,
+        ordinal: 1,
+        sequence: 1,
         offset: Some(299),
         name: "sgArcHandle".into(),
     });
@@ -113,14 +118,15 @@ fn reference_cells_copy_operand_identity() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: None,
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(100),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         role: FeatureInputScalarRole::Driving,
         operands: vec![FeatureInputOperand {
-            offset: 143,
+            offset: Some(143),
             reference_ref: "reference".into(),
             kind,
             entity_index: 7,
@@ -130,6 +136,7 @@ fn reference_cells_copy_operand_identity() {
     assert_eq!(
         reference_cells(std::slice::from_ref(&scalar), &[]).unwrap(),
         vec![crate::records::FeatureInputReference {
+            sequence: 0,
             id: scalar.operands[0].reference_ref.clone(),
             parent: scalar.parent,
             feature_ref: scalar.feature_ref,
@@ -671,10 +678,12 @@ fn extended_object_indexed_spatial_point_uses_wide_coordinate_offset() {
 
 #[test]
 fn relation_binding_requires_family_operand_signature() {
-    let class = FeatureInputClass { feature_ref: None,
+    let class = FeatureInputClass {
+        feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(10),
         name: "sgLLDist".into(),
     };
@@ -689,7 +698,8 @@ fn relation_binding_requires_family_operand_signature() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("sketch".into()),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(20),
         object_id: 1,
         name: "name".into(),
@@ -723,10 +733,12 @@ fn relation_binding_requires_family_operand_signature() {
 
 #[test]
 fn relation_binding_with_ambiguous_declarations_is_withheld() {
-    let class = |offset: u64, name: &str| FeatureInputClass { feature_ref: None,
+    let class = |offset: u64, name: &str| FeatureInputClass {
+        feature_ref: None,
         id: format!("class-{offset}"),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         name: name.into(),
     };
@@ -741,7 +753,8 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("sketch".into()),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(30),
         object_id: 1,
         name: "name".into(),
@@ -762,10 +775,12 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
 
 #[test]
 fn scoped_relation_binding_does_not_cross_feature_interval() {
-    let class = FeatureInputClass { feature_ref: None,
+    let class = FeatureInputClass {
+        feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(10),
         name: "sgPntPntDist".into(),
     };
@@ -780,7 +795,8 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("second".into()),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(120),
         object_id: 1,
         name: "name".into(),
@@ -1169,7 +1185,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         let entities = super::sketch_input_entities(&payload, "lane");
         let point = entities
             .iter()
-            .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
+            .find(|entity| entity.offset() == Some(cadmpeg_core::decode::u64_from_index(offset)))
             .expect("linked profile point");
         assert_eq!(point.kind(), SketchInputKind::Point);
         assert_eq!(
@@ -1251,7 +1267,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     let entities = super::sketch_input_entities(&extended, "lane");
     let point = entities
         .iter()
-        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
+        .find(|entity| entity.offset() == Some(cadmpeg_core::decode::u64_from_index(offset)))
         .expect("extended-tail linked profile point");
     assert_eq!(point.kind(), SketchInputKind::Point);
     assert_eq!(
@@ -1343,7 +1359,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     );
     let entity = super::sketch_input_entities(&legacy_geometry, "lane")
         .into_iter()
-        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
+        .find(|entity| entity.offset() == Some(cadmpeg_core::decode::u64_from_index(offset)))
         .expect("legacy geometry linked profile point");
     assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(
@@ -1398,7 +1414,8 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         id: "scalar".into(),
         parent: parent.into(),
         feature_ref: None,
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(100),
         object_id: 1,
         name: "name".into(),
@@ -1406,10 +1423,12 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         role: FeatureInputScalarRole::Driving,
         operands,
     }];
-    let class = |parent: &str, offset: u64, id: String| FeatureInputClass { feature_ref: None,
+    let class = |parent: &str, offset: u64, id: String| FeatureInputClass {
+        feature_ref: None,
         id,
         parent: parent.into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         name: "sgEntHandle".into(),
     };

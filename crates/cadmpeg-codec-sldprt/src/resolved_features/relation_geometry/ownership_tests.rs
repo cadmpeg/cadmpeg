@@ -1,7 +1,6 @@
 use super::{
     is_reference_relation_parameter, owned_relation_parameters, LaneIds, RelationParameters,
-    RELATION_PARAMETER_ID_PROPERTY, RELATION_PARAMETER_ROLE_PROPERTY,
-    RELATION_PARAMETER_ROLE_REFERENCE,
+    RELATION_PARAMETER_ID_PROPERTY,
 };
 use crate::records::relation_scalars::RelationScalars;
 use crate::records::{
@@ -23,10 +22,11 @@ pub(super) fn relation_lane() -> FeatureInputLane {
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
         relation_instances: vec![FeatureInputRelationInstance {
+            sequence: 0,
             id: "relation".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: "class".into(),
             feature_ref: "feature".into(),
@@ -73,7 +73,8 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 id: format!("scalar-{}", next(5)),
                 parent: "lane".into(),
                 feature_ref: None,
-                ordinal, sequence: ordinal,
+                ordinal,
+                sequence: ordinal,
                 offset: Some(u64::from(ordinal)),
                 object_id: 1,
                 name: format!("name-{}", next(5)),
@@ -83,10 +84,12 @@ fn indexed_relation_lookups_match_the_linear_scans() {
             })
             .collect();
         lane.names = (0..12)
-            .map(|ordinal| FeatureInputName { feature_ref: None,
+            .map(|ordinal| FeatureInputName {
+                feature_ref: None,
                 id: format!("name-{}", next(5)),
                 parent: "lane".into(),
-                ordinal, sequence: ordinal,
+                ordinal,
+                sequence: ordinal,
                 offset: Some(u64::from(ordinal)),
                 value: format!("D{}", next(3)),
                 object_id: None,
@@ -152,14 +155,9 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                         format!("relation-{}", next(5)),
                     );
                 }
-                if next(3) != 0 {
-                    properties.insert(
-                        cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ROLE_PROPERTY),
-                        RELATION_PARAMETER_ROLE_REFERENCE.into(),
-                    );
-                }
+                let reference = next(3) != 0;
                 DesignParameter {
-                    driving: true,
+                    driving: !reference,
                     id: ParameterId::mint(format!("synthetic:test:id#parameter-{}", next(20)))
                         .expect("identity grammar"),
                     owner: (next(5) != 0).then(|| {

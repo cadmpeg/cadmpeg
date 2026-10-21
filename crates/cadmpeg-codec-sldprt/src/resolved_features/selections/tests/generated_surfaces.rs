@@ -27,10 +27,12 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -47,7 +49,7 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
     let identities = generated_surface_identities(&lane).unwrap();
     assert_eq!(identities.len(), 1);
     let identity = &identities[0];
-    assert_eq!(identity.offset, u64::try_from(offset).unwrap());
+    assert_eq!(identity.offset, Some(u64::try_from(offset).unwrap()));
     assert_eq!(identity.feature_source_id.value(), 89);
     assert_eq!(identity.local_identity, 0x85b5);
     assert_eq!(identity.components.len(), 2);
@@ -83,10 +85,12 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -106,7 +110,10 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     let identities = generated_surface_identities(&lane).unwrap();
     assert_eq!(identities.len(), 2048);
     for (index, identity) in identities.iter().enumerate() {
-        assert_eq!(identity.offset, u64::try_from(first + index * 16).unwrap());
+        assert_eq!(
+            identity.offset,
+            Some(u64::try_from(first + index * 16).unwrap())
+        );
         assert_eq!(identity.feature_source_id.value(), 89);
         assert_eq!(identity.local_identity, 3);
         assert_eq!(identity.components.len(), 1);
@@ -146,17 +153,21 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
         native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
+                sequence: 0,
+                feature_ref: None,
                 id: "surface-class".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
+                offset: Some(0),
                 name: class_name.into(),
             },
             FeatureInputClass {
+                sequence: 4096,
+                feature_ref: None,
                 id: "projection-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 4096,
+                offset: Some(4096),
                 name: "moPLineProjIdRep_c".into(),
             },
         ],

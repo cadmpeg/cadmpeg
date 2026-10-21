@@ -599,7 +599,9 @@ fn sparse_configuration_values_inherit_without_copied_base_caches() {
     let independent = ParameterId::mint("synthetic:test:id#independent").expect("identity grammar");
     let overridden = ParameterId::mint("synthetic:test:id#overridden").expect("identity grammar");
     let dependent = ParameterId::mint("synthetic:test:id#dependent").expect("identity grammar");
-    let parameter = |id: ParameterId, value, dependencies: Vec<ParameterId>| DesignParameter {
+    let parameter = |id: ParameterId,
+                     value: cadmpeg_ir::features::ParameterValue,
+                     dependencies: Vec<ParameterId>| DesignParameter {
         driving: true,
         id,
         owner: None,

@@ -1,5 +1,7 @@
 //! Tests for the `projections` module.
 
+use crate::test_support::dimensions::source_value;
+
 use super::{
     full_round_fillet_selection_triple, project_compact_surface_selections,
     project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
@@ -370,7 +372,8 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     let selection = |parent: &str, offset| FeatureInputSurfaceSelection {
         id: format!("selection-{parent}"),
         parent: parent.into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -568,7 +571,8 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
     let selection = |id: &str, tail: [u8; 12]| FeatureInputSurfaceSelection {
         id: id.into(),
         parent: id.into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -660,10 +664,11 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: vec![FeatureInputSurfaceSelection {
+            sequence: 12,
             id: "selection".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 12,
+            offset: Some(12),
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "name".into(),
@@ -746,7 +751,8 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             .map(|(ordinal, local_id)| FeatureInputSurfaceSelection {
                 id: format!("selection-{ordinal}"),
                 parent: "lane".into(),
-                ordinal: u32::try_from(ordinal).unwrap(), sequence: u32::try_from(ordinal).unwrap(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                sequence: u32::try_from(ordinal).unwrap(),
                 offset: Some(cadmpeg_core::decode::u64_from_index(ordinal)),
                 selector: 0,
                 kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -861,7 +867,8 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         FeatureInputSurfaceSelection {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
-            ordinal, sequence: ordinal,
+            ordinal,
+            sequence: ordinal,
             offset: Some(u64::from(ordinal)),
             selector,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -989,7 +996,8 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         |ordinal: u32, producer: &str, source: u32, local_id: u32| FeatureInputSurfaceSelection {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
-            ordinal, sequence: ordinal,
+            ordinal,
+            sequence: ordinal,
             offset: Some(u64::from(ordinal)),
             selector: if ordinal == 0 { 6 } else { 4 },
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -1109,7 +1117,8 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     let selection = |parent: &str, signature| FeatureInputSurfaceSelection {
         id: format!("selection-{parent}"),
         parent: parent.into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -1279,7 +1288,8 @@ fn split_face_collects_distinct_generated_target_faces() {
         FeatureInputSurfaceSelection {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
-            ordinal, sequence: ordinal,
+            ordinal,
+            sequence: ordinal,
             offset: Some(u64::from(ordinal)),
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -1420,10 +1430,12 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         configurations: Vec::new(),
         features: vec![feature, next],
     };
-    let name = |id: &str, offset, object_id, value: &str| FeatureInputName { feature_ref: None,
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
@@ -1433,10 +1445,12 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            feature_ref: None,
             id: "vertex-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: vec![
@@ -1465,7 +1479,8 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     let selection = FeatureInputEdgeSelection {
         id: "edge".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(80),
         object_name_ref: "feature-name".into(),
         feature_ref: "variable".into(),
@@ -1496,8 +1511,8 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && actual_radius.get() == 2.0
-            && actual_radius_2.get() == 3.0) && selections.len() == 1
+            && source_value(&actual_radius, &history.features).get() == 2.0
+            && source_value(&actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
     ));
     lane.edge_selections.push(selection);
     let mut projected = [cadmpeg_ir::features::Feature {
@@ -1612,10 +1627,12 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         configurations: Vec::new(),
         features: vec![feature, next],
     };
-    let name = |id: &str, offset, object_id, value: &str| FeatureInputName { feature_ref: None,
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
@@ -1625,10 +1642,12 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            feature_ref: None,
             id: "edge-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: vec![
@@ -1657,7 +1676,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     let selection = FeatureInputEdgeSelection {
         id: "edge".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(80),
         object_name_ref: "feature-name".into(),
         feature_ref: "variable".into(),
@@ -1675,7 +1695,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
 
     let groups = variable_fillet_radius_groups(
         "variable",
-        &mut VariableFilletObjects::new(&[history], &[lane]),
+        &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[lane]),
         &[&selection],
     )
     .expect("legacy edge-control join");
@@ -1687,8 +1707,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && actual_radius.get() == 2.0
-            && actual_radius_2.get() == 3.0) && selections.len() == 1
+            && source_value(&actual_radius, &history.features).get() == 2.0
+            && source_value(&actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1730,7 +1750,8 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     let selection = FeatureInputEdgeSelection {
         id: "edge".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(80),
         object_name_ref: "name".into(),
         feature_ref: "variable".into(),
@@ -1759,15 +1780,15 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && actual_radius.get() == 50.0
-            && actual_radius_2.get() == 4.0) && selections.len() == 1
+            && source_value(&actual_radius, &history.features).get() == 50.0
+            && source_value(&actual_radius_2, &history.features).get() == 4.0) && selections.len() == 1
     ));
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
     assert!(variable_fillet_radius_groups(
         "variable",
-        &mut VariableFilletObjects::new(&[history], &[]),
+        &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&collision]
     )
     .is_none());
@@ -1778,7 +1799,8 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
         id: format!("{parent}-{offset}"),
         parent: parent.into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,

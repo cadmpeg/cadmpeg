@@ -236,7 +236,7 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature.id].definition,
+        decoded.ir().model.configurations[0].feature_states[&feature.id].definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(configuration_sketch)),
             ..

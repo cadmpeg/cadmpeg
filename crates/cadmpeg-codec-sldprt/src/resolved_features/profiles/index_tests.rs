@@ -128,12 +128,12 @@ fn owned_markers_match_the_lane_scans() {
             assert_eq!(
                 indexed
                     .iter()
-                    .filter(|marker| marker.offset() < end)
+                    .filter(|marker| marker.offset() < Some(end))
                     .count(),
                 markers
                     .iter()
                     .filter(|marker| {
-                        marker.feature_ref.as_deref() == Some(owner) && marker.offset() < end
+                        marker.feature_ref.as_deref() == Some(owner) && marker.offset() < Some(end)
                     })
                     .count()
             );

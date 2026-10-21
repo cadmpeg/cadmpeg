@@ -57,7 +57,8 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         id: id.into(),
         parent: "lane".into(),
         feature_ref: Some("feature".into()),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(offset),
         object_id: 1,
         name: "dimension-name".into(),
@@ -81,10 +82,12 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "dimension-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             value: "D1".into(),
             object_id: None,
         }],
@@ -99,10 +102,11 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         sketch_entities: Vec::new(),
     };
     let mut relations = vec![FeatureInputRelationInstance {
+        sequence: 10,
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 10,
+        offset: Some(10),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -164,7 +168,8 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -177,14 +182,14 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: 1,
+                offset: Some(1),
                 reference_ref: "reference-a".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 0,
                 entity_ref: Some(hint_a.id().to_string()),
             },
             FeatureInputOperand {
-                offset: 2,
+                offset: Some(2),
                 reference_ref: "reference-b".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 1,
@@ -388,7 +393,8 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         id: "scalar".into(),
         parent: "lane".into(),
         feature_ref: Some("native-feature".into()),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(10),
         object_id: 1,
         name: "name".into(),
@@ -402,10 +408,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             value: "D1".into(),
             object_id: None,
         }],
@@ -422,7 +430,8 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(10),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -575,7 +584,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let mut driving_scalar = scalar.clone();
     driving_scalar.id = "driving-by-name".into();
     driving_scalar.ordinal = 1;
-    driving_scalar.offset = 20;
+    driving_scalar.offset = Some(20);
     driving_scalar.object_id = 2;
     driving_scalar.name = "driving-name".into();
     driving_scalar.role = FeatureInputScalarRole::Driving;
@@ -643,7 +652,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         parameter.value,
         Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(parameter.expression, "<MOD-DIAM>12mm");
+    assert_eq!(parameter.expression, "<MOD-DIAM>12mm".into());
     assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
 
     parameter.value = Some(ParameterValue::Real(
@@ -685,7 +694,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         parameter.value,
         Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(parameter.expression, "12mm");
+    assert_eq!(parameter.expression, "12mm".into());
 }
 
 #[test]
@@ -919,7 +928,8 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         id: "circle-relation".into(),
         parent: "lane".into(),
         feature_ref: "feature-native".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(80),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "circle-class".into(),
@@ -930,7 +940,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 81,
+            offset: Some(81),
             reference_ref: "circle-reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
             entity_index: 0,
@@ -959,7 +969,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         name: "D1".into(),
         ordinal: 0,
-        expression: String::new(),
+        expression: String::new().into(),
         value: Some(ParameterValue::Length(Length::new(8.0).unwrap())),
         display: Some(DimensionDisplay::Diameter),
         properties: BTreeMap::new(),
@@ -1142,10 +1152,12 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         entity_index: 0,
         entity_ref: None,
     };
-    let class = FeatureInputClass { feature_ref: None,
+    let class = FeatureInputClass {
+        feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(112),
         name: "sgEntHandle".into(),
     };
@@ -1153,7 +1165,8 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         id: operand.reference_ref.clone(),
         parent: "lane".into(),
         feature_ref: Some("feature-native".into()),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: operand.offset,
         kind,
         class_ref: Some(class.id.clone()),
@@ -1355,10 +1368,12 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         entity_index: 0,
         entity_ref: None,
     };
-    let class = FeatureInputClass { feature_ref: None,
+    let class = FeatureInputClass {
+        feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(312),
         name: "sgEntHandle".into(),
     };
@@ -1374,20 +1389,23 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_payload: Vec::new().into(),
         classes: vec![class.clone()],
         names: vec![FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "feature-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            offset: Some(100),
             value: "Sketch1".into(),
             object_id: ObjectId::from_value(7),
         }],
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
         relation_instances: vec![FeatureInputRelationInstance {
+            sequence: 280,
             id: "circle-dimension".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 280,
+            offset: Some(280),
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: class.id.clone(),
             feature_ref: "feature-native".into(),
@@ -1404,6 +1422,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref,
             parent: "lane".into(),
             feature_ref: Some("feature-native".into()),

@@ -327,7 +327,7 @@ fn design_completeness_audits_typed_construction_families() {
         }),
         FeatureDefinition::Operation(FeatureOperation::Sphere {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap().into(),
             op: BooleanOp::Unresolved,
         }),
         FeatureDefinition::Operation(FeatureOperation::FaceBlend {
@@ -910,7 +910,9 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                     cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: EdgeSelection::Edges(Vec::new()),
                         radius: RadiusSpec::Constant {
-                            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                            radius: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                            ),
                         },
                         tangency_weight: None,
                     },
@@ -1187,7 +1189,11 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         owner: Some(owner.clone()),
         ordinal: 4,
         name: "D4".into(),
-        expression: cadmpeg_ir::features::Expression::parameter(future.clone()),
+        expression: cadmpeg_ir::features::Expression {
+            tokens: vec![cadmpeg_ir::features::ExpressionToken::Parameter(
+                future.clone(),
+            )],
+        },
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),

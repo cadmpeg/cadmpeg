@@ -1418,7 +1418,7 @@ fn semantic_writer_uses_consistent_neutral_features_over_native_edits() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("depth is written");
-    assert_eq!(depth.expression, "18mm");
+    assert_eq!(depth.expression, "18mm".into());
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
@@ -1849,7 +1849,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    assert_eq!(parameter.expression, "50mm");
+    assert_eq!(parameter.expression, "50mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -1989,7 +1989,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    assert_eq!(parameter.expression, "0.5");
+    assert_eq!(parameter.expression, "0.5".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(

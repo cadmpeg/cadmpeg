@@ -71,7 +71,7 @@ fn source_value<Q: cadmpeg_ir::features::DimensionValue>(
 }
 
 fn source_binding<Q>(feature: &Feature, name: &str) -> cadmpeg_ir::Dimension<Q> {
-    super::parameter_dimension(feature, name)
+    super::parameter_dimension(feature, &[name])
         .expect("source dimension has its canonical parameter identity")
 }
 
@@ -109,7 +109,9 @@ fn canonical_dependencies_participate_in_the_shared_regeneration_order() {
     ir.model.features = project_features(std::slice::from_ref(&history)).unwrap();
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();
-    ir.model.features[0].dependencies.push(predecessor.clone());
+    ir.model.features[0]
+        .dependencies
+        .insert(predecessor.clone());
     ir.model
         .configurations
         .push(cadmpeg_ir::features::DesignConfiguration {
@@ -956,26 +958,32 @@ fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
     }
     lane.names = vec![
         crate::records::FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "instance-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            offset: Some(100),
             object_id: ObjectId::from_value(25),
             value: "instance".into(),
         },
         crate::records::FeatureInputName {
+            sequence: 140,
+            feature_ref: None,
             id: "definition-name".into(),
             parent: "lane".into(),
             ordinal: 1,
-            offset: 140,
+            offset: Some(140),
             object_id: ObjectId::from_value(23),
             value: "definition".into(),
         },
         crate::records::FeatureInputName {
+            sequence: 340,
+            feature_ref: None,
             id: "compact-instance-name".into(),
             parent: "lane".into(),
             ordinal: 2,
-            offset: 340,
+            offset: Some(340),
             object_id: ObjectId::from_value(34),
             value: "compact".into(),
         },

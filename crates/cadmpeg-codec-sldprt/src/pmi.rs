@@ -821,13 +821,17 @@ fn collect_dimensions(
             },
         )?;
         for record in &mut output.records[first..] {
-            let source = |offset: u64| image.source_offset(offset.saturating_sub(36));
-            record.offset = record.offset.map(source);
-            record.value_offset = record.value_offset.map(source);
-            record.precision_offset = record.precision_offset.map(source);
-            record.basic_offset = record.basic_offset.map(source);
-            record.inspection_offset = record.inspection_offset.map(source);
-            record.reference_only_offset = record.reference_only_offset.map(source);
+            let source = |offset: u64| {
+                offset
+                    .checked_sub(36)
+                    .map(|offset| image.source_offset(offset))
+            };
+            record.offset = record.offset.and_then(source);
+            record.value_offset = record.value_offset.and_then(source);
+            record.precision_offset = record.precision_offset.and_then(source);
+            record.basic_offset = record.basic_offset.and_then(source);
+            record.inspection_offset = record.inspection_offset.and_then(source);
+            record.reference_only_offset = record.reference_only_offset.and_then(source);
             if let Some((_, offset)) = &mut record.display_text {
                 *offset = offset.map(source);
             }

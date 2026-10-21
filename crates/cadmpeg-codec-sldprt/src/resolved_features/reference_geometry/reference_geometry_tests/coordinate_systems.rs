@@ -120,10 +120,12 @@ fn coordinate_system_record(
             native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: format!("{lane_id}-name"),
                 parent: lane_id.into(),
                 ordinal: 0,
-                offset: 0,
+                offset: Some(0),
                 object_id: ObjectId::from_value(500),
                 value: name.into(),
             }],

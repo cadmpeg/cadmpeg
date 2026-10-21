@@ -52,7 +52,8 @@ fn dynamic_relation(
     FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family,
         class_ref: "class".into(),
@@ -84,7 +85,7 @@ fn length_parameter(value: f64) -> DesignParameter {
         owner: None,
         ordinal: 0,
         name: "D1".into(),
-        expression: value.to_string(),
+        expression: value.to_string().into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
         properties: BTreeMap::new(),
@@ -217,7 +218,8 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
@@ -229,7 +231,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::E1,
             entity_index: 0,

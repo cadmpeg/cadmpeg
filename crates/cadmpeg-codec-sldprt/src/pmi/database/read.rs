@@ -27,7 +27,7 @@ impl MapImage {
     }
 }
 
-pub(crate) fn images(
+pub(in crate::pmi) fn images(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<Vec<MapImage>>, CodecError> {

@@ -271,7 +271,7 @@ fn semantic_writer_round_trips_typed_scale() {
             bodies: BodySelection::Native(selection),
             center: Some(ScaleCenter::Point(checked_geometry_1)),
             factors: ScaleFactors::Uniform { factor },
-        }) if (selection == "body:1" && factor.get() == 2.0) && matches!(checked_geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
+        }) if (selection == "body:1" && decoded.ir().dimension_value(&factor).unwrap().get() == 2.0) && matches!(checked_geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),

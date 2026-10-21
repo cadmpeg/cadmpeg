@@ -908,7 +908,8 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
     let relation = FeatureInputRelationInstance {
         id: "point-relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(4),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
@@ -920,7 +921,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 5,
+            offset: Some(5),
             reference_ref: "shared-reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
             entity_index: 0,
@@ -1525,7 +1526,8 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -1627,7 +1629,8 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::LineLineDistance,
         class_ref: "class".into(),
@@ -1724,7 +1727,8 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::LineLineDistance,
         class_ref: "class".into(),
@@ -1737,14 +1741,14 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: 0,
+                offset: Some(0),
                 reference_ref: "missing-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index: 13,
                 entity_ref: None,
             },
             FeatureInputOperand {
-                offset: 1,
+                offset: Some(1),
                 reference_ref: "known-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index: 6,

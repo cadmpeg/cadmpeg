@@ -35,7 +35,8 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
@@ -47,7 +48,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8129).unwrap()),
             entity_index: 1,
@@ -108,7 +109,8 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
@@ -120,7 +122,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8207).unwrap()),
             entity_index: 0,
