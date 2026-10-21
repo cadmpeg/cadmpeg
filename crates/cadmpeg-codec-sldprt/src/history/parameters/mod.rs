@@ -381,6 +381,7 @@ fn native_parameter_is_real(feature: &Feature, name: &str) -> bool {
     match classify(feature) {
         Some(FeatureClass::Scale) => matches!(name, "Factor" | "ScaleX" | "ScaleY" | "ScaleZ"),
         Some(FeatureClass::Flex) => name == "Factor",
+        Some(FeatureClass::Sweep) => name == "Scale",
         Some(FeatureClass::Helix) => name == "Revolutions",
         _ => false,
     }

@@ -254,3 +254,33 @@ fn retained_rotation_parameter_does_not_reactivate_a_removed_body_motion() {
         matches!(super::modify::project_move_body(&source), Some(FeatureDefinition::Operation(FeatureOperation::MoveBody { rotation: Some(rotation), .. })) if matches!(rotation.angle, Dimension::Parameter(_)))
     );
 }
+
+#[test]
+fn known_invalid_sweep_scale_does_not_become_an_absent_optional_control() {
+    let mut source = feature("sweep", Some("7"), 0);
+    source.xml_tag = "Sweep".into();
+    for value in ["inf", "0", "-2"] {
+        source
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("Scale"), value.into());
+        assert!(
+            super::project_sweep(&source, &std::collections::HashMap::new()).is_none(),
+            "{value}"
+        );
+        assert_eq!(source.parameters["Scale"], value);
+    }
+    for value in ["2", "Factor * 2"] {
+        source
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("Scale"), value.into());
+        assert!(matches!(
+            super::project_sweep(&source, &std::collections::HashMap::new()),
+            Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sweep {
+                    scale: Some(Dimension::Parameter(_)),
+                    ..
+                }
+            ))
+        ));
+    }
+}
