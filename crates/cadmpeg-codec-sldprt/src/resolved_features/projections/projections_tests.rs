@@ -29,6 +29,7 @@ use cadmpeg_ir::{
 use std::collections::BTreeMap;
 
 mod compact_selections;
+mod parameter_cache;
 mod patterns;
 
 fn with_projection_context<R>(
