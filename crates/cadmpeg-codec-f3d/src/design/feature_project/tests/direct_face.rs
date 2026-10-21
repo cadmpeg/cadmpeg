@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::records::identity::Located;
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+    DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
+};
+use crate::records::topology::extrude_selection::DesignOperandRole as SourceOperandRole;
+
 use crate::records::feature::direct_face::{
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
@@ -43,28 +50,41 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
 }
 
 fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:group#100",
-        "scope_record_index": 12,
-        "scope_reference_ordinal": 0,
-        "record_index": 100,
-        "byte_offset": 1000,
-        "class_tag": "332",
-        "members": [200],
-        "member_offsets": [1026],
-        "frame": {
-            "member_count_offset": 1021,
-            "opaque_index": 1,
-            "opaque_index_offset": 1072,
-            "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 1076,
-            "variant": false
-        },
-        "role": role.raw(),
-        "role_offset": 1054,
-        "paired_class_tag": "259",
-        "paired_byte_offset": 1125
-    }))
+    DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        scope_record_index: 12,
+        scope_reference_ordinal: 0,
+        record_index: 100,
+        byte_offset: 1000,
+        role_offset: 1054,
+        paired_byte_offset: 1125,
+        id: "f3d:test:group#100".to_owned(),
+        class_tag: "332".to_owned().try_into().expect("source class tag"),
+        paired_class_tag: "259".to_owned().try_into().expect("source class tag"),
+        members: [200]
+            .into_iter()
+            .zip([1026])
+            .map(|(value, offset)| Located { value, offset })
+            .collect(),
+        lost_edge_references: Vec::new(),
+        operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(role.raw())),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1021,
+                opaque_index: 1,
+                opaque_index_offset: 1072,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1076,
+                variant: false,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+            },
+        )
+        .expect("source construction frame"),
+    })
     .unwrap()
 }
 

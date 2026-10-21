@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-module projection and completeness unit tests.
 
+use crate::records::identity::Located;
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+    DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+    DesignConstructionOperandRole,
+};
+use crate::records::topology::extrude_selection::DesignOperandRole as SourceOperandRole;
+
 use super::super::{
     container_only_dimension_parameters, unresolved_dimension_companion_count,
     DesignProjectionGaps, DimensionCompanionSources,
@@ -366,7 +374,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 source: crate::records::parameters::DesignParameterSource::new(
                     "Linear Dimension-2".into(),
                     Some(3),
-                    Some(crate::records::identity::Located {
+                    Some(Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
                     }),
@@ -464,29 +472,46 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
 
     native.design_construction_operand_groups.push(
-        serde_json::from_value(serde_json::json!({
-            "id": "native:partial-edges",
-            "scope_record_index": 1,
-            "scope_reference_ordinal": 0,
-            "record_index": 2,
-            "byte_offset": 0,
-            "class_tag": "300",
-            "members": [3],
-            "lost_edge_references": ["f3d:test:lost-edge-reference#2"],
-            "member_offsets": [0],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 1.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 0x10_0000_0000u64,
-            "role_offset": 0,
-            "paired_class_tag": "258",
-            "paired_byte_offset": 0
-        }))
+        DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+            scope_record_index: 1,
+            scope_reference_ordinal: 0,
+            record_index: 2,
+            byte_offset: 0,
+            role_offset: 0,
+            paired_byte_offset: 0,
+            id: "native:partial-edges".to_owned(),
+            class_tag: "300".to_owned().try_into().expect("source class tag"),
+            paired_class_tag: "258".to_owned().try_into().expect("source class tag"),
+            members: [3]
+                .into_iter()
+                .zip([0])
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            lost_edge_references: vec!["f3d:test:lost-edge-reference#2"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                0x10_0000_0000u64,
+            )),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 1.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                },
+            )
+            .expect("source construction frame"),
+        })
         .expect("lost-reference construction group"),
     );
     ir.model.features[2].evaluation.edit(|definition, _| {
@@ -698,11 +723,11 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         crate::records::entity_header::DesignTimelineFrame::test_items(
             0,
             vec![
-                crate::records::identity::Located {
+                Located {
                     value: 100,
                     offset: 0,
                 },
-                crate::records::identity::Located {
+                Located {
                     value: 200,
                     offset: 0,
                 },
@@ -755,7 +780,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
                 source: crate::records::parameters::DesignParameterSource::new(
                     "Linear Dimension-2".into(),
                     Some(29),
-                    Some(crate::records::identity::Located {
+                    Some(Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
                     }),
@@ -874,7 +899,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
                 .unwrap(),
             record_index: 31,
             frame_length: 100,
-            opaque_index: Some(crate::records::identity::Located {
+            opaque_index: Some(Located {
                 value: 0,
                 offset: 313,
             }),
