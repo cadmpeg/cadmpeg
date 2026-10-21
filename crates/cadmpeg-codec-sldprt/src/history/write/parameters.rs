@@ -155,12 +155,18 @@ fn sync_neutral_parameters(
                 (parameter.name.clone(), properties)
             })
             .collect();
-        let mut names = record
-            .parameters
-            .keys()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .into_iter();
+        let mut names = parameters
+            .iter()
+            .map(|parameter| parameter.name.to_string())
+            .collect::<Vec<_>>();
+        names.extend(
+            record
+                .parameters
+                .keys()
+                .filter(|name| !parameters.iter().any(|parameter| parameter.name == **name))
+                .map(ToString::to_string),
+        );
+        let mut names = names.into_iter();
         let mut content = record
             .content
             .iter()
