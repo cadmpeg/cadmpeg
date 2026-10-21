@@ -245,7 +245,37 @@ mod tests {
             let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
             assert_eq!(result.is_ok(), valid);
             if let Ok(record) = result {
-                assert_eq!(serde_json::to_value(record).unwrap(), wire);
+                // §2.4: raw record text accompanies the typed table in fidelity.
+                let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+                for (ordinal, entry) in wire["entries"].as_array().unwrap().iter().enumerate() {
+                    let id =
+                        native_child_id("string-table-entry", &record.id(), &ordinal.to_string());
+                    crate::fidelity::retain(
+                        &mut fidelity,
+                        &id,
+                        "synthetic-string-table",
+                        0,
+                        entry["raw"].as_str().unwrap().as_bytes(),
+                        cadmpeg_ir::ArenaClasses::new(),
+                    )
+                    .unwrap();
+                }
+                let mut restored = serde_json::to_value(&record).unwrap();
+                for (ordinal, entry) in restored["entries"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .enumerate()
+                {
+                    assert!(entry.get("raw").is_none());
+                    let id =
+                        native_child_id("string-table-entry", &record.id(), &ordinal.to_string());
+                    entry["raw"] = serde_json::json!(std::str::from_utf8(
+                        crate::test_support::source_fidelity::bytes(&fidelity, &id)
+                    )
+                    .unwrap());
+                }
+                assert_eq!(restored, wire);
             }
         }
     }

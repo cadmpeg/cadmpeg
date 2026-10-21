@@ -1122,7 +1122,11 @@ pub(crate) mod tests {
             .iter()
             .find(|annotation| annotation.object.ends_with("#Dimension"))
             .expect("dimension");
-        assert_eq!(dimension.text, ["12.5 mm"]);
+        assert_eq!(dimension.parameters["FormatSpec"], "12.5 mm");
+        assert!(
+            dimension.text.is_empty(),
+            "format syntax is distinct from literal text"
+        );
         assert_eq!(
             dimension.references["References2D"][0]
                 .as_ref()
@@ -1179,7 +1183,10 @@ pub(crate) mod tests {
             semantic_dimension.kind,
             cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension
         );
-        assert_eq!(semantic_dimension.text, ["12.5 mm"]);
+        assert!(
+            semantic_dimension.text.is_empty(),
+            "format syntax has its canonical format field"
+        );
         assert_eq!(semantic_dimension.format.as_deref(), Some("12.5 mm"));
         assert_eq!(semantic_dimension.value, None);
         assert_eq!(

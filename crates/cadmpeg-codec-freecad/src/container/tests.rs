@@ -305,13 +305,8 @@ fn inspects_and_closes_physical_ledger() {
         )
         .expect("decode");
     assert!(result.report().losses.is_empty());
-    let ledger = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .expect("namespace")
-        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
-        .expect("ledger");
+    let ledger: Vec<crate::native::ArchiveSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "physical-ledger");
     assert_eq!(ledger.first().map(|span| span.span.start()), Some(0));
     assert_eq!(ledger.last().map(|span| span.span.end()), Some(archive_len));
     assert!(ledger
@@ -416,13 +411,14 @@ fn thumbnail_bytes_are_retained_with_digest() {
         1,
         "thumbnail has one product reference"
     );
-    let retained = result
-        .source_fidelity()
-        .retained_records()
-        .values()
-        .next()
-        .expect("retained thumbnail");
-    assert_eq!(retained.data(), Some(b"png".as_slice()));
+    let thumbnail = cadmpeg_ir::ids::UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
+        cadmpeg_ir::ids::IdentityKey::encode_segment("thumbnails/Thumbnail.png"),
+    );
+    assert_eq!(
+        crate::test_support::source_fidelity::bytes(result.source_fidelity(), thumbnail.as_str()),
+        b"png"
+    );
 }
 
 #[test]
@@ -450,9 +446,8 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .iter()
         .find(|entry| entry.name() == "Shared.bin")
         .expect("shared entry");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans: Vec<crate::native::LogicalSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = spans
         .iter()
         .find(|span| span.entry == "Shared.bin")
