@@ -406,13 +406,16 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .unwrap();
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Patched { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert!(plan
         .report()
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "native.records-omitted"));
+    assert!(matches!(plan.report().synthesis_cause(),
+        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
+            if reason.contains("reconstructible typed payload")));
     let mut encoded = Vec::new();
     let report = plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
@@ -917,4 +920,19 @@ fn semantic_writer_types_resolved_relation_scalar() {
         ))
     );
     assert!(parameter.native_ref.is_none());
+}
+
+#[test]
+fn complete_typed_marker_content_keeps_the_patch_payload_path() {
+    let native = crate::test_support::native::complete_marker_source();
+    let [lane] = native.feature_input_lanes.as_slice() else { panic!("one complete source lane"); };
+    crate::resolved_features::native_lane_write::require_reconstructible_content(lane, &native.feature_histories)
+        .expect("all actual marker bodies and scalar operands are representable");
+    let payload = crate::writer::resolved_feature_payload(lane, &native.feature_histories, &[])
+        .expect("the supported actual typed-marker patch path remains available");
+    assert_eq!(payload, lane.native_payload.to_vec());
+    assert_eq!(lane.scalars[0].value.get(), 0.025);
+    assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
+    assert_eq!(lane.scalars[0].operands[0].entity_ref.as_deref(), Some(lane.sketch_entities[0].id()));
+    assert_eq!(lane.scalars[0].operands[1].entity_ref.as_deref(), Some(lane.sketch_entities[2].id()));
 }

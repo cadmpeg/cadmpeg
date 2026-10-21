@@ -4,96 +4,7 @@
 use super::*;
 
 fn source() -> SldprtNative {
-    let history = crate::records::FeatureHistory {
-        id: "sldprt:history#operand-control".into(),
-        part_name: None,
-        properties: std::collections::BTreeMap::default(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![crate::records::Feature {
-            id: "sldprt:history:feature#operand-control".into(),
-            parent: "sldprt:history#operand-control".into(),
-            xml_tag: "Sketch".into(),
-            tree_parent: None,
-            source_id: crate::records::FeatureSource::from_value(1),
-            ordinal: 0,
-            name: "ControlSketch".into(),
-            kind: "Sketch".into(),
-            input_class: Some("moProfileFeature_c".into()),
-            suppressed: false,
-            parameters: std::collections::BTreeMap::default(),
-            dimension_properties: std::collections::BTreeMap::default(),
-            properties: std::collections::BTreeMap::default(),
-            text: None,
-            content: Vec::new(),
-        }],
-    };
-    let mut payload = Vec::new();
-    crate::resolved_features::write_generate::append_generated_object_name(
-        &mut payload,
-        "ControlSketch",
-        1,
-    )
-    .unwrap();
-    // D6 operands address compatible point ordinals, not object indexes.
-    // Keep original operands [0, 2] and provide the actual middle point.
-    for (index, id, coordinates) in [
-        (0u32, 1u32, [0.001, 0.002]),
-        (1, 2, [0.002, 0.003]),
-        (2, 3, [0.003, 0.004]),
-    ] {
-        payload.extend_from_slice(&index.to_le_bytes());
-        crate::resolved_features::write_generate::append_coordinate_marker(
-            &mut payload,
-            SketchInputKind::Point,
-            coordinates,
-            id,
-        );
-    }
-    crate::resolved_features::write_generate::append_generated_scalar(
-        &mut payload,
-        "sgPntPntDist",
-        "Distance",
-        0.025,
-        17,
-        &[
-            (crate::records::FeatureInputOperandKind::D6, 0),
-            (crate::records::FeatureInputOperandKind::D6, 2),
-        ],
-    )
-    .unwrap();
-    crate::resolved_features::write_generate::append_generated_object_name(
-        &mut payload,
-        "IndependentName",
-        77,
-    )
-    .unwrap();
-    let lane = crate::resolved_features::write_prepare::generated_native_lane(
-        std::slice::from_ref(&history),
-        "test:native:lane#operand-control",
-        Some("0".into()),
-        payload,
-    )
-    .unwrap();
-    assert_eq!(lane.sketch_entities.len(), 3);
-    assert_eq!(lane.scalars.len(), 1);
-    assert!(lane.scalars[0]
-        .operands
-        .iter()
-        .all(|operand| operand.entity_ref.is_some()));
-    assert_eq!(
-        lane.scalars[0].operands[0].entity_ref.as_deref(),
-        Some(lane.sketch_entities[0].id())
-    );
-    assert_eq!(
-        lane.scalars[0].operands[1].entity_ref.as_deref(),
-        Some(lane.sketch_entities[2].id())
-    );
-    SldprtNative {
-        feature_histories: vec![history],
-        feature_input_lanes: vec![lane],
-        ..Default::default()
-    }
+    crate::test_support::native::complete_marker_source()
 }
 
 fn regenerate_control(source: &SldprtNative) -> (SldprtNative, Vec<LossNote>, NativeDispositions) {
@@ -173,7 +84,11 @@ fn linked_native_scalar_requires_reconstructible_markers_but_keeps_independent_n
                     name.object_id.and_then(crate::records::ObjectId::value)
                 ))
                 .collect::<Vec<_>>(),
-            [("ControlSketch", Some(1)), ("IndependentName", Some(77))]
+            [
+                ("ControlSketch", Some(1)),
+                ("Distance", None),
+                ("IndependentName", Some(77))
+            ]
         );
         let scalar = &rejected.feature_input_lanes[0].scalars[0];
         assert_eq!(
@@ -271,4 +186,39 @@ fn edited_native_scalar_with_actual_marker_operands_writes_current_value() {
         NativeDisposition::Regenerated
     );
     assert_eq!(source.feature_input_lanes[0].scalars[0].value.get(), 0.050);
+}
+
+#[test]
+fn terminal_coordinate_identity_requires_a_complete_record_boundary() {
+    let mut point = Vec::new();
+    crate::resolved_features::write_generate::append_coordinate_marker(
+        &mut point,
+        SketchInputKind::Point,
+        [0.003, 0.004],
+        7,
+    );
+    assert_eq!(
+        crate::resolved_features::markers::marker_local_id(&point, 0),
+        Some(7)
+    );
+    let mut truncated_class = point.clone();
+    truncated_class.extend_from_slice(crate::resolved_features::CLASS_MARKER);
+    truncated_class.extend_from_slice(&20u16.to_le_bytes());
+    truncated_class.extend_from_slice(b"short");
+    assert_eq!(
+        crate::resolved_features::markers::marker_local_id(&truncated_class, 0),
+        None
+    );
+    let mut unknown_tail = point.clone();
+    unknown_tail.extend_from_slice(b"unknown trailing fields");
+    assert_eq!(
+        crate::resolved_features::markers::marker_local_id(&unknown_tail, 0),
+        None
+    );
+    let mut reserved_field = point;
+    reserved_field[82] = 1;
+    assert_eq!(
+        crate::resolved_features::markers::marker_local_id(&reserved_field, 0),
+        None
+    );
 }
