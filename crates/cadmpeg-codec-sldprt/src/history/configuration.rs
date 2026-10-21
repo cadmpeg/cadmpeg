@@ -172,7 +172,9 @@ pub(crate) fn enrich_history_semantic(
     )?;
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
     apply_evaluated_parameters(ctx, histories)?;
-    crate::resolved_features::reference_geometry::enrich_history_reference_axes(histories, lanes);
+    crate::resolved_features::reference_geometry::enrich_history_reference_axes(
+        ctx, histories, lanes,
+    )?;
     crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
     Ok(())
 }
@@ -395,7 +397,7 @@ fn project_configuration_design_states_within(
             pmi_dimensions,
             HistoryEnrichment::Write,
         )?;
-        let mut features = project_features(&projection)?;
+        let mut features = project_features(ctx, &projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
             &mut features,
             &projection,

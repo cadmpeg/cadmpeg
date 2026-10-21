@@ -100,7 +100,7 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -168,7 +168,7 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -535,7 +535,7 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
         features: vec![reference, duplicate, offset],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -584,7 +584,7 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -815,7 +815,7 @@ fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
         features: vec![offset, principal],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -847,7 +847,7 @@ fn explicit_offset_plane_reference_cannot_bind_itself() {
         .properties
         .insert(cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0".into());
 
-    let projected = project_features(&[FeatureHistory {
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
@@ -899,7 +899,7 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
         features: vec![offset, principal],
     };
 
-    let mut projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let mut projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -951,7 +951,7 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
         features: vec![offset, principal],
     };
 
-    let mut projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let mut projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -1011,7 +1011,7 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
         features: vec![offset, principal],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),
@@ -1064,7 +1064,7 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
         features: vec![offset, reference],
     };
 
-    let mut projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let mut projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),

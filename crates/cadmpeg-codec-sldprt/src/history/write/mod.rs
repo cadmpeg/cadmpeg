@@ -23,6 +23,7 @@ use self::features::sync_neutral_features;
 
 /// Regenerate native feature fields from current neutral content.
 pub(crate) fn synchronize_feature_records(
+    ctx: &DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<Vec<features::FeatureInputRename>, CodecError> {
@@ -33,18 +34,19 @@ pub(crate) fn synchronize_feature_records(
     validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
     validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
     validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
-    validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
+    validate_embedded_helix_edits(ctx, &ir.model.features, native.as_ref())?;
     sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native)
 }
 
 fn validate_embedded_helix_edits(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     let Some(native) = native else {
         return Ok(());
     };
-    let embedded = project_features(&native.feature_histories)?
+    let embedded = project_features(ctx, &native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
             matches!(
@@ -157,7 +159,7 @@ fn project_feature_model_with_native_inputs(
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
     )?;
-    let mut projection = project_feature_model(&histories)?;
+    let mut projection = project_feature_model(&ctx, &histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
         features,

@@ -69,10 +69,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         existing
             .properties
             .iter()
-            .filter(|(key, _)| {
-                !consumed.contains(&key.as_str())
-                    && !crate::history::project::consumed::FEATURE_KEYS.contains(&key.as_str())
-            })
+            .filter(|(key, _)| !consumed.contains(&key.as_str()) && key.as_str() != "Scope")
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect()
     }
