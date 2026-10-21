@@ -36,9 +36,9 @@ pub(super) fn encode(
             }
             let pattern = fields
                 .value("hexadecimal_pattern")
-                .and_then(Value::as_str)
                 .ok_or("line pattern has no typed hexadecimal string")?;
-            if !pattern.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            let pattern = crate::text::field(pattern)?;
+            if !pattern.iter().all(u8::is_ascii_hexdigit) {
                 return Err("line pattern contains a nonhexadecimal character".into());
             }
             values.push(fields.text("hexadecimal_pattern")?);

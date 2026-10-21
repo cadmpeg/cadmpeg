@@ -4,33 +4,37 @@
 use super::*;
 
 pub(super) fn shape(record: &NativeRecord) -> Result<(u32, i64), String> {
-    Ok(match record.field("kind").and_then(Value::as_str) {
-        Some("definition") => (
-            302,
-            record
-                .field("associativity_form")
-                .and_then(Value::as_i64)
-                .ok_or("associativity definition has no form")?,
-        ),
-        Some("label_display") => (402, 5),
-        Some("view_list") => (402, 6),
-        Some("single_parent") => (402, 9),
-        Some("external_reference_index") => (402, 12),
-        Some("legacy_signal_string") => (402, 8),
-        Some("legacy_text_node") => (402, 10),
-        Some("legacy_connect_node") => (402, 11),
-        Some("dimensioned_geometry") => (402, 13),
-        Some("planar") => (402, 16),
-        Some("flow") => (
-            402,
-            record
-                .field("form")
-                .and_then(Value::as_i64)
-                .ok_or("flow has no form")?,
-        ),
-        Some("recalculable_dimension") => (402, 21),
-        _ => return Err("associativity has no typed kind".into()),
-    })
+    Ok(
+        match record.field("kind").as_ref().and_then(Value::as_str) {
+            Some("definition") => (
+                302,
+                record
+                    .field("associativity_form")
+                    .as_ref()
+                    .and_then(Value::as_i64)
+                    .ok_or("associativity definition has no form")?,
+            ),
+            Some("label_display") => (402, 5),
+            Some("view_list") => (402, 6),
+            Some("single_parent") => (402, 9),
+            Some("external_reference_index") => (402, 12),
+            Some("legacy_signal_string") => (402, 8),
+            Some("legacy_text_node") => (402, 10),
+            Some("legacy_connect_node") => (402, 11),
+            Some("dimensioned_geometry") => (402, 13),
+            Some("planar") => (402, 16),
+            Some("flow") => (
+                402,
+                record
+                    .field("form")
+                    .as_ref()
+                    .and_then(Value::as_i64)
+                    .ok_or("flow has no form")?,
+            ),
+            Some("recalculable_dimension") => (402, 21),
+            _ => return Err("associativity has no typed kind".into()),
+        },
+    )
 }
 
 fn pointers(fields: &mut Fields<'_>, name: &str) -> Result<Vec<String>, String> {

@@ -250,7 +250,14 @@ pub(super) fn project(
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
-    decoded.extend(layers::project(ir, directory, &records, sequences, ctx, &mut losses)?);
+    decoded.extend(layers::project(
+        ir,
+        directory,
+        &records,
+        sequences,
+        ctx,
+        &mut losses,
+    )?);
     let mut defined = BTreeMap::new();
     let mut text_fonts = BTreeMap::new();
     for entry in directory

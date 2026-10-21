@@ -4,7 +4,7 @@
 //! builder, and the pass that fills the `annotations` arena while recording
 //! counted-tail verdicts.
 
-use crate::text::NativeText;
+use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::{collect_native_items, OverdeclaredCounts};
 
@@ -21,9 +21,9 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(super) struct NativeTextRun {
+pub(super) struct NativeBytesRun {
     declared_character_count: Option<i64>,
-    text: Option<NativeText<Vec<u8>>>,
+    text: Option<NativeBytes<Vec<u8>>>,
     box_size: [Option<f64>; 2],
     font_code: Option<i64>,
     font_definition: Option<String>,
@@ -42,8 +42,8 @@ pub(super) struct NativeNewTextRun {
     line_spacing: Option<f64>,
     font_style: Option<i64>,
     character_angle: Option<f64>,
-    control_codes: Option<NativeText<Vec<u8>>>,
-    text: NativeTextRun,
+    control_codes: Option<NativeBytes<Vec<u8>>>,
+    text: NativeBytesRun,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -54,7 +54,7 @@ pub(super) enum NativeAnnotation {
         source_entity: String,
         form: i64,
         declared_string_count: Option<i64>,
-        strings: Vec<NativeTextRun>,
+        strings: Vec<NativeBytesRun>,
         transformation: Option<String>,
     },
     NewGeneralNote {
@@ -248,7 +248,7 @@ impl Subject<'_> {
         )
     }
 
-    fn text_run(&self, start: usize) -> NativeTextRun {
+    fn text_run(&self, start: usize) -> NativeBytesRun {
         let record = self.record;
         let font_code = record.and_then(|record| record.integer(start + 3));
         let text = record.and_then(|record| record.string(start + 11));
@@ -263,12 +263,12 @@ impl Subject<'_> {
                 .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
             None => None,
         };
-        NativeTextRun {
+        NativeBytesRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
             text: (!v5_null_string)
                 .then_some(text)
                 .flatten()
-                .map(|bytes| NativeText::from(bytes.to_vec())),
+                .map(|bytes| NativeBytes::from(bytes.to_vec())),
             box_size: [
                 record.and_then(|record| record.number(start + 1)),
                 record.and_then(|record| record.number(start + 2)),

@@ -35,7 +35,7 @@ pub(super) fn project(
         let NativePropertyValue::Name { value: Some(value) } = &property.value else {
             continue;
         };
-        let Some(value) = value.text() else {
+        let Some(value) = crate::text::decoded(value) else {
             losses.push(
                 IgesLossCode::NeutralProjectionUnavailable
                     .note(format!("{}: carrier name is not UTF-8", property.id)),
@@ -70,7 +70,7 @@ pub(super) fn project(
         let Some(label) = entity.label.as_ref() else {
             continue;
         };
-        let Some(label) = label.text() else {
+        let Some(label) = crate::text::decoded(label) else {
             losses.push(
                 IgesLossCode::NeutralProjectionUnavailable
                     .note(format!("{}: directory label is not UTF-8", entity.id)),

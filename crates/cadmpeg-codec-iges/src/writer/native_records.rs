@@ -106,15 +106,17 @@ fn text(value: Option<&Value>) -> Result<String, String> {
     let Some(value) = value.filter(|value| !value.is_null()) else {
         return Ok(String::new());
     };
-    let value = value.as_str().ok_or("text has no decoded Unicode value")?;
-    if !value
-        .bytes()
-        .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+    let bytes = crate::text::field(value)?;
+    if !bytes
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
     {
         return Err("text has no printable Fixed ASCII representation".into());
     }
-    Ok(format!("{}H{value}", value.len()))
+    let value = std::str::from_utf8(&bytes).map_err(|error| error.to_string())?;
+    Ok(format!("{}H{value}", bytes.len()))
 }
+
 fn coordinates(value: Option<&Value>, width: usize) -> Result<Vec<String>, String> {
     let values = value
         .and_then(Value::as_array)
@@ -151,9 +153,10 @@ fn entity(type_code: u32, form: i64, parameters: Vec<String>) -> Entity {
     }
 }
 fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
-    let form = || {
+    let form = || -> Result<i64, String> {
         record
             .field("form")
+            .as_ref()
             .and_then(Value::as_i64)
             .ok_or("record has no typed form".into())
     };
@@ -164,7 +167,7 @@ fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
         "units_data" => (316, 0),
         "line_fonts" => (
             304,
-            match record.field("kind").and_then(Value::as_str) {
+            match record.field("kind").as_ref().and_then(Value::as_str) {
                 Some("template") => 1,
                 Some("visible_blank_pattern") => 2,
                 _ => return Err("line font has no typed kind".into()),
@@ -173,9 +176,10 @@ fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
         "groups" => (
             402,
             match (
-                record.field("ordered").and_then(Value::as_bool),
+                record.field("ordered").as_ref().and_then(Value::as_bool),
                 record
                     .field("back_pointers_required")
+                    .as_ref()
                     .and_then(Value::as_bool),
             ) {
                 (Some(false), Some(true)) => 1,
