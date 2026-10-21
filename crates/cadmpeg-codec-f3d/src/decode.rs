@@ -4116,6 +4116,19 @@ fn decode_result(
             )));
     }
     let mut untyped = retained.untyped;
+    // Optional payload admission failures retain bytes but no document value.
+    // Preview, image and OGS payloads belong to model; an unclassified member
+    // can also contain design content and cannot authorize source replay.
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.attributes.contains_key("payload_error"))
+    {
+        untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
+        if entry.role == ContainerRole::Other {
+            untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
+        }
+    }
     // The manifest selector remains usable when an authored metadata field
     // cannot be read, but that field has no typed document value. Retaining
     // its original container bytes cannot authorize replay of that content.
