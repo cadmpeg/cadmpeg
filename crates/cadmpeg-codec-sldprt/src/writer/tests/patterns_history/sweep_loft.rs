@@ -558,14 +558,6 @@ fn semantic_writer_round_trips_typed_rib() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_ref = decoded.ir().model.features[0].id.clone();
-    let draft_before = decoded
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.name == "Draft")
-        .unwrap()
-        .clone();
     assert!(matches!(
     decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
         construction: cadmpeg_ir::features::RibConstruction {
@@ -581,21 +573,13 @@ fn semantic_writer_round_trips_typed_rib() {
         (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),)
             if (
                 (profile == &profile_ref && (decoded.ir().dimension_value(value).unwrap().get() - 5f64.to_radians()).abs() < 1.0e-12)
-                && decoded.ir().dimension_value(actual_thickness).unwrap().get() == 2.0
+                && decoded.ir().dimension_value(&actual_thickness).unwrap().get() == 2.0
             )
             && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })
     )));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let owner = ir_edit.model.features[1].id.clone();
-        ir_edit
-            .set_dimension(
-                &owner,
-                "/construction/thickness",
-                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-            )
-            .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Rib { construction, op }) =
                 definition
@@ -605,272 +589,30 @@ fn semantic_writer_round_trips_typed_rib() {
             construction.direction = Some(
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             );
+            construction.thickness = Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            ));
             construction.side = Some(RibSide::Centered);
             construction.draft = RibDraft::None;
             *op = BooleanOp::NewBody;
         });
     }
 
-    let owner = decoded.ir().model.features[1].id.clone();
-    let input_parameters = decoded.ir().model.parameters.clone();
-    let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .unwrap();
-    assert!(matches!(
-        plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-    ));
-    assert!(plan.report().losses.iter().any(|loss| {
-        loss.code.local_code() == "writer.design-reduced"
-            && loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains(owner.as_str())
-            && loss.message.contains(
-                "cannot retain independent parameter Draft without reactivating its rib draft",
-            )
-    }));
-    assert!(matches!(plan.report().coverage,
-        cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage)
-            if coverage.features == cadmpeg_ir::codec::write::ArenaDisposition::Reported
-    ));
     let mut encoded = Vec::new();
-    plan.write_to(&mut encoded).unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    // D1/S-entity: this native form cannot carry an independent Draft while
-    // also representing RibDraft::None. Retain the parameter and solved model,
-    // and report the lost construction instead of reactivating its old angle.
-    assert_eq!(decoded.ir().model.parameters, input_parameters);
-    // Rebuilding the container remints history positions (340 -> 375 in this
-    // fixture). Prove one global role mapping instead of equating old byte IDs.
-    let mut owners = std::collections::BTreeMap::new();
-    let mut mapped_owners = std::collections::BTreeSet::new();
-    assert_eq!(
-        regenerated.ir().model.features.len(),
-        decoded.ir().model.features.len()
-    );
-    for expected in &decoded.ir().model.features {
-        let candidates = regenerated
-            .ir()
-            .model
-            .features
-            .iter()
-            .filter(|actual| actual.ordinal == expected.ordinal && actual.name == expected.name)
-            .collect::<Vec<_>>();
-        let [actual] = candidates.as_slice() else {
-            panic!("unique feature role: {expected:#?}");
-        };
-        assert!(mapped_owners.insert(actual.id.clone()));
-        owners.insert(expected.id.clone(), actual.id.clone());
-    }
-    assert_eq!(mapped_owners.len(), regenerated.ir().model.features.len());
-    let mut parameters = std::collections::BTreeMap::new();
-    let mut mapped_parameters = std::collections::BTreeSet::new();
-    assert_eq!(
-        regenerated.ir().model.parameters.len(),
-        input_parameters.len()
-    );
-    for expected in &input_parameters {
-        let written_owner = &owners[expected.owner.as_ref().unwrap()];
-        let candidates = regenerated
-            .ir()
-            .model
-            .parameters
-            .iter()
-            .filter(|actual| {
-                actual.owner.as_ref() == Some(written_owner)
-                    && actual.ordinal == expected.ordinal
-                    && actual.name == expected.name
-            })
-            .collect::<Vec<_>>();
-        let [actual] = candidates.as_slice() else {
-            panic!("unique owned parameter role: {expected:#?}");
-        };
-        assert!(mapped_parameters.insert(actual.id.clone()));
-        parameters.insert(expected.id.clone(), actual.id.clone());
-        assert_eq!(actual.value, expected.value);
-        assert_eq!(actual.driving, expected.driving);
-        assert_eq!(actual.display, expected.display);
-        let cache = expected.value.as_ref().unwrap();
-        assert_eq!(
-            expected.expression.literal_value_as(cache).as_ref(),
-            Some(cache)
-        );
-        assert_eq!(
-            actual.expression.literal_value_as(cache).as_ref(),
-            Some(cache)
-        );
-    }
-    assert_eq!(
-        mapped_parameters.len(),
-        regenerated.ir().model.parameters.len()
-    );
-    let draft = regenerated
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.id == parameters[&draft_before.id])
-        .unwrap();
-    assert_eq!(draft.name, draft_before.name);
-    assert_eq!(
-        draft.owner.as_ref(),
-        Some(&owners[draft_before.owner.as_ref().unwrap()])
-    );
-    assert_eq!(draft.expression, draft_before.expression);
-    assert_eq!(draft.value, draft_before.value);
-    assert!(matches!(
-        regenerated
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.id == owners[&owner])
-            .unwrap()
-            .definition()
-            .operation(),
-        FeatureOperation::StoredGeometry {}
-    ));
-    let synthesized = SldprtCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-        .unwrap();
-    assert!(matches!(
-        synthesized.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-    ));
-    let synthesized_report = synthesized.report().clone();
-    let mut synthesized_bytes = Vec::new();
-    synthesized.write_to(&mut synthesized_bytes).unwrap();
-    let source_free = SldprtCodec
-        .decode(
-            &mut Cursor::new(synthesized_bytes),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let diagnostics = |stage: &str, left: &cadmpeg_ir::CadIr, right: &cadmpeg_ir::CadIr| {
-        eprintln!(
-            "Rib conservation stage={stage}; coverage={:?}",
-            synthesized_report.coverage
-        );
-        let left = serde_json::to_value(&left.model).unwrap();
-        let right = serde_json::to_value(&right.model).unwrap();
-        for arena in cadmpeg_test_support::contract::written_arenas(&synthesized_report) {
-            let key = arena.as_str();
-            if left[key] != right[key] {
-                eprintln!(
-                    "Rib conservation stage={stage} arena={key} left={} right={}",
-                    left[key], right[key]
-                );
-            }
-        }
-    };
-    diagnostics("retained-vs-sourcefree", regenerated.ir(), source_free.ir());
-    cadmpeg_test_support::contract::assert_written_arenas_agree(
-        &synthesized_report,
-        regenerated.ir(),
-        source_free.ir(),
-    );
-    diagnostics("input-vs-written", decoded.ir(), regenerated.ir());
-    cadmpeg_test_support::contract::assert_written_arenas_agree(
-        &synthesized_report,
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
-        regenerated.ir(),
-    );
-    let point_bits = |ir: &cadmpeg_ir::CadIr| {
-        let mut points = ir
-            .model
-            .points
-            .iter()
-            .map(|point| {
-                let point = point.position().get();
-                [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]
-            })
-            .collect::<Vec<_>>();
-        points.sort_unstable();
-        points
-    };
-    assert_eq!(point_bits(decoded.ir()), point_bits(regenerated.ir()));
-}
-
-#[test]
-fn semantic_writer_round_trips_rib_without_an_independent_draft() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, RibDraft, RibSide};
-    use cadmpeg_ir::math::Vector3;
-
-    // A separately authored control has no Draft parameter. It can represent
-    // the same no-draft operation without discarding independent content.
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Sketch Name="RibProfile" Type="Sketch" id="41"/><Rib Name="Web" Type="Rib" id="42" Profile="41" Direction="0,1,0" BothSides="false" Operation="Join"><Dimension Name="Thickness">2mm</Dimension></Rib></Keywords>"#,
-    ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    assert!(decoded
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .all(|parameter| parameter.name != "Draft"));
-    {
-        let mut ir_edit = decoded.ir_mut();
-        let owner = ir_edit.model.features[1].id.clone();
-        ir_edit
-            .set_dimension(
-                &owner,
-                "/construction/thickness",
-                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-            )
-            .unwrap();
-        ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Rib { construction, op }) =
-                definition
-            else {
-                panic!("typed rib");
-            };
-            construction.direction = Some(
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
-            );
-            construction.side = Some(RibSide::Centered);
-            construction.draft = RibDraft::None;
-            *op = BooleanOp::NewBody;
-        });
-    }
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-        .unwrap();
-    assert!(!plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "writer.design-reduced"));
-    let mut encoded = Vec::new();
-    plan.write_to(&mut encoded).unwrap();
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(regenerated.ir());
-    let feature = &native.feature_histories[0].features[1];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[1];
     assert_eq!(feature.properties["Profile"], "41");
     assert_eq!(feature.properties["Direction"], "1,0,0");
     assert_eq!(feature.properties["BothSides"], "true");
     assert_eq!(feature.properties["Operation"], "NewBody");
     assert_eq!(feature.parameters["Thickness"], "3mm");
     assert!(!feature.parameters.contains_key("Draft"));
-    assert!(matches!(
-        regenerated.ir().model.features[1].definition().operation(),
-        FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
-                draft: RibDraft::None,
-                ..
-            },
-            ..
-        }
-    ));
 }

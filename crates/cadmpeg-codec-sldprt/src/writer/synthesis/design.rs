@@ -18,7 +18,6 @@ use crate::native::SldprtNative;
 pub(super) fn prepare(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-    compressed_sketch_configurations: &std::collections::BTreeSet<String>,
 ) -> Result<Option<SldprtNative>, CodecError> {
     if !ir.scope.design {
         return Ok(ir
@@ -48,11 +47,7 @@ pub(super) fn prepare(
         &ir.model.bodies,
         &mut native,
     )?;
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(
-        ir,
-        &mut native,
-        compressed_sketch_configurations,
-    )?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
     let all_bodies = ir
         .model
@@ -137,117 +132,9 @@ pub(super) fn prepare(
         &Annotations::default(),
     )?;
     if let Some(native) = native.as_mut() {
-        materialize_configuration_associations(ir, native, losses)?;
         crate::resolved_features::write_feature_parameters::synthesize(ir, native)?;
     }
     Ok(native)
-}
-
-/// Native configuration records are authored even for partition-only rows.
-/// Reflect that actual new association in the prepared document so the normal
-/// changed-configuration accounting reports the representation change.
-fn materialize_configuration_associations(
-    ir: &mut CadIr,
-    native: &SldprtNative,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
-    let mut namespace = ir
-        .native
-        .namespace("sldprt")
-        .map(SldprtNative::load)
-        .transpose()?
-        .unwrap_or_default();
-    let mut associations = Vec::new();
-    for (index, configuration) in ir.model.configurations.iter().enumerate() {
-        if configuration.native_ref.is_some() {
-            continue;
-        }
-        let slot = configuration
-            .properties
-            .get("id")
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(configuration.ordinal);
-        let mut matching = native
-            .feature_histories
-            .iter()
-            .flat_map(|history| {
-                history
-                    .configurations
-                    .iter()
-                    .map(move |record| (history, record))
-            })
-            .filter(|(_, record)| {
-                let record_slot = record
-                    .properties
-                    .get("id")
-                    .and_then(|value| value.parse::<u32>().ok())
-                    .unwrap_or(record.ordinal);
-                record_slot == slot
-                    && record.source_index == configuration.source_index
-                    && Some(record.name.as_str()) == configuration.name.as_deref()
-            });
-        let (parent, record) = matching.next().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
-                "configuration {} has no authored native counterpart",
-                configuration.id
-            ))
-        })?;
-        if matching.next().is_some() {
-            return Err(CodecError::UnsupportedContent(format!(
-                "configuration {} has multiple authored native counterparts",
-                configuration.id
-            )));
-        }
-        let parent_index = match namespace
-            .feature_histories
-            .iter()
-            .position(|history| history.id == parent.id)
-        {
-            Some(index) => index,
-            None => {
-                // Only the association's required parent and native record
-                // enter the prepared namespace, never transient lane buffers.
-                let mut history = parent.clone();
-                history.features.clear();
-                history.content.clear();
-                history.configurations.clear();
-                namespace.feature_histories.push(history);
-                namespace.feature_histories.len() - 1
-            }
-        };
-        let configurations = &mut namespace.feature_histories[parent_index].configurations;
-        if let Some(existing) = configurations
-            .iter_mut()
-            .find(|existing| existing.id == record.id)
-        {
-            *existing = record.clone();
-        } else {
-            configurations.push(record.clone());
-        }
-        associations.push((index, record.id.clone(), slot));
-    }
-    if associations.is_empty() {
-        return Ok(());
-    }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )?;
-    namespace.store(&ctx, ir.native.namespace_mut("sldprt"))?;
-    // Publish associations only after the actual native records were admitted.
-    for (index, native_ref, slot) in associations {
-        let configuration = &mut ir.model.configurations[index];
-        configuration.native_ref = Some(native_ref.clone());
-        losses.push(
-            SldprtLossCode::WriterConfigurationAssociationGenerated.note(format!(
-                "configuration {} acquired authored native association {native_ref} at slot {slot}",
-                configuration.id
-            )),
-        );
-    }
-    Ok(())
 }
 
 fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
@@ -343,11 +230,7 @@ fn sketches(
     let original = ir.clone();
     let try_sketch = |candidate: &CadIr| {
         let mut native = native.cloned();
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(
-            candidate,
-            &mut native,
-            &std::collections::BTreeSet::new(),
-        )
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(candidate, &mut native)
     };
     let mut dropped = HashSet::new();
     for sketch in ir.model.sketches.clone() {

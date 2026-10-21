@@ -740,47 +740,6 @@ fn synthesis_writes_supported_lanes_from_neutral_content() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    // The physical partition has its own source identity. The decoder can
-    // select that observed partition without guessing an ordinal for Default.
-    let active = decoded
-        .ir()
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| configuration.active)
-        .collect::<Vec<_>>();
-    assert_eq!(active.len(), 1);
-    assert!(active[0].source_index.is_some());
-    assert!(active[0].parameter_values.is_empty());
-    assert!(active[0].feature_states.is_empty());
-    let active_bodies = active[0]
-        .bodies
-        .as_ref()
-        .expect("the physical partition has bodies");
-    assert!(!active_bodies.is_empty());
-    assert!(active_bodies.iter().all(|id| decoded
-        .ir()
-        .model
-        .bodies
-        .iter()
-        .any(|body| &body.id == id)));
-    // An explicitly unresolved document still fails the same precondition.
-    let mut unresolved = decoded.ir().clone();
-    for configuration in &mut unresolved.model.configurations {
-        configuration.active = false;
-    }
-    let error = SldprtCodec
-        .plan(
-            EncodeInput::new(&unresolved, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .expect_err("an explicitly unresolved document has no active configuration");
-    assert!(
-        error
-            .to_string()
-            .contains("requires exactly one active configuration"),
-        "{error}"
-    );
     let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(

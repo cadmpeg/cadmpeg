@@ -4340,8 +4340,6 @@ fn stamp_local_digests(
                         "outer_version"
                             | "block_count"
                             | "compound_stream_count"
-                            | "displaylist_vertices"
-                            | "displaylist_triangles"
                             | "active_parasolid_block"
                     )
             })

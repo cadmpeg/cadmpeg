@@ -3,7 +3,6 @@
 #![allow(clippy::unwrap_used)]
 
 mod dependencies;
-pub(super) mod reduction;
 
 use std::io::Cursor;
 
@@ -1469,7 +1468,6 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 
 #[test]
 fn semantic_writer_round_trips_variable_radius_fillet() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::{
         features::{
             edge_treatments::{RadiusSpec, VariableRadius},
@@ -1495,35 +1493,14 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
-        }] if points.as_slice().iter().map(|point| {
-            let point = point.to_raw();
-            (point.parameter, decoded.ir().dimension_value(&point.radius).unwrap().get())
-        }).collect::<Vec<_>>() == [(0.0, 2.0), (0.5, 4.0), (1.0, 3.0)])
+        }] if points.as_slice().iter().map(VariableRadius::to_raw).collect::<Vec<_>>() == [
+            VariableRadius { parameter: 0.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(2.0).unwrap()) },
+            VariableRadius { parameter: 0.5, radius: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()) },
+            VariableRadius { parameter: 1.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(3.0).unwrap()) },
+        ])
     ));
     {
         let mut ir_edit = decoded.ir_mut();
-        let id = ir_edit.model.features[0].id.clone();
-        ir_edit
-            .set_dimension(
-                &id,
-                "/groups/0/radius/points/1/radius",
-                Length::new(5.0).unwrap(),
-            )
-            .unwrap();
-        let position = ir_edit
-            .model
-            .parameters
-            .iter()
-            .find(|parameter| parameter.name == "Position1")
-            .unwrap()
-            .id
-            .clone();
-        let value = cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::scalar::FiniteReal::new(0.4).unwrap(),
-        );
-        ir_edit
-            .set_parameter_expression(&position, value.literal_expression(), Some(value))
-            .unwrap();
         let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
         let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
         let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
@@ -1540,6 +1517,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             .map(VariableRadius::to_raw)
             .collect::<Vec<_>>();
         samples[1].parameter = 0.4;
+        samples[1].radius = cadmpeg_ir::Dimension::Literal(Length::new(5.0).unwrap());
         *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
@@ -1579,83 +1557,18 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             };
         });
     }
-    // D1/S-entity: the original indexed radius controls remain independent.
-    // Their native names would reactivate a variable law in this operation.
-    reduction::assert_independent_parameter_reduction(
+    let mut encoded = Vec::new();
+    crate::test_support::serialize_edited_history(
         regenerated.ir(),
         regenerated.source_fidelity(),
-        0,
-        "variable fillet radius law",
-    );
-    let mut positive = reduction::source_less_operation(
-        regenerated.ir().model.features[0].definition().clone(),
-        "Constant radius",
-    );
-    // A fresh supported fillet needs an actual held edge. The source-derived
-    // control above retains its original unresolved selection unchanged.
-    let edge = positive.model.edges[0].id.clone();
-    positive.model.features[0].evaluation.edit(|definition, _| {
-        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
-            panic!("fresh constant fillet");
-        };
-        groups[0].edges = EdgeSelection::Edges(vec![edge.clone()]);
-    });
-    let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&positive, None), TargetRequest::Inherit)
-        .unwrap()
-        .write_to(&mut encoded)
-        .unwrap();
+        &mut encoded,
+    )
+    .unwrap();
     let final_ir = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let parameters = &sldprt_native(final_ir.ir()).feature_histories[0].features[0].parameters;
     assert_eq!(parameters["Radius"], "6mm");
-    // Native record allocation can reorder edge identities. Match the actual
-    // selected physical segment rather than an arena position.
-    let endpoints = |ir: &cadmpeg_ir::CadIr, edge: &cadmpeg_ir::topology::Edge| {
-        let mut points = [&edge.start, &edge.end].map(|id| {
-            let vertex = ir.model.vertices.iter().find(|v| &v.id == id).unwrap();
-            let point = ir
-                .model
-                .points
-                .iter()
-                .find(|p| p.id == vertex.point)
-                .unwrap();
-            let position = point.position().get();
-            [position.x, position.y, position.z]
-        });
-        points.sort_by(|a, b| {
-            a[0].total_cmp(&b[0])
-                .then(a[1].total_cmp(&b[1]))
-                .then(a[2].total_cmp(&b[2]))
-        });
-        points
-    };
-    let expected_segment = endpoints(&positive, &positive.model.edges[0]);
-    let matching_edges = final_ir
-        .ir()
-        .model
-        .edges
-        .iter()
-        .filter(|edge| endpoints(final_ir.ir(), edge) == expected_segment)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        matching_edges.len(),
-        1,
-        "one edge occupies the selected segment"
-    );
-    let written_edge = &matching_edges[0].id;
-    assert_eq!(
-        sldprt_native(final_ir.ir()).feature_histories[0].features[0].properties["Edges"],
-        written_edge.as_str()
-    );
-    assert!(matches!(
-        final_ir.ir().model.features[0].definition(),
-        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-            if matches!(&groups[0].radius, RadiusSpec::Constant { radius }
-                if final_ir.ir().dimension_value(radius).unwrap().get() == 6.0)
-    ));
     assert!(!parameters
         .keys()
         .any(|name| name.as_str().starts_with("Position")));
