@@ -28,10 +28,11 @@ pub(super) fn fixture() -> Vec<u8> {
     let mut changed = 0;
     for index in 0..source.len() {
         let mut entry = source.by_index(index).unwrap();
+        let name = entry.name().unwrap().into_owned();
         assert_eq!(entry.compression(), zip::CompressionMethod::Stored);
         let mut payload = Vec::new();
         entry.read_to_end(&mut payload).unwrap();
-        if entry.name() == MEMBER {
+        if name == MEMBER {
             // The frozen input predates the corrected first-owned-index word
             // (docs/formats/asm.md §1, header invariants). Its original header
             // stated 7 even though asmheader #0/body #1 first owns region #2.
@@ -45,7 +46,7 @@ pub(super) fn fixture() -> Vec<u8> {
             assert_eq!(&payload[end..], &original[end..]);
             changed += 1;
         }
-        historical.start_file(entry.name(), options).unwrap();
+        historical.start_file(name, options).unwrap();
         historical.write_all(&payload).unwrap();
     }
     assert_eq!(changed, 1);
