@@ -28,6 +28,8 @@ use operands::{
 const EPS_ORTHONORMAL_FRAME: f64 = 1.0e-9;
 /// Perpendicularity acceptance scaled by direction magnitudes.
 const EPS_PERPENDICULAR: f64 = 1.0e-9;
+/// Relative acceptance for the native numeric expression cache.
+const EXPRESSION_CACHE_RELATIVE_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 
 pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
     feature.evaluation.outputs().is_empty()
@@ -153,30 +155,106 @@ fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
 pub(crate) fn incomplete_expression_parameters(
     ir: &CadIr,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::features::ParameterValue;
+    use std::collections::BTreeMap;
     let ids = ir
         .model
         .parameters
         .iter()
-        .map(|parameter| &parameter.id)
-        .collect::<BTreeSet<_>>();
+        .enumerate()
+        .map(|(index, parameter)| (&parameter.id, index))
+        .collect::<BTreeMap<_, _>>();
     let mut incomplete = BTreeSet::new();
-    for parameter in &ir.model.parameters {
-        // Reference cycles are valid authored relationships. Their cached
-        // evaluations remain held; the shared graph validator reports cycles
-        // as warnings rather than erasing references or inventing an order.
-        if parameter.value.is_none()
-            || parameter
+    let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
+    let scalar = |value: &ParameterValue| match value {
+        ParameterValue::Length(value) => Some(value.get()),
+        ParameterValue::Angle(value) => Some(value.get()),
+        ParameterValue::Real(value) => Some(value.get()),
+        ParameterValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
+        _ => None,
+    };
+    loop {
+        let mut progressed = false;
+        for parameter in &ir.model.parameters {
+            if evaluated.contains_key(&parameter.id) || incomplete.contains(&parameter.id) {
+                continue;
+            }
+            let unit = parameter.properties.get("unit").map(String::as_str);
+            if parameter.value.is_none()
+                || unit.is_some_and(|unit| !matches!(unit, "millimeter" | "inch" | "degree"))
+                || parameter
+                    .expression
+                    .dependencies()
+                    .any(|id| !ids.contains_key(id))
+            {
+                incomplete.insert(parameter.id.clone());
+                continue;
+            }
+            if parameter
                 .expression
                 .dependencies()
-                .any(|id| !ids.contains(id))
-            || parameter
-                .properties
-                .get("unit")
-                .is_some_and(|unit| !matches!(unit.as_str(), "millimeter" | "inch" | "degree"))
-        {
+                .any(|id| !evaluated.contains_key(id))
+            {
+                continue;
+            }
+            let stored = parameter.value.as_ref().and_then(scalar);
+            let literal = parameter
+                .value
+                .as_ref()
+                .and_then(|value| parameter.expression.literal_value_as(value))
+                .as_ref()
+                .and_then(scalar);
+            let native_value = if let Some(literal) = literal {
+                Some(match unit {
+                    Some("inch") => literal / 25.4,
+                    Some("degree") => literal.to_degrees(),
+                    _ => literal,
+                })
+            } else {
+                parameter
+                    .expression
+                    .render_with(|id| ids.get(id).map(|index| format!("p{index}")))
+                    .and_then(|text| {
+                        crate::native::om::evaluate_parameterized_expression(&text, |name| {
+                            let index: usize = name.strip_prefix('p')?.parse().ok()?;
+                            evaluated.get(&ir.model.parameters.get(index)?.id).copied()
+                        })
+                    })
+                    .map(|value| value.get())
+            };
+            let canonical = native_value.and_then(|value| {
+                unit.map_or(Some(value), |unit| {
+                    crate::native::om::canonical_expression_value(unit, value)
+                })
+            });
+            if let (Some(native), Some(canonical), Some(stored)) = (native_value, canonical, stored)
+            {
+                let tolerance = EXPRESSION_CACHE_RELATIVE_TOLERANCE
+                    * canonical.abs().max(stored.abs()).max(1.0);
+                if canonical.is_finite()
+                    && stored.is_finite()
+                    && (canonical - stored).abs() <= tolerance
+                {
+                    evaluated.insert(&parameter.id, native);
+                    progressed = true;
+                    continue;
+                }
+            }
             incomplete.insert(parameter.id.clone());
         }
+        if !progressed {
+            break;
+        }
     }
+    // Cyclic identities remain in their expression tokens; only the ability
+    // to verify their cached evaluation is incomplete.
+    incomplete.extend(
+        ir.model
+            .parameters
+            .iter()
+            .filter(|parameter| !evaluated.contains_key(&parameter.id))
+            .map(|parameter| parameter.id.clone()),
+    );
     Ok(incomplete)
 }
 

@@ -454,11 +454,14 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
     })
     .expect("valid exactness fields");
 
-    assert!(ir.model.parameters[2]
-        .expression
-        .dependencies()
-        .next()
-        .is_none());
+    assert_eq!(
+        ir.model.parameters[2]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![ir.model.parameters[3].id.clone()]
+    );
 }
 
 #[test]
@@ -687,10 +690,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
     assert_eq!(
         feature_completeness::incomplete_expression_parameters(&duplicate_name).unwrap(),
-        duplicate_name.model.parameters[..2]
-            .iter()
-            .map(|parameter| parameter.id.clone())
-            .collect()
+        Default::default(), // D3: token identities remain unambiguous after a display-name collision.
     );
 
     let mut unevaluated = ir.clone();
@@ -716,7 +716,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
 }
 
 #[test]
-fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
+fn nx_cyclic_formula_table_retains_identity_dependency_edges() {
     let expression =
         |id: &str, name: &str, text: &str, source_offset| crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{id}"),
@@ -757,11 +757,22 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
         crate::test_support::parameter_expression_text(&ir, &ir.model.parameters[1].expression),
         "p2 + 1"
     );
-    assert!(ir.model.parameters.iter().all(|parameter| parameter
-        .expression
-        .dependencies()
-        .next()
-        .is_none()));
+    assert_eq!(
+        ir.model.parameters[0]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![ir.model.parameters[1].id.clone()]
+    );
+    assert_eq!(
+        ir.model.parameters[1]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![ir.model.parameters[0].id.clone()]
+    );
     assert_eq!(
         feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         ir.model
@@ -840,11 +851,14 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
         .dependencies()
         .next()
         .is_none());
-    assert!(ir.model.parameters[3]
-        .expression
-        .dependencies()
-        .next()
-        .is_none());
+    assert_eq!(
+        ir.model.parameters[3]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![ir.model.parameters[2].id.clone()]
+    );
     for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 1.0, 1.0]) {
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(value).unwrap(),
