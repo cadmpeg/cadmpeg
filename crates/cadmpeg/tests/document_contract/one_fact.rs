@@ -170,7 +170,7 @@ fn assert_staleness_is_written_or_reported(report: &ExportReport, ir: &CadIr, fe
     );
 }
 
-#[cfg(any(feature = "fcstd", feature = "sldprt"))]
+#[cfg(any(feature = "fcstd", feature = "sldprt", feature = "f3d"))]
 fn native_records(ir: &CadIr, namespace: &str, arena: &str) -> Vec<Value> {
     ir.native
         .namespace(namespace)
@@ -183,7 +183,7 @@ fn native_records(ir: &CadIr, namespace: &str, arena: &str) -> Vec<Value> {
         .collect()
 }
 
-#[cfg(any(feature = "fcstd", feature = "sldprt"))]
+#[cfg(any(feature = "fcstd", feature = "sldprt", feature = "f3d"))]
 fn native_length(text: &str, expected_mm: f64) {
     let expected = ParameterValue::Length(Length::new(expected_mm).unwrap());
     assert_eq!(
@@ -498,36 +498,37 @@ fn fusion_one_fact_updates_the_bound_sketch_constraint_and_its_owner_state() {
     // This fixture contains Sketch 1 and two dimensional parameters, not a Pad.
     // Edit the constraint's canonical parameter rather than inventing an
     // extrusion or copying a new scalar into its dimensional operand.
-    let (constraint_name, parameter_id, feature_id, feature_name, expected_mm) = ir
-        .model
-        .sketch_constraints
-        .iter()
-        .find_map(|constraint| {
-            let value = serde_json::to_value(&constraint.definition).unwrap();
-            ir.model.parameters.iter().find_map(|parameter| {
-                let paths = parameter_bindings(&value, &parameter.id);
-                if paths.len() != 1 {
-                    return None;
-                }
-                let ParameterValue::Length(length) = parameter.value.as_ref()? else {
-                    return None;
-                };
-                let owner = parameter.owner.as_ref()?;
-                let feature = ir
-                    .model
-                    .features
-                    .iter()
-                    .find(|feature| feature.id == *owner)?;
-                Some((
-                    constraint.name.clone(),
-                    parameter.id.clone(),
-                    owner.clone(),
-                    feature.name.clone().expect("named sketch feature"),
-                    length.get() + 5.0,
-                ))
+    let (constraint_id, constraint_definition, parameter_id, feature_id, feature_name, expected_mm) =
+        ir.model
+            .sketch_constraints
+            .iter()
+            .find_map(|constraint| {
+                let value = serde_json::to_value(&constraint.definition).unwrap();
+                ir.model.parameters.iter().find_map(|parameter| {
+                    let paths = parameter_bindings(&value, &parameter.id);
+                    if paths.len() != 1 {
+                        return None;
+                    }
+                    let ParameterValue::Length(length) = parameter.value.as_ref()? else {
+                        return None;
+                    };
+                    let owner = parameter.owner.as_ref()?;
+                    let feature = ir
+                        .model
+                        .features
+                        .iter()
+                        .find(|feature| feature.id == *owner)?;
+                    Some((
+                        constraint.id.clone(),
+                        serde_json::to_string(&constraint.definition).unwrap(),
+                        parameter.id.clone(),
+                        owner.clone(),
+                        feature.name.clone().expect("named sketch feature"),
+                        length.get() + 5.0,
+                    ))
+                })
             })
-        })
-        .expect("a sketch constraint binds a canonical length parameter");
+            .expect("a sketch constraint binds a canonical length parameter");
     let value = ParameterValue::Length(Length::new(expected_mm).unwrap());
     ir.set_parameter_expression(&parameter_id, Expression::literal(&value), Some(value))
         .unwrap();
@@ -556,12 +557,152 @@ fn fusion_one_fact_updates_the_bound_sketch_constraint_and_its_owner_state() {
             parameter.owner.as_ref() == Some(&owner.id) && parameter.name == parameter_name
         })
         .expect("written canonical constraint parameter");
+    let expected_value = Some(ParameterValue::Length(Length::new(expected_mm).unwrap()));
+    assert_eq!(parameter.value, expected_value);
+    assert_eq!(
+        parameter
+            .expression
+            .literal_value_as(parameter.value.as_ref().unwrap()),
+        expected_value
+    );
+    // The edited cache is 15 mm; its unchanged two points remain 10 mm apart.
+    // No proven source-free directional carrier exists for this unsolved
+    // relation. Its reduction must name the exact lost kind, loci and binding.
+    let expected_loss = format!("Sketch constraint {constraint_id} is omitted: no exact regenerated encoding for canonical definition {constraint_definition}");
+    let notes = report
+        .losses
+        .iter()
+        .filter(|loss| loss.message == expected_loss)
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].code.local_code(), "writer.design-records-omitted");
+    assert_eq!(notes[0].severity, Severity::Error);
+    let before_definition: Value = serde_json::from_str(&constraint_definition).unwrap();
+    assert_eq!(before_definition["kind"], "horizontal_distance");
+    assert_eq!(
+        parameter_bindings(&before_definition, &parameter_id).len(),
+        1
+    );
+    assert!(before_definition["first"].get("entity").is_some());
+    assert!(before_definition["second"].get("entity").is_some());
+    assert_eq!(ir.model.sketch_constraints.len(), 4);
+    assert_eq!(after.model.sketch_constraints.len(), 3);
+    assert!(after.model.sketch_constraints.iter().all(|constraint| {
+        let definition = serde_json::to_value(&constraint.definition).unwrap();
+        parameter_bindings(&definition, &parameter.id).is_empty()
+            && definition["parameter"] != serde_json::json!(parameter.id)
+    }));
+    let cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage) = report.coverage else {
+        panic!("partial sketch constraint handling must declare coverage")
+    };
+    assert_eq!(
+        coverage.sketch_constraints,
+        cadmpeg_ir::codec::write::ArenaDisposition::Reported
+    );
+    assert_eq!(after.model.sketches.len(), 1);
+    assert_eq!(after.model.features.len(), 1);
+    assert_eq!(after.model.parameters.len(), 2);
+    assert_eq!(after.model.sketch_entities.len(), 8);
+    assert_eq!(
+        after
+            .model
+            .sketch_entities
+            .iter()
+            .map(|entity| (entity.construction, &entity.geometry))
+            .collect::<Vec<_>>(),
+        ir.model
+            .sketch_entities
+            .iter()
+            .map(|entity| (entity.construction, &entity.geometry))
+            .collect::<Vec<_>>()
+    );
+    let native_parameters = native_records(after, "f3d", "design_parameters");
+    let native_parameter = native_parameters
+        .iter()
+        .find(|record| record["name"] == parameter_name)
+        .unwrap();
+    assert!(
+        (native_parameter["evaluated_value"].as_f64().unwrap() * 10.0 - expected_mm).abs()
+            <= EPS_DIMENSION_MM
+    );
+    native_length(
+        native_parameter["expression"].as_str().unwrap(),
+        expected_mm,
+    );
+    let native_owners = native_records(after, "f3d", "design_parameter_owners");
+    let native_owner = native_owners
+        .iter()
+        .find(|owner| owner["record_index"] == native_parameter["owner_record_index"])
+        .unwrap();
+    assert!(
+        (native_owner["evaluated_value"].as_f64().unwrap() * 10.0 - expected_mm).abs()
+            <= EPS_DIMENSION_MM
+    );
+    let original_pairs = native_records(&ir, "f3d", "design_dimension_locus_pairs");
+    assert_eq!(original_pairs.len(), 1);
+    let pair_id = original_pairs[0]["id"].as_str().unwrap();
+    assert_eq!(
+        report.native_dispositions.record_disposition(
+            "f3d",
+            "design_dimension_locus_pairs",
+            pair_id
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    assert!(native_records(after, "f3d", "design_dimension_locus_pairs").is_empty());
+    assert_eq!(
+        native_records(after, "f3d", "design_dimension_recipe_records").len(),
+        1
+    );
+    assert_eq!(native_records(after, "f3d", "sketch_relations").len(), 2);
+    assert_staleness_is_written_or_reported(&report, after, &feature_name);
+}
+
+#[cfg(feature = "f3d")]
+#[test]
+fn fusion_unchanged_source_free_directional_dimension_retains_its_sole_binding() {
+    use cadmpeg_codec_f3d::F3dCodec;
+    let bytes = fs::read(
+        workspace()
+            .join("crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d"),
+    )
+    .unwrap();
+    let codec = F3dCodec::default();
+    let decoded = decode(&codec, &bytes);
+    let ir: CadIr = serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap()).unwrap();
+    let source_parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d2")
+        .unwrap();
+    let source_constraint = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .find(|constraint| {
+            parameter_bindings(
+                &serde_json::to_value(&constraint.definition).unwrap(),
+                &source_parameter.id,
+            )
+            .len()
+                == 1
+        })
+        .unwrap();
+    let (written, report) = write_decode(&codec, &codec, &ir, None, None);
+    let after = written.ir();
+    let parameter = after
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == source_parameter.name)
+        .unwrap();
     let constraint = after
         .model
         .sketch_constraints
         .iter()
         .find(|constraint| {
-            constraint.name == constraint_name
+            constraint.name == source_constraint.name
                 && parameter_bindings(
                     &serde_json::to_value(&constraint.definition).unwrap(),
                     &parameter.id,
@@ -569,18 +710,27 @@ fn fusion_one_fact_updates_the_bound_sketch_constraint_and_its_owner_state() {
                 .len()
                     == 1
         })
-        .expect("the dimensional constraint retains its sole parameter binding");
+        .expect("the supported dimensional constraint retains its sole parameter binding");
     let resolved = after
         .resolved_sketch_constraint_definition(constraint.definition.kind())
         .unwrap();
     let original = serde_json::to_value(&constraint.definition).unwrap();
     let paths = parameter_bindings(&original, &parameter.id);
     assert_eq!(paths.len(), 1);
+    assert_eq!(original["kind"], "horizontal_distance");
     assert!(
-        (resolved.pointer(&paths[0]).and_then(Value::as_f64).unwrap() - expected_mm).abs()
+        (resolved.pointer(&paths[0]).and_then(Value::as_f64).unwrap() - 10.0).abs()
             <= EPS_DIMENSION_MM
     );
-    assert_staleness_is_written_or_reported(&report, after, &feature_name);
+    assert_eq!(after.model.sketch_constraints.len(), 4);
+    assert_eq!(parameter.value, source_parameter.value);
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.starts_with(&format!(
+            "Sketch constraint {} is omitted:",
+            source_constraint.id
+        ))));
 }
 
 #[cfg(feature = "f3d")]
