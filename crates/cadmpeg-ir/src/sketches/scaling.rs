@@ -83,13 +83,13 @@ impl SketchConstraintDefinition {
             | Kind::RepeatedDistance { parameter, .. }
             | Kind::RepeatedLength { parameter, .. }
             | Kind::ParallelLineSetDistance { parameter, .. } => {
-                dimension_length(parameter, scale)?
+                dimension_length(parameter, scale)?;
             }
             Kind::Radius { parameter, .. }
             | Kind::Diameter { parameter, .. }
             | Kind::RepeatedRadius { parameter, .. }
             | Kind::RepeatedDiameter { parameter, .. } => {
-                dimension_positive_length(parameter, scale)?
+                dimension_positive_length(parameter, scale)?;
             }
             Kind::MidpointCoordinate { value, .. } => constraint_length(value, scale)?,
             Kind::RectangularPattern { pattern } => {
@@ -97,7 +97,7 @@ impl SketchConstraintDefinition {
                     match &mut direction.distance {
                         super::SketchPatternDistance::Spacing { distance }
                         | super::SketchPatternDistance::Span { distance } => {
-                            dimension_length(distance, scale)?
+                            dimension_length(distance, scale)?;
                         }
                     }
                 }
@@ -130,7 +130,7 @@ impl SpatialSketchConstraintDefinition {
             | Kind::RepeatedLineLength { parameter, .. }
             | Kind::RepeatedParallelLineDistance { parameter, .. }
             | Kind::ParallelLineSetDistance { parameter, .. } => {
-                dimension_length(parameter, scale)?
+                dimension_length(parameter, scale)?;
             }
             _ => {}
         }

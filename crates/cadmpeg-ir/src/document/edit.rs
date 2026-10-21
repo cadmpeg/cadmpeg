@@ -285,7 +285,7 @@ impl CadIr {
         let affected = self.affected_evaluations([parameter.as_str()])?;
         self.model.parameters[ordinal].expression = expression;
         self.model.parameters[ordinal].value = value;
-        self.invalidate(affected);
+        self.invalidate(&affected);
         Ok(())
     }
 
@@ -307,7 +307,7 @@ impl CadIr {
         self.model.features[ordinal]
             .evaluation
             .set_definition(definition);
-        self.invalidate(affected);
+        self.invalidate(&affected);
         Ok(())
     }
 
@@ -319,11 +319,11 @@ impl CadIr {
             });
         }
         let affected = self.affected_evaluations([feature.as_str()])?;
-        self.invalidate(affected);
+        self.invalidate(&affected);
         Ok(())
     }
 
-    fn invalidate(&mut self, affected: BTreeSet<String>) {
+    fn invalidate(&mut self, affected: &BTreeSet<String>) {
         for feature in &mut self.model.features {
             if affected.contains(feature.id.as_str()) {
                 feature.needs_recompute = true;
@@ -443,7 +443,7 @@ impl FeatureDefinition {
                         )
                         && fields.contains_key("value") =>
                 {
-                    paths.push(path.to_owned())
+                    paths.push(path.to_owned());
                 }
                 Value::Object(fields) => {
                     for (key, value) in fields {

@@ -98,7 +98,7 @@ pub(super) fn check(
         } => {
             let points =
                 sketch_locus_point(first, geometry).zip(sketch_locus_point(second, geometry));
-            let expected = scalar(ir, parameter, |value| value.get());
+            let expected = scalar(ir, parameter, crate::scalar::Length::get);
             mismatch(
                 points.zip(expected).map(|((first, second), expected)| {
                     let measured = match definition {
@@ -129,7 +129,7 @@ pub(super) fn check(
             };
             mismatch(
                 measured
-                    .zip(scalar(ir, parameter, |value| value.get()))
+                    .zip(scalar(ir, parameter, crate::scalar::Length::get))
                     .map(|(measured, expected)| close(ir, measured, expected)),
                 "solved distance disagrees with its canonical dimension",
             )
@@ -138,7 +138,7 @@ pub(super) fn check(
             entities,
             parameter,
         } => {
-            let expected = scalar(ir, parameter, |value| value.get());
+            let expected = scalar(ir, parameter, crate::scalar::Length::get);
             mismatch(
                 expected.map(|expected| {
                     entities.iter().all(|entity| {
@@ -150,7 +150,7 @@ pub(super) fn check(
             )
         }
         Constraint::Radius { entity, parameter } | Constraint::Diameter { entity, parameter } => {
-            let expected = scalar(ir, parameter, |value| value.get());
+            let expected = scalar(ir, parameter, crate::scalar::PositiveLength::get);
             mismatch(
                 radius(entity, geometry)
                     .zip(expected)
@@ -182,7 +182,7 @@ pub(super) fn check(
                 1.0
             };
             mismatch(
-                scalar(ir, parameter, |value| value.get()).map(|expected| {
+                scalar(ir, parameter, crate::scalar::PositiveLength::get).map(|expected| {
                     entities.iter().all(|entity| {
                         radius(entity, geometry)
                             .is_none_or(|radius| close(ir, factor * radius, expected))
@@ -198,7 +198,7 @@ pub(super) fn check(
         } => mismatch(
             direction(first, geometry)
                 .zip(direction(second, geometry))
-                .zip(scalar(ir, parameter, |value| value.get()))
+                .zip(scalar(ir, parameter, crate::scalar::Angle::get))
                 .map(|((first, second), expected)| angle_close(ir, second - first, expected)),
             "solved line angle disagrees with its canonical dimension",
         ),
@@ -213,7 +213,7 @@ pub(super) fn check(
             };
             mismatch(
                 direction(entity, geometry)
-                    .zip(scalar(ir, parameter, |value| value.get()))
+                    .zip(scalar(ir, parameter, crate::scalar::Angle::get))
                     .map(|(angle, expected)| angle_close(ir, angle - axis, expected)),
                 "solved line-to-axis angle disagrees with its canonical dimension",
             )
@@ -240,7 +240,7 @@ pub(super) fn check(
                     });
             mismatch(
                 measured
-                    .zip(scalar(ir, angle, |value| value.get()))
+                    .zip(scalar(ir, angle, crate::scalar::PositiveAngle::get))
                     .map(|(measured, expected)| angle_close(ir, measured, expected)),
                 "solved curve sweep disagrees with its canonical angular dimension",
             )

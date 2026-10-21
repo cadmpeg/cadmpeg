@@ -183,10 +183,12 @@ pub(super) fn check(
                         .feature_states
                         .get(&feature.id)
                         .and_then(crate::features::ConfigurationFeatureState::definition)
-                        .map(|definition| {
-                            super::topology::regeneration_references(definition.operation())
-                        })
-                        .unwrap_or_else(|| feature.dependencies.iter().collect());
+                        .map_or_else(
+                            || feature.dependencies.iter().collect(),
+                            |definition| {
+                                super::topology::regeneration_references(definition.operation())
+                            },
+                        );
                     references
                         .into_iter()
                         .filter_map(|id| positions.get(id.as_str()).copied())

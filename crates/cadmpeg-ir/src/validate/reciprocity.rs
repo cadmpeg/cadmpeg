@@ -17,7 +17,10 @@ pub(super) fn check(model: &crate::document::Model, findings: &mut Vec<Finding>)
         model.bodies.iter().map(|row| {
             (
                 row.id.as_str(),
-                row.regions.iter().map(|id| id.as_str()).collect(),
+                row.regions
+                    .iter()
+                    .map(crate::ids::RegionId::as_str)
+                    .collect(),
             )
         }),
         model
@@ -32,7 +35,7 @@ pub(super) fn check(model: &crate::document::Model, findings: &mut Vec<Finding>)
         model.regions.iter().map(|row| {
             (
                 row.id.as_str(),
-                row.shells.iter().map(|id| id.as_str()).collect(),
+                row.shells.iter().map(crate::ids::ShellId::as_str).collect(),
             )
         }),
         model
@@ -47,7 +50,7 @@ pub(super) fn check(model: &crate::document::Model, findings: &mut Vec<Finding>)
         model.shells.iter().map(|row| {
             (
                 row.id.as_str(),
-                row.faces().iter().map(|id| id.as_str()).collect(),
+                row.faces().iter().map(crate::ids::FaceId::as_str).collect(),
             )
         }),
         model
@@ -62,7 +65,7 @@ pub(super) fn check(model: &crate::document::Model, findings: &mut Vec<Finding>)
         model.faces.iter().map(|row| {
             (
                 row.id.as_str(),
-                row.loops.iter().map(|id| id.as_str()).collect(),
+                row.loops.iter().map(crate::ids::LoopId::as_str).collect(),
             )
         }),
         model
@@ -77,7 +80,10 @@ pub(super) fn check(model: &crate::document::Model, findings: &mut Vec<Finding>)
         model.loops.iter().map(|row| {
             (
                 row.id.as_str(),
-                row.coedges().iter().map(|id| id.as_str()).collect(),
+                row.coedges()
+                    .iter()
+                    .map(crate::ids::CoedgeId::as_str)
+                    .collect(),
             )
         }),
         model

@@ -360,9 +360,8 @@ fn planar_line(
     Some((start, end.vector_from(start)))
 }
 fn face_plane(ir: &CadIr, selection: &FaceSelection) -> Option<(Point3, Vector3)> {
-    let faces = match selection {
-        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
-        _ => return None,
+    let (FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) = selection else {
+        return None;
     };
     let [id] = faces.as_slice() else {
         return None;
@@ -422,13 +421,13 @@ fn planar_point(ir: &CadIr, sketch: &crate::sketches::SketchId, point: Point2) -
 }
 fn profile_normal(ir: &CadIr, profile: &crate::features::ProfileRef) -> Option<Vector3> {
     let profile = profile.planar()?;
-    let sketch = match profile {
-        PlanarProfileRef::Sketch(id)
-        | PlanarProfileRef::SketchProfiles { sketch: id, .. }
-        | PlanarProfileRef::SketchRegions { sketch: id, .. }
-        | PlanarProfileRef::SketchEntities { sketch: id, .. }
-        | PlanarProfileRef::SketchSelection { sketch: id, .. } => id,
-        _ => return None,
+    let (PlanarProfileRef::Sketch(sketch)
+    | PlanarProfileRef::SketchProfiles { sketch, .. }
+    | PlanarProfileRef::SketchRegions { sketch, .. }
+    | PlanarProfileRef::SketchEntities { sketch, .. }
+    | PlanarProfileRef::SketchSelection { sketch, .. }) = profile
+    else {
+        return None;
     };
     Some(
         ir.model
@@ -444,9 +443,8 @@ fn selected_edge<'a>(
     ir: &'a CadIr,
     selection: &EdgeSelection,
 ) -> Option<&'a crate::topology::Edge> {
-    let edges = match selection {
-        EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges,
-        _ => return None,
+    let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection else {
+        return None;
     };
     let [id] = edges.as_slice() else {
         return None;

@@ -2644,15 +2644,13 @@ fn check_feature_references(
             }
             if let Some(definition) = state.definition() {
                 for reference in regeneration_references(definition.operation()) {
-                    match features.get(reference.as_str()) {
-                        None => ref_error(
+                    if !features.contains_key(reference.as_str()) {
+                        ref_error(
                             findings,
                             configuration.id.as_str(),
                             "configuration definition feature",
                             reference.as_str(),
-                        ),
-
-                        Some(_) => {}
+                        );
                     }
                 }
             }
@@ -2841,15 +2839,13 @@ fn check_feature_references(
             );
         }
         for dependency in &feature.dependencies {
-            match features.get(dependency.as_str()) {
-                None => ref_error(
+            if !features.contains_key(dependency.as_str()) {
+                ref_error(
                     findings,
                     feature.id.as_str(),
                     "dependency feature",
                     dependency.as_str(),
-                ),
-
-                Some(_) => {}
+                );
             }
         }
         for item in &feature.source_content {
@@ -3381,15 +3377,13 @@ fn check_feature_references(
                         })
                 {
                     if let crate::features::BinderTarget::Feature { feature: target } = target {
-                        match features.get(target.as_str()) {
-                            None => ref_error(
+                        if !features.contains_key(target.as_str()) {
+                            ref_error(
                                 findings,
                                 feature.id.as_str(),
                                 "binder target feature",
                                 target.as_str(),
-                            ),
-
-                            Some(_) => {}
+                            );
                         }
                     }
                 }
