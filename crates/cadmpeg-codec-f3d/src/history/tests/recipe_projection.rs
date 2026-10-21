@@ -153,11 +153,9 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
 
 #[test]
 fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
-    let document = serde_json::json!({
-        "id": "history",
-        "byte_offset": 0,
-        "states": []
-    });
+    let history = AsmHistory::new("history".into(), 0, None, false, Vec::new());
+    assert_eq!(history.byte_offset, Some(0));
+    let document = serde_json::to_value(&history).unwrap();
     let history: AsmHistory = serde_json::from_value(document).unwrap();
     assert!(history.states().is_empty());
     assert!(!crate::history::projection_was_finalized(

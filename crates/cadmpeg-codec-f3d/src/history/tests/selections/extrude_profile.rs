@@ -10,7 +10,14 @@ use std::collections::HashMap;
 fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     use crate::records::{
         feature::scope::DesignParameterScope,
-        topology::{construction::DesignConstructionOperandGroup, face::DesignFaceOperand},
+        topology::{
+            construction::{
+                DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+                DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+                DesignConstructionOperandRole,
+            },
+            face::DesignFaceOperand,
+        },
     };
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
@@ -18,32 +25,46 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         let member_offsets = (0..members.len())
             .map(|index| u64_from_index(index) * 11)
             .collect::<Vec<_>>();
-        serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
-            "id": format!(
+        let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+            id: format!(
                 "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
             ),
-            "scope_record_index": 42,
-            "scope_reference_ordinal": scope_reference_ordinal,
-            "record_index": record_index,
-            "byte_offset": 0,
-            "class_tag": "267",
-            "members": members,
-            "member_offsets": member_offsets,
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 279_172_874_240_u64,
-            "extrude_role": "profile",
-            "role_offset": 0,
-            "paired_class_tag": "260",
-            "paired_byte_offset": 0
-        }))
-        .expect("profile group")
+            scope_record_index: 42,
+            scope_reference_ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: "267".to_owned().try_into().unwrap(),
+            members: members
+                .into_iter()
+                .zip(member_offsets)
+                .map(|(value, offset)| crate::records::identity::Located { value, offset })
+                .collect(),
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                },
+            )
+            .unwrap(),
+            operand_role: DesignConstructionOperandRole::ExtrudeProfile,
+            role_offset: 0,
+            paired_class_tag: "260".to_owned().try_into().unwrap(),
+            paired_byte_offset: 0,
+        })
+        .expect("profile group");
+        assert_eq!(group.role().raw(), 279_172_874_240_u64);
+        group
     };
     let paired_prefix = || {
         let mut prefix = vec![0; 10];
