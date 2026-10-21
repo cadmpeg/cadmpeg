@@ -5087,11 +5087,38 @@ pub(crate) fn edge_recipe_structure_within(
     budget: &WorkBudget,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
-    let Some(tail) = program.get(7..) else {
+    let Some(prelude_length) = edge_recipe_prelude_length(program, budget) else {
+        return Ok(None);
+    };
+    let Some(tail) = program.get(prelude_length..) else {
         return Ok(None);
     };
     let structure = edge_recipe_structure_tail(ctx, budget, tail)?;
     Ok(structure.filter(|_| !budget.exhausted()))
+}
+
+pub(in crate::design::decode) fn edge_recipe_prelude_length(
+    program: &[i32],
+    budget: &WorkBudget,
+) -> Option<usize> {
+    let tag = |word: i32| matches!(word, -1..=1);
+    if let Some([-1, -1, 2, 0, first, 1, second]) = program.get(..7) {
+        return (budget.charge_by(7) && tag(*first) && tag(*second)).then_some(7);
+    }
+    let [0, first_tag, count] = program.get(..3)? else {
+        return None;
+    };
+    let count = usize::try_from(*count).ok().filter(|count| *count != 0)?;
+    let length = count.checked_mul(2)?.checked_add(3)?;
+    if !tag(*first_tag) || length > program.len() || !budget.charge_by(length) {
+        return None;
+    }
+    for (ordinal, pair) in program[3..length].chunks_exact(2).enumerate() {
+        if pair[0] != i32::try_from(ordinal.checked_add(1)?).ok()? || !tag(pair[1]) {
+            return None;
+        }
+    }
+    Some(length)
 }
 
 /// Decode the alternate two-clause edge-recipe grammar owned by `SurfacePatch`.
@@ -5215,7 +5242,7 @@ fn edge_recipe_structure_tail(
     if side_count == 0 {
         return Ok(None);
     }
-    let Some(delimited) = recipe_delimiter(remaining) else {
+    let Some(delimited) = edge_recipe_delimiter(remaining) else {
         return Ok(None);
     };
     remaining = delimited;
@@ -5223,9 +5250,10 @@ fn edge_recipe_structure_tail(
     for RecipeSideSequence {
         sides,
         remaining: tail,
-    } in edge_recipe_side_sequences(ctx, budget, remaining, side_count)?
+    } in
+        edge_recipe_side_sequences(ctx, budget, remaining, side_count, RecipeSideGrammar::Edge)?
     {
-        if !matches!(tail, [] | [-1 | 0]) {
+        if !matches!(tail, [-1..=1]) {
             continue;
         }
         if structure.is_some() {
@@ -5247,6 +5275,7 @@ fn edge_recipe_side_sequences<'w>(
     budget: &WorkBudget,
     words: &'w [i32],
     side_count: usize,
+    grammar: RecipeSideGrammar,
 ) -> Result<Vec<RecipeSideSequence<'w>>, CodecError> {
     let _depth = ctx.enter_nested("f3d recipe side recursion")?;
     if !budget.charge() {
@@ -5259,10 +5288,10 @@ fn edge_recipe_side_sequences<'w>(
         }]);
     }
     let mut out = Vec::new();
-    for (side, tail) in edge_recipe_counted_side_candidates(budget, words) {
+    for (side, tail) in edge_recipe_counted_side_candidates(budget, words, grammar) {
         let remaining = if side_count == 1 {
             tail
-        } else if let Some(remaining) = recipe_delimiter(tail) {
+        } else if let Some(remaining) = grammar.delimiter(tail) {
             remaining
         } else {
             continue;
@@ -5270,7 +5299,7 @@ fn edge_recipe_side_sequences<'w>(
         for RecipeSideSequence {
             sides: mut following,
             remaining: tail,
-        } in edge_recipe_side_sequences(ctx, budget, remaining, side_count - 1)?
+        } in edge_recipe_side_sequences(ctx, budget, remaining, side_count - 1, grammar)?
         {
             if !budget.charge() {
                 return Ok(Vec::new());
@@ -5285,11 +5314,61 @@ fn edge_recipe_side_sequences<'w>(
     Ok(out)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RecipeSideGrammar {
+    Edge,
+    Face,
+}
+
+impl RecipeSideGrammar {
+    fn delimiter(self, words: &[i32]) -> Option<&[i32]> {
+        match self {
+            Self::Edge => edge_recipe_delimiter(words),
+            Self::Face => recipe_delimiter(words),
+        }
+    }
+}
+
+fn edge_recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
+    matches!(words.first(), Some(-1..=1)).then(|| &words[1..])
+}
+
 fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
     matches!(words.first(), Some(-1 | 0)).then(|| &words[1..])
 }
 
-fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
+fn complete_recipe_payload_prefix(budget: &WorkBudget, prefix: &[i32]) -> bool {
+    if prefix == [0] {
+        return true;
+    }
+    if prefix.is_empty() {
+        return false;
+    }
+    let mut pending = vec![prefix];
+    while let Some(remaining) = pending.pop() {
+        if remaining.is_empty() {
+            return true;
+        }
+        if !budget.charge_by(remaining.len()) {
+            return false;
+        }
+        let Some(at) = remaining.iter().position(|word| *word < 0) else {
+            continue;
+        };
+        if remaining[at] != -1 {
+            continue;
+        }
+        if at >= 1 && remaining.get(at + 1..at + 4) == Some(&[0, 0, -1]) {
+            pending.push(&remaining[at + 4..]);
+        }
+        if at >= 4 && remaining.get(at - 3..at) == Some(&[0, 0, 0]) {
+            pending.push(&remaining[at + 1..]);
+        }
+    }
+    false
+}
+
+fn complete_face_recipe_payload_prefix(prefix: &[i32]) -> bool {
     if prefix == [0] {
         return true;
     }
@@ -5316,6 +5395,7 @@ fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
 fn edge_recipe_counted_side_candidates<'w>(
     budget: &WorkBudget,
     words: &'w [i32],
+    grammar: RecipeSideGrammar,
 ) -> Vec<(DesignTopologyRecipeSide, &'w [i32])> {
     let Some(field_count) = words
         .first()
@@ -5324,7 +5404,7 @@ fn edge_recipe_counted_side_candidates<'w>(
     else {
         return Vec::new();
     };
-    if field_count.get() < 2 {
+    if grammar == RecipeSideGrammar::Face && field_count.get() < 2 {
         return Vec::new();
     }
     let Some(scalar_count) = usize::try_from(field_count.get())
@@ -5336,7 +5416,7 @@ fn edge_recipe_counted_side_candidates<'w>(
     let Some(&header_value) = words.get(1) else {
         return Vec::new();
     };
-    let Some(mut remaining) = words.get(2..).and_then(recipe_delimiter) else {
+    let Some(mut remaining) = words.get(2..).and_then(|tail| grammar.delimiter(tail)) else {
         return Vec::new();
     };
     // Each scalar consumes at least one remaining word; a larger count is
@@ -5350,7 +5430,7 @@ fn edge_recipe_counted_side_candidates<'w>(
             return Vec::new();
         };
         scalars.push(scalar);
-        let Some(tail) = recipe_delimiter(tail) else {
+        let Some(tail) = grammar.delimiter(tail) else {
             return Vec::new();
         };
         remaining = tail;
@@ -5361,12 +5441,18 @@ fn edge_recipe_counted_side_candidates<'w>(
         if !budget.charge_by(entry_count_at + 1) {
             return Vec::new();
         }
-        if !complete_recipe_payload_prefix(&remaining[..entry_count_at]) {
+        let prefix = &remaining[..entry_count_at];
+        let complete_prefix = match grammar {
+            RecipeSideGrammar::Edge => complete_recipe_payload_prefix(budget, prefix),
+            RecipeSideGrammar::Face => complete_face_recipe_payload_prefix(prefix),
+        };
+        if !complete_prefix {
             continue;
         }
         let candidate = (|| {
             let payload_entry_count = u32::try_from(*remaining.get(entry_count_at)?).ok()?;
-            if entry_count_at != 1 && payload_entry_count == 0 {
+            if grammar == RecipeSideGrammar::Face && entry_count_at != 1 && payload_entry_count == 0
+            {
                 return None;
             }
             let payload_len = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
@@ -5427,7 +5513,7 @@ pub(crate) fn face_recipe_structure_within(
     for RecipeSideSequence {
         sides,
         remaining: tail,
-    } in edge_recipe_side_sequences(ctx, budget, remaining, 2)?
+    } in edge_recipe_side_sequences(ctx, budget, remaining, 2, RecipeSideGrammar::Face)?
     {
         let postlude = match tail {
             [] | [-1 | 0] => None,

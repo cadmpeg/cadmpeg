@@ -189,23 +189,6 @@ one predecessor edge.
 **Need.** We must decode the operand binding before assigning a deleted
 predecessor edge as the selected treatment edge.
 
-### DR-70. Unstructured edge-recipe selection semantics
-
-**Question.** What do the retained words of an edge-recipe program that does not
-admit the standard structured tail select?
-
-**Known.** The decoder retains the complete recipe program, prefix references,
-selectors, topology triplets, history transition, and before-and-after topology.
-These sources independently constrain candidate edges but do not establish that
-geometric or topology-delta reconstruction is the stored recipe semantics.
-Generic topology reconstruction does not assign edge identity to an operand
-whose non-empty program does not admit the structured grammar. The operand
-remains native, or unresolved when its group declares lost references.
-
-**Need.** We must decode the program fields that bind each operand to its
-persistent edge selection and distinguish identity fields from validation or
-topology context.
-
 ### DR-74. Lost-edge runs shorter than the operand list
 
 **Question.** Which operands of a counted edge group do the records of a

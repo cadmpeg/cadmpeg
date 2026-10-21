@@ -1224,6 +1224,34 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         [edge_operand.id.clone()]
     );
 
+    let mut counted_operand = edge_operand.clone();
+    counted_operand.recipe_program =
+        [&[0, -1, 1, 1, 0][..], &edge_operand.recipe_program[7..]].concat();
+    assert_eq!(
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+            &dimension_recipe,
+            std::slice::from_ref(&counted_operand),
+        ),
+        [counted_operand.id.clone()]
+    );
+    let mut mismatched_dimension_recipe = dimension_recipe.clone();
+    mismatched_dimension_recipe.program[1] += 1;
+    assert!(
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+            &mismatched_dimension_recipe,
+            std::slice::from_ref(&counted_operand),
+        )
+        .is_empty()
+    );
+    counted_operand.recipe_program[3] = 2;
+    assert!(
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+            &dimension_recipe,
+            std::slice::from_ref(&counted_operand),
+        )
+        .is_empty()
+    );
+
     let mut face_bytes = Vec::new();
     header(&mut face_bytes, *b"306", 100);
     let face_paired_at = header(&mut face_bytes, *b"259", 100);
