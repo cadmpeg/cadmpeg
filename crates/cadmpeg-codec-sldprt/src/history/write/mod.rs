@@ -56,7 +56,7 @@ fn validate_embedded_helix_edits(
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native)?
+    let expected = project_features_with_native_inputs(native, &[])?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
@@ -88,7 +88,7 @@ fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let expected = project_features_with_native_inputs(native)?
+    let expected = project_features_with_native_inputs(native, &[])?
         .into_iter()
         .filter_map(|feature| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
@@ -136,12 +136,14 @@ fn validate_surface_sweep_profile_edits(
 
 fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
-    Ok(project_feature_model_with_native_inputs(native)?.features)
+    Ok(project_feature_model_with_native_inputs(native, sketches)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
     let projection_bytes = native
         .feature_input_lanes
@@ -185,6 +187,9 @@ fn project_feature_model_with_native_inputs(
         &histories,
         &native.feature_input_lanes,
     );
+    // The held sketch arenas resolve profile aliases exactly as on decode.
+    // This replaces a provisional Feature operand with its actual Sketch.
+    crate::history::bind::bind_unique_sketch_feature(features, sketches, &histories);
     // Later bindings replace provisional feature operands with their actual
     // sketch or spatial carriers. Dependencies follow the final definition.
     crate::history::project::refresh_definition_dependencies(&ctx, features)?;
