@@ -11,11 +11,11 @@ use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
+use crate::chunks::{ArchiveVersion, BoundedReader, checked_count_bytes, chunk_at};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
-use crate::settings::{interval, point, vector, xform, MillimeterScale};
-use crate::wire::{scaled_coordinate, uuid, Uuid};
+use crate::settings::{MillimeterScale, interval, point, vector, xform};
+use crate::wire::{Uuid, scaled_coordinate, uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_LOCALIZERS: usize = 1 << 16;
@@ -376,7 +376,7 @@ pub(crate) fn decode(
             return Err(GeometryError::malformed(
                 outer.position() - 4,
                 "invalid morph-control variant",
-            ))
+            ));
         }
     };
     let captive_ids = captive_ids(data, &mut outer, archive)?;
@@ -822,7 +822,7 @@ pub(crate) fn project(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode, localizer, project, Control, LocalizerKind, ANONYMOUS};
+    use super::{ANONYMOUS, Control, LocalizerKind, decode, localizer, project};
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
     use crate::settings::MillimeterScale;
@@ -943,7 +943,7 @@ mod tests {
         assert_eq!(
             parameters["captive_0_object"]
                 .literal()
-                .and_then(|expression| expression.literal_text())
+                .and_then(cadmpeg_ir::Expression::literal_text)
                 .as_deref(),
             Some("rhino:object:record#000007")
         );

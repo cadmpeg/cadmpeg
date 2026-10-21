@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text and leader objects regenerated from current semantic annotations.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, LossNote, Map, RhinoLossCode, Value, anonymous,
+    anonymous_with_children, framed_object_record, integer, object_attributes_payload, utf16,
+    wire_index,
+};
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 
 const TEXT_CLASS: [u8; 16] = [
@@ -124,7 +128,12 @@ fn text(
             }
         }
     }
-    anonymous_with_children(1, i32::from(leader), &outer, &[0..base_end])
+    anonymous_with_children(
+        1,
+        i32::from(leader),
+        &outer,
+        std::slice::from_ref(&(0..base_end)),
+    )
 }
 
 fn dot(

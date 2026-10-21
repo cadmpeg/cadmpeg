@@ -3,21 +3,23 @@
 
 use crate::loss::Diagnostics;
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
+    nurbs::NurbsCurve,
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{loss::LossNote, Severity};
+use cadmpeg_ir::report::{Severity, loss::LossNote};
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -25,8 +27,6 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;
@@ -585,7 +585,7 @@ impl<'a> DecodeContext<'a> {
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
-                        association: Some(self.source_association(identity)?.identity),
+                        association: Some(Self::source_association(identity)?.identity),
                         id: crate::mesh::MeshId::Ready(
                             cadmpeg_ir::tessellation::TessellationId::mint(format!(
                                 "rhino:object:tessellation#{key}"
@@ -807,7 +807,7 @@ impl<'a> DecodeContext<'a> {
                     ) {
                         Ok(value) => value,
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
-                            return Err(error)
+                            return Err(error);
                         }
                         Err(error) => {
                             self.scan_warning(source_order, format_args!("{error}"));
@@ -922,7 +922,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
-        let association = self.source_association(identity)?;
+        let association = Self::source_association(identity)?;
         let feature_id = {
             Ok::<_, cadmpeg_core::CodecError>(FeatureId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "hatch", "feature"),
@@ -1220,7 +1220,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
-        let association = self.source_association(identity)?;
+        let association = Self::source_association(identity)?;
         let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
         let feature_id = {
             Ok::<_, cadmpeg_core::CodecError>(FeatureId::compose(
@@ -1585,7 +1585,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
-        let association = self.source_association(identity)?;
+        let association = Self::source_association(identity)?;
         let parameter_id = format!("rhino:object:curve#{key}.curve-on-surface-c2");
         let model_id = construction
             .model_curve
@@ -1771,7 +1771,6 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn source_association(
-        &self,
         identity: &crate::objects::SourceIdentity,
     ) -> Result<ObjectContext, cadmpeg_core::CodecError> {
         source_association(identity, &[], None, None)
@@ -1868,7 +1867,7 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity() else {
             return Ok(false);
         };
-        surface.source_object = Some(self.source_association(identity)?.identity);
+        surface.source_object = Some(Self::source_association(identity)?.identity);
         let id = surface.id.to_string();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
@@ -2115,11 +2114,13 @@ impl<'a> DecodeContext<'a> {
                 .filter(|record| record.data().is_some())
                 .count();
         let note = if self.opaque_records.is_empty() {
-            format!("decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
+            format!(
+                "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
              records and complete bytes for {byte_records}; document cap {} bytes, per-record cap {} bytes",
-            self.session.unknowns().len(),
-            RETAINED_DOCUMENT_CAP,
-            RETAINED_RECORD_CAP)
+                self.session.unknowns().len(),
+                RETAINED_DOCUMENT_CAP,
+                RETAINED_RECORD_CAP
+            )
         } else {
             format!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
@@ -2370,7 +2371,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(false);
         };
-        let association = self.source_association(identity)?;
+        let association = Self::source_association(identity)?;
         let Some(unknown) = self
             .session
             .unknowns()
@@ -2760,7 +2761,7 @@ impl<'a> DecodeContext<'a> {
         if extrusion.boundaries.is_empty() {
             return Ok(false);
         }
-        let association = self.source_association(identity)?;
+        let association = Self::source_association(identity)?;
         let session = self.expand.ctx();
         let mut source_boundaries = std::mem::take(&mut extrusion.boundaries);
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
@@ -2927,7 +2928,7 @@ impl<'a> DecodeContext<'a> {
             .append_prefixed(mesh.warnings, format_args!("{}", identity.source_id));
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
-        tessellation.source_object = Some(self.source_association(identity)?.identity);
+        tessellation.source_object = Some(Self::source_association(identity)?.identity);
         self.session
             .append_model_mut()?
             .tessellations
@@ -3024,7 +3025,7 @@ impl<'a> DecodeContext<'a> {
             self.scan_unbound_unit_warning(source_order, "Brep");
             return Ok(());
         };
-        let association = self.source_association(identity)?;
+        let association = Self::source_association(identity)?;
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };

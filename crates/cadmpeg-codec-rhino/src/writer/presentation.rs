@@ -5,6 +5,7 @@ use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 
+#[derive(Clone, Copy)]
 pub(super) struct Display<'a> {
     pub(super) name: Option<&'a str>,
     pub(super) color: Option<Color>,
@@ -32,7 +33,7 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
                 .bodies
                 .iter()
                 .find(|row| row.id == *id)
-                .and_then(|row| row.name.as_deref())
+                .and_then(|row| row.name.as_deref());
         }
         AppearanceTarget::Face(id) => {
             return ir
@@ -40,7 +41,7 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
                 .faces
                 .iter()
                 .find(|row| row.id == *id)
-                .and_then(|row| row.name.as_deref())
+                .and_then(|row| row.name.as_deref());
         }
         AppearanceTarget::Occurrence(id) => {
             return ir
@@ -48,7 +49,7 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
                 .occurrences
                 .iter()
                 .find(|row| row.id == *id)
-                .and_then(|row| row.name.as_deref())
+                .and_then(|row| row.name.as_deref());
         }
         AppearanceTarget::Curve(id) => AttributeTarget::Curve(id.clone()),
         AppearanceTarget::Surface(id) => AttributeTarget::Surface(id.clone()),

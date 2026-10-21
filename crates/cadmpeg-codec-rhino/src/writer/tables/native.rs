@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-free inverses for native presentation tables without neutral homes.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Value, anonymous_with_children, class_wrapper,
+    class_wrapper_with_direct, component, crc_chunk_with_direct, object_record, records,
+    source_record_resolves, utf16, uuid, wire_index,
+};
 
 const GROUP_CLASS: [u8; 16] = [
     0x97, 0x9f, 0x1d, 0x72, 0x45, 0x36, 0xc4, 0x44, 0x8b, 0xe6, 0xb2, 0xcf, 0x69, 0x7d, 0x25, 0xce,
@@ -55,7 +59,7 @@ pub(in crate::writer) fn group_indices(ir: &CadIr, identity: &str) -> Result<Vec
         .iter()
         .filter(|record| group_resolves(ir, record))
         .enumerate()
-        .filter_map(|(index, record)| {
+        .filter(|(_, record)| {
             record
                 .field("links")
                 .and_then(|value| {
@@ -66,8 +70,8 @@ pub(in crate::writer) fn group_indices(ir: &CadIr, identity: &str) -> Result<Vec
                     })
                 })
                 .unwrap_or(false)
-                .then(|| wire_index(index))
         })
+        .map(|(index, _)| wire_index(index))
         .collect()
 }
 
@@ -172,7 +176,12 @@ pub(in crate::writer) fn linetypes(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecErro
             0x2000_8078,
             &class_wrapper_with_direct(
                 LINETYPE_CLASS,
-                &anonymous_with_children(2, 3, &payload, &[0..component_end])?,
+                &anonymous_with_children(
+                    2,
+                    3,
+                    &payload,
+                    std::slice::from_ref(&(0..component_end)),
+                )?,
                 &[],
             )?,
             &[],

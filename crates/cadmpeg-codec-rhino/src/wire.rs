@@ -9,7 +9,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 
-use crate::chunks::{checked_count_bytes, BoundedReader, FramingError};
+use crate::chunks::{BoundedReader, FramingError, checked_count_bytes};
 use crate::curves::GeometryError;
 use crate::layout::uuid_wire_form as uuid_wire;
 use crate::settings::MillimeterScale;
@@ -33,8 +33,8 @@ pub(crate) fn native_color(
     }
 }
 
-pub(crate) fn serialize_panose<S: serde::Serializer>(
-    value: &Option<cadmpeg_ir::native::bytes::NativeBytes<[u8; 10]>>,
+pub(crate) fn serialize_panose<'a, S: serde::Serializer>(
+    value: impl IntoIterator<Item = &'a cadmpeg_ir::native::bytes::NativeBytes<[u8; 10]>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     #[derive(serde::Serialize)]
@@ -52,7 +52,8 @@ pub(crate) fn serialize_panose<S: serde::Serializer>(
     }
     use serde::Serialize;
     value
-        .as_ref()
+        .into_iter()
+        .next()
         .map(|value| {
             let bytes: &[u8] = value.as_ref();
             Panose {

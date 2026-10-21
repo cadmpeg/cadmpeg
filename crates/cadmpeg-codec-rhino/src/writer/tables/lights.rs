@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Light geometry and photometric controls have a native typed inverse.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Map, Value, class_wrapper, color, crc_chunk_with_direct, integer,
+    records, short_chunk, utf16, uuid, wire_index,
+};
 
 const LIGHT_CLASS: [u8; 16] = [
     0x13, 0x85, 0xa0, 0x85, 0x83, 0xf3, 0xd3, 0x11, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,

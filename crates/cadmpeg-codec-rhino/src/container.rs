@@ -11,21 +11,21 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
-    checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
-    parse_header, validate_eof, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
-    TCODE_SHORT,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE,
+    TCODE_ENDOFTABLE, TCODE_SHORT, checked_count_bytes, checksum_children_through_class_end,
+    chunk_at, direct_checksum_ranges, parse_header, validate_eof, verify_checksum,
+    verify_checksum_ranges,
 };
-use crate::instances::{parse_definitions, DefinitionScan};
+use crate::instances::{DefinitionScan, parse_definitions};
 use crate::layout::file_header;
 use crate::objects::{
-    degraded_object_record, parse_object_record, resolve_identities, ObjectRecord,
+    ObjectRecord, degraded_object_record, parse_object_record, resolve_identities,
 };
 use crate::wire::Uuid;
 /// Maximum direct table records retained or described in one document.
@@ -1196,7 +1196,7 @@ fn scan_with_record_limit<'a>(
                 ) {
                     Ok(descriptor) => descriptor,
                     Err(FramingError::Resource(limit)) => {
-                        return Err(CodecError::ResourceLimit(limit))
+                        return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
                         warnings.push(format_args!(
@@ -1585,7 +1585,7 @@ pub(crate) fn source_layout(scan: &Scan<'_>) -> Result<BTreeMap<String, String>,
     let objects = scan
         .objects
         .iter()
-        .map(|object| object.range())
+        .map(super::objects::ObjectRecord::range)
         .collect::<Vec<_>>();
     let history = scan
         .history

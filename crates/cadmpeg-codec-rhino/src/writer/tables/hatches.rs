@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed hatch lines are emitted in the archive's millimetre units.
 
-use super::*;
+use super::{
+    CadIr, CodecError, Digest, Value, anonymous, anonymous_with_children,
+    class_wrapper_with_direct, component, crc_chunk_with_direct, integer, records, utf16,
+    wire_index,
+};
 
 const PATTERN_CLASS: [u8; 16] = [
     0x91, 0x7c, 0x4e, 0x06, 0xf6, 0x35, 0x34, 0x47, 0xa4, 0x46, 0x79, 0xff, 0x7c, 0xd6, 0x59, 0xe1,

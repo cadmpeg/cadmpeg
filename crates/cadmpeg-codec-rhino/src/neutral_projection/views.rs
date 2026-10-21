@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved views expose their names and admitted camera poses as neutral state.
 
-use cadmpeg_core::{decode::DecodeContext, CodecError};
+use cadmpeg_core::{CodecError, decode::DecodeContext};
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ids::{Identity, IdentityKey};
 use cadmpeg_ir::native::NativeRecord;
 use cadmpeg_ir::presentation::{
@@ -10,7 +11,6 @@ use cadmpeg_ir::presentation::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
-use cadmpeg_ir::CadIr;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
@@ -37,31 +37,42 @@ fn close(a: [f64; 3], b: [f64; 3]) -> bool {
 }
 
 fn orientation(viewport: &Map<String, Value>) -> Option<NonzeroVector<4>> {
-    let x = vector(viewport, "camera_x_axis")?;
-    let y = vector(viewport, "camera_y_axis")?;
-    let z = vector(viewport, "camera_z_axis")?;
+    let camera_x = vector(viewport, "camera_x_axis")?;
+    let camera_y = vector(viewport, "camera_y_axis")?;
+    let camera_z = vector(viewport, "camera_z_axis")?;
     // This is admission of the stored orthonormal camera frame, not a repair
     // of an inconsistent source frame or a geometric tolerance substitution.
-    if [x, y, z]
+    if [camera_x, camera_y, camera_z]
         .into_iter()
         .any(|axis| (dot(axis, axis) - 1.0).abs() > EPS_CAMERA_FRAME)
-        || [dot(x, y), dot(x, z), dot(y, z)]
-            .into_iter()
-            .any(|value| value.abs() > EPS_CAMERA_FRAME)
+        || [
+            dot(camera_x, camera_y),
+            dot(camera_x, camera_z),
+            dot(camera_y, camera_z),
+        ]
+        .into_iter()
+        .any(|value| value.abs() > EPS_CAMERA_FRAME)
         || !close(
             [
-                x[1] * y[2] - x[2] * y[1],
-                x[2] * y[0] - x[0] * y[2],
-                x[0] * y[1] - x[1] * y[0],
+                camera_x[1] * camera_y[2] - camera_x[2] * camera_y[1],
+                camera_x[2] * camera_y[0] - camera_x[0] * camera_y[2],
+                camera_x[0] * camera_y[1] - camera_x[1] * camera_y[0],
             ],
-            z,
+            camera_z,
         )
-        || !close(vector(viewport, "camera_direction")?, z.map(|value| -value))
-        || !close(vector(viewport, "camera_up")?, y)
+        || !close(
+            vector(viewport, "camera_direction")?,
+            camera_z.map(|value| -value),
+        )
+        || !close(vector(viewport, "camera_up")?, camera_y)
     {
         return None;
     }
-    let matrix = [[x[0], y[0], z[0]], [x[1], y[1], z[1]], [x[2], y[2], z[2]]];
+    let matrix = [
+        [camera_x[0], camera_y[0], camera_z[0]],
+        [camera_x[1], camera_y[1], camera_z[1]],
+        [camera_x[2], camera_y[2], camera_z[2]],
+    ];
     let trace = matrix[0][0] + matrix[1][1] + matrix[2][2];
     let (w, axis) = if trace > 0.0 {
         let scale = (trace + 1.0).sqrt() * 2.0;
@@ -74,21 +85,28 @@ fn orientation(viewport: &Map<String, Value>) -> Option<NonzeroVector<4>> {
             ],
         )
     } else {
-        let i = if matrix[0][0] > matrix[1][1] && matrix[0][0] > matrix[2][2] {
+        let major_axis = if matrix[0][0] > matrix[1][1] && matrix[0][0] > matrix[2][2] {
             0
         } else if matrix[1][1] > matrix[2][2] {
             1
         } else {
             2
         };
-        let j = (i + 1) % 3;
-        let k = (i + 2) % 3;
-        let scale = (1.0 + matrix[i][i] - matrix[j][j] - matrix[k][k]).sqrt() * 2.0;
+        let next_axis = (major_axis + 1) % 3;
+        let last_axis = (major_axis + 2) % 3;
+        let scale = (1.0 + matrix[major_axis][major_axis]
+            - matrix[next_axis][next_axis]
+            - matrix[last_axis][last_axis])
+            .sqrt()
+            * 2.0;
         let mut axis = [0.0; 3];
-        axis[i] = scale / 4.0;
-        axis[j] = (matrix[j][i] + matrix[i][j]) / scale;
-        axis[k] = (matrix[k][i] + matrix[i][k]) / scale;
-        ((matrix[k][j] - matrix[j][k]) / scale, axis)
+        axis[major_axis] = scale / 4.0;
+        axis[next_axis] = (matrix[next_axis][major_axis] + matrix[major_axis][next_axis]) / scale;
+        axis[last_axis] = (matrix[last_axis][major_axis] + matrix[major_axis][last_axis]) / scale;
+        (
+            (matrix[last_axis][next_axis] - matrix[next_axis][last_axis]) / scale,
+            axis,
+        )
     };
     let norm = dot(axis, axis).sqrt();
     if norm <= f64::EPSILON {
@@ -157,7 +175,7 @@ pub(super) fn project(
         }
         let legacy_mode = fields
             .get("legacy_display_mode")
-            .and_then(|value| value.as_i64());
+            .and_then(serde_json::Value::as_i64);
         let modern_mode = fields
             .get("attributes")
             .and_then(Value::as_object)
