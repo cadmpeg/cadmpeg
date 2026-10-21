@@ -112,7 +112,7 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
         record.offset() + 1,
         cadmpeg_ir::RetainedBytes::Digest {
             byte_len: record.byte_len(),
-            sha256: record.sha256(),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256()).unwrap(),
         },
     )
     .unwrap()
