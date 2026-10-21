@@ -148,7 +148,12 @@ pub(super) fn plan(
             .is_none_or(|body| supported.contains(body))
     });
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
-    let mut prepared_native = design::prepare(&mut projected, &mut losses)?;
+    let compressed_sketch_configurations = super::sketch_compression::from_fidelity(input.fidelity);
+    let mut prepared_native = design::prepare(
+        &mut projected,
+        &mut losses,
+        &compressed_sketch_configurations,
+    )?;
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
         let mut declared = NativeDispositions::for_namespace(
@@ -316,6 +321,15 @@ pub(super) fn plan(
         ),
         SynthesisCause::Fresh | SynthesisCause::SourceImageUnavailable => None,
     };
+    let compressed_sketches = projected
+        .model
+        .sketches
+        .iter()
+        .filter(|sketch| {
+            compressed_sketch_configurations
+                .contains(sketch.configuration.as_deref().unwrap_or("0"))
+        })
+        .count();
     let consumption = match cause {
         SynthesisCause::PatchDeclined { reason } => Consumption::Degraded { reason },
         SynthesisCause::SourceImageUnavailable => {
@@ -326,10 +340,17 @@ pub(super) fn plan(
             Consumption::NotConsumed
         }
         SynthesisCause::Fresh | SynthesisCause::SourceUnrepresented { .. } => {
-            Consumption::NotConsumed
+            if compressed_sketches == 0 {
+                Consumption::NotConsumed
+            } else {
+                Consumption::Degraded { reason: "retained only nested sketch compression layout; all lane content regenerated from the current document".into() }
+            }
         }
     };
-    let notes = vec!["source container regenerated from IR".into()];
+    let mut notes = vec!["source container regenerated from IR".into()];
+    if compressed_sketches != 0 {
+        notes.push(format!("retained nested compression layout for {compressed_sketches} freshly generated sketch stream(s); no source lane content was replayed"));
+    }
     if let Some(message) = resolved.displacement_message() {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }

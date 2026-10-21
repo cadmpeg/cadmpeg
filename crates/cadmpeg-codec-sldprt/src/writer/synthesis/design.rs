@@ -18,6 +18,7 @@ use crate::native::SldprtNative;
 pub(super) fn prepare(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
+    compressed_sketch_configurations: &std::collections::BTreeSet<String>,
 ) -> Result<Option<SldprtNative>, CodecError> {
     if !ir.scope.design {
         return Ok(ir
@@ -47,7 +48,11 @@ pub(super) fn prepare(
         &ir.model.bodies,
         &mut native,
     )?;
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(
+        ir,
+        &mut native,
+        compressed_sketch_configurations,
+    )?;
     crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
     let all_bodies = ir
         .model
@@ -230,7 +235,11 @@ fn sketches(
     let original = ir.clone();
     let try_sketch = |candidate: &CadIr| {
         let mut native = native.cloned();
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(candidate, &mut native)
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(
+            candidate,
+            &mut native,
+            &std::collections::BTreeSet::new(),
+        )
     };
     let mut dropped = HashSet::new();
     for sketch in ir.model.sketches.clone() {

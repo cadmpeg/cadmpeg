@@ -26,6 +26,7 @@ use cadmpeg_ir::units::FinitePoint2;
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
+    compressed_sketch_configurations: &std::collections::BTreeSet<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if !ir.scope.design {
         return Ok(());
@@ -47,7 +48,7 @@ pub(crate) fn prepare_sketches_for_write(
     native
         .feature_input_lanes
         .retain(|lane| !lane.id.starts_with("sldprt:generated:feature-input#"));
-    let generated = source_less_lanes(ir, native)?;
+    let generated = source_less_lanes(ir, native, compressed_sketch_configurations)?;
     native.feature_input_lanes.extend(generated);
     Ok(())
 }
@@ -1179,6 +1180,7 @@ pub(crate) fn synthesize_feature_classes(
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
+    compressed_sketch_configurations: &std::collections::BTreeSet<String>,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
@@ -1199,11 +1201,16 @@ fn source_less_lanes(
         append_generated_sketch_markers(ir, sketch, &mut payload)?;
         let sketch_ir = sketch_brep(ir, sketch)?;
         let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
-        payload.extend(crate::writer::parasolid_stream_named(
+        let stream = crate::writer::parasolid_stream_named(
             &body,
             "SCH_SW_33103_11000",
             sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
-        )?);
+        )?;
+        if compressed_sketch_configurations.contains(&configuration) {
+            payload.extend(crate::writer::sketch_compression::wrap(&stream)?);
+        } else {
+            payload.extend(stream);
+        }
         objects.push((configuration, owner.ordinal, payload));
     }
     for sketch in &ir.model.spatial_sketches {

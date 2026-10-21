@@ -8,6 +8,7 @@ use std::num::NonZeroU16;
 mod accounting;
 mod custom_properties;
 mod previews;
+pub(crate) mod sketch_compression;
 mod synthesis;
 pub(crate) mod target;
 
@@ -162,7 +163,11 @@ pub(super) fn write_semantic_at(
     } else {
         let feature_input_renames =
             crate::history::write::synchronize_feature_records(&digest_ctx, ir, &mut native)?;
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(
+            ir,
+            &mut native,
+            &sketch_compression::from_scan(source_scan.as_ref()),
+        )?;
         crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
         crate::history::write::configurations::synchronize_configuration_records(
             ir,
