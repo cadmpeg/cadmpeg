@@ -57,7 +57,11 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
     };
     let native_dispositions = native::coverage(target, &prepared, &mut losses)?;
     let coverage = prepare::dispositions(target, &prepared, coverage, &mut losses);
-    if prepared.model.bodies.is_empty() {
+    if prepared.model.bodies.is_empty()
+        && prepared.model.surfaces.is_empty()
+        && prepared.model.curves.is_empty()
+        && prepared.model.points.is_empty()
+    {
         losses.push(F3dLossCode::WriterNoExportableSolids.note(
             "the document has no body representable by the F3D writer; wrote an empty geometry carrier",
         ));
