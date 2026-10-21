@@ -46,7 +46,14 @@ pub(crate) fn write_new(
     let loaded_native = f3d_native(target)?;
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
-    let native = loaded_native.unwrap_or_default();
+    let mut native = loaded_native.unwrap_or_default();
+    // Native arena order follows identity, while a MetaStream type table is
+    // addressed by the explicit segment-local class discriminator. Rebuild
+    // that layout after loading the document, before positional table lookups
+    // or registry encoding.
+    native
+        .design_types
+        .sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
     validate_source_less_face_keys(&native)?;
     let attributes = attributes::AttributeIndex::new(target, &native);
     if !target.model.subds.is_empty() {
