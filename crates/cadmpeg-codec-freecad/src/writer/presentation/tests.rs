@@ -107,14 +107,25 @@ fn explicit_appearance_binding_overrides_body_and_native_color() {
         Some("65535")
     );
     assert!(providers["Shape"].properties["Visibility"].contains("value=\"0\""));
-    assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].code.local_code(), "appearance.not-transferred");
-    assert!(losses[0]
+    let native_material = material
+        .descendants()
+        .find(|node| node.has_tag_name("PropertyMaterial"))
+        .unwrap();
+    assert_eq!(native_material.attribute("shininess"), Some("0.9"));
+    assert_eq!(native_material.attribute("transparency"), Some("0"));
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "appearance.not-transferred"));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("required native material defaults")));
+    assert!(losses.iter().any(|loss| loss
         .message
-        .contains("authored:model:appearance_binding#Blue"));
-    assert!(losses[0]
-        .message
-        .contains("independent visibility/channel gates"));
+        .contains("authored:model:appearance_binding#Blue")
+        && loss
+            .message
+            .contains("independent visibility/channel gates")));
 }
 
 #[test]
