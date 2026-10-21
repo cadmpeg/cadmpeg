@@ -65,7 +65,7 @@ fn partition_configuration_reports_only_its_new_native_association() {
     );
     assert_eq!(decoded.ir().model.configurations[0], snapshot);
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    let report = plan.write_to(&mut bytes).unwrap();
     let written = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
@@ -87,7 +87,7 @@ fn partition_configuration_reports_only_its_new_native_association() {
     assert_eq!(actual.parameter_overrides, snapshot.parameter_overrides);
     assert_eq!(actual.feature_states, snapshot.feature_states);
     cadmpeg_test_support::contract::assert_written_arenas_agree(
-        plan.report(),
+        &report,
         decoded.ir(),
         written.ir(),
     );
@@ -107,12 +107,12 @@ fn partition_configuration_reports_only_its_new_native_association() {
         .iter()
         .any(|note| note.code.local_code() == "writer.configuration-association-generated"));
     let mut bytes = Vec::new();
-    bound.write_to(&mut bytes).unwrap();
+    let bound_report = bound.write_to(&mut bytes).unwrap();
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     cadmpeg_test_support::contract::assert_written_arenas_agree(
-        bound.report(),
+        &bound_report,
         written.ir(),
         rewritten.ir(),
     );
