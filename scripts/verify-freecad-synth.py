@@ -42,11 +42,11 @@ def verify(app, root: Path, report: Path) -> int:
             export = provenance.get("export") if isinstance(provenance, dict) else None
             write_path = export.get("write_path") if isinstance(export, dict) else None
             if (not isinstance(provenance, dict) or not isinstance(write_path, dict)
-                    or provenance.get("ir_version") != "7"
+                    or provenance.get("ir_version") != "8"
                     or provenance.get("status") != "ok"
                     or provenance.get("command") != "convert"
                     or write_path.get("path") != "synthesized"):
-                raise RuntimeError("input does not have a successful wire-v7 synthesized export report")
+                raise RuntimeError("input does not have a successful wire-v8 synthesized export report")
             check = provenance.get("check_report", {})
             counts = check.get("entity_counts", {}) if isinstance(check, dict) else {}
             expected_bodies = counts.get("bodies", 0) if isinstance(counts, dict) else 0
