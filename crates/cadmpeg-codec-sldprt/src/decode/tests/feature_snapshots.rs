@@ -9,6 +9,7 @@ use cadmpeg_ir::features::{
     FeatureEvaluation, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use std::collections::BTreeMap;
 
 fn run() {
@@ -96,13 +97,57 @@ fn run() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    let features = ir.model.features.clone();
-    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
-        .unwrap();
+    let original = ir.clone();
+    let mut features = ir.model.features.clone();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for feature in &mut features {
+        assert_eq!(feature.dependencies.as_slice(), [dependency.clone()]);
+        let mut references = Vec::new();
+        feature
+            .definition()
+            .visit_identity_references(&ctx, &mut |reference| {
+                references.push(reference.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert!(!references
+            .iter()
+            .any(|reference| reference == dependency.as_str()));
+        // D26: the input's unrelated dangling dependency is not a definition
+        // reference. Only this derived list changes; all other state stays exact.
+        feature.dependencies.clear();
+    }
+    normalize_configuration_differences(&ctx, &mut ir).unwrap();
     assert_eq!(ir.model.features, features);
     assert!(ir.model.configurations[0].feature_states.is_empty());
     assert!(ir.model.configurations[0].parameter_values.is_empty());
     assert!(ir.model.configurations[0].parameter_overrides.is_empty());
+
+    // A separate authored control has an actual feature seed reference. The
+    // refresh must retain this edge rather than clearing every dependency.
+    let mut referenced = original;
+    let seed = referenced.model.features[0].id.clone();
+    referenced.model.features[1]
+        .evaluation
+        .edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = definition
+            else {
+                panic!("pattern definition");
+            };
+            *seeds = vec![PatternSeed::Feature(seed.clone())];
+        });
+    let mut expected = referenced.model.features.clone();
+    expected[0].dependencies.clear();
+    expected[1].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![seed]).unwrap();
+    normalize_configuration_differences(&ctx, &mut referenced).unwrap();
+    assert_eq!(referenced.model.features, expected);
+    assert!(referenced.model.configurations[0].feature_states.is_empty());
+    assert!(referenced.model.configurations[0]
+        .parameter_values
+        .is_empty());
+    assert!(referenced.model.configurations[0]
+        .parameter_overrides
+        .is_empty());
 }
 
 #[test]
