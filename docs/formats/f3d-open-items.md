@@ -214,19 +214,6 @@ remains native, or unresolved when its group declares lost references.
 persistent edge selection and distinguish identity fields from validation or
 topology context.
 
-### DR-72. ACT change-group class-tail fields
-
-**Question.** What fields does the class-owned tail of an ACT change group
-contain, and which dynamic change-group classes write each tail form?
-
-**Known.** `f3d.md` §3.1 "An **ACT change group** payload" gives the complete
-channel run, optional entity key, padding rule, and class-tail extent. The
-native ACT entity retains the tail bytes and their stream offset. The tail does
-not change the channel count, names, GUIDs, entity key, or ACT-table join.
-
-**Need.** A source-less writer must generate the class tail selected by the
-change-group class instead of copying it from a retained record.
-
 ### DR-73. Thread compact-trailer record reference
 
 **Question.** What does the record named by a reference-bearing compact

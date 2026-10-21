@@ -95,14 +95,14 @@ impl ActTableRow {
     }
 }
 
-/// Non-padding bytes following an ACT channel group.
+/// Opaque stream residue retained after the final ACT channel group.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ActClassTail {
+pub(crate) struct ActStreamResidue {
     bytes: Vec<u8>,
     offset: u64,
 }
 
-impl ActClassTail {
+impl ActStreamResidue {
     pub(crate) fn new(bytes: Vec<u8>, offset: u64) -> Result<Self, String> {
         if bytes.iter().all(|byte| *byte == 0) {
             return Err("channel_class_tail must contain non-padding bytes".into());
@@ -134,7 +134,7 @@ pub(crate) struct ActChannelGroup {
     entity_id_offset: Option<u64>,
     class_tag: DesignClassTag,
     channels: BTreeMap<String, Located<DesignGuidText>>,
-    class_tail: Option<ActClassTail>,
+    class_tail: Option<ActStreamResidue>,
 }
 
 fn validate_act_channel_name(name: &str) -> Result<(), String> {
@@ -150,7 +150,7 @@ impl ActChannelGroup {
         entity_id_offset: Option<u64>,
         class_tag: DesignClassTag,
         channels: BTreeMap<String, Located<DesignGuidText>>,
-        class_tail: Option<ActClassTail>,
+        class_tail: Option<ActStreamResidue>,
     ) -> Result<Self, String> {
         if channels.is_empty() || channels.len() > 8 {
             return Err("ACT channels must contain 1 through 8 entries".into());
@@ -508,7 +508,9 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                     .collect::<Result<_, String>>()?,
                 match (wire.channel_class_tail, wire.channel_class_tail_offset) {
                     (bytes, None) if bytes.is_empty() => None,
-                    (bytes, Some(offset)) => Some(ActClassTail::new(bytes.into_inner(), offset)?),
+                    (bytes, Some(offset)) => {
+                        Some(ActStreamResidue::new(bytes.into_inner(), offset)?)
+                    }
                     _ => return Err("channel_class_tail requires channel_class_tail_offset".into()),
                 },
             )?),
