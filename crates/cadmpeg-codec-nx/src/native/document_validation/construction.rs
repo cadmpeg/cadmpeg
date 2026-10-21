@@ -299,6 +299,12 @@ fn symbolic_thread(namespace: &NativeNamespace, record: &Value) -> Result<(), Na
         }
     }
     if let Some(construction) = record.get("construction") {
+        if construction.is_null() {
+            return Err(fail(
+                record,
+                "construction: this key states a value; omit it to state absence",
+            ));
+        }
         nonzero_byte(construction, "parameter_class_index")?;
         for coordinate in sized_array(construction, "coordinates", 3)? {
             finite(record, &coordinate["value"], "coordinates")?;

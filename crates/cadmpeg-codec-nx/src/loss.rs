@@ -401,19 +401,27 @@ mod tests {
         }
     }
 
-    /// Only an attachment failure pins a floor above its taxonomy floor.
+    /// Source integrity and attachment failures pin Error above their taxonomy floor.
     #[test]
     fn strict_floor_follows_taxonomy_except_attachment_failure() {
         use cadmpeg_ir::report::loss::StrictConsequence;
         for code in NxLossCode::ALL {
             let expected = match code {
-                NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
+                NxLossCode::NativeAttachmentFailed | NxLossCode::SourceIntegrityRejected => {
+                    Some(cadmpeg_ir::report::Severity::Error)
+                }
                 other => other.shared_taxonomy().strict_floor(),
             };
             assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
         }
         assert_eq!(
             NxLossCode::NativeAttachmentFailed
+                .note("x")
+                .strict_consequence(),
+            StrictConsequence::Reject
+        );
+        assert_eq!(
+            NxLossCode::SourceIntegrityRejected
                 .note("x")
                 .strict_consequence(),
             StrictConsequence::Reject
