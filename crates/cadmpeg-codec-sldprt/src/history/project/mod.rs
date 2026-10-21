@@ -3,10 +3,12 @@
 
 use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureContent, FeatureHistory};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::{
     features::{
         ConfigurationId, DatumPlaneReference, DesignConfiguration, FeatureDefinition, FeatureId,
@@ -31,6 +33,8 @@ mod content_tests;
 #[cfg(test)]
 mod custom_property_tests;
 mod datum;
+#[cfg(test)]
+mod dependency_projection_tests;
 #[cfg(test)]
 mod dimension_admission_tests;
 #[cfg(test)]
@@ -168,6 +172,7 @@ impl fmt::Display for FeatureOrdinal {
 }
 
 pub(crate) fn project_feature_model(
+    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
     let (mut features, parents) = histories.iter().try_fold(
@@ -235,7 +240,7 @@ pub(crate) fn project_feature_model(
                         .unwrap_or(u64::from(feature.ordinal)),
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: Some(feature.suppressed),
-                    dependencies: project_feature_dependencies(feature, &by_source)?,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     source_properties: consumed::properties(feature, &definition),
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
@@ -303,6 +308,29 @@ pub(crate) fn project_feature_model(
     }
     bind_offset_plane_references(&mut features, histories);
     bind_native_construction_features(&mut features, histories);
+    let held = features
+        .iter()
+        .map(|feature| (feature.id.as_str().to_owned(), feature.id.clone()))
+        .collect::<HashMap<_, _>>();
+    for feature in &mut features {
+        let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+        // Tree-node children express containment, not regeneration operands.
+        if !matches!(
+            feature.evaluation.definition().operation(),
+            FeatureOperation::TreeNode { .. }
+        ) {
+            feature
+                .evaluation
+                .definition()
+                .visit_identity_references(ctx, &mut |id| {
+                    if let Some(target) = held.get(id).filter(|target| **target != feature.id) {
+                        dependencies.insert(target.clone());
+                    }
+                    Ok(())
+                })?;
+        }
+        feature.dependencies = dependencies;
+    }
     Ok(FeatureProjection {
         features,
         regeneration_parents,
@@ -310,9 +338,10 @@ pub(crate) fn project_feature_model(
 }
 
 pub(crate) fn project_features(
+    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
-    project_feature_model(histories).map(|projection| projection.features)
+    project_feature_model(ctx, histories).map(|projection| projection.features)
 }
 
 /// Project standalone history notes into the semantic-annotation arena.
@@ -1139,33 +1168,6 @@ fn project_feature_content(
         result.push(value)?;
     }
     Ok(result)
-}
-
-fn project_feature_dependencies(
-    feature: &Feature,
-    by_source: &HashMap<String, FeatureId>,
-) -> Result<cadmpeg_ir::features::DistinctMembers<FeatureId>, CodecError> {
-    let owner = neutral_feature_id(&feature.id)?;
-    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-    for property in FEATURE_REFERENCE_PROPERTIES {
-        let Some(value) = feature.properties.get(*property) else {
-            continue;
-        };
-        for reference in value
-            .split(|character: char| {
-                character == ',' || character == ';' || character.is_whitespace()
-            })
-            .filter(|reference| !reference.is_empty())
-        {
-            let Some(dependency) = by_source.get(reference) else {
-                continue;
-            };
-            if dependency != &owner {
-                dependencies.insert(dependency.clone());
-            }
-        }
-    }
-    Ok(dependencies)
 }
 
 /// Project decoded native configurations into neutral design configurations.

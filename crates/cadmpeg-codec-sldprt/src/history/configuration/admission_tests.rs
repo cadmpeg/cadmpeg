@@ -302,7 +302,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     }];
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.parameters = crate::history::parameters::project_parameters(&ctx, &histories)?;
-    ir.model.features = crate::history::project::project_features(&histories)?;
+    ir.model.features = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories)?;
     ir.model
         .configurations
         .push(design_configuration("design", 0, Some(0), None));
@@ -1105,7 +1105,7 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     ];
     let mut base = cadmpeg_ir::CadIr::empty();
     base.model.parameters = crate::history::parameters::project_parameters(&ctx, &histories)?;
-    base.model.features = crate::history::project::project_features(&histories)?;
+    base.model.features = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories)?;
     let parameter =
         cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#feature:0").unwrap();
     base.model

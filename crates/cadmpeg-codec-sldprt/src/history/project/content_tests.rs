@@ -25,7 +25,7 @@ fn feature_content_projection_keeps_repeated_text() {
     history.features[0]
         .content
         .push(FeatureContent::Text("source text".into()));
-    let projection = project_feature_model(&[history]).unwrap();
+    let projection = project_feature_model(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert_eq!(projection.features[0].source_content.len(), 2);
     assert_eq!(
         projection.features[0].source_content[0],
