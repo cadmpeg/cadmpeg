@@ -463,21 +463,61 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
     });
+    // #209 Rule W1/P: semantic native edits are document content; source agreement
+    // is checked only for a fidelity-backed patch, whose refusal selects synthesis.
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let edited = crate::native::SldprtNative::load(namespace).unwrap();
     assert!(crate::resolved_features::validate::validate_native(
         &cadmpeg_test_support::service_decode_context(),
-        decoded.ir()
+        decoded.ir(),
     )
     .unwrap()
-    .iter()
-    .any(|finding| finding.message.contains("class index does not match")));
-
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    .is_empty());
+    let error = crate::native::source::load(namespace, decoded.source_fidelity()).unwrap_err();
     assert!(error.to_string().contains("class index does not match"));
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let class = &edited.feature_input_lanes[0].classes[0];
+    assert_eq!(class.name, "sgOtherHandle");
+    assert!(
+        class.feature_ref.is_none(),
+        "fixture class is independent native content"
+    );
+    assert_ne!(
+        plan.report().native_dispositions.record_disposition(
+            "sldprt",
+            "feature_input_classes",
+            &class.id,
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let output = sldprt_native(written.ir());
+    assert!(output
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.classes)
+        .any(|class| class.name == "sgOtherHandle"));
+    assert!(
+        output
+            .feature_input_lanes
+            .iter()
+            .flat_map(|lane| &lane.classes)
+            .all(|class| class.name != "sgPointHandle"),
+        "the old source class must not return"
+    );
 }
 
 #[test]
@@ -546,21 +586,55 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         native.feature_input_lanes[0].scalars[0].value =
             cadmpeg_ir::scalar::FiniteReal::new(0.050).expect("finite test scalar");
     });
+    // #209 Rule W1/P: semantic native edits are document content; source agreement
+    // is checked only for a fidelity-backed patch, whose refusal selects synthesis.
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let edited = crate::native::SldprtNative::load(namespace).unwrap();
     assert!(crate::resolved_features::validate::validate_native(
         &cadmpeg_test_support::service_decode_context(),
-        decoded.ir()
+        decoded.ir(),
     )
     .unwrap()
-    .iter()
-    .any(|finding| finding.message.contains("scalar index does not match")));
-
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    .is_empty());
+    let error = crate::native::source::load(namespace, decoded.source_fidelity()).unwrap_err();
     assert!(error.to_string().contains("scalar index does not match"));
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let scalar = &edited.feature_input_lanes[0].scalars[0];
+    assert_eq!(scalar.value.get(), 0.050);
+    assert!(
+        scalar.feature_ref.is_none(),
+        "fixture scalar is independent native content"
+    );
+    assert_ne!(
+        plan.report().native_dispositions.record_disposition(
+            "sldprt",
+            "feature_input_scalars",
+            &scalar.id,
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let output = sldprt_native(written.ir());
+    let values = output
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.scalars)
+        .map(|scalar| scalar.value.get())
+        .collect::<Vec<_>>();
+    assert_eq!(values, [0.050], "the old source scalar must not return");
 }
 
 #[test]

@@ -444,9 +444,9 @@ fn retain_owners(
     allowed: &BTreeSet<&str>,
     selection_owners: &BTreeSet<&str>,
 ) {
-    let permitted = |owner: Option<&str>| owner.is_some_and(|owner| allowed.contains(owner));
+    let permitted = |owner: Option<&str>| owner.is_none_or(|owner| allowed.contains(owner));
     let selection_permitted = |owner: Option<&str>| {
-        owner.is_some_and(|owner| allowed.contains(owner) || selection_owners.contains(owner))
+        owner.is_none_or(|owner| allowed.contains(owner) || selection_owners.contains(owner))
     };
     let scalar_names = lane
         .scalars
