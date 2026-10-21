@@ -825,7 +825,8 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         .push(crate::records::FeatureInputEdgeSelection {
             id: "selection".into(),
             parent: lane.id.clone(),
-            ordinal: 0, sequence: 0,
+            ordinal: 0,
+            sequence: 0,
             offset: Some(100),
             object_name_ref: "name".into(),
             feature_ref: "consumer-native".into(),
@@ -947,7 +948,8 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
                 .push(crate::records::FeatureInputEdgeSelection {
                     id: format!("selection-{ordinal}"),
                     parent: lane.id.clone(),
-                    ordinal: u32::try_from(ordinal).unwrap(), sequence: u32::try_from(ordinal).unwrap(),
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                    sequence: u32::try_from(ordinal).unwrap(),
                     offset: Some(100),
                     object_name_ref: "name".into(),
                     feature_ref: feature_ref.into(),
@@ -978,21 +980,26 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
         .unwrap();
         let states = &mut expected.model.configurations[configuration_index].feature_states;
         for feature in features {
-            if let Some(state) = states.get_mut(&feature.id) {
-                *state = if feature.suppressed == Some(true) {
-                    cadmpeg_ir::features::ConfigurationFeatureState::Suppressed {}
-                } else {
-                    cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                        definition: feature.evaluation.into_parts().0,
-                    }
-                };
-            }
+            let state = if feature.suppressed == Some(true) {
+                cadmpeg_ir::features::ConfigurationFeatureState::Suppressed {}
+            } else {
+                cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+                    definition: feature.evaluation.into_parts().0,
+                }
+            };
+            states.insert(feature.id, state);
         }
     }
     project_configuration_supplemental_edge_selections(&mut ir, &lanes).unwrap();
 
     assert_eq!(ir, expected);
     for configuration in &ir.model.configurations {
+        assert!(
+            matches!(configuration.feature_states[&id("consumer-b")].definition().unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+                if matches!(&groups[0].edges, EdgeSelection::Generated { edges, .. }
+                    if edges.len() == 1 && edges[0].feature == id("producer") && edges[0].local_id == "7"))
+        );
         let second = &configuration.feature_states[&id("second")];
         if configuration.ordinal == 2 {
             assert!(second.is_suppressed());
@@ -1580,7 +1587,8 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let selection = || crate::records::FeatureInputSurfaceSelection {
         id: "selection".into(),
         parent: "lane".into(),
-        ordinal: 0, sequence: 0,
+        ordinal: 0,
+        sequence: 0,
         offset: Some(0),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
