@@ -12,7 +12,8 @@ fn omitting_a_cube_boundary_reclassifies_only_the_affected_solid() {
     assert_eq!(ir.model.bodies[0].kind, BodyKind::Solid);
     // An unrelated meaningful empty body must retain its existing kind.
     let mut sibling = ir.model.bodies[0].clone();
-    sibling.id = cadmpeg_ir::ids::BodyId::mint("control:unaffected-empty").unwrap();
+    sibling.id =
+        cadmpeg_ir::ids::BodyId::mint("synthetic:cache-control:body#unaffected-empty").unwrap();
     sibling.regions.clear();
     ir.model.bodies.push(sibling.clone());
     let original_points = ir.model.points.clone();
