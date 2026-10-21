@@ -128,6 +128,9 @@ fn every_golden_shape_refuses_an_unknown_key() {
 /// stops being a free-form map stops reaching its shape here and the sweep
 /// says so.
 fn hand_written_documents() -> Vec<(&'static str, Value)> {
+    use cadmpeg_ir::features::{
+        Dimension, Expression, Feature, FeatureDefinition, FeatureEvaluation, NativeFeatureKind,
+    };
     use cadmpeg_ir::presentation::{
         CameraState, PresentationDocument, PresentationState, PresentationStateKind,
         ViewPresentation,
@@ -219,10 +222,33 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
             native_ref: "zz:native-ref".to_string(),
         });
 
+    let mut native_feature = CadIr::empty();
+    native_feature.model.features.push(Feature {
+        id: "test:design:feature#0".try_into().expect("valid identity"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        needs_recompute: false,
+        dependencies: Default::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Native {
+            kind: NativeFeatureKind::Other("zz_source_operation".to_string()),
+            parameters: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("zz_source_parameter"),
+                Dimension::Literal(Expression::text("10 mm")),
+            )]),
+        }),
+        native_ref: None,
+    });
+
     [
         ("presentation", presentation),
         ("product definition", products),
         ("semantic annotation", annotations),
+        ("native feature parameters", native_feature),
     ]
     .into_iter()
     .map(|(name, ir)| (name, serde_json::to_value(&ir).expect("a CadIr serializes")))
