@@ -629,3 +629,5 @@ fn semantic_writer_round_trips_generic_pattern_type() {
 
 mod feature_input;
 mod sweep_loft;
+
+mod renames;

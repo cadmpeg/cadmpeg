@@ -515,7 +515,7 @@ fn semantic_writer_retains_partial_native_rib_construction() {
                    })));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    super::parameters_extrude::assert_solved_feature_reduction(
+    crate::writer::tests::parameters_extrude::assert_solved_feature_reduction(
         &detached,
         decoded.source_fidelity(),
         0,

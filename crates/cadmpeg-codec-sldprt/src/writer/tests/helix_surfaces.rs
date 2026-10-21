@@ -428,7 +428,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
     let FeatureOperation::Native { kind, parameters } = feature.definition().operation() else {
         panic!("unresolved authored helix law remains native");
     };
-    assert_eq!(kind, "Helix/Spiral");
+    assert_eq!(kind.as_str(), "Helix/Spiral");
     for name in ["D3", "D4", "D5", "D7"] {
         let parameter = decoded
             .ir()
@@ -439,13 +439,11 @@ fn semantic_writer_round_trips_native_axis_helix() {
             .unwrap();
         assert_eq!(parameters[name], Dimension::Parameter(parameter.id.clone()));
     }
-    assert!(
-        decoded
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("authoring law"))
-    );
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("authoring law")));
     let mut edited = decoded.ir().clone();
     for (name, value) in [
         ("D3", ParameterValue::Length(Length::new(4000.0).unwrap())),
