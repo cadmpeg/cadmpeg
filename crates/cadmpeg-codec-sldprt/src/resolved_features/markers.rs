@@ -1250,30 +1250,34 @@ fn generated_coordinate_identity_boundary(payload: &[u8], offset: usize) -> bool
     let Some(end) = offset.checked_add(142) else {
         return false;
     };
-    if payload.get(offset..offset.saturating_add(SKETCH_MARKER.len())) != Some(SKETCH_MARKER)
-        || payload.get(offset.saturating_add(23)..offset.saturating_add(27))
-            != Some(&[0x05, 0, 1, 0])
-        || payload.get(offset.saturating_add(64)..offset.saturating_add(66)) != Some(&[0x1e, 0])
-        || payload.get(offset.saturating_add(82)..offset.saturating_add(138)) != Some(&[0; 56])
-        || marker_coordinates(payload, offset).is_none()
+    let Some(marker) = payload.get(offset..end) else {
+        return false;
+    };
+    if marker.get(..SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || marker.get(23..27) != Some(&[0x05, 0, 1, 0])
+        || marker.get(64..66) != Some(&[0x1e, 0])
+        || marker.get(82..138) != Some(&[0; 56])
+        || marker_coordinates(marker, 0).is_none()
     {
         return false;
     }
     if end == payload.len() {
         return true;
     }
-    if payload.get(end..end.saturating_add(super::CLASS_MARKER.len())) != Some(super::CLASS_MARKER)
-    {
-        return false;
-    }
-    let Some(length) = View::u16_le_at(payload, end.saturating_add(4)).map(usize::from) else {
+    let Some(name_start) = end.checked_add(6) else {
         return false;
     };
-    let Some(name) = end.checked_add(6).and_then(|start| {
-        start
-            .checked_add(length)
-            .and_then(|finish| payload.get(start..finish))
-    }) else {
+    let Some(header) = payload.get(end..name_start) else {
+        return false;
+    };
+    if header.get(..super::CLASS_MARKER.len()) != Some(super::CLASS_MARKER) {
+        return false;
+    }
+    let length = usize::from(u16::from_le_bytes([header[4], header[5]]));
+    let Some(name) = name_start
+        .checked_add(length)
+        .and_then(|finish| payload.get(name_start..finish))
+    else {
         return false;
     };
     !name.is_empty() && std::str::from_utf8(name).is_ok()
