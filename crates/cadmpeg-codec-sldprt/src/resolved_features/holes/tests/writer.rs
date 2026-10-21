@@ -44,25 +44,19 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
     {
         let mut ir = decoded.ir_mut();
-        ir.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
-                definition
-            else {
-                panic!("typed hole feature");
-            };
-            shape
-                .try_edit(|_, _, diameter| {
-                    *diameter = Some(cadmpeg_ir::Dimension::Literal(
-                        cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-                    ));
-                })
-                .unwrap();
-            *extent = Some(LinearTermination::Blind {
-                length: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::NonZeroLength::new(16.0).unwrap(),
-                ),
-            });
-        });
+        let owner = ir.model.features[0].id.clone();
+        ir.set_dimension(
+            &owner,
+            "/shape/diameter",
+            cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+        )
+        .unwrap();
+        ir.set_dimension(
+            &owner,
+            "/extent/length",
+            cadmpeg_ir::scalar::NonZeroLength::new(16.0).unwrap(),
+        )
+        .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -202,6 +196,15 @@ fn semantic_writer_round_trips_hole_placement() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let depth_id = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap()
+        .id
+        .clone();
     {
         let mut ir = decoded.ir_mut();
         let updated_ir_evaluation = &mut ir.model.features[0].evaluation;
@@ -255,7 +258,22 @@ fn semantic_writer_round_trips_hole_placement() {
     assert_eq!(native.properties["Position"], "4mm,5mm,6mm");
     assert_eq!(native.properties["Direction"], "0,1,0");
     assert_eq!(native.properties["EndCondition"], "ThroughAll");
-    assert!(!native.parameters.contains_key("Depth"));
+    // D1: explicit ThroughAll removes the operation use, not its independent parameter.
+    assert!(native.parameters.contains_key("Depth"));
+    let depth = regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == depth_id)
+        .expect("same independent depth parameter");
+    assert_eq!(depth.name, "Depth");
+    assert_eq!(
+        depth.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(10.0).unwrap()
+        ))
+    );
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -317,56 +335,53 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                 ..
             },) if ((decoded.ir().dimension_value(&value).unwrap().get() - 82f64.to_radians()).abs() < 1.0e-12) && decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 9.0)));
 
+    let depth_id = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap()
+        .id
+        .clone();
     {
         let mut ir = decoded.ir_mut();
+        for (index, path, value) in [
+            (0, "/shape/construction/kind/diameter", 12.0),
+            (0, "/shape/construction/kind/depth", 5.0),
+            (1, "/shape/construction/kind/diameter", 11.0),
+        ] {
+            let owner = ir.model.features[index].id.clone();
+            ir.set_dimension(
+                &owner,
+                path,
+                cadmpeg_ir::scalar::PositiveLength::new(value).unwrap(),
+            )
+            .unwrap();
+        }
+        let owner = ir.model.features[1].id.clone();
+        ir.set_dimension(
+            &owner,
+            "/shape/construction/kind/angle",
+            cadmpeg_ir::scalar::InteriorAngle::new(90f64.to_radians()).unwrap(),
+        )
+        .unwrap();
         let updated_ir_evaluation = &mut ir.model.features[0].evaluation;
         let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+        let FeatureDefinition::Operation(FeatureOperation::Hole { extent, .. }) =
             &mut updated_ir_definition
         else {
             panic!("counterbore hole");
         };
-        let mut edited_construction = shape.construction().clone();
-        let construction = &mut edited_construction;
-        let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
-            panic!("ordinary hole form");
-        };
-        *kind = HoleKind::Counterbore {
-            diameter: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap(),
-            ),
-            depth: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-            ),
-        };
         *extent = Some(LinearTermination::ThroughAll {});
 
-        *shape = cadmpeg_ir::features::holes::HoleShape::new(
-            edited_construction,
-            shape.exit_kind().clone(),
-            shape.diameter().cloned(),
-        )
-        .unwrap();
         updated_ir_evaluation.set_definition(updated_ir_definition);
         let updated_ir_evaluation = &mut ir.model.features[1].evaluation;
         let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+        let FeatureDefinition::Operation(FeatureOperation::Hole { extent, .. }) =
             &mut updated_ir_definition
         else {
             panic!("countersink hole");
-        };
-        let mut edited_construction = shape.construction().clone();
-        let construction = &mut edited_construction;
-        let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
-            panic!("ordinary hole form");
-        };
-        *kind = HoleKind::Countersink {
-            diameter: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(11.0).unwrap(),
-            ),
-            angle: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::InteriorAngle::new(90f64.to_radians()).unwrap(),
-            ),
         };
         *extent = Some(LinearTermination::Blind {
             length: cadmpeg_ir::Dimension::Literal(
@@ -374,12 +389,6 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             ),
         });
 
-        *shape = cadmpeg_ir::features::holes::HoleShape::new(
-            edited_construction,
-            shape.exit_kind().clone(),
-            shape.diameter().cloned(),
-        )
-        .unwrap();
         updated_ir_evaluation.set_definition(updated_ir_definition);
     }
 
@@ -395,7 +404,29 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         .unwrap();
     let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(features[0].properties["EndCondition"], "ThroughAll");
-    assert!(!features[0].parameters.contains_key("Depth"));
+    // D1: ThroughAll removes use while the independent original20mm parameter survives.
+    assert!(features[0].parameters.contains_key("Depth"));
+    let depth = regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == depth_id)
+        .expect("same independent counterbore depth parameter");
+    assert_eq!(depth.name, "Depth");
+    assert_eq!(
+        depth.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(20.0).unwrap()
+        ))
+    );
+    assert!(matches!(
+        regenerated.ir().model.features[0].definition().operation(),
+        FeatureOperation::Hole {
+            extent: Some(LinearTermination::ThroughAll {}),
+            ..
+        }
+    ));
     assert_eq!(features[0].parameters["CounterboreDiameter"], "12mm");
     assert_eq!(features[0].parameters["CounterboreDepth"], "5mm");
     assert_eq!(features[1].properties["EndCondition"], "Blind");
