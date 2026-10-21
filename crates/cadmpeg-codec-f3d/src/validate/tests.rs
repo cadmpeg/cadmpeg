@@ -154,7 +154,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
                 record_index: 169,
                 class_tag: crate::records::references::DesignClassTag::try_from("410".to_owned())
                     .unwrap(),
-                byte_offset: 100,
+                byte_offset: Some(100),
             },
         ]);
         native.design_parameter_scopes.push(scope);
