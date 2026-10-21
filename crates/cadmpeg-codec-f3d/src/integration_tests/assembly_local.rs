@@ -10,6 +10,8 @@ use super::{decode, f3d_with_smbh, f3z_archive, synthetic_geometry_smbh, XREF_RO
 
 #[test]
 fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
     let local = decode(component.clone());
@@ -59,7 +61,7 @@ fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies()
         .source_fidelity()
         .unrepresented()
         .contains(&cadmpeg_ir::document::ArenaClass::Model,));
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
     let plan = crate::F3dCodec
         .plan(
             EncodeInput::new(merged.ir(), Some(merged.source_fidelity())),

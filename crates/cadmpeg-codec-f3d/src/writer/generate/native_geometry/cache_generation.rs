@@ -24,12 +24,11 @@ fn profile(
         .ok_or_else(|| CodecError::malformed(format!("cache profile {id} is missing")))?;
     match &curve.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(Some(nurbs.clone())),
-        CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => curve
-            .parameter_range
-            .map(|range| {
-                native_increasing_interval_curve(&SolvedCurveGeometry::Line(line), range).map(Some)
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
+            curve.parameter_range.map_or(Ok(None), |range| {
+                native_increasing_interval_curve(&SolvedCurveGeometry::Line(*line), range).map(Some)
             })
-            .unwrap_or(Ok(None)),
+        }
         // Rational conic conversion preserves a locus, not its angle parameter.
         _ => Ok(None),
     }

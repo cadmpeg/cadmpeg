@@ -235,9 +235,11 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             projection.features[0].native_ref.as_deref(),
             Some(scopes[0].id.as_str())
         );
-        let mut native = crate::native::F3dNative::default();
-        native.design_parameter_scopes = scopes.into();
-        native.design_construction_operand_groups = groups.into();
+        let native = crate::native::F3dNative {
+            design_parameter_scopes: scopes.into(),
+            design_construction_operand_groups: groups.into(),
+            ..crate::native::F3dNative::default()
+        };
         let mut ir = cadmpeg_ir::CadIr::empty();
         crate::test_support::with_decode_context(|ctx| {
             native.store(ctx, ir.native.namespace_mut("f3d"))

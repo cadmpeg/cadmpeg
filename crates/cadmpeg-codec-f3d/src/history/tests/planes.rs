@@ -53,6 +53,13 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
 
 #[test]
 fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
+    use crate::records::identity::Located;
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+        DesignConstructionOperandRole,
+    };
+
     use crate::history_records::AsmHistoricalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -81,12 +88,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             .expect("mirror construction"),
         );
     }
-    use crate::records::identity::Located;
-    use crate::records::topology::construction::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
-        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
-        DesignConstructionOperandRole,
-    };
+
     let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
         id: "f3d:Design/BulkStream.dat:group#30".into(),
         scope_record_index: 42,

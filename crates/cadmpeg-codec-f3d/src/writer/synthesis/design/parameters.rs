@@ -154,21 +154,7 @@ pub(super) fn regenerate(
             )));
         }
     }
-    if !native.design_parameter_scopes.is_empty() {
-        native.design_parameter_owners.retain(|owner| {
-            native
-                .design_parameters
-                .iter()
-                .any(|parameter| parameter.owner_record_index() == Some(owner.record_index()))
-        });
-        native.design_parameter_companions.retain(|companion| {
-            native
-                .design_parameter_owners
-                .iter()
-                .any(|owner| owner.companion_record_index() == companion.record_index())
-        });
-        target.model.parameters = super::sketch::project(native)?.parameters;
-    } else {
+    if native.design_parameter_scopes.is_empty() {
         target.model.parameters = super::with_context(|ctx| {
             Ok(
                 crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -198,6 +184,20 @@ pub(super) fn regenerate(
                 .parameters,
             )
         })?;
+    } else {
+        native.design_parameter_owners.retain(|owner| {
+            native
+                .design_parameters
+                .iter()
+                .any(|parameter| parameter.owner_record_index() == Some(owner.record_index()))
+        });
+        native.design_parameter_companions.retain(|companion| {
+            native
+                .design_parameter_owners
+                .iter()
+                .any(|owner| owner.companion_record_index() == companion.record_index())
+        });
+        target.model.parameters = super::sketch::project(native)?.parameters;
     }
     Ok(())
 }

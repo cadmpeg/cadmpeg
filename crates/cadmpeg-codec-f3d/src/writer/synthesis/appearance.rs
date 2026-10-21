@@ -4,6 +4,7 @@
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use sha2::{Digest, Sha256};
+use std::fmt::Write;
 
 use crate::loss::F3dLossCode;
 
@@ -159,10 +160,10 @@ fn asset_guid(identity: &str) -> String {
     bytes.copy_from_slice(&digest[..16]);
     bytes[6] = (bytes[6] & 0x0f) | 0x80;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex = bytes
-        .iter()
-        .map(|byte| format!("{byte:02X}"))
-        .collect::<String>();
+    let mut hex = String::new();
+    for byte in bytes {
+        write!(&mut hex, "{byte:02X}").expect("writing to a String cannot fail");
+    }
     format!(
         "{}-{}-{}-{}-{}",
         &hex[..8],

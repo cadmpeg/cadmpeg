@@ -508,7 +508,7 @@ pub(super) fn coverage(
     original: &CadIr,
     written: &CadIr,
     _losses: &mut Vec<LossNote>,
-) -> Result<NativeDispositions, CodecError> {
+) -> NativeDispositions {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
         crate::native::F3D_ARENA_NAMES,
@@ -555,7 +555,7 @@ pub(super) fn coverage(
             }
         }
     }
-    Ok(result)
+    result
 }
 
 /// (C) checks concern relationships inside the typed native document. A

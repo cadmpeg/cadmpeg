@@ -7639,8 +7639,10 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
     for companion in &native.design_parameter_companions {
         let native_stream = design_stream(companion.id());
         let payload = companion.payload();
-        let payload_interval =
-            payload.and_then(|payload| payload.byte_offset().zip(payload.byte_length()));
+        let payload_interval = payload.and_then(
+            super::records::parameters::DesignCompanionPayload::byte_offset
+                .zip(payload.byte_length()),
+        );
         let source_payload_valid = payload_interval.is_none_or(|(start, length)| {
             let Some(end) = start.checked_add(length) else {
                 return false;

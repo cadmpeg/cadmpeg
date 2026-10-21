@@ -2,6 +2,7 @@
 
 use super::*;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 fn rational() -> NurbsCurve {
     NurbsCurve::from_lanes(

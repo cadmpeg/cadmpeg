@@ -765,6 +765,10 @@ fn dimension_operands_preserve_null_and_required_index_wires() {
 
 #[test]
 fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
+    use crate::records::topology::sketch_profile::{
+        DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
+    };
+
     for (name, suffix) in [
         ("Sketch_0", 0),
         ("Sketch_00017", 17),
@@ -802,9 +806,7 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
                 .contains("entity_id")
         );
     }
-    use crate::records::topology::sketch_profile::{
-        DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
-    };
+
     let source = DesignSketchProfileOperand::try_new(DesignSketchProfileOperandDraft {
         scope_reference_ordinal: 0,
         record_index: 1,

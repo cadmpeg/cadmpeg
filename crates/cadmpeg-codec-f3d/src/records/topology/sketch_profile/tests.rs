@@ -218,28 +218,28 @@ fn sketch_profile_source_admission_preserves_real_positions_and_rejects_broken_f
         |draft: &mut DesignSketchProfileOperandDraft| draft.entity_reference_offset = 32,
         |draft: &mut DesignSketchProfileOperandDraft| draft.paired_byte_offset = 80,
         |draft: &mut DesignSketchProfileOperandDraft| {
-            draft.region_selection.as_mut().unwrap().region_count_offset = Some(0)
+            draft.region_selection.as_mut().unwrap().region_count_offset = Some(0);
         },
         |draft: &mut DesignSketchProfileOperandDraft| {
             draft
                 .region_selection
                 .as_mut()
                 .unwrap()
-                .companion_byte_offset = None
+                .companion_byte_offset = None;
         },
         |draft: &mut DesignSketchProfileOperandDraft| {
-            draft.region_selection.as_mut().unwrap().regions[0].member_count_offset = Some(0)
+            draft.region_selection.as_mut().unwrap().regions[0].member_count_offset = Some(0);
         },
         |draft: &mut DesignSketchProfileOperandDraft| {
-            draft.region_selection.as_mut().unwrap().regions[0].members[0].kind_offset = None
+            draft.region_selection.as_mut().unwrap().regions[0].members[0].kind_offset = None;
         },
         |draft: &mut DesignSketchProfileOperandDraft| {
-            draft.region_selection.as_mut().unwrap().regions[0].members[0].curve_primary_id_offset =
-                Some(0)
+            draft.region_selection.as_mut().unwrap().regions[0].members[0]
+                .curve_primary_id_offset = Some(0);
         },
         |draft: &mut DesignSketchProfileOperandDraft| {
             draft.region_selection.as_mut().unwrap().regions[0].members[0].incidence_words_offset =
-                Some(0)
+                Some(0);
         },
     ] {
         let mut invalid = source_draft();

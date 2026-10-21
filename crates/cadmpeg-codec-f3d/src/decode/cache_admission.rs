@@ -15,6 +15,24 @@ use cadmpeg_ir::CadIr;
 
 use crate::{loss::F3dLossCode, native::F3dNative};
 
+struct References<'a, 'ctx> {
+    ctx: &'a DecodeContext<'ctx>,
+    used: BTreeSet<String>,
+    candidates: &'a BTreeSet<String>,
+}
+impl cadmpeg_ir::document::EntityRewrite for References<'_, '_> {
+    type Error = CodecError;
+    fn rewrite<T: RewriteIdentities>(&mut self, entity: T) -> Result<T, CodecError> {
+        entity.visit_identity_references(self.ctx, &mut |id| {
+            if self.candidates.contains(id) {
+                self.used.insert(id.to_owned());
+            }
+            Ok(())
+        })?;
+        Ok(entity)
+    }
+}
+
 fn point(
     result: Result<FinitePoint3, EvaluationFailure<Point3>>,
 ) -> Result<Option<Point3>, CodecError> {
@@ -177,31 +195,27 @@ pub(crate) fn recover(
 /// No inference is made for unsupported constructions or mixed-sign weights.
 fn boundary_contradicts_extrusion(ir: &CadIr, face: &cadmpeg_ir::topology::Face) -> Option<String> {
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry};
-    let Some(surface) = ir.model.surfaces.iter().find(|row| row.id == face.surface) else {
-        return None;
-    };
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|row| row.id == face.surface)?;
     let SurfaceGeometry::Procedural { construction, .. } = &surface.geometry else {
         return None;
     };
-    let Some(row) = ir
+    let row = ir
         .model
         .procedural_surfaces
         .iter()
-        .find(|row| row.id == *construction)
-    else {
-        return None;
-    };
+        .find(|row| row.id == *construction)?;
     let ProceduralSurfaceDefinition::Extrusion(extrusion) = row.definition() else {
         return None;
     };
-    let Some(curve) = ir
+    let curve = ir
         .model
         .curves
         .iter()
-        .find(|row| row.id == *extrusion.directrix())
-    else {
-        return None;
-    };
+        .find(|row| row.id == *extrusion.directrix())?;
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry else {
         return None;
     };
@@ -539,23 +553,6 @@ fn omit_face_parts(
     // A solved face-owned carrier has no standalone semantic owner after
     // its final face is omitted. Preserve it if any surviving typed record
     // still refers to it; procedural carriers keep their true construction.
-    struct References<'a, 'ctx> {
-        ctx: &'a DecodeContext<'ctx>,
-        used: BTreeSet<String>,
-        candidates: &'a BTreeSet<String>,
-    }
-    impl cadmpeg_ir::document::EntityRewrite for References<'_, '_> {
-        type Error = CodecError;
-        fn rewrite<T: RewriteIdentities>(&mut self, entity: T) -> Result<T, CodecError> {
-            entity.visit_identity_references(self.ctx, &mut |id| {
-                if self.candidates.contains(id) {
-                    self.used.insert(id.to_owned());
-                }
-                Ok(())
-            })?;
-            Ok(entity)
-        }
-    }
     let mut references = References {
         ctx,
         used: BTreeSet::new(),

@@ -885,6 +885,8 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
 
 #[test]
 fn edge_flange_two_sided_projects() {
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
         SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
@@ -896,7 +898,7 @@ fn edge_flange_two_sided_projects() {
     })
     .unwrap()
     .expect("two-sided EdgeFlange definition");
-    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+
     let definition =
         crate::test_support::with_decode_context(|ctx| definition.resolve_dimensions(&ir, ctx))
             .unwrap();

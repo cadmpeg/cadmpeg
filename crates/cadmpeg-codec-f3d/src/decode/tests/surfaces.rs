@@ -275,7 +275,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == profile)
-                .map(|curve| {
+                .inspect(|curve| {
                     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
                         panic!("original finite ruled profile")
                     };
@@ -286,7 +286,6 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                         ])
                         .unwrap(),
                     );
-                    curve
                 })
                 .expect("ruled profile")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -379,7 +378,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == source)
-                .map(|curve| {
+                .inspect(|curve| {
                     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
                         panic!("original finite sum profile")
                     };
@@ -390,7 +389,6 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                         ])
                         .unwrap(),
                     );
-                    curve
                 })
                 .expect("sum source curve")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
