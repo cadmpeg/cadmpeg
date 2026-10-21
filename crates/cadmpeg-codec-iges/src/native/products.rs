@@ -35,6 +35,50 @@ fn occurrence_id(path: &[String]) -> Result<OccurrenceId, CodecError> {
     Ok(ids::occurrence(&stem))
 }
 
+fn carrier_bodies(ir: &CadIr, link: &str) -> Vec<cadmpeg_ir::ids::BodyId> {
+    let edges: std::collections::BTreeSet<_> = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve().is_some_and(|curve| curve.as_str() == link))
+        .map(|edge| &edge.id)
+        .collect();
+    let vertices: std::collections::BTreeSet<_> = ir
+        .model
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.point.as_str() == link)
+        .map(|vertex| &vertex.id)
+        .collect();
+    let faces: std::collections::BTreeSet<_> = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.surface.as_str() == link)
+        .map(|face| &face.id)
+        .collect();
+    let regions: std::collections::BTreeSet<_> = ir
+        .model
+        .shells
+        .iter()
+        .filter(|shell| {
+            shell.wire_edges().iter().any(|edge| edges.contains(edge))
+                || shell
+                    .free_vertices()
+                    .iter()
+                    .any(|vertex| vertices.contains(vertex))
+                || shell.faces().iter().any(|face| faces.contains(face))
+        })
+        .map(|shell| &shell.region)
+        .collect();
+    ir.model
+        .regions
+        .iter()
+        .filter(|region| regions.contains(&region.id))
+        .map(|region| region.body.clone())
+        .collect()
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     occurrences: &[NativeProductOccurrence],
@@ -82,14 +126,21 @@ pub(super) fn project(
             continue;
         };
         for link in &record.neutral_links {
-            if let Some(body) = ir.model.bodies.iter().find(|body| body.id.as_str() == link) {
-                if !definition.bodies.contains(&body.id) {
-                    definition.bodies.push(body.id.clone());
-                }
-            } else {
+            let bodies =
+                if let Some(body) = ir.model.bodies.iter().find(|body| body.id.as_str() == link) {
+                    vec![body.id.clone()]
+                } else {
+                    carrier_bodies(ir, link)
+                };
+            if bodies.is_empty() {
                 losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                     "{} member {member}: product membership of carrier {link} has no neutral body owner", record.id
                 )));
+            }
+            for body in bodies {
+                if !definition.bodies.contains(&body) {
+                    definition.bodies.push(body);
+                }
             }
         }
     }
