@@ -4,6 +4,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::make_block;
@@ -285,26 +286,63 @@ fn native_validation_rejects_edited_relation_instance() {
             .clear_parameter();
     });
 
+    // #209 Rules W1/P and D1: source agreement gates patching, while the
+    // canonical neutral constraint remains the winner over its native copy.
     assert!(crate::resolved_features::validate::validate_native(
         &cadmpeg_test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
-    .iter()
-    .any(|finding| {
-        finding
-            .message
-            .contains("relation instances do not match the native payload")
-    }));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    .is_empty());
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let edited = crate::native::SldprtNative::load(namespace).unwrap();
+    assert!(edited.feature_input_lanes[0].relation_instances[0]
+        .parameter_scalar_ref()
+        .is_none());
+    let error = crate::native::source::load(namespace, decoded.source_fidelity()).unwrap_err();
     assert!(error
         .to_string()
         .contains("relation instances do not match the native payload"));
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(
+                decoded.ir(),
+                Some(decoded.source_fidelity()),
+            ),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let expected = decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .map(|constraint| constraint.definition.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        !expected.is_empty(),
+        "fixture has canonical relation semantics"
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        written
+            .ir()
+            .model
+            .sketch_constraints
+            .iter()
+            .map(|constraint| constraint.definition.clone())
+            .collect::<Vec<_>>(),
+        expected,
+        "canonical relation semantics survive regeneration"
+    );
 }
 
 #[test]
