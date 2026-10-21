@@ -129,7 +129,7 @@ pub(in crate::writer) fn write(
         "sweep" => sweep(&value, object, names)?,
         "hole" => hole(&value, object, names)?,
         "fillet" | "chamfer" => dress_up(&value, object, names)?,
-        "shell" | "offset_shape" => shell(&value, object, names)?,
+        "shell" | "offset_shape" => shell(&value, object, names, feature.source_tag.as_deref())?,
         "draft" => {
             object.kind = "PartDesign::Draft".into();
             selection(object, "Base", &value["faces"], names)?;
