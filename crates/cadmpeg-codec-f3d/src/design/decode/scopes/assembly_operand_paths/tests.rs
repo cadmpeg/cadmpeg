@@ -249,3 +249,44 @@ fn typed_path_reads_a_decimal_occurrence_key() {
     assert_eq!(path.occurrence_guids()[0].value.as_str(), "34");
     assert_eq!(path.identity_guids().len(), 4);
 }
+
+/// A typed path's identity GUIDs can be followed by a zero word, a pair count
+/// and that many pairs of occurrence identities.
+#[test]
+fn typed_path_reads_its_occurrence_identity_pairs() {
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID as TYPED;
+    let plain = identity_qualified_path_bytes(*b"366", true);
+    let mut bytes = plain[..plain.len() - 8].to_vec();
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    for unit in "43".encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    push_guid(&mut bytes, "66666666-6666-6666-6666-666666666666");
+    let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), Some(TYPED))
+        .unwrap()
+        .expect("typed path with an identity pair");
+    let pairs = path.paired_occurrence_keys();
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[0].value.as_str(), "43");
+    assert_eq!(
+        pairs[1].value.as_str(),
+        "66666666-6666-6666-6666-666666666666"
+    );
+    assert_eq!(path.identity_guids().len(), 4);
+
+    // The plain zero tail has no pairs; a pair without its `u32 2` is refused.
+    let plain = exact_assembly_operand_path(&plain, 0, 65, plain.len(), path_link(), Some(TYPED))
+        .unwrap()
+        .expect("typed path without pairs");
+    assert!(plain.paired_occurrence_keys().is_empty());
+    let marker = bytes.len() - 4 - 72 - 8 - 4;
+    bytes[marker] = 3;
+    assert!(
+        exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), Some(TYPED))
+            .unwrap()
+            .is_none()
+    );
+}
