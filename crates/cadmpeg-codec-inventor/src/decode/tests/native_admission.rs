@@ -518,12 +518,14 @@ fn ufrx_occurrence_is_admitted() {
     let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("source context");
     let occurrence = UfrxOccurrence {
-        end_string_flag: 0,
-        file_reference_id: 0,
+        reference_id: 0,
         occurrence_id: 0,
+        occurrence_key: 0,
         header_value: 0,
         title: None,
         header_padding_words: 0,
+        prototype_document_id: None,
+        component_name: None,
         source,
     };
     assert!(
@@ -847,6 +849,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
             parameters: vec![],
             suffix: source,
         }],
+        levels_of_detail: vec![],
         references: vec![InventorExternalReference {
             path: "part.ipt".into(),
             library_id: 0,
@@ -876,12 +879,14 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
             source,
         }],
         occurrences: vec![UfrxOccurrence {
-            end_string_flag: 0,
-            file_reference_id: 7,
-            occurrence_id: 42,
+            reference_id: 0,
+            occurrence_id: 7,
+            occurrence_key: 42,
             header_value: 0,
             title: None,
             header_padding_words: 0,
+            prototype_document_id: None,
+            component_name: None,
             source,
         }],
         unparsed_tail: root.child(0, 0).expect("empty tail"),
