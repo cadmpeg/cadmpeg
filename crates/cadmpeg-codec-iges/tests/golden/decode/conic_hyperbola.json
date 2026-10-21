@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -51,67 +50,35 @@
         "cards": [
           {
             "id": "iges:physical:card#1",
-            "line_ending": "0a",
-            "offset": 0,
-            "payload": "6f726967696e616c206669787475726520202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020205320202020202031",
-            "section": "start",
-            "sequence": 1
+            "section": "start"
           },
           {
             "id": "iges:physical:card#2",
-            "line_ending": "0a",
-            "offset": 81,
-            "payload": "31482c2c31483b2c374870726f647563742c3848706172742e6967732c37486361646d7065672c3348302e312c33322c33382c362c3330382c31352c30482c312e302c322c32484d4720202020202031",
-            "section": "global",
-            "sequence": 1
+            "section": "global"
           },
           {
             "id": "iges:physical:card#3",
-            "line_ending": "0a",
-            "offset": 162,
-            "payload": "4d2c312c312e302c31354832303236303731342e3030303030302c302e3030312c313030302e302c3648617574686f722c33486f72672c31312c302c30482c30483b2020202020204720202020202032",
-            "section": "global",
-            "sequence": 2
+            "section": "global"
           },
           {
             "id": "iges:physical:card#4",
-            "line_ending": "0a",
-            "offset": 243,
-            "payload": "2020202020313034202020202020203120202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303030304420202020202031",
-            "section": "directory",
-            "sequence": 1
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#5",
-            "line_ending": "0a",
-            "offset": 324,
-            "payload": "2020202020313034202020202020203020202020202020302020202020202032202020202020203220202020202020202020202020202020202020434f4e494320202020202020304420202020202032",
-            "section": "directory",
-            "sequence": 2
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#6",
-            "line_ending": "0a",
-            "offset": 405,
-            "payload": "3130342c302e32352c302c2d302e313131313131313131313131313131312c302c302c2d312c302c322c302c332e3038363136313236393633303438372c332e20202020202020315020202020202031",
-            "section": "parameter",
-            "sequence": 1
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#7",
-            "line_ending": "0a",
-            "offset": 486,
-            "payload": "3532353630333538303933313430343b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020315020202020202032",
-            "section": "parameter",
-            "sequence": 2
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#8",
-            "line_ending": "0a",
-            "offset": 567,
-            "payload": "5330303030303031473030303030303244303030303030325030303030303032202020202020202020202020202020202020202020202020202020202020202020202020202020205420202020202031",
-            "section": "terminate",
-            "sequence": 1
+            "section": "terminate"
           }
         ],
         "circular_arrays": [],
@@ -154,11 +121,7 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "",
             "parameter_line_count": 2,
-            "parameter_line_end": null,
-            "parameter_line_start": null,
-            "parameter_start": 1,
             "parameters": [],
             "property_links": [],
             "references": [],
@@ -200,13 +163,14 @@
         "quarantined_directory_records": [],
         "quarantined_parameter_records": [
           {
-            "bytes": "3130342c302e32352c302c2d302e313131313131313131313131313131312c302c302c2d312c302c322c302c332e3038363136313236393633303438372c332e202020202020203150202020202020313532353630333538303933313430343b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020315020202020202032",
-            "cards": 2,
             "defect": "numeric-crosses-card",
+            "evidence": {
+              "length": 160,
+              "sha256": "88c7192f732a85e22b06791f4e70f158001be9dff68dd8aeaeb399df4a4ced5f"
+            },
             "id": "iges:quarantine:parameter#1",
             "section": "parameter-data",
-            "sequence": 1,
-            "source_offset": 405
+            "sequence": 1
           }
         ],
         "rectangular_arrays": [],
@@ -224,14 +188,14 @@
         "views": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "native_file_name": "part.igs",
         "native_units": "MM",
-        "parameter_delimiter": ",",
-        "record_delimiter": ";",
-        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -302,7 +266,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     },
     "transfer_ledger": {
       "entries": [
@@ -327,6 +294,15 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "document_local_sha256": "291b20cdc8180f437bb0d1429279af9f0e4f31449323aa2fe153cdf5e1a3ccc7",
+      "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1]]",
+      "iges.entity_layout": "[[1,1,2]]",
+      "iges.parameter_delimiter": ",",
+      "iges.parameter_layout": "[]",
+      "iges.record_delimiter": ";",
+      "iges.representation": "fixed-ascii"
+    },
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -334,8 +310,14 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

@@ -1,6 +1,9 @@
 {
-  "ir_version": "7",
-  "decode_depth": "full",
+  "ir_version": "8",
+  "scope": {
+    "model": true,
+    "design": true
+  },
   "units": {
     "length": "millimeter"
   },
@@ -117,7 +120,7 @@
                 0.75
               ],
               "tag": "crease",
-              "sector coefficients": [
+      ß       "sector_coefficients": [
                 0.125,
                 0.875
               ]

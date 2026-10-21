@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -19,8 +18,7 @@
           "id": "rhino:object:curve#record-000000-offset-177",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -53,8 +51,7 @@
           "id": "rhino:object:curve#record-000000-offset-177.root.component-0",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -64,8 +61,7 @@
           "id": "rhino:object:curve#record-000000-offset-177.root.component-1",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -98,8 +94,7 @@
           "id": "rhino:object:curve#record-000000-offset-177.root.component-1.component-0",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -193,8 +188,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -229,18 +223,12 @@
         "windows_bitmaps": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "absolute_tolerance_millimeters": "0.01",
-        "absolute_tolerance_native": "0.01",
-        "angular_tolerance": "0.1",
-        "archive_version": "50",
-        "container_kind": "3dm-chunks",
-        "millimeters_per_unit": "1",
-        "relative_tolerance": "0.001",
-        "unit_system": "standard:2",
-        "unit_value": "2"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -308,6 +296,16 @@
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -315,7 +313,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -339,6 +340,15 @@
         }
       }
     },
+    "metadata": {
+      "rhino.history_layout": "[]",
+      "rhino.object_layout": "[{\"start\":177,\"end\":813}]",
+      "rhino.source.archive_version": "50",
+      "rhino.source.container_kind": "3dm-chunks",
+      "rhino.source.millimeters_per_unit": "1",
+      "rhino.source.unit_code": "2",
+      "rhino.table_layout": "[[268435476,[]],[268435477,[[536903729,105,153]]],[268435475,[[536903792,177,813]]]]"
+    },
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -346,8 +356,10 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

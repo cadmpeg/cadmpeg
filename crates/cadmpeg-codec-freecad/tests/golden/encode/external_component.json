@@ -19,7 +19,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 30,
         "bodies": 1,
         "coedges": 6,
         "configurations": 0,
@@ -29,18 +29,14 @@
         "faces": 3,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 1,
+        "features": 0,
         "loops": 3,
         "native.fcstd.applications": 2,
         "native.fcstd.attachments": 1,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 1,
-        "native.fcstd.design_census": 1,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 2,
-        "native.fcstd.logical_ledger": 74,
         "native.fcstd.objects": 2,
-        "native.fcstd.physical_ledger": 15,
         "native.fcstd.properties": 36,
         "native.fcstd.shape_payloads": 1,
         "native.fcstd.string_tables": 1,
@@ -72,18 +68,92 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "coverage": "complete"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
     "losses": [],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "written"
+            },
+            "applications": {
+              "disposition": "written"
+            },
+            "attachments": {
+              "disposition": "written"
+            },
+            "carrier_census": {
+              "disposition": "written"
+            },
+            "design_census": {
+              "disposition": "written"
+            },
+            "document": {
+              "disposition": "written"
+            },
+            "drawings": {
+              "disposition": "written"
+            },
+            "element_maps": {
+              "disposition": "written"
+            },
+            "entries": {
+              "disposition": "written"
+            },
+            "extensions": {
+              "disposition": "written"
+            },
+            "gui_documents": {
+              "disposition": "written"
+            },
+            "gui_properties": {
+              "disposition": "written"
+            },
+            "gui_view_providers": {
+              "disposition": "written"
+            },
+            "joints": {
+              "disposition": "written"
+            },
+            "objects": {
+              "disposition": "written"
+            },
+            "product_nodes": {
+              "disposition": "written"
+            },
+            "properties": {
+              "disposition": "written"
+            },
+            "shape_payloads": {
+              "disposition": "written"
+            },
+            "string_tables": {
+              "disposition": "written"
+            },
+            "unknowns": {
+              "disposition": "written"
+            },
+            "unreadable_entries": {
+              "disposition": "written"
+            }
+          }
+        }
+      }
+    },
     "notes": [
       "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+      "retained layout reused after current typed and neutral projections agreed"
     ],
     "write_path": {
       "fidelity": {
-        "status": "not_consumed"
+        "status": "replayed"
       },
       "path": "patched"
     }

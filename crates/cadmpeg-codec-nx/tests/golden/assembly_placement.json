@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -64,11 +63,14 @@
               ],
               "raw_frame": "ff0045010401010000501800000001008000000100000000013ff000000003034100032630313233343536372d383961622d636465662d303132332d34353637383961626364656600",
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 76,
               "uuid": "01234567-89ab-cdef-0123-456789abcdef"
             }
           ]
         }
+      },
+      "scope": {
+        "design": false,
+        "model": false
       },
       "source": {
         "attributes": {
@@ -77,7 +79,6 @@
           "file_size": "163",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "149",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -130,6 +131,17 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -138,7 +150,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -150,7 +165,23 @@
             "tag": "ASSEMBLY_PLACEMENT"
           }
         }
-      }
+      },
+      "metadata": {
+        "native.nx.assembly_placements.nx:assembly:placement#76.source_offset": "76",
+        "source.footer_offset": "149"
+      },
+      "retained_records": {
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAACVAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABJAAAAAAAAAP8ARQEEAQEAAFAYAAAAAQCAAAABAAAAAAE/8AAAAAMDQQADJjAxMjM0NTY3LTg5YWItY2RlZi0wMTIzLTQ1Njc4OWFiY2RlZgBGT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
+        }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

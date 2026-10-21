@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -171,7 +170,6 @@
           "parasolid_surface_curve_records": [
             {
               "id": "nx:s0:surface-curve-record#12",
-              "inflated_offset": 473,
               "original_curve_xmt": 9,
               "pcurve_xmt": 9,
               "stream_ordinal": 0,
@@ -191,6 +189,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -198,7 +200,6 @@
           "file_size": "377",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "363",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -287,7 +288,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -406,6 +410,10 @@
           }
         }
       },
+      "metadata": {
+        "native.nx.parasolid_surface_curve_records.nx:s0:surface-curve-record#12.inflated_offset": "473",
+        "source.footer_offset": "363"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -413,9 +421,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABrAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAfAQAAAAAAAHgBdVDPLwNREP4e2lpd6tdJaN6RbgSVSDh4kaZogmDXebN0E01KZbMXXEm4O7u7uEn67/hx64Wbo+/Z1W7QeTNvvvnem5nM7NoA5laks7+2Y29XHLle2SrL6TMvCGthrXE6I48C3wv9qjw8lyeNql+v+wFTcnZp03XKtuMuuMsUwEQP+b86iN5vUvBdoA+Cx6QNEUOLKiy9tCZLs+QEUvydtjQdW45UBDNMEBhBhmGKdwYDEOhnY1gYJoAWtfhQmD8oevwAiknTWkRau44le3TYf5B6j8gfH0WJOw8jERF2Ld21xChHYWJbs2oi3gkwpgdsvwBTyCYiqKuL543H8Ut1F/v75l7rOt/E7a88WFyBAWP17fPp5vX44wvFszUKRk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

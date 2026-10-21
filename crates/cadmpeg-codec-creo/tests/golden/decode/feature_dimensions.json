@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -20,13 +19,34 @@
             "definition": "native",
             "kind": "CurveFromEquation",
             "parameters": {
-              "assignment_count": "1",
-              "entity_id": "7"
+              "assignment_count": {
+                "kind": "literal",
+                "value": {
+                  "tokens": [
+                    {
+                      "kind": "text",
+                      "value": "1"
+                    }
+                  ]
+                }
+              },
+              "entity_id": {
+                "kind": "literal",
+                "value": {
+                  "tokens": [
+                    {
+                      "kind": "text",
+                      "value": "7"
+                    }
+                  ]
+                }
+              }
             }
           },
           "id": "creo:depdb:curve_expression_feature#7-269",
           "name": "Curve Equation 7",
           "native_ref": "creo:depdb:curve_expression#active-7-269",
+          "needs_recompute": false,
           "ordinal": 2,
           "source_content": [
             {
@@ -35,7 +55,6 @@
             }
           ],
           "source_tag": "crv_fr_eqn",
-          "source_text": "result=d42+1[deg]",
           "suppressed": false
         },
         {
@@ -64,11 +83,8 @@
           "id": "creo:model:feature#40",
           "name": "Extrude id 40",
           "native_ref": "creo:featdefs:feature_definition#917",
+          "needs_recompute": false,
           "ordinal": 1,
-          "source_properties": {
-            "native_parameter.dimension_count": "2",
-            "native_parameter.sketch_segment_count": "0"
-          },
           "suppressed": false
         },
         {
@@ -81,6 +97,7 @@
           },
           "id": "creo:model:sketch_feature#917",
           "native_ref": "creo:featdefs:sketch#917",
+          "needs_recompute": false,
           "ordinal": 0,
           "source_content": [
             {
@@ -100,7 +117,15 @@
       "occurrences": [],
       "parameters": [
         {
-          "expression": "d42+1[deg]",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "d42+1[deg]"
+              }
+            ]
+          },
           "id": "creo:depdb:curve_expression_parameter#7-269-0",
           "name": "result",
           "native_ref": "creo:depdb:curve_expression#active-7-269",
@@ -117,7 +142,15 @@
           }
         },
         {
-          "expression": "1",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "1"
+              }
+            ]
+          },
           "id": "creo:featdefs:parameter#917:42:1",
           "name": "d917_42_1",
           "native_ref": "creo:featdefs:sketch#917",
@@ -137,7 +170,15 @@
           }
         },
         {
-          "expression": "1",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "1"
+              }
+            ]
+          },
           "id": "creo:featdefs:parameter#917:42:2",
           "name": "d917_42_2",
           "native_ref": "creo:featdefs:sketch#917",
@@ -321,6 +362,10 @@
           }
         ]
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -831,6 +876,16 @@
         },
         "message": "1 history feature definition(s) retain only source-native semantics.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "creo",
+          "scope": "namespaced"
+        },
+        "message": "Curve-expression record 7 assignment 0 identifier \"d42\" has no unique neutral parameter.",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -841,7 +896,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -933,6 +991,22 @@
           "tag": "section_sketch_feature"
         }
       }
-    }
+    },
+    "retained_records": {
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNGZWF0RGVmcwpmZWF0X2RlZnNfOTE3AOABZmVhdF9pZAAo4ABnc2VjMmRfcHRyAGRpbXRhYl9wdHIA+AL3gQL74uABdHlwZQAK4AF2YWx1ZQDk4AFkaXJlY3QAAeABYXV4X3ZhbHVlAA/gAWV4dF9pZAAq8/eBAuIK5AEYKuAAcmVsYXRfcHRyACMKI01kbFN0YXR1cwpFeHRydWRlIGlkIDQwACMKI0RFUERCX0RBVEEK4ABwX2RlcF9kYgDj4ABlbnRpdHkoY3J2X2ZyX2VxbikA4+ABaWQAB+AKZXhwcmVzc2lvbgD4AXJlc3VsdD1kNDIrMVtkZWddAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

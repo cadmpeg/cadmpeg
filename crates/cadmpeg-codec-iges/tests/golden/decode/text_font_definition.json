@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -51,107 +50,55 @@
         "cards": [
           {
             "id": "iges:physical:card#1",
-            "line_ending": "0a",
-            "offset": 0,
-            "payload": "6f726967696e616c206669787475726520202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020205320202020202031",
-            "section": "start",
-            "sequence": 1
+            "section": "start"
           },
           {
             "id": "iges:physical:card#10",
-            "line_ending": "0a",
-            "offset": 729,
-            "payload": "3331302c3130312c3448424153452c2c31302c322c36352c382c302c332c2c302c302c302c342c31302c302c382c302c36362c382c302c303b2020202020202020202020202020315020202020202031",
-            "section": "parameter",
-            "sequence": 1
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#11",
-            "line_ending": "0a",
-            "offset": 810,
-            "payload": "3331302c3130322c33484d4f442c2d312c31302c312c36372c382c302c322c312c302c302c2c382c31303b20202020202020202020202020202020202020202020202020202020335020202020202032",
-            "section": "parameter",
-            "sequence": 2
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#12",
-            "line_ending": "0a",
-            "offset": 891,
-            "payload": "3331322c342c322c2d332c312e353730373936333236373934383936362c302c302c302c302c302c303b2020202020202020202020202020202020202020202020202020202020355020202020202033",
-            "section": "parameter",
-            "sequence": 3
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#13",
-            "line_ending": "0a",
-            "offset": 972,
-            "payload": "5330303030303031473030303030303244303030303030365030303030303033202020202020202020202020202020202020202020202020202020202020202020202020202020205420202020202031",
-            "section": "terminate",
-            "sequence": 1
+            "section": "terminate"
           },
           {
             "id": "iges:physical:card#2",
-            "line_ending": "0a",
-            "offset": 81,
-            "payload": "31482c2c31483b2c374870726f647563742c3848706172742e6967732c37486361646d7065672c3348302e312c33322c33382c362c3330382c31352c30482c312e302c322c32484d4720202020202031",
-            "section": "global",
-            "sequence": 1
+            "section": "global"
           },
           {
             "id": "iges:physical:card#3",
-            "line_ending": "0a",
-            "offset": 162,
-            "payload": "4d2c312c312e302c31354832303236303731342e3030303030302c302e3030312c313030302e302c3648617574686f722c33486f72672c31312c302c30482c30483b2020202020204720202020202032",
-            "section": "global",
-            "sequence": 2
+            "section": "global"
           },
           {
             "id": "iges:physical:card#4",
-            "line_ending": "0a",
-            "offset": 243,
-            "payload": "2020202020333130202020202020203120202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303230304420202020202031",
-            "section": "directory",
-            "sequence": 1
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#5",
-            "line_ending": "0a",
-            "offset": 324,
-            "payload": "202020202033313020202020202020302020202020202030202020202020203120202020202020302020202020202020202020202020202042415345464f4e5420202020202020304420202020202032",
-            "section": "directory",
-            "sequence": 2
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#6",
-            "line_ending": "0a",
-            "offset": 405,
-            "payload": "2020202020333130202020202020203220202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303230304420202020202033",
-            "section": "directory",
-            "sequence": 3
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#7",
-            "line_ending": "0a",
-            "offset": 486,
-            "payload": "2020202020333130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020204d4f44464f4e5420202020202020304420202020202034",
-            "section": "directory",
-            "sequence": 4
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#8",
-            "line_ending": "0a",
-            "offset": 567,
-            "payload": "2020202020333132202020202020203320202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303230304420202020202035",
-            "section": "directory",
-            "sequence": 5
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#9",
-            "line_ending": "0a",
-            "offset": 648,
-            "payload": "202020202033313220202020202020302020202020202030202020202020203120202020202020302020202020202020202020202020202020464f4e5455534520202020202020304420202020202036",
-            "section": "directory",
-            "sequence": 6
+            "section": "directory"
           }
         ],
         "circular_arrays": [],
@@ -222,189 +169,139 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3331302c3130312c3448424153452c2c31302c322c36352c382c302c332c2c302c302c302c342c31302c302c382c302c36362c382c302c303b20202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 2,
-            "parameter_line_start": 1,
-            "parameter_start": 1,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 310
                 }
               },
               {
-                "end": 7,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 101
                 }
               },
               {
-                "end": 14,
-                "start": 8,
                 "value": {
                   "kind": "string",
                   "value": "42415345"
                 }
               },
               {
-                "end": 15,
-                "start": 15,
                 "value": {
                   "kind": "omitted"
                 }
               },
               {
-                "end": 18,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 10
                 }
               },
               {
-                "end": 20,
-                "start": 19,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 23,
-                "start": 21,
                 "value": {
                   "kind": "integer",
                   "value": 65
                 }
               },
               {
-                "end": 25,
-                "start": 24,
                 "value": {
                   "kind": "integer",
                   "value": 8
                 }
               },
               {
-                "end": 27,
-                "start": 26,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 29,
-                "start": 28,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 30,
-                "start": 30,
                 "value": {
                   "kind": "omitted"
                 }
               },
               {
-                "end": 32,
-                "start": 31,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 34,
-                "start": 33,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 36,
-                "start": 35,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 38,
-                "start": 37,
                 "value": {
                   "kind": "integer",
                   "value": 4
                 }
               },
               {
-                "end": 41,
-                "start": 39,
                 "value": {
                   "kind": "integer",
                   "value": 10
                 }
               },
               {
-                "end": 43,
-                "start": 42,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 45,
-                "start": 44,
                 "value": {
                   "kind": "integer",
                   "value": 8
                 }
               },
               {
-                "end": 47,
-                "start": 46,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 50,
-                "start": 48,
                 "value": {
                   "kind": "integer",
                   "value": 66
                 }
               },
               {
-                "end": 52,
-                "start": 51,
                 "value": {
                   "kind": "integer",
                   "value": 8
                 }
               },
               {
-                "end": 54,
-                "start": 53,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 56,
-                "start": 55,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -442,134 +339,98 @@
             "links": [
               "iges:entity:directory#1"
             ],
-            "parameter_bytes": "3331302c3130322c33484d4f442c2d312c31302c312c36372c382c302c322c312c302c302c2c382c31303b202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 3,
-            "parameter_line_start": 2,
-            "parameter_start": 2,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 310
                 }
               },
               {
-                "end": 7,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 102
                 }
               },
               {
-                "end": 13,
-                "start": 8,
                 "value": {
                   "kind": "string",
                   "value": "4d4f44"
                 }
               },
               {
-                "end": 16,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": -1
                 }
               },
               {
-                "end": 19,
-                "start": 17,
                 "value": {
                   "kind": "integer",
                   "value": 10
                 }
               },
               {
-                "end": 21,
-                "start": 20,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 24,
-                "start": 22,
                 "value": {
                   "kind": "integer",
                   "value": 67
                 }
               },
               {
-                "end": 26,
-                "start": 25,
                 "value": {
                   "kind": "integer",
                   "value": 8
                 }
               },
               {
-                "end": 28,
-                "start": 27,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 30,
-                "start": 29,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 32,
-                "start": 31,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 34,
-                "start": 33,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 36,
-                "start": 35,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 37,
-                "start": 37,
                 "value": {
                   "kind": "omitted"
                 }
               },
               {
-                "end": 39,
-                "start": 38,
                 "value": {
                   "kind": "integer",
                   "value": 8
                 }
               },
               {
-                "end": 42,
-                "start": 40,
                 "value": {
                   "kind": "integer",
                   "value": 10
@@ -616,95 +477,69 @@
             "links": [
               "iges:entity:directory#3"
             ],
-            "parameter_bytes": "3331322c342c322c2d332c312e353730373936333236373934383936362c302c302c302c302c302c303b20202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 4,
-            "parameter_line_start": 3,
-            "parameter_start": 3,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 312
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 4
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 10,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": -3
                 }
               },
               {
-                "end": 29,
-                "start": 11,
                 "value": {
                   "kind": "real",
                   "value": 1.5707963267948966
                 }
               },
               {
-                "end": 31,
-                "start": 30,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 33,
-                "start": 32,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 35,
-                "start": 34,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 37,
-                "start": 36,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 39,
-                "start": 38,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 41,
-                "start": 40,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -884,14 +719,14 @@
         "views": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "native_file_name": "part.igs",
         "native_units": "MM",
-        "parameter_delimiter": ",",
-        "record_delimiter": ";",
-        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -946,7 +781,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     },
     "transfer_ledger": {
       "entries": [
@@ -979,6 +817,15 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "document_local_sha256": "1085b76a1ef1191122685083639310dcaf7f8fa18de0caaabddc369ac55214c2",
+      "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1],[11,810,80,1],[12,891,80,1],[13,972,80,1]]",
+      "iges.entity_layout": "[[1,1,1],[3,2,1],[5,3,1]]",
+      "iges.parameter_delimiter": ",",
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":7},{\"start\":8,\"end\":14},{\"start\":15,\"end\":15},{\"start\":16,\"end\":18},{\"start\":19,\"end\":20},{\"start\":21,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":41},{\"start\":42,\"end\":43},{\"start\":44,\"end\":45},{\"start\":46,\"end\":47},{\"start\":48,\"end\":50},{\"start\":51,\"end\":52},{\"start\":53,\"end\":54},{\"start\":55,\"end\":56}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":7},{\"start\":8,\"end\":13},{\"start\":14,\"end\":16},{\"start\":17,\"end\":19},{\"start\":20,\"end\":21},{\"start\":22,\"end\":24},{\"start\":25,\"end\":26},{\"start\":27,\"end\":28},{\"start\":29,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":37},{\"start\":38,\"end\":39},{\"start\":40,\"end\":42}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":10},{\"start\":11,\"end\":29},{\"start\":30,\"end\":31},{\"start\":32,\"end\":33},{\"start\":34,\"end\":35},{\"start\":36,\"end\":37},{\"start\":38,\"end\":39},{\"start\":40,\"end\":41}]]]",
+      "iges.record_delimiter": ";",
+      "iges.representation": "fixed-ascii"
+    },
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -986,8 +833,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

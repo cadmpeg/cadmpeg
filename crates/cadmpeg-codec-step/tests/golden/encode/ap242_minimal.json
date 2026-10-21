@@ -25,21 +25,57 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
+      "coverage": {
+        "arenas": {
+          "appearance_bindings": "written",
+          "appearances": "written",
+          "assembly_joints": "dropped",
+          "assets": "dropped",
+          "attributes": "dropped",
+          "bodies": "written",
+          "coedges": "written",
+          "configurations": "dropped",
+          "curves": "written",
+          "drawings": "dropped",
+          "edges": "written",
+          "faces": "written",
+          "feature_input_topologies": "dropped",
+          "feature_result_topologies": "dropped",
+          "features": "dropped",
+          "loops": "written",
+          "occurrences": "written",
+          "parameters": "dropped",
+          "pcurves": "written",
+          "pmi": "written",
+          "points": "written",
+          "presentation_documents": "dropped",
+          "presentation_layers": "written",
+          "procedural_curves": "written",
+          "procedural_surfaces": "written",
+          "product_definitions": "written",
+          "regions": "written",
+          "semantic_annotations": "dropped",
+          "shells": "written",
+          "sketch_constraints": "dropped",
+          "sketch_entities": "dropped",
+          "sketches": "dropped",
+          "spatial_sketch_constraints": "dropped",
+          "spatial_sketch_entities": "dropped",
+          "spatial_sketches": "dropped",
+          "spreadsheets": "dropped",
+          "subds": "dropped",
+          "surfaces": "written",
+          "tessellations": "written",
+          "vertices": "written",
+          "view_presentations": "dropped"
+        },
+        "coverage": "declared"
+      },
       "identity": {
         "payload": "native",
         "target": "step:ap242-e3"
       },
       "losses": [
-        {
-          "code": {
-            "code": "native.passthrough-record-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "step",
-            "scope": "namespaced"
-          },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
-          "severity": "info"
-        },
         {
           "code": {
             "code": "target.source-dialect-displaced",
@@ -50,8 +86,32 @@
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "native.records-omitted",
+            "kind": "record_not_typed",
+            "namespace": "export",
+            "scope": "namespaced"
+          },
+          "message": "the step write omits 2 native record(s) from `step.unknowns`",
+          "severity": "info"
         }
       ],
+      "native_dispositions": {
+        "namespaces": {
+          "step": {
+            "arenas": {
+              "drawing_targets": {
+                "disposition": "dropped"
+              },
+              "unknowns": {
+                "disposition": "dropped"
+              }
+            }
+          }
+        }
+      },
       "notes": [],
       "write_path": {
         "fidelity": {
@@ -87,21 +147,57 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
+      "coverage": {
+        "arenas": {
+          "appearance_bindings": "written",
+          "appearances": "written",
+          "assembly_joints": "dropped",
+          "assets": "dropped",
+          "attributes": "dropped",
+          "bodies": "written",
+          "coedges": "written",
+          "configurations": "dropped",
+          "curves": "written",
+          "drawings": "dropped",
+          "edges": "written",
+          "faces": "written",
+          "feature_input_topologies": "dropped",
+          "feature_result_topologies": "dropped",
+          "features": "dropped",
+          "loops": "written",
+          "occurrences": "written",
+          "parameters": "dropped",
+          "pcurves": "written",
+          "pmi": "reported",
+          "points": "written",
+          "presentation_documents": "dropped",
+          "presentation_layers": "written",
+          "procedural_curves": "written",
+          "procedural_surfaces": "written",
+          "product_definitions": "written",
+          "regions": "written",
+          "semantic_annotations": "dropped",
+          "shells": "written",
+          "sketch_constraints": "dropped",
+          "sketch_entities": "dropped",
+          "sketches": "dropped",
+          "spatial_sketch_constraints": "dropped",
+          "spatial_sketch_entities": "dropped",
+          "spatial_sketches": "dropped",
+          "spreadsheets": "dropped",
+          "subds": "dropped",
+          "surfaces": "written",
+          "tessellations": "reported",
+          "vertices": "written",
+          "view_presentations": "dropped"
+        },
+        "coverage": "declared"
+      },
       "identity": {
         "payload": "native",
         "target": "step:ap214"
       },
       "losses": [
-        {
-          "code": {
-            "code": "native.passthrough-record-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "step",
-            "scope": "namespaced"
-          },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
-          "severity": "info"
-        },
         {
           "code": {
             "code": "target.source-dialect-displaced",
@@ -112,8 +208,32 @@
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "native.records-omitted",
+            "kind": "record_not_typed",
+            "namespace": "export",
+            "scope": "namespaced"
+          },
+          "message": "the step write omits 2 native record(s) from `step.unknowns`",
+          "severity": "info"
         }
       ],
+      "native_dispositions": {
+        "namespaces": {
+          "step": {
+            "arenas": {
+              "drawing_targets": {
+                "disposition": "dropped"
+              },
+              "unknowns": {
+                "disposition": "dropped"
+              }
+            }
+          }
+        }
+      },
       "notes": [],
       "write_path": {
         "fidelity": {
@@ -149,6 +269,52 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
+      "coverage": {
+        "arenas": {
+          "appearance_bindings": "written",
+          "appearances": "written",
+          "assembly_joints": "dropped",
+          "assets": "dropped",
+          "attributes": "dropped",
+          "bodies": "written",
+          "coedges": "written",
+          "configurations": "dropped",
+          "curves": "written",
+          "drawings": "dropped",
+          "edges": "written",
+          "faces": "written",
+          "feature_input_topologies": "dropped",
+          "feature_result_topologies": "dropped",
+          "features": "dropped",
+          "loops": "written",
+          "occurrences": "written",
+          "parameters": "dropped",
+          "pcurves": "written",
+          "pmi": "written",
+          "points": "written",
+          "presentation_documents": "dropped",
+          "presentation_layers": "written",
+          "procedural_curves": "written",
+          "procedural_surfaces": "written",
+          "product_definitions": "written",
+          "regions": "written",
+          "semantic_annotations": "dropped",
+          "shells": "written",
+          "sketch_constraints": "dropped",
+          "sketch_entities": "dropped",
+          "sketches": "dropped",
+          "spatial_sketch_constraints": "dropped",
+          "spatial_sketch_entities": "dropped",
+          "spatial_sketches": "dropped",
+          "spreadsheets": "dropped",
+          "subds": "dropped",
+          "surfaces": "written",
+          "tessellations": "written",
+          "vertices": "written",
+          "view_presentations": "dropped"
+        },
+        "coverage": "declared"
+      },
       "identity": {
         "payload": "native",
         "target": "step:ap242-e2"
@@ -156,15 +322,29 @@
       "losses": [
         {
           "code": {
-            "code": "native.passthrough-record-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "step",
+            "code": "native.records-omitted",
+            "kind": "record_not_typed",
+            "namespace": "export",
             "scope": "namespaced"
           },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "message": "the step write omits 2 native record(s) from `step.unknowns`",
           "severity": "info"
         }
       ],
+      "native_dispositions": {
+        "namespaces": {
+          "step": {
+            "arenas": {
+              "drawing_targets": {
+                "disposition": "dropped"
+              },
+              "unknowns": {
+                "disposition": "dropped"
+              }
+            }
+          }
+        }
+      },
       "notes": [],
       "write_path": {
         "fidelity": {

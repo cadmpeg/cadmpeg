@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -202,6 +201,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -209,7 +212,6 @@
           "file_size": "376",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "362",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -298,7 +300,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -428,6 +433,9 @@
           }
         }
       },
+      "metadata": {
+        "source.footer_offset": "362"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -435,9 +443,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABqAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAeAQAAAAAAAHgBdVA9T8MwEH0G2gANlK8JQfEIrRBQJCRYLFQVqAQISJijQDNUKhRFWYAV/gEzOwtz/w6sXfgJPJOktWhzued79+y7s3PhANg6kO7V4blz1nDlUeO0Ltcf/DBqRa3O/Ya8DQM/Cpry5lHedZpBux2ELCk6tRPPrTuut+Pt0wAbY9SHfQbjf6LgvsAEBD+bmCWHNlXe++6t1DapCeR4Ol/RcoIipZhaLBCYh8U0x9XCNAQmORgVzJFAm9r9KG9fV30eAM0mtFeR12EAc8ZAHcHUTyymMc6MtYQpIyPNbJ3ZYoFPYWHfC2o5+SfAon5gfwdYRcHIoF6evo4/l57VWxLfu5e911IXa//qkHkts53m6TXTqDUTKhn5Cx9FNPVGT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

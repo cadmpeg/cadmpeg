@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -30,11 +29,6 @@
             "definition": "step:product:product#8",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -69,11 +63,6 @@
             "definition": "step:product:product#8",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -105,11 +94,6 @@
             "definition": "step:product:product#3",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -174,16 +158,12 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "328",
-        "bytes_typed": "1682",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "36",
-        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -260,10 +240,23 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "metadata": {
+      "bytes_named_opaque": "0",
+      "bytes_structural": "328",
+      "bytes_typed": "1682",
+      "bytes_unclassified": "0",
+      "data_sections": "1",
+      "entity_instances": "36",
+      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+    },
+    "unrepresented": []
   }
 }

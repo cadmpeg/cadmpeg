@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -48,7 +47,6 @@
             {
               "byte_len": 82,
               "id": "nx:s0:deltas-residual#0",
-              "inflated_offset": 0,
               "sha256": "5323f8601601908f64d31cae05356cb24dcf5477dc43a47629092f2789751d15",
               "stream_ordinal": 0
             }
@@ -58,7 +56,6 @@
               "id": "nx:segment-index:row#0",
               "ordinal": 0,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 76,
               "subtype_code": 9,
               "type_code": 32,
               "value": 11
@@ -67,7 +64,6 @@
               "id": "nx:segment-index:row#1",
               "ordinal": 1,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 88,
               "subtype_code": 1,
               "type_code": 1,
               "value": 24
@@ -78,7 +74,6 @@
               "id": "nx:segment-stream-links:link#0",
               "row": "nx:segment-index:row#0",
               "slot": "type_code",
-              "source_offset": 108,
               "stream_kind": "deltas",
               "stream_ordinal": 0,
               "wrapper_byte_len": 8
@@ -91,6 +86,10 @@
           ]
         }
       },
+      "scope": {
+        "design": false,
+        "model": false
+      },
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "0",
@@ -100,7 +99,6 @@
           "file_size": "223",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "209",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -182,6 +180,17 @@
           },
           "message": "The Parasolid stream at stream@116 declares schema \"SCH_test\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -190,7 +199,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -229,6 +241,13 @@
           }
         }
       },
+      "metadata": {
+        "native.nx.parasolid_deltas_residual_spans.nx:s0:deltas-residual#0.inflated_offset": "0",
+        "native.nx.segment_index_rows.nx:segment-index:row#0.source_offset": "76",
+        "native.nx.segment_index_rows.nx:segment-index:row#1.source_offset": "88",
+        "native.nx.segment_stream_links.nx:segment-stream-links:link#0.source_offset": "108",
+        "source.footer_offset": "209"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -236,9 +255,20 @@
             "retention": "inline"
           },
           "offset": 116,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAADRAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACFAAAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAAAAAAgF0AAAB4AQFSAK3/UFMAAAA/OiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgdGVzdCBzZWdtZW50IHN0cmVhbSBwYXlsb2FkAAAACFNDSF90ZXN0AO4gGX5GT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

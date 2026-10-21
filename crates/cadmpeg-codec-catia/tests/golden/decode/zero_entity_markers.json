@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -67,6 +66,7 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -94,35 +94,30 @@
         "zero_entity_ownership_roots": [],
         "zero_entity_records": [
           {
-            "byte_offset": 16,
             "id": "catia:zero-entity:record#1",
             "logical_end": 28,
             "record_ordinal": 1,
             "tag": "1000"
           },
           {
-            "byte_offset": 28,
             "id": "catia:zero-entity:record#2",
             "logical_end": 40,
             "record_ordinal": 2,
             "tag": "1000"
           },
           {
-            "byte_offset": 40,
             "id": "catia:zero-entity:record#3",
             "logical_end": 52,
             "record_ordinal": 3,
             "tag": "1000"
           },
           {
-            "byte_offset": 52,
             "id": "catia:zero-entity:record#4",
             "logical_end": 64,
             "record_ordinal": 4,
             "tag": "1000"
           },
           {
-            "byte_offset": 64,
             "id": "catia:zero-entity:record#5",
             "logical_end": 76,
             "record_ordinal": 5,
@@ -133,12 +128,15 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "76",
         "finjpl_segment_count": "0",
-        "outer_dir_offset": "0",
         "preview_count": "0"
       },
       "identity": {
@@ -520,6 +518,67 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#1 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#2 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#3 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#4 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#5 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the catia decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -530,7 +589,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -549,6 +611,14 @@
         }
       }
     },
+    "metadata": {
+      "native.catia.zero_entity_records.catia:zero-entity:record#1.byte_offset": "16",
+      "native.catia.zero_entity_records.catia:zero-entity:record#2.byte_offset": "28",
+      "native.catia.zero_entity_records.catia:zero-entity:record#3.byte_offset": "40",
+      "native.catia.zero_entity_records.catia:zero-entity:record#4.byte_offset": "52",
+      "native.catia.zero_entity_records.catia:zero-entity:record#5.byte_offset": "64",
+      "source.outer_dir_offset": "0"
+    },
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {
@@ -556,8 +626,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

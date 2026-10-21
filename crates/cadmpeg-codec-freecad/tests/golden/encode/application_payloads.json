@@ -2,38 +2,18 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 17887,
-      "payload_sha256": "4967474a869eb773778fa06757e569d6c0b7129bda7b7cec8a3ccfa7627a7913"
+      "payload_len": 12471,
+      "payload_sha256": "b4389090c52092871e19b82992462d75d5d140f99ede57498b4d2a6a4df08119"
     },
     {
-      "name": "MeshKernel.bms",
-      "payload_len": 392,
-      "payload_sha256": "94a23b71978647bf25a932453afa2279bbfb6f38acf09510cba8bf360de58a04"
+      "name": "Cadmpeg.StringHasher.0.txt",
+      "payload_len": 22,
+      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
     },
     {
-      "name": "Normals",
-      "payload_len": 4,
-      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-    },
-    {
-      "name": "PointCloud",
-      "payload_len": 40,
-      "payload_sha256": "e161b73045886ad13be16c62fff955490942c1d9b111ad6e3f14ec2fd2b89049"
-    },
-    {
-      "name": "Points",
-      "payload_len": 4,
-      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-    },
-    {
-      "name": "Toolpath.nc",
-      "payload_len": 114,
-      "payload_sha256": "25d78dc146566256598058452d50a69383bbe2741a98d0bb1b44dbe33c952dd4"
-    },
-    {
-      "name": "cc0_payload.bin",
-      "payload_len": 16,
-      "payload_sha256": "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72"
+      "name": "FreeGeometry.brp",
+      "payload_len": 266,
+      "payload_sha256": "76d2a0cac8b3865719c46cdf10b6788cd20e38696170e4acf8e65d1ccbc6066a"
     }
   ],
   "report": {
@@ -44,7 +24,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 68,
         "bodies": 0,
         "coedges": 0,
         "configurations": 0,
@@ -58,13 +38,10 @@
         "loops": 0,
         "native.fcstd.applications": 7,
         "native.fcstd.attachments": 3,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 7,
         "native.fcstd.extensions": 2,
-        "native.fcstd.logical_ledger": 167,
         "native.fcstd.objects": 7,
-        "native.fcstd.physical_ledger": 50,
         "native.fcstd.properties": 80,
         "native.fcstd.string_tables": 1,
         "occurrences": 0,
@@ -95,20 +72,435 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "written",
+        "appearances": "written",
+        "assembly_joints": "reported",
+        "assets": "dropped",
+        "attributes": "reported",
+        "bodies": "written",
+        "coedges": "written",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "reported",
+        "loops": "written",
+        "occurrences": "reported",
+        "parameters": "reported",
+        "pcurves": "written",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "written",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "reported",
+        "regions": "written",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "reported",
+        "sketch_entities": "reported",
+        "sketches": "reported",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "reported",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "written"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+    "losses": [
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "native property fcstd:native:property#Mesh:Mesh has no independently writable typed payload",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "native property fcstd:native:property#PointCloud:Points has no independently writable typed payload",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#0:UnitSystem:property (UnitSystem) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExtensionPayload:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExtensionPayload:Payload:property (Payload) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FemAnalysis:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Mesh:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PointCloud:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Normals:property (Normals) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Points:property (Points) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Toolpath:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Toolpath:Path:property (Path) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "feature.not-transferred",
+          "kind": "parametric_record_omitted",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "object ExtensionPayload property Members refers to an omitted record and is removed",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "feature.not-transferred",
+          "kind": "parametric_record_omitted",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "object FemAnalysis property Group refers to an omitted record and is removed",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "geometry.not-transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "FCStd does not represent 1 record(s) in neutral arena `tessellations`",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.entries`",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 16 native record(s) from `fcstd.properties`",
+        "severity": "info"
+      }
     ],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "dropped"
+            },
+            "applications": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#CorpusMetadata": "regenerated",
+                "fcstd:native:application#ExtensionPayload": "regenerated",
+                "fcstd:native:application#FemAnalysis": "regenerated",
+                "fcstd:native:application#Mesh": "regenerated",
+                "fcstd:native:application#PointCloud": "regenerated",
+                "fcstd:native:application#TemperatureConstraint": "regenerated",
+                "fcstd:native:application#Toolpath": "regenerated"
+              }
+            },
+            "attachments": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:attachment#Mesh": "written",
+                "fcstd:native:attachment#PointCloud": "written",
+                "fcstd:native:attachment#Toolpath": "written"
+              }
+            },
+            "carrier_census": {
+              "disposition": "dropped"
+            },
+            "design_census": {
+              "disposition": "dropped"
+            },
+            "document": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
+            },
+            "drawings": {
+              "disposition": "dropped"
+            },
+            "element_maps": {
+              "disposition": "dropped"
+            },
+            "entries": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated"
+              }
+            },
+            "extensions": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:extension#FemAnalysis:0%3AGroupExtension": "written",
+                "fcstd:native:extension#TemperatureConstraint:0%3ASuppressibleExtension": "written"
+              }
+            },
+            "gui_documents": {
+              "disposition": "dropped"
+            },
+            "gui_properties": {
+              "disposition": "dropped"
+            },
+            "gui_view_providers": {
+              "disposition": "dropped"
+            },
+            "joints": {
+              "disposition": "dropped"
+            },
+            "objects": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#CorpusMetadata": "written",
+                "fcstd:native:object#ExtensionPayload": "written",
+                "fcstd:native:object#FemAnalysis": "written",
+                "fcstd:native:object#Mesh": "written",
+                "fcstd:native:object#PointCloud": "written",
+                "fcstd:native:object#TemperatureConstraint": "written",
+                "fcstd:native:object#Toolpath": "written"
+              }
+            },
+            "product_nodes": {
+              "disposition": "dropped"
+            },
+            "properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#CorpusMetadata:InertValue": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
+                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Proxy": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
+                "fcstd:native:property#ExtensionPayload:Domain": "regenerated",
+                "fcstd:native:property#ExtensionPayload:Label": "regenerated",
+                "fcstd:native:property#ExtensionPayload:Label2": "regenerated",
+                "fcstd:native:property#ExtensionPayload:Proxy": "regenerated",
+                "fcstd:native:property#ExtensionPayload:SerializedState": "regenerated",
+                "fcstd:native:property#ExtensionPayload:Visibility": "regenerated",
+                "fcstd:native:property#FemAnalysis:Label": "regenerated",
+                "fcstd:native:property#FemAnalysis:Label2": "regenerated",
+                "fcstd:native:property#FemAnalysis:Uid": "regenerated",
+                "fcstd:native:property#FemAnalysis:Visibility": "regenerated",
+                "fcstd:native:property#FemAnalysis:_GroupTouched": "written",
+                "fcstd:native:property#Mesh:Label": "regenerated",
+                "fcstd:native:property#Mesh:Label2": "regenerated",
+                "fcstd:native:property#Mesh:Placement": "regenerated",
+                "fcstd:native:property#Mesh:Visibility": "regenerated",
+                "fcstd:native:property#Mesh:_ElementMapVersion": "written",
+                "fcstd:native:property#PointCloud:Label": "regenerated",
+                "fcstd:native:property#PointCloud:Label2": "regenerated",
+                "fcstd:native:property#PointCloud:Placement": "regenerated",
+                "fcstd:native:property#PointCloud:Visibility": "regenerated",
+                "fcstd:native:property#PointCloud:_ElementMapVersion": "written",
+                "fcstd:native:property#TemperatureConstraint:AmplitudeValues": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:CFlux": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:ConstraintType": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:EnableAmplitude": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:Label": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:Label2": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:NormalDirection": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:References": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:Scale": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:Suppressed": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:Temperature": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:Visibility": "regenerated",
+                "fcstd:native:property#Toolpath:Label": "regenerated",
+                "fcstd:native:property#Toolpath:Label2": "regenerated",
+                "fcstd:native:property#Toolpath:Placement": "regenerated",
+                "fcstd:native:property#Toolpath:Visibility": "regenerated",
+                "fcstd:native:property#Toolpath:_ElementMapVersion": "written"
+              }
+            },
+            "shape_payloads": {
+              "disposition": "dropped"
+            },
+            "string_tables": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:string-table#0": "written"
+              }
+            },
+            "unknowns": {
+              "disposition": "dropped"
+            },
+            "unreadable_entries": {
+              "disposition": "dropped"
+            }
+          }
+        }
+      }
+    },
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "source_unrepresented",
+      "classes": [
+        "model",
+        "design"
+      ]
+    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

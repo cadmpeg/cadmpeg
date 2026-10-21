@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -462,15 +461,14 @@
           },
           "id": "creo:model:feature#4",
           "name": "Round id 4",
+          "needs_recompute": false,
           "ordinal": 0,
           "outputs": [
             "creo:visibgeom:body#1"
           ],
           "source_properties": {
             "featdefs_row_schema_classes": "913",
-            "featdefs_schema_class": "913",
-            "native_parameter.affected_edge_ids": "10,11",
-            "native_parameter.affected_geometry_ids": "99"
+            "featdefs_schema_class": "913"
           },
           "suppressed": false
         }
@@ -3093,6 +3091,10 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "crv_array_count": "6",
@@ -3634,7 +3636,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -4424,8 +4429,23 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": []
+      },
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgEASIE9gAADw8PDw9D8ABD8AAPLwAALwAA4w/kDw8P5A8PDw8PD+MCIgQBAAAPDw8PQ/AAD0PwAOQPLwAA4w8P5OQPDw8PDw8PD+MDIgQBAAAPDw8PQ/AAQ/AAD+QvAAAP4+QPDw/kDw8PDw8PD+MEIgQBAAAPDw8PDw8PDw8P40gAAEPwAC8AAC8AAEgAAOQPDw/kDw/jY3J2X2FycmF5APP4BnRvcG9sX3JlZl9kYXRhAAoIBAH2AQIMDQAA4+H1BfbjCwgEAfYBAwoPAADj4fUF9uMMCAQB9gEECw4AAOPh9QX24w0IBAH2AgMOCwAA4+H1BfbjDggEAfYCBAoPAADj4fUF9uMPCAQB9gMEDQwAAOPh9QX24yMKI0FsbEZlYXR1cgoE6wQAEAEA5eP2g5Hh4CFnZW9tc19hZmZlY3RlZAD4AWPgIWVkZ3NfYWZmZWN0ZWQA+AIKCyMKI01kbFN0YXR1cwpSb3VuZCBpZCA0AA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

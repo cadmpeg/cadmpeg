@@ -1,6 +1,9 @@
 {
-  "ir_version": "7",
-  "decode_depth": "full",
+  "ir_version": "8",
+  "scope": {
+    "model": true,
+    "design": true
+  },
   "units": {
     "length": "millimeter"
   },
@@ -226,27 +229,27 @@
         "owner_loop": "synthetic:cube:loop#back",
         "edge": "synthetic:cube:edge#2",
         "radial_next": "synthetic:cube:coedge#bottom:2",
-        "sense": "reversed"
+        "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#back:1",
         "owner_loop": "synthetic:cube:loop#back",
-        "edge": "synthetic:cube:edge#10",
-        "radial_next": "synthetic:cube:coedge#right:3",
+        "edge": "synthetic:cube:edge#11",
+        "radial_next": "synthetic:cube:coedge#left:3",
         "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#back:2",
         "owner_loop": "synthetic:cube:loop#back",
         "edge": "synthetic:cube:edge#6",
-        "radial_next": "synthetic:cube:coedge#top:1",
-        "sense": "forward"
+        "radial_next": "synthetic:cube:coedge#top:3",
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#back:3",
         "owner_loop": "synthetic:cube:loop#back",
-        "edge": "synthetic:cube:edge#11",
-        "radial_next": "synthetic:cube:coedge#left:1",
+        "edge": "synthetic:cube:edge#10",
+        "radial_next": "synthetic:cube:coedge#right:1",
         "sense": "reversed"
       },
       {
@@ -254,69 +257,69 @@
         "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#0",
         "radial_next": "synthetic:cube:coedge#front:0",
-        "sense": "forward"
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#bottom:1",
         "owner_loop": "synthetic:cube:loop#bottom",
-        "edge": "synthetic:cube:edge#1",
-        "radial_next": "synthetic:cube:coedge#right:0",
-        "sense": "forward"
+        "edge": "synthetic:cube:edge#3",
+        "radial_next": "synthetic:cube:coedge#left:0",
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#bottom:2",
         "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#2",
         "radial_next": "synthetic:cube:coedge#back:0",
-        "sense": "forward"
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#bottom:3",
         "owner_loop": "synthetic:cube:loop#bottom",
-        "edge": "synthetic:cube:edge#3",
-        "radial_next": "synthetic:cube:coedge#left:0",
-        "sense": "forward"
+        "edge": "synthetic:cube:edge#1",
+        "radial_next": "synthetic:cube:coedge#right:0",
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#front:0",
         "owner_loop": "synthetic:cube:loop#front",
         "edge": "synthetic:cube:edge#0",
         "radial_next": "synthetic:cube:coedge#bottom:0",
-        "sense": "reversed"
+        "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#front:1",
         "owner_loop": "synthetic:cube:loop#front",
-        "edge": "synthetic:cube:edge#8",
-        "radial_next": "synthetic:cube:coedge#left:3",
+        "edge": "synthetic:cube:edge#9",
+        "radial_next": "synthetic:cube:coedge#right:3",
         "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#front:2",
         "owner_loop": "synthetic:cube:loop#front",
         "edge": "synthetic:cube:edge#4",
-        "radial_next": "synthetic:cube:coedge#top:3",
-        "sense": "forward"
+        "radial_next": "synthetic:cube:coedge#top:1",
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#front:3",
         "owner_loop": "synthetic:cube:loop#front",
-        "edge": "synthetic:cube:edge#9",
-        "radial_next": "synthetic:cube:coedge#right:1",
+        "edge": "synthetic:cube:edge#8",
+        "radial_next": "synthetic:cube:coedge#left:1",
         "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#left:0",
         "owner_loop": "synthetic:cube:loop#left",
         "edge": "synthetic:cube:edge#3",
-        "radial_next": "synthetic:cube:coedge#bottom:3",
-        "sense": "reversed"
+        "radial_next": "synthetic:cube:coedge#bottom:1",
+        "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#left:1",
         "owner_loop": "synthetic:cube:loop#left",
-        "edge": "synthetic:cube:edge#11",
-        "radial_next": "synthetic:cube:coedge#back:3",
+        "edge": "synthetic:cube:edge#8",
+        "radial_next": "synthetic:cube:coedge#front:3",
         "sense": "forward"
       },
       {
@@ -324,27 +327,27 @@
         "owner_loop": "synthetic:cube:loop#left",
         "edge": "synthetic:cube:edge#7",
         "radial_next": "synthetic:cube:coedge#top:0",
-        "sense": "forward"
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#left:3",
         "owner_loop": "synthetic:cube:loop#left",
-        "edge": "synthetic:cube:edge#8",
-        "radial_next": "synthetic:cube:coedge#front:1",
+        "edge": "synthetic:cube:edge#11",
+        "radial_next": "synthetic:cube:coedge#back:1",
         "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#right:0",
         "owner_loop": "synthetic:cube:loop#right",
         "edge": "synthetic:cube:edge#1",
-        "radial_next": "synthetic:cube:coedge#bottom:1",
-        "sense": "reversed"
+        "radial_next": "synthetic:cube:coedge#bottom:3",
+        "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#right:1",
         "owner_loop": "synthetic:cube:loop#right",
-        "edge": "synthetic:cube:edge#9",
-        "radial_next": "synthetic:cube:coedge#front:3",
+        "edge": "synthetic:cube:edge#10",
+        "radial_next": "synthetic:cube:coedge#back:3",
         "sense": "forward"
       },
       {
@@ -352,13 +355,13 @@
         "owner_loop": "synthetic:cube:loop#right",
         "edge": "synthetic:cube:edge#5",
         "radial_next": "synthetic:cube:coedge#top:2",
-        "sense": "forward"
+        "sense": "reversed"
       },
       {
         "id": "synthetic:cube:coedge#right:3",
         "owner_loop": "synthetic:cube:loop#right",
-        "edge": "synthetic:cube:edge#10",
-        "radial_next": "synthetic:cube:coedge#back:1",
+        "edge": "synthetic:cube:edge#9",
+        "radial_next": "synthetic:cube:coedge#front:1",
         "sense": "reversed"
       },
       {
@@ -366,28 +369,28 @@
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#7",
         "radial_next": "synthetic:cube:coedge#left:2",
-        "sense": "reversed"
+        "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#top:1",
         "owner_loop": "synthetic:cube:loop#top",
-        "edge": "synthetic:cube:edge#6",
-        "radial_next": "synthetic:cube:coedge#back:2",
-        "sense": "reversed"
+        "edge": "synthetic:cube:edge#4",
+        "radial_next": "synthetic:cube:coedge#front:2",
+        "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#top:2",
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#5",
         "radial_next": "synthetic:cube:coedge#right:2",
-        "sense": "reversed"
+        "sense": "forward"
       },
       {
         "id": "synthetic:cube:coedge#top:3",
         "owner_loop": "synthetic:cube:loop#top",
-        "edge": "synthetic:cube:edge#4",
-        "radial_next": "synthetic:cube:coedge#front:2",
-        "sense": "reversed"
+        "edge": "synthetic:cube:edge#6",
+        "radial_next": "synthetic:cube:coedge#back:2",
+        "sense": "forward"
       }
     ],
     "edges": [

@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -197,7 +196,6 @@
               "byte_len": 120,
               "family": "CONE",
               "id": "nx:s1:deltas-record#70-12",
-              "inflated_offset": 70,
               "kind": 52,
               "node_id": 911,
               "position": [
@@ -220,7 +218,6 @@
             {
               "byte_len": 70,
               "id": "nx:s1:deltas-residual#0",
-              "inflated_offset": 0,
               "sha256": "894857f2f9b776a00dadb52f361df957a104fa45d2d42d162ce8ead227d37b87",
               "stream_ordinal": 1
             }
@@ -240,6 +237,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "120",
@@ -250,7 +251,6 @@
           "file_size": "541",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "527",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -380,7 +380,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -519,6 +522,11 @@
           }
         }
       },
+      "metadata": {
+        "native.nx.parasolid_deltas_records.nx:s1:deltas-record#70-12.inflated_offset": "70",
+        "native.nx.parasolid_deltas_residual_spans.nx:s1:deltas-residual#0.inflated_offset": "0",
+        "source.footer_offset": "527"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -526,7 +534,8 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -534,9 +543,20 @@
             "retention": "inline"
           },
           "offset": 362,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAAPAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAADDAQAAAAAAAHgBlVC7TsNAEJwDgoEYwqtCEF0JiRAQEBI0JxQFiAQIsKktQ1xECgRZboAW/oCanoY6vwNtGj4h49gXnfIosvbtzszu3u3dtQNg51i6tydXzmXVlafVi4rcfPbDqB7Vm09b8iEM/CioyfsX+disBY1GELIl55TPPbfiuN6ed0QDbExQH/znMdkVBfMCUxD8bK4FYsSmCod/7fXyNjWBDKvtYiynK0cpgRYbBJZgkWboLcxBYAazQBGLBIhN7X8Xdu9KPgtAY5IeKGG6G3vOPKMnDgPqP1F1TJjh8/EEBuc0JjPwyC2WeRWjDlm1lr4JsMKXNXMbyJpUvb/+nv2svqnPNH61btof+RYO+vow/o3TrfVxenwdta5jB9lFNjl4AV1MMQrCQBDcYCv4hS0VbQQbbRaRiIFEgneF3ZmYA5GIEK/Rwi9YWOkP9AFWvsIXWAo22oqFx0VCyDDMwMwwPgOARgf5qDtknsOx77g2ViMZq2BVw2kiAyUjDNe4WOowloneV1hvILjNuGiKtgZAC8oApR1YVp518kPv9j59afL32V5d59uP/jCkl7FM6GBwpHsa0fOyeYzdMxV2aQvwA5nALrtGT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

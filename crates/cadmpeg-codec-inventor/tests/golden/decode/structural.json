@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -46,7 +45,6 @@
         "active_carrier": [
           {
             "carrier_len": null,
-            "carrier_offset": null,
             "carrier_sha256": null,
             "delta_state": null,
             "detail": null,
@@ -166,6 +164,10 @@
         "vertex_ownerships": [],
         "wire_topologies": []
       }
+    },
+    "scope": {
+      "design": true,
+      "model": false
     },
     "source": {
       "attributes": {
@@ -302,15 +304,46 @@
         },
         "message": "Inventor geometry is not available for this document kind.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the inventor decoder did not deliver classes: model",
+        "severity": "error"
       }
     ],
     "notes": [],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "retained_records": {
+      "inventor:source:image#whole": {
+        "bytes": {
+          "byte_len": 1536,
+          "retention": "digest",
+          "sha256": "41556a60229e345e81f4ea0992ff6594edba01e4010a3c3463218d5b7fbe371d"
+        },
+        "offset": 0,
+        "stream": "inventor:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

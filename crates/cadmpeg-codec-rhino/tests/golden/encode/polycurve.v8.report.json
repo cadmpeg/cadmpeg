@@ -1,0 +1,237 @@
+{
+  "census": {
+    "basis": "ir_arenas",
+    "counts": {
+      "appearance_bindings": 0,
+      "appearances": 0,
+      "assembly_joints": 0,
+      "assets": 0,
+      "attributes": 0,
+      "bodies": 0,
+      "coedges": 0,
+      "configurations": 0,
+      "curves": 4,
+      "drawings": 0,
+      "edges": 0,
+      "faces": 0,
+      "feature_input_topologies": 0,
+      "feature_result_topologies": 0,
+      "features": 0,
+      "loops": 0,
+      "native.rhino.document_settings": 1,
+      "native.rhino.unknowns": 1,
+      "occurrences": 0,
+      "parameters": 0,
+      "pcurves": 0,
+      "pmi": 0,
+      "points": 0,
+      "presentation_documents": 0,
+      "presentation_layers": 0,
+      "procedural_curves": 2,
+      "procedural_surfaces": 0,
+      "product_definitions": 0,
+      "regions": 0,
+      "semantic_annotations": 0,
+      "shells": 0,
+      "sketch_constraints": 0,
+      "sketch_entities": 0,
+      "sketches": 0,
+      "spatial_sketch_constraints": 0,
+      "spatial_sketch_entities": 0,
+      "spatial_sketches": 0,
+      "spreadsheets": 0,
+      "subds": 0,
+      "surfaces": 0,
+      "surfaces_unknown_geometry": 0,
+      "tessellations": 0,
+      "vertices": 0,
+      "view_presentations": 0
+    }
+  },
+  "coverage": {
+    "arenas": {
+      "appearance_bindings": "reported",
+      "appearances": "reported",
+      "assembly_joints": "omitted",
+      "assets": "omitted",
+      "attributes": "dropped",
+      "bodies": "reported",
+      "coedges": "reported",
+      "configurations": "dropped",
+      "curves": "reported",
+      "drawings": "omitted",
+      "edges": "reported",
+      "faces": "reported",
+      "feature_input_topologies": "omitted",
+      "feature_result_topologies": "omitted",
+      "features": "dropped",
+      "loops": "reported",
+      "occurrences": "omitted",
+      "parameters": "dropped",
+      "pcurves": "reported",
+      "pmi": "omitted",
+      "points": "reported",
+      "presentation_documents": "omitted",
+      "presentation_layers": "omitted",
+      "procedural_curves": "written",
+      "procedural_surfaces": "dropped",
+      "product_definitions": "omitted",
+      "regions": "reported",
+      "semantic_annotations": "omitted",
+      "shells": "reported",
+      "sketch_constraints": "dropped",
+      "sketch_entities": "dropped",
+      "sketches": "dropped",
+      "spatial_sketch_constraints": "omitted",
+      "spatial_sketch_entities": "omitted",
+      "spatial_sketches": "omitted",
+      "spreadsheets": "omitted",
+      "subds": "dropped",
+      "surfaces": "reported",
+      "tessellations": "reported",
+      "vertices": "reported",
+      "view_presentations": "omitted"
+    },
+    "coverage": "declared"
+  },
+  "identity": {
+    "payload": "native",
+    "target": "rhino:archive-80"
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "target.source-dialect-displaced",
+        "kind": "source_dialect_displaced",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "source dialect rhino:archive-50 was displaced by target dialect rhino:archive-80; the source dialect identity is not preserved",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "native.records-omitted",
+        "kind": "record_not_typed",
+        "namespace": "export",
+        "scope": "namespaced"
+      },
+      "message": "the rhino write omits 1 native record(s) from `rhino.unknowns`",
+      "severity": "info"
+    }
+  ],
+  "native_dispositions": {
+    "namespaces": {
+      "rhino": {
+        "arenas": {
+          "annotation_arrows": {
+            "disposition": "dropped"
+          },
+          "annotation_settings": {
+            "disposition": "dropped"
+          },
+          "annotations": {
+            "disposition": "dropped"
+          },
+          "applications": {
+            "disposition": "dropped"
+          },
+          "construction_planes": {
+            "disposition": "dropped"
+          },
+          "dimension_styles": {
+            "disposition": "dropped"
+          },
+          "document_notes": {
+            "disposition": "dropped"
+          },
+          "document_settings": {
+            "disposition": "dropped",
+            "records": {
+              "rhino:document:settings#current": "regenerated"
+            }
+          },
+          "embedded_images": {
+            "disposition": "dropped"
+          },
+          "external_references": {
+            "disposition": "dropped"
+          },
+          "grid_defaults": {
+            "disposition": "dropped"
+          },
+          "groups": {
+            "disposition": "dropped"
+          },
+          "hatch_patterns": {
+            "disposition": "dropped"
+          },
+          "history_records": {
+            "disposition": "dropped"
+          },
+          "layers": {
+            "disposition": "dropped"
+          },
+          "lights": {
+            "disposition": "dropped"
+          },
+          "linetypes": {
+            "disposition": "dropped"
+          },
+          "materials": {
+            "disposition": "dropped"
+          },
+          "object_presentation": {
+            "disposition": "dropped"
+          },
+          "previews": {
+            "disposition": "dropped"
+          },
+          "product_definitions": {
+            "disposition": "dropped"
+          },
+          "product_occurrences": {
+            "disposition": "dropped"
+          },
+          "render_settings": {
+            "disposition": "dropped"
+          },
+          "revisions": {
+            "disposition": "dropped"
+          },
+          "setting_records": {
+            "disposition": "dropped"
+          },
+          "text_dots": {
+            "disposition": "dropped"
+          },
+          "text_styles": {
+            "disposition": "dropped"
+          },
+          "texture_mappings": {
+            "disposition": "dropped"
+          },
+          "unknowns": {
+            "disposition": "dropped"
+          },
+          "views": {
+            "disposition": "dropped"
+          },
+          "windows_bitmaps": {
+            "disposition": "dropped"
+          }
+        }
+      }
+    }
+  },
+  "notes": [
+    "3DM archive version 80"
+  ],
+  "write_path": {
+    "fidelity": {
+      "status": "not_consumed"
+    },
+    "path": "synthesized"
+  }
+}

@@ -2,7 +2,7 @@
 # Count: regular files under crates/cadmpeg-codec-<id>/tests/golden (recursive).
 # These are mesh-size floors, not branch-coverage measurements. Later phases that
 # claim "goldens unchanged" must keep each codec at or above its floor.
-# Inventor (4) and sat (6, code-built inputs) are the thinnest nets.
+# Inventor (6) and sat (8, code-built inputs) are the thinnest nets.
 # Floors count regular files only. They do not detect a blanked or corrupted
 # snapshot. Content comparison and orphan detection live in
 # cadmpeg_test_support::golden (Harness::check for frozen fixture files;
@@ -12,20 +12,23 @@
 # flate2 backend and diverge compressor output.
 
 [floors]
-catia = 78
+catia = 80
 creo = 84
-f3d = 317
+f3d = 365
 freecad = 48
 iges = 324
-inventor = 4
-nx = 111
-rhino = 136
-sat = 6
+inventor = 6
+nx = 112
+rhino = 188
+sat = 8
 sldprt = 60
 step = 42
 
 [notes]
+catia = "26 frozen fixture files + 27 inspect + 27 decode snapshots. The external_preview input is code-built and contributes inspect/decode goldens without another frozen fixture file."
+f3d = "61 frozen fixture files + 61 inspect + 61 decode + 61 generate + 60 patch + 61 replay artifacts. Counts do not establish semantic coverage."
+rhino = "28 frozen fixture files + 28 inspect + 28 decode + 104 encode artifacts. Encode contains 52 successful target cases, each with a binary and export report, across explicit v5 and v8 targets."
 step = "19 inspect + 19 decode + 4 encode. The branches are not uniform: inspect and decode run over every fixture through Harness::check, while encode runs over the four stems ENCODE_FIXTURES names, through Harness::check_inputs. A written STEP file is much larger than the report describing it, and those four sources already span every target resolution the writer has: Inherit to the catalog default, Inherit to a non-default row, Inherit to an edition carried in a schema object identifier, and the refusal an edition-less AP242 header must produce. Adding a fixture raises this floor by 2, or by 3 if ENCODE_FIXTURES also names it."
-inventor ="thinnest fixture-backed net; 2 inspect + 2 decode snapshots; Harness::check_inputs (code-built streams; inspect+decode branches)"
-sat = "six snapshots from code-built inputs (3 inspect + 3 decode); no fixture files; Harness::check_inputs (code-built streams; inspect+decode branches)"
-nx = "flat golden directory (110 JSON snapshots at tests/golden root); Harness::check_inputs with Branch kind empty. In-tree arena coverage floors and catalogue-count pins live in crates/cadmpeg-codec-nx/src/golden_tests.rs; they check which native arenas the fixtures populate, which this TOML cannot. Fixtures call zlib_compress at test time, so snapshots pin compressor output. Regenerate with UPDATE_GOLDEN=1 cargo test-fast golden. Do not use cargo test -p cadmpeg-codec-nx: an isolated package build can resolve a different flate2 backend (miniz_oxide vs zlib-rs via feature unification) and diverge zlib bytes."
+inventor = "thinnest code-built input net; 3 inspect + 3 decode snapshots, including model_states; no frozen fixture files; Harness::check_inputs covers both branches."
+sat = "eight snapshots from code-built inputs (4 inspect + 4 decode), including attributed_sphere; no frozen fixture files; Harness::check_inputs covers both branches."
+nx = "flat golden directory (112 JSON snapshots at tests/golden root); Harness::check_inputs with Branch kind empty. In-tree arena coverage floors and catalogue-count pins live in crates/cadmpeg-codec-nx/src/golden_tests.rs; they check which native arenas the fixtures populate, which this TOML cannot. Fixtures call zlib_compress at test time, so snapshots pin compressor output. Regenerate with UPDATE_GOLDEN=1 cargo test-fast golden. Do not use cargo test -p cadmpeg-codec-nx: an isolated package build can resolve a different flate2 backend (miniz_oxide vs zlib-rs via feature unification) and diverge zlib bytes."
