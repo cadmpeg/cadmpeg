@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Physical selection checks for the linear triangle fixtures.
+//! Physical selection checks for triangles with source endpoint topology.
 
 use cadmpeg_ir::ids::{EdgeId, FaceId, VertexId};
 use cadmpeg_ir::topology::{Edge, LoopBoundaryRole, Sense};
@@ -36,35 +36,49 @@ fn ordered_points(mut points: Vec<[f64; 3]>) -> Vec<[f64; 3]> {
     points
 }
 
-fn endpoints(ir: &CadIr, edge: &Edge) -> Vec<[f64; 3]> {
-    let curve = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| Some(&curve.id) == edge.curve())
-        .unwrap();
-    assert!(matches!(
-        curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Solved(
-            cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_)
-        )
-    ));
+fn endpoints(ir: &CadIr, edge: &Edge, synthesized: bool) -> Vec<[f64; 3]> {
+    if synthesized {
+        let curve = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| Some(&curve.id) == edge.curve())
+            .expect("synthesis emits a straight carrier");
+        assert!(matches!(
+            curve.geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_)
+            )
+        ));
+    } else {
+        // triangle_body authors edge_use(_, 0); its source states endpoint
+        // topology and does not state a geometric curve carrier.
+        assert!(
+            edge.curve().is_none(),
+            "the unchanged source has no edge carrier"
+        );
+    }
     ordered_points(vec![position(ir, &edge.start), position(ir, &edge.end)])
 }
 
-pub(super) fn line_edge(before: &CadIr, after: &CadIr, id: &EdgeId) -> EdgeId {
+pub(super) fn topology_edge(
+    before: &CadIr,
+    after: &CadIr,
+    id: &EdgeId,
+    synthesized: bool,
+) -> EdgeId {
     let original = before
         .model
         .edges
         .iter()
         .find(|edge| &edge.id == id)
         .unwrap();
-    let expected = endpoints(before, original);
+    let expected = endpoints(before, original, false);
     let candidates = after
         .model
         .edges
         .iter()
-        .filter(|edge| endpoints(after, edge) == expected)
+        .filter(|edge| endpoints(after, edge, synthesized) == expected)
         .collect::<Vec<_>>();
     assert_eq!(
         candidates.len(),
@@ -74,7 +88,11 @@ pub(super) fn line_edge(before: &CadIr, after: &CadIr, id: &EdgeId) -> EdgeId {
     candidates[0].id.clone()
 }
 
-fn triangle(ir: &CadIr, id: &FaceId) -> (Vec<[f64; 3]>, LoopBoundaryRole, [f64; 3]) {
+fn triangle(
+    ir: &CadIr,
+    id: &FaceId,
+    synthesized: bool,
+) -> (Vec<[f64; 3]>, LoopBoundaryRole, [f64; 3]) {
     let face = ir.model.faces.iter().find(|face| &face.id == id).unwrap();
     let loops = face.loops.iter().collect::<Vec<_>>();
     assert_eq!(loops.len(), 1);
@@ -101,7 +119,7 @@ fn triangle(ir: &CadIr, id: &FaceId) -> (Vec<[f64; 3]>, LoopBoundaryRole, [f64; 
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
                 .unwrap();
-            let _ = endpoints(ir, edge);
+            let _ = endpoints(ir, edge, synthesized);
             position(
                 ir,
                 match coedge.sense {
@@ -136,13 +154,18 @@ fn triangle(ir: &CadIr, id: &FaceId) -> (Vec<[f64; 3]>, LoopBoundaryRole, [f64; 
     )
 }
 
-pub(super) fn triangle_face(before: &CadIr, after: &CadIr, id: &FaceId) -> FaceId {
-    let expected = triangle(before, id);
+pub(super) fn triangle_face(
+    before: &CadIr,
+    after: &CadIr,
+    id: &FaceId,
+    synthesized: bool,
+) -> FaceId {
+    let expected = triangle(before, id, false);
     let candidates = after
         .model
         .faces
         .iter()
-        .filter(|face| triangle(after, &face.id) == expected)
+        .filter(|face| triangle(after, &face.id, synthesized) == expected)
         .collect::<Vec<_>>();
     assert_eq!(
         candidates.len(),
