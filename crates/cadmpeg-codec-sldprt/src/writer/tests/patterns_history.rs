@@ -573,11 +573,6 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
 
 #[test]
 fn semantic_writer_round_trips_generic_pattern_type() {
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternTransform},
-        FeatureDefinition, FeatureOperation,
-    };
-
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -590,24 +585,17 @@ fn semantic_writer_round_trips_generic_pattern_type() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let updated_ir_edit_evaluation = &mut ir_edit.model.features[1].evaluation;
-        let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
-            &mut updated_ir_edit_definition
-        else {
-            panic!("generic linear pattern");
-        };
-        let mut transform = pattern.definition().clone();
-        let PatternTransform::Linear {
-            distance, count, ..
-        } = &mut transform
-        else {
-            panic!("pattern form");
-        };
-        *distance.dimension_mut() = cadmpeg_ir::scalar::Length::new(6.0).unwrap().into();
-        *count = cadmpeg_ir::Dimension::Literal(3);
-        *pattern = PatternKind::new(transform).unwrap();
-        updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
+        let owner = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &owner,
+                "/pattern/distance/distance",
+                cadmpeg_ir::scalar::Length::new(6.0).unwrap(),
+            )
+            .unwrap();
+        ir_edit
+            .set_dimension(&owner, "/pattern/count", 3u32)
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
