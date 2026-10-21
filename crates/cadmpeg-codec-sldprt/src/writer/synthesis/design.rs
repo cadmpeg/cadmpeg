@@ -137,9 +137,64 @@ pub(super) fn prepare(
         &Annotations::default(),
     )?;
     if let Some(native) = native.as_mut() {
+        materialize_configuration_associations(ir, native, losses)?;
         crate::resolved_features::write_feature_parameters::synthesize(ir, native)?;
     }
     Ok(native)
+}
+
+/// Native configuration records are authored even for partition-only rows.
+/// Reflect that actual new association in the prepared document so the normal
+/// changed-configuration accounting reports the representation change.
+fn materialize_configuration_associations(
+    ir: &mut CadIr,
+    native: &SldprtNative,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    for configuration in &mut ir.model.configurations {
+        if configuration.native_ref.is_some() {
+            continue;
+        }
+        let slot = configuration
+            .properties
+            .get("id")
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(configuration.ordinal);
+        let mut matching = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.configurations)
+            .filter(|record| {
+                let record_slot = record
+                    .properties
+                    .get("id")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(record.ordinal);
+                record_slot == slot
+                    && record.source_index == configuration.source_index
+                    && Some(record.name.as_str()) == configuration.name.as_deref()
+            });
+        let record = matching.next().ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "configuration {} has no authored native counterpart",
+                configuration.id
+            ))
+        })?;
+        if matching.next().is_some() {
+            return Err(CodecError::UnsupportedContent(format!(
+                "configuration {} has multiple authored native counterparts",
+                configuration.id
+            )));
+        }
+        configuration.native_ref = Some(record.id.clone());
+        losses.push(
+            SldprtLossCode::WriterConfigurationAssociationGenerated.note(format!(
+                "configuration {} acquired authored native association {} at slot {slot}",
+                configuration.id, record.id
+            )),
+        );
+    }
+    Ok(())
 }
 
 fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
