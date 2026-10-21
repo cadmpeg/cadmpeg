@@ -145,11 +145,14 @@ pub(crate) fn attribute_supported(attribute: &cadmpeg_ir::attributes::SourceAttr
     if !matches!(attribute.target, AttributeTarget::Pmi(_)) {
         return false;
     }
-    match (attribute.name.as_str(), attribute.values.as_slice()) {
-        ("precision", [AttributeValue::Integer(_)]) => true,
-        ("basic" | "inspection" | "reference_only", [AttributeValue::Boolean(_)]) => true,
-        _ => false,
-    }
+    matches!(
+        (attribute.name.as_str(), attribute.values.as_slice()),
+        ("precision", [AttributeValue::Integer(_)])
+            | (
+                "basic" | "inspection" | "reference_only",
+                [AttributeValue::Boolean(_)]
+            )
+    )
 }
 
 fn supported_dimension(ir: &CadIr, dimension: &cadmpeg_ir::pmi::PmiDimension) -> bool {
@@ -294,18 +297,20 @@ pub(crate) fn payload(
                     .iter()
                     .find(|parameter| parameter.id == *id)
             })
-            .map(|parameter| {
-                let owner = parameter
-                    .owner
-                    .as_ref()
-                    .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
-                    .and_then(|feature| feature.name.as_deref());
-                owner.map_or_else(
-                    || parameter.name.clone(),
-                    |owner| format!("{}@{owner}", parameter.name),
-                )
-            })
-            .unwrap_or_else(|| annotation.id.as_str().to_owned());
+            .map_or_else(
+                || annotation.id.as_str().to_owned(),
+                |parameter| {
+                    let owner = parameter
+                        .owner
+                        .as_ref()
+                        .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
+                        .and_then(|feature| feature.name.as_deref());
+                    owner.map_or_else(
+                        || parameter.name.clone(),
+                        |owner| format!("{}@{owner}", parameter.name),
+                    )
+                },
+            );
         let mut record = Record {
             guid,
             cad_text,

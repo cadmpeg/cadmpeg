@@ -810,13 +810,13 @@ pub(super) fn bind_offset_plane_references(
                         && same_scalar(signed_distance, distance.get()))
                     .then_some(&candidate.id)
                 });
-            let mut candidates_by_root = HashMap::new();
+            let mut candidates_by_root = HashSet::new();
             for candidate in candidates {
                 let root = canonical_plane_id(candidate, &zero_offset_parents);
-                candidates_by_root.insert(root, ());
+                candidates_by_root.insert(root);
             }
             let mut candidates = candidates_by_root.into_iter();
-            let Some((reference, ())) = candidates.next() else {
+            let Some(reference) = candidates.next() else {
                 continue;
             };
             if candidates.next().is_some() {
@@ -1519,12 +1519,14 @@ fn native_definition(feature: &Feature) -> FeatureDefinition {
                         .iter()
                         .position(|candidate| candidate == name.as_str())
                         .and_then(|ordinal| neutral_parameter_id(feature, ordinal).ok())
-                        .map(cadmpeg_ir::features::Dimension::Parameter)
-                        .unwrap_or_else(|| {
-                            cadmpeg_ir::features::Dimension::Literal(
-                                cadmpeg_ir::features::Expression::text(expression),
-                            )
-                        }),
+                        .map_or_else(
+                            || {
+                                cadmpeg_ir::features::Dimension::Literal(
+                                    cadmpeg_ir::features::Expression::text(expression),
+                                )
+                            },
+                            cadmpeg_ir::features::Dimension::Parameter,
+                        ),
                 )
             })
             .collect(),

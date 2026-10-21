@@ -186,8 +186,7 @@ pub(crate) fn validate(native: &SldprtNative) -> Result<(), CodecError> {
                 .iter()
                 .zip(&expected.body_selections)
                 .find(|(actual, source)| actual != source)
-                .map(|(actual, _)| actual.id.as_str())
-                .unwrap_or(lane.id.as_str());
+                .map_or(lane.id.as_str(), |(actual, _)| actual.id.as_str());
             return Err(CodecError::malformed(format_args!(
                 "feature-input body selection {id} has inconsistent ownership"
             )));

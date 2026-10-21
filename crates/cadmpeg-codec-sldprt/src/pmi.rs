@@ -524,12 +524,12 @@ pub(crate) fn apply_to_parameters(
                     }
                     _ => cadmpeg_ir::features::DimensionValue::to_parameter_value(&value),
                 };
-                let expression = cache
-                    .as_ref()
-                    .map(|value| {
+                let expression = cache.as_ref().map_or_else(
+                    || Expression::text(record.value.get().to_string()),
+                    |value| {
                         Expression::text(crate::history::literals::format_parameter_value(value))
-                    })
-                    .unwrap_or_else(|| Expression::text(record.value.get().to_string()));
+                    },
+                );
                 let index = parameters.len();
                 parameters.push(DesignParameter {
                     id: ParameterId::compose(
