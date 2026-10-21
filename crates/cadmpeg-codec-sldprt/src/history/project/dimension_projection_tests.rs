@@ -423,17 +423,34 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+        diameter: Some(diameter),
+        extent,
+        ..
+    }) = projected[0].evaluation.definition()
+    else {
+        panic!("expected typed cosmetic thread");
+    };
+    assert!(matches!(diameter, cadmpeg_ir::Dimension::Parameter(_)));
+    assert_eq!(source_value(diameter, &history.features).get(), 8.0);
+    let Some(CosmeticThreadExtent::Blind { length }) = extent else {
+        panic!("expected blind length");
+    };
+    assert!(matches!(length, cadmpeg_ir::Dimension::Parameter(_)));
+    assert_eq!(source_value(length, &history.features).get(), 16.0);
+
     assert_eq!(
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()
+            diameter: Some(cadmpeg_ir::Dimension::Parameter(
+                cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#thread:1").unwrap()
             )),
             extent: Some(CosmeticThreadExtent::Blind {
-                length: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(16.0).unwrap()
+                length: cadmpeg_ir::Dimension::Parameter(
+                    cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#thread:0")
+                        .unwrap()
                 ),
             }),
         })
@@ -456,13 +473,25 @@ fn cosmetic_thread_without_blind_length_is_through() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+        diameter: Some(diameter),
+        extent,
+        ..
+    }) = projected[0].evaluation.definition()
+    else {
+        panic!("expected typed cosmetic thread");
+    };
+    assert!(matches!(diameter, cadmpeg_ir::Dimension::Parameter(_)));
+    assert_eq!(source_value(diameter, &history.features).get(), 8.0);
+    assert!(matches!(extent, Some(CosmeticThreadExtent::Through {})));
+
     assert_eq!(
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()
+            diameter: Some(cadmpeg_ir::Dimension::Parameter(
+                cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#thread:0").unwrap()
             )),
             extent: Some(CosmeticThreadExtent::Through {}),
         })
@@ -490,13 +519,26 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
             features: vec![thread],
         };
 
-        let projected = project_features(&[history]).unwrap();
+        let projected = project_features(std::slice::from_ref(&history)).unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            diameter: Some(diameter),
+            extent,
+            ..
+        }) = projected[0].evaluation.definition()
+        else {
+            panic!("expected typed cosmetic thread");
+        };
+        assert!(matches!(diameter, cadmpeg_ir::Dimension::Parameter(_)));
+        assert_eq!(source_value(diameter, &history.features).get(), 4.9);
+        assert!(matches!(extent, Some(CosmeticThreadExtent::Through {})));
+
         assert_eq!(
             *projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: FaceSelection::Unresolved,
-                diameter: Some(cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(4.9).unwrap()
+                diameter: Some(cadmpeg_ir::Dimension::Parameter(
+                    cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#thread:1")
+                        .unwrap()
                 )),
                 extent: Some(CosmeticThreadExtent::Through {}),
             })

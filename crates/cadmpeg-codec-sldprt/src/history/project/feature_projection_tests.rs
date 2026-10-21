@@ -70,7 +70,10 @@ fn source_value<Q: cadmpeg_ir::features::DimensionValue>(
     .expect("source control resolves from its actual source parameter")
 }
 
-fn source_binding<Q: cadmpeg_ir::features::DimensionValue>(feature: &Feature, name: &str) -> cadmpeg_ir::Dimension<Q> {
+fn source_binding<Q: cadmpeg_ir::features::DimensionValue>(
+    feature: &Feature,
+    name: &str,
+) -> cadmpeg_ir::Dimension<Q> {
     super::parameter_dimension(feature, &[name])
         .expect("source dimension has its canonical parameter identity")
 }
@@ -144,7 +147,24 @@ fn canonical_dependencies_participate_in_the_shared_regeneration_order() {
         .map(|feature| (&feature.id, feature.ordinal))
         .collect::<HashMap<_, _>>();
     assert!(ordinals[&predecessor] < ordinals[&consumer]);
-    assert!(ir.model.features[0].dependencies.is_empty());
+    let first = ir
+        .model
+        .features
+        .iter()
+        .min_by_key(|feature| feature.ordinal)
+        .unwrap();
+    assert_eq!(first.id, predecessor);
+    assert!(first.dependencies.is_empty());
+    let consumer = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id == consumer)
+        .unwrap();
+    assert_eq!(
+        consumer.dependencies.iter().collect::<Vec<_>>(),
+        vec![&predecessor]
+    );
 }
 
 #[test]
@@ -1113,6 +1133,13 @@ fn length_plane_parameter_claims_offset_semantics() {
         .insert(cadmpeg_core::nonblank_literal!("D1"), "70mm".into());
 
     assert!(is_offset_plane(&plane));
+    let distance = cadmpeg_ir::Dimension::Parameter(
+        ParameterId::mint("sldprt:model:parameter#plane:0").unwrap(),
+    );
+    assert_eq!(
+        source_value::<Length>(&distance, std::slice::from_ref(&plane)).get(),
+        70.0
+    );
     assert_eq!(
         project_definition(
             &plane,
@@ -1124,7 +1151,7 @@ fn length_plane_parameter_claims_offset_semantics() {
         .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
-            distance: cadmpeg_ir::Dimension::Literal(Length::new(70.0).unwrap()),
+            distance,
         })
     );
 }
