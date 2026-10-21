@@ -50,7 +50,14 @@ fn set_typed_parameter_cache(parameter: &mut DesignParameter, value: ParameterVa
         .value
         .as_ref()
         .is_some_and(|old| parameter.expression.literal_value_as(old).is_some());
-    if literal && parameter.expression.literal_value_as(&value).as_ref() != Some(&value) {
+    let same_quantity = parameter
+        .value
+        .as_ref()
+        .is_some_and(|old| std::mem::discriminant(old) == std::mem::discriminant(&value));
+    if literal
+        && (!same_quantity
+            || parameter.expression.literal_value_as(&value).as_ref() != Some(&value))
+    {
         parameter.expression = value.literal_expression();
     }
     parameter.value = Some(value);
