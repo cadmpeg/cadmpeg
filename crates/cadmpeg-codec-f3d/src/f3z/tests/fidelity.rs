@@ -121,7 +121,7 @@ fn archive_scope_and_source_representation_union_independent_members() {
             .retained_record(&child_image)
             .unwrap()
             .untyped(),
-        &[ArenaClass::Model].into()
+        &cadmpeg_ir::ArenaClasses::from([ArenaClass::Model])
     );
     assert_eq!(
         decoded
@@ -168,7 +168,7 @@ fn archive_scope_excludes_design_when_every_member_failed_design_projection() {
             .retained_record(&child_image)
             .unwrap()
             .untyped(),
-        &[ArenaClass::Model].into()
+        &cadmpeg_ir::ArenaClasses::from([ArenaClass::Model])
     );
     assert_eq!(
         decoded

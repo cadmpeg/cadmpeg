@@ -82,7 +82,10 @@ fn generated_f3d_synthesizes_only_document_content_and_applies_semantic_edits() 
             .unwrap(),
     );
 
-    let (output, report) = synthesize_document(decoded.ir(), Some(decoded.source_fidelity()));
+    // This baseline exercises source-free synthesis. The same unedited,
+    // fully typed document with its sidecar is eligible for exact replay.
+    assert!(decoded.source_fidelity().unrepresented().is_empty());
+    let (output, report) = synthesize_document(decoded.ir(), None);
     assert_eq!(
         output.ir().model.bodies.len(),
         decoded.ir().model.bodies.len()
