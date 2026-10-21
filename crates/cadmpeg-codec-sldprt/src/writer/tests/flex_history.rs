@@ -899,6 +899,16 @@ fn encoder_writes_source_less_curved_sketches() {
         .expect("source distance parameter");
     parameter.expression = "5mm".into();
     parameter.value = Some(ParameterValue::Length(Length::new(5.0).unwrap()));
+    let validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(
+        validation.findings.iter().any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+                && finding.severity == cadmpeg_ir::report::Severity::Error
+                && finding.entity.as_deref() == Some("synthetic:test:constraint#distance")
+                && finding.message == "solved locus distance disagrees with its canonical dimension"
+        }),
+        "{validation:#?}"
+    );
     let error = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))

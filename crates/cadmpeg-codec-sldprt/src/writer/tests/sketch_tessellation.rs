@@ -311,6 +311,12 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    let edited_start = cadmpeg_ir::sketches::SketchLocus::Start(
+        decoded.ir().model.sketch_entities[0].id().clone(),
+    );
+    let coincidence_id = decoded.ir().model.sketch_constraints.iter().find(|constraint| {
+        matches!(constraint.definition.kind(), cadmpeg_ir::sketches::SketchConstraintDefinitionInput::CoincidentLoci { loci } if loci.contains(&edited_start))
+    }).expect("authored shared start-point coincidence").id.clone();
     {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
@@ -329,6 +335,16 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         .unwrap();
     }
 
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).unwrap();
+    assert!(
+        validation.findings.iter().any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+                && finding.severity == cadmpeg_ir::report::Severity::Error
+                && finding.entity.as_deref() == Some(coincidence_id.as_str())
+                && finding.message == "solved loci disagree with their coincidence constraint"
+        }),
+        "{validation:#?}"
+    );
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
