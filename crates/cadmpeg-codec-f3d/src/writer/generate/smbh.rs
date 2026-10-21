@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveMetadata},
-    CurveGeometry, SolvedCurveGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{ShellId, VertexId};
 use cadmpeg_ir::topology::Sense;
@@ -672,7 +672,6 @@ fn encode_face_topology_smbh(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let model = &target.model;
     let region_ordinals: HashMap<_, _> = model
