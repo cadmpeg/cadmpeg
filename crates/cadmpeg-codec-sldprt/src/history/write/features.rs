@@ -475,7 +475,6 @@ fn synchronize_features(
             for properties in existing.dimension_properties.values_mut() {
                 properties.remove("Value");
                 properties.remove("Driven");
-                properties.remove("EquationId");
             }
             existing.properties = properties;
             if existing

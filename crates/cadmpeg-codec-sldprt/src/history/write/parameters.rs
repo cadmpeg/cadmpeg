@@ -162,6 +162,14 @@ fn sync_neutral_parameters(
                 let mut properties = parameter.properties.clone();
                 properties.remove("Value");
                 properties.remove("Driven");
+                properties.remove("EquationId");
+                if let Some(alias) = record
+                    .dimension_properties
+                    .get(parameter.name.as_str())
+                    .and_then(|properties| properties.get("EquationId"))
+                {
+                    properties.insert(cadmpeg_core::nonblank_literal!("EquationId"), alias.clone());
+                }
                 if let Some(value) = &parameter.value {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Value"),
