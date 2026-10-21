@@ -2,7 +2,7 @@
 //! Exact assembly operand frames, including as-built frames.
 
 use crate::layout::assembly_compact_wide_scope as compact_wide;
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, View};
 
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::shared_frames::marked_record_reference;
@@ -149,6 +149,17 @@ pub(super) fn exact_assembly_operand_frames(
             )? != [0; compact_wide::FIRST_OPERAND_REFERENCE - compact_wide::ZERO_RUN_22]
             || bytes.get(start + 43..start + 50)? != [0; 7]
             || bytes.get(start + 265..start + 272)? != [0; 7]
+        {
+            return None;
+        }
+        // The limit-owner run: the 850-byte scope names its two limit owners,
+        // owner-local ordinals 4 and 5, and the other forms store count 0.
+        let limit_owners = if scope.frame_length() == 850 { 2 } else { 0 };
+        if usize::try_from(View::u32_le_at(bytes, start + 526)?).ok()? != limit_owners
+            || (0..limit_owners).any(|ordinal| {
+                marked_record_reference(bytes, start + 530 + 11 * ordinal)
+                    != scope.reference_members().values().nth(4 + ordinal).copied()
+            })
         {
             return None;
         }

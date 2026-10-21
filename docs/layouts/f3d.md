@@ -1541,7 +1541,7 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 26 B
 
-Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 526 in the 850-byte form.
+Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
@@ -1564,7 +1564,7 @@ Cross-checked against code:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The class-430/262 744-byte Assemble form uses the compact locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 945-byte wide Assemble form stores its locator references after the count at offset 537.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 806- and 861-byte compact wide Assemble forms store their locator references after the count at offset 530.
-- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 850-byte compact wide Assemble form stores its locator references after the count at offset 526.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 850-byte compact wide Assemble form stores its locator references after the count at offset 552, behind its two limit-owner references.
 
 ## `assembly_as_built_421_scope`
 

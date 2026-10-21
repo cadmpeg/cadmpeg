@@ -1844,7 +1844,7 @@ fn push_wide_operand_path(bytes: &mut Vec<u8>, index: u32, scope_record_index: u
 /// operand frames and two wide operand paths after its paired header.
 fn compact_wide_scope_fixture(
     owners_first: bool,
-) -> (Vec<u8>, DesignParameterScope, [DesignParameterOwner; 4]) {
+) -> (Vec<u8>, DesignParameterScope, [DesignParameterOwner; 6]) {
     let scope_record_index = 10_u32;
     let mut bytes = vec![0_u8; 850];
     bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
@@ -1864,9 +1864,11 @@ fn compact_wide_scope_fixture(
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
-    // The 850-byte scope: locator count 2 at 526, references at 530 and 541.
+    // The 850-byte scope: its two limit owners after the count at 526, then
+    // the locator count at 552 and the locators at 556 and 567.
     bytes[526..530].copy_from_slice(&2_u32.to_le_bytes());
-    for (at, target) in [(530, 64_u32), (541, 67_u32)] {
+    bytes[552..556].copy_from_slice(&2_u32.to_le_bytes());
+    for (at, target) in [(530, 54_u32), (541, 55), (556, 64), (567, 67)] {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
     }
@@ -1892,9 +1894,9 @@ fn compact_wide_scope_fixture(
     scope.class_tag = DesignClassTag::try_from("285".to_owned()).unwrap();
     scope.paired_class_tag = DesignClassTag::try_from("262".to_owned()).unwrap();
     let members = if owners_first {
-        vec![50, 51, 52, 53, 64, 67]
+        vec![50, 51, 52, 53, 54, 55, 64, 67]
     } else {
-        vec![64, 67, 50, 51, 52, 53]
+        vec![64, 67, 50, 51, 52, 53, 54, 55]
     };
     scope
         .try_edit(|draft| {
@@ -1928,6 +1930,8 @@ fn compact_wide_scope_fixture(
         owner(51, 1, 0.0),
         owner(52, 2, 0.0),
         owner(53, 3, 0.5),
+        owner(54, 4, -1.7),
+        owner(55, 5, 1.7),
     ];
     (bytes, scope, owners)
 }
@@ -1965,6 +1969,14 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
     // The owners are the first four reference members, not the last.
     let (bytes, scope, owners) = compact_wide_scope_fixture(false);
     assert!(read(&bytes, &scope, &owners).is_none());
+
+    // The limit-owner run names the fifth and sixth owners.
+    let (mut bytes, scope, owners) = compact_wide_scope_fixture(true);
+    bytes[531] = 53;
+    assert!(read(&bytes, &scope, &owners)
+        .expect("alignment without frames")
+        .operand_frames()
+        .is_none());
 
     // A malformed locator leaves the frames without qualifiers.
     let (mut bytes, scope, owners) = compact_wide_scope_fixture(true);

@@ -1264,7 +1264,7 @@ pub(crate) mod assembly_variable_reference_operand_path_locator {
 /// Spec §Assembly operands. Record length 26 B.
 ///
 /// ```text
-/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 526 in the 850-byte form.
+/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
 /// ```
 pub(crate) mod assembly_operand_path_locator_reference_run {
     /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
