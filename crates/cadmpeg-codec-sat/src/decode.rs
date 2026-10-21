@@ -538,7 +538,7 @@ fn build_result(
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     losses.extend(dialect_loss(kernel));
-    if !geometry_transferred && !unknowns.is_empty() {
+    if !geometry_transferred && (!unknowns.is_empty() || stats.other_records() != 0) {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{}`.", terminator_line(dialect))
         });

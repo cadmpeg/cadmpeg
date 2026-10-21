@@ -62,11 +62,11 @@ pub(in crate::decode) trait SourceLength: Clone {
     fn scale_source_length(&mut self, scale: PositiveReal) -> Result<(), CodecError>;
 }
 macro_rules! source_length {
-    ($($quantity:ty),+ $(,)?) => {$ (
+    ($($quantity:ty => $refusal:literal),+ $(,)?) => {$ (
         impl SourceLength for $quantity {
             fn scale_source_length(&mut self, scale: PositiveReal) -> Result<(), CodecError> {
                 *self = Self::new(self.get() * scale.get()).ok_or_else(|| {
-                    CodecError::malformed("Creo scaled source length violates its quantity bounds")
+                    CodecError::malformed($refusal)
                 })?;
                 Ok(())
             }
@@ -74,10 +74,10 @@ macro_rules! source_length {
     )+};
 }
 source_length!(
-    Length,
-    cadmpeg_ir::scalar::PositiveLength,
-    cadmpeg_ir::scalar::NonZeroLength,
-    cadmpeg_ir::scalar::NonNegativeLength
+    Length => "Creo scaled length must be finite",
+    cadmpeg_ir::scalar::PositiveLength => "Creo scaled length must be positive and finite",
+    cadmpeg_ir::scalar::NonZeroLength => "Creo scaled length must be finite and nonzero",
+    cadmpeg_ir::scalar::NonNegativeLength => "Creo scaled length must be nonnegative and finite"
 );
 impl<Q: SourceLength> SourceLength for cadmpeg_ir::features::Dimension<Q> {
     fn scale_source_length(&mut self, scale: PositiveReal) -> Result<(), CodecError> {
