@@ -110,7 +110,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
                 }
             },
             ..
-        }) if regenerated.ir().dimension_value(&actual_length).unwrap().get() == 18.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 18.0
     ));
 }
 
@@ -171,7 +171,7 @@ fn semantic_writer_uses_consistent_neutral_features_over_native_edits() {
                     termination: cadmpeg_ir::features::LinearTermination::Blind { length }, ..
                 }
             }, ..
-        }) if regenerated.ir().dimension_value(&length).unwrap().get() == 18.0
+        }) if regenerated.ir().dimension_value(length).unwrap().get() == 18.0
     ));
 }
 
@@ -241,7 +241,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
                 }
             },
             ..
-        }) if regenerated.ir().dimension_value(&actual_length).unwrap().get() == 50.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 50.0
     ));
 }
 
@@ -763,7 +763,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
                 }
             },
             ..
-        }) if regenerated.ir().dimension_value(&actual_length).unwrap().get() == 50.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 50.0
     ));
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0]

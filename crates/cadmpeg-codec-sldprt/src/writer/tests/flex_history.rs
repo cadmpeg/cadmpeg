@@ -1319,7 +1319,7 @@ fn encoder_writes_source_less_native_features() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 25.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 25.0
     ));
     assert_eq!(
         sldprt_native(decoded.ir()).feature_histories[0].features[0].xml_tag,

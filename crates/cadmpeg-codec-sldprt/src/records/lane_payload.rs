@@ -112,6 +112,17 @@ impl<'de> Deserialize<'de> for LanePayload {
     }
 }
 
+/// The retained image belongs to a lane identity, outside the document.
+pub(crate) fn retained_id(
+    lane: &str,
+) -> Result<cadmpeg_ir::ids::UnknownId, cadmpeg_core::CodecError> {
+    cadmpeg_ir::ids::UnknownId::mint(format!(
+        "sldprt:source:feature-input#{}",
+        Sha256Digest::digest(lane.as_bytes())
+    ))
+    .map_err(cadmpeg_core::CodecError::malformed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::LanePayload;
@@ -130,15 +141,4 @@ mod tests {
         parsed.attach(&payload).expect("matching retained image");
         assert_eq!(parsed.as_slice(), payload.as_slice());
     }
-}
-
-/// The retained image belongs to a lane identity, outside the document.
-pub(crate) fn retained_id(
-    lane: &str,
-) -> Result<cadmpeg_ir::ids::UnknownId, cadmpeg_core::CodecError> {
-    cadmpeg_ir::ids::UnknownId::mint(format!(
-        "sldprt:source:feature-input#{}",
-        Sha256Digest::digest(lane.as_bytes())
-    ))
-    .map_err(cadmpeg_core::CodecError::malformed)
 }

@@ -674,7 +674,7 @@ fn encoder_writes_source_less_line_sketches() {
             },
             op: BooleanOp::Join,
             ..
-        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 12.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 12.0
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),

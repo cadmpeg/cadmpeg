@@ -808,7 +808,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         owner: Some(feature_id),
         ordinal: 0,
         name: "Pitch".into(),
-        expression: cadmpeg_ir::features::Expression::from("D1@Sketch1 * 2").into(),
+        expression: cadmpeg_ir::features::Expression::from("D1@Sketch1 * 2"),
         display: None,
         value: None,
         properties: BTreeMap::new(),
@@ -1707,13 +1707,12 @@ fn untyped_feature_framing_is_not_written_as_content() {
             plan.report().write_path(),
             cadmpeg_ir::report::export::WritePath::Patched { .. }
         ));
-        assert!(
-            plan.report()
-                .losses
-                .iter()
-                .any(|loss| loss.code.namespace() == "export"
-                    && loss.code.local_code() == "native.records-omitted")
-        );
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.namespace() == "export"
+                && loss.code.local_code() == "native.records-omitted"));
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
         let output = SldprtCodec

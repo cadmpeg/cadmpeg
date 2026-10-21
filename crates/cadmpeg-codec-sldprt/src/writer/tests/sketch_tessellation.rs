@@ -774,8 +774,7 @@ fn synthesis_writes_supported_lanes_from_neutral_content() {
             EncodeInput::new(&unresolved, Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .err()
-        .expect("an explicitly unresolved document has no active configuration");
+        .expect_err("an explicitly unresolved document has no active configuration");
     assert!(
         error
             .to_string()

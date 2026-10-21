@@ -77,7 +77,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 12.7
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 12.7
     ));
 }
 
@@ -767,7 +767,7 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
             },
             op: BooleanOp::NewBody,
             ..
-        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 6.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 6.0
     ));
 }
 

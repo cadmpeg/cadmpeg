@@ -357,7 +357,7 @@ fn decode_resolves_feature_topology_selections() {
     assert!(
         matches!(regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-            if matches!(&groups[0].edges, EdgeSelection::Resolved { edges, .. } if edges == &[emitted_edge.clone()]))
+            if matches!(&groups[0].edges, EdgeSelection::Resolved { edges, .. } if edges == std::slice::from_ref(emitted_edge)))
     );
 }
 
@@ -425,7 +425,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
                 radius: actual_radius,
             },
             ..
-        }] if decoded.ir().dimension_value(&actual_radius).unwrap().get() == 2.0)
+        }] if decoded.ir().dimension_value(actual_radius).unwrap().get() == 2.0)
     ));
     // D26: this fillet has no definition references. Its original authored
     // ordering text remains a native fact, not an extra canonical operand edge.
@@ -448,7 +448,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
                 distance: actual_distance,
             },
             ..
-        }] if decoded.ir().dimension_value(&actual_distance).unwrap().get() == 3.0)
+        }] if decoded.ir().dimension_value(actual_distance).unwrap().get() == 3.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -457,7 +457,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
-            }, Some(actual_diameter),) if decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 4.0)));
+            }, Some(actual_diameter),) if decoded.ir().dimension_value(actual_diameter).unwrap().get() == 4.0)));
 
     {
         let mut ir = decoded.ir_mut();
@@ -781,7 +781,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
             op: BooleanOp::Cut,
         }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle },
-                }) if (decoded.ir().dimension_value(&angle).unwrap().get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
+                }) if (decoded.ir().dimension_value(angle).unwrap().get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
 }
 
