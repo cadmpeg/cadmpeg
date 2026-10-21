@@ -525,7 +525,7 @@ pub(crate) fn sync_feature_scalars(
         for (index, &(start, feature)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
             let mut owned = None;
-            for (name, expression) in &feature.parameters {
+            for name in feature.parameters.keys() {
                 let candidates = owned
                     .get_or_insert_with(|| owners.owned(&feature.id, start, end))
                     .iter()
@@ -534,11 +534,7 @@ pub(crate) fn sync_feature_scalars(
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })
                     .collect::<Vec<_>>();
-                let parsed = crate::history::parameters::parse_native_parameter_literal(
-                    feature,
-                    name.as_str(),
-                    expression,
-                );
+                let parsed = crate::history::parameters::source_parameter_value(feature, name);
                 let value = match &parsed {
                     Some(ParameterValue::Length(value)) => value.get() / 1000.0,
                     Some(ParameterValue::Angle(value)) => value.get(),
