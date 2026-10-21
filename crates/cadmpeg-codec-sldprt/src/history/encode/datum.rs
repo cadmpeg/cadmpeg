@@ -37,7 +37,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             NeutralFeatureEncoding {
                 kind: record.kind.clone(),
                 parameters: self.base_parameters(),
-                properties: feature.source_properties.clone(),
+                properties: self.base_properties(),
             }
         })
     }
@@ -66,7 +66,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             require_same_family(existing, &feature.id, &["ReferencePlane"])?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
                 format_point3_mm(frame.origin()),
@@ -103,7 +103,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             match reference {
                 Some(DatumPlaneReference::Feature { feature: reference }) => {
                     let source = parent_sources.get(reference).ok_or_else(|| {
@@ -181,7 +181,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             };
             require_same_family(existing, &feature.id, &["ReferenceAxis"])?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
                 format_point3_mm(origin),
@@ -212,7 +212,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             };
             require_same_family(existing, &feature.id, &["ReferencePoint"])?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Position"),
                 format_point3_mm(position),
@@ -238,7 +238,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 &feature.id,
                 &["CoordinateSystem", "ReferenceCoordinateSystem"],
             )?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
                 format_point3_mm(frame.origin()),

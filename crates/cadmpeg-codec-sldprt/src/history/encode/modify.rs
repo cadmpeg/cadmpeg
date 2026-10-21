@@ -123,7 +123,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 write_native_selection(
                     &mut properties,
@@ -314,7 +314,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 write_native_selection(
                     &mut properties,
@@ -359,7 +359,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(target) = body_selection_value(target) {
                 properties.insert(cadmpeg_core::nonblank_literal!("Target"), target);
             }
@@ -400,7 +400,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Targets"), targets);
             properties.insert(cadmpeg_core::nonblank_literal!("Tools"), tools);
             if let Some(reverse) = reverse {
@@ -433,7 +433,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 if !crate::resolved_features::component_paths::is_compact_body_selection_value(
                     &selection,
@@ -499,7 +499,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             properties.insert(cadmpeg_core::nonblank_literal!("Heal"), heal.to_string());
             NeutralFeatureEncoding {
@@ -529,7 +529,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), targets);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("ReplacementFaces"),
@@ -559,7 +559,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             };
             let mut parameters = self.base_parameters();
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             parameters.remove("Distance");
             parameters.remove("Angle");
@@ -644,7 +644,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             };
             let mut parameters = self.base_parameters();
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), bodies);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Translation"),
@@ -718,7 +718,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     format_length_mm(self.dimension(height)?.into()),
                 );
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(faces) = faces {
                 properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             }
@@ -764,7 +764,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let mut parameters = self.base_parameters();
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(axis) = axis {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Axis"),
@@ -881,7 +881,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), selection);
             }

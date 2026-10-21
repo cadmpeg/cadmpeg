@@ -100,7 +100,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let mut parameters = self.base_parameters();
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(extent) = construction.extent() {
                 parameters.remove("Angle");
                 parameters.remove("Angle2");
@@ -319,7 +319,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("Scale");
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(profile) = profile_source {
                 properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
             }
@@ -450,7 +450,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     ))
                 })?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if !profile_sources.is_empty() || existing.is_none() {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Profiles"),

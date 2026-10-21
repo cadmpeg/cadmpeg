@@ -62,7 +62,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 RibDraft::Unresolved => {}
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(profile) = &construction.profile {
                 let profile_source =
                     planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
@@ -196,7 +196,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let mut parameters = self.base_parameters();
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if !seed_sources.is_empty() {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Seeds"),
