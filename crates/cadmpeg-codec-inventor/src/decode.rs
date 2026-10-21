@@ -1186,7 +1186,7 @@ fn decode_container<'a>(
     let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries.into_iter().collect();
     if !ctx.container_only()
         && !geometry_transferred
-        && carrier_read_no_geometry
+        && (carrier_read_no_geometry || !matches!(document_kind, DocumentKind::Assembly))
         && ir
             .model
             .populated_arena(cadmpeg_ir::ArenaClass::Model)
