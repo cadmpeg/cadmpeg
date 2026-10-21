@@ -167,8 +167,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             LinearTermination, PlanarProfileRef, ProfileRef,
         };
 
+        let next_parameter = std::cell::Cell::new(10_000_u32);
+        let native_parameters = std::cell::RefCell::new(Vec::new());
         let parameter = |source_kind: &str, unit: &str, value| {
-            parse_design_parameter_record(&parameter_record(
+            let mut parameter = parse_design_parameter_record(&parameter_record(
                 Some(44),
                 "value",
                 source_kind,
@@ -176,7 +178,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 "d1",
                 value,
             ))
-            .expect("generated feature parameter is canonical")
+            .expect("generated feature parameter is canonical");
+            parameter.record_index = next_parameter.get();
+            next_parameter.set(parameter.record_index + 1);
+            parameter.id = format!(
+                "f3d:Design/BulkStream.dat:parameter#{}",
+                parameter.record_index
+            );
+            native_parameters.borrow_mut().push(parameter.clone());
+            parameter
         };
         let mut scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
@@ -323,7 +333,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 op: BooleanOp::NewBody,
                 solid: Some(true),
                 ..
-            }) if (profile == &neutral_sketch_id(&placement)) && actual_length.literal().unwrap().get() == 5.5 && actual_draft.literal().unwrap().get() == 0.2
+            }) if (profile == &neutral_sketch_id(&placement)) && super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         let reference_aware_prologue = scope.extrude_prologue();
         let Some(DesignExtrudePrologue::ReferenceAware {
@@ -401,7 +411,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.literal().unwrap().get() == 5.5 && actual_draft.literal().unwrap().get() == 0.2
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedThroughAll);
         set_extrude_direction_reversed(&mut scope, true);
@@ -429,7 +439,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_draft.literal().unwrap().get() == 0.2
+            }) if super::dimension_value(actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         set_extrude_direction_reversed(&mut scope, false);
         set_extrude_extent(&mut scope, DesignExtrudeExtent::SymmetricThroughAll);
@@ -457,7 +467,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_draft.literal().unwrap().get() == 0.2
+            }) if super::dimension_value(actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
         let selection = DesignExtrudeSelectionGroup::try_from(
@@ -1271,7 +1281,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.literal().unwrap().get() == 5.5
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5
         ));
         set_extrude_direction_reversed(&mut scope, true);
         let reversed_hybrid = crate::test_support::with_decode_context(|decode_ctx| {
@@ -1300,7 +1310,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.literal().unwrap().get() == 5.5
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5
         ));
         set_extrude_direction_reversed(&mut scope, false);
         {
@@ -1353,7 +1363,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 op: BooleanOp::Join,
                 ..
-            }) if (native == &profile_group.id) && actual_length.literal().unwrap().get() == 2.0
+            }) if (native == &profile_group.id) && super::dimension_value(actual_length, &native_parameters.borrow()).get() == 2.0
         ));
 
         let mut face_group = body_group.clone();
@@ -1424,7 +1434,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     offset: actual_offset
                 },
                 ..
-            }) if actual_offset.literal().unwrap().get() == 1.0
+            }) if super::dimension_value(actual_offset, &native_parameters.borrow()).get() == 1.0
         ));
         set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
 
@@ -1476,7 +1486,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.literal().unwrap().get() == 5.5 && actual_length_2.literal().unwrap().get() == 0.5 && actual_draft.literal().unwrap().get() == -0.3
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_length_2, &native_parameters.borrow()).get() == 0.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == -0.3
         ));
         set_extrude_direction_reversed(&mut scope, true);
         assert!(
@@ -1522,7 +1532,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.literal().unwrap().get() == 6.0
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == 6.0
         ));
 
         set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
@@ -1562,7 +1572,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &face_group.id) && actual_offset.literal().unwrap().get() == 0.25
+            }) if (id == &face_group.id) && super::dimension_value(actual_offset, &native_parameters.borrow()).get() == 0.25
         ));
 
         let mut omitted_zero_offset_scope = scope.clone();
@@ -1672,7 +1682,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (first_id == &face_group.id && second_id == &second_face_group.id) && actual_offset.literal().unwrap().get() == 0.25 && actual_draft.literal().unwrap().get() == 0.2 && actual_offset_2.literal().unwrap().get() == 0.5 && actual_draft_2.literal().unwrap().get() == -0.3
+            }) if (first_id == &face_group.id && second_id == &second_face_group.id) && super::dimension_value(actual_offset, &native_parameters.borrow()).get() == 0.25 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == 0.2 && super::dimension_value(actual_offset_2, &native_parameters.borrow()).get() == 0.5 && super::dimension_value(actual_draft_2, &native_parameters.borrow()).get() == -0.3
         ));
 
         set_extrude_direction_reversed(&mut scope, true);
@@ -1743,7 +1753,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &face_group.id) && actual_length.literal().unwrap().get() == 5.5 && actual_offset.literal().unwrap().get() == 0.5 && actual_draft.literal().unwrap().get() == -0.3
+            }) if (id == &face_group.id) && super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_offset, &native_parameters.borrow()).get() == 0.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == -0.3
         ));
 
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
@@ -1822,7 +1832,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &start_group.id) && actual_length.literal().unwrap().get() == 5.5 && actual_length_2.literal().unwrap().get() == 0.5
+            }) if (id == &start_group.id) && super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_length_2, &native_parameters.borrow()).get() == 0.5
         ));
     });
 }
