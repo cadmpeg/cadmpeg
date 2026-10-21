@@ -87,7 +87,7 @@ fn translate_coordinates(
                         | "points"
                         | "vertices"
                         | "poles"
-                );
+                ) || (point && key == "rows");
                 translate_coordinates(child, offset, point)?;
             }
         }
