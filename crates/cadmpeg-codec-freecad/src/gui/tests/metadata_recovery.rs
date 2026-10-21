@@ -47,10 +47,19 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
             .arena_as::<GuiDocumentRecord>("gui_documents")
             .unwrap();
         assert_eq!(documents.len(), 1);
-        assert!(recovered
+        let unresolved = recovered
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "source.gui-metadata-unresolved"));
+            .filter(|loss| loss.code.local_code() == "source.gui-metadata-unresolved")
+            .count();
+        // An explicitly empty schema-1 provider table is a complete GUI fact.
+        if gui == b"<Document SchemaVersion=\"1\"><ViewProviderData Count=\"0\"/></Document>" {
+            assert_eq!(unresolved, 0);
+            assert!(documents[0].states.is_empty());
+            assert!(recovered.ir().model.view_presentations.is_empty());
+        } else {
+            assert_eq!(unresolved, 1, "{:?}", recovered.report().losses);
+        }
     }
 }

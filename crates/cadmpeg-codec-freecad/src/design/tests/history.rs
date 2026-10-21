@@ -1102,7 +1102,11 @@ fn retains_spreadsheet_cycles_in_canonical_tokens_and_native_records() {
     let cycles = report
         .findings
         .iter()
-        .filter(|finding| finding.message.contains("parameter dependency cycle"))
+        .filter(|finding| {
+            finding
+                .message
+                .contains("parameter expression dependency cycle")
+        })
         .collect::<Vec<_>>();
     assert_eq!(cycles.len(), 1, "{:?}", report.findings);
     assert_eq!(
@@ -1113,6 +1117,7 @@ fn retains_spreadsheet_cycles_in_canonical_tokens_and_native_records() {
     let related = cycles[0]
         .related
         .iter()
+        .chain(cycles[0].entity.iter())
         .map(String::as_str)
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
