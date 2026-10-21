@@ -1727,18 +1727,38 @@ mod relation_records_tests {
     use std::collections::BTreeMap;
 
     fn class(offset: u64, name: &str) -> FeatureInputClass {
+        class_with_sequence(
+            offset,
+            name,
+            u32::try_from(offset).expect("fixture source order fits u32"),
+        )
+    }
+
+    fn class_with_sequence(offset: u64, name: &str, sequence: u32) -> FeatureInputClass {
         FeatureInputClass {
             feature_ref: None,
             id: format!("class-{offset}"),
             parent: "lane".into(),
             ordinal: 0,
-            sequence: u32::try_from(offset).expect("fixture source order fits u32"),
+            sequence,
             offset: Some(offset),
             name: name.into(),
         }
     }
 
     fn scalar(offset: u64, role: FeatureInputScalarRole) -> FeatureInputScalar {
+        scalar_with_sequence(
+            offset,
+            role,
+            u32::try_from(offset).expect("fixture source order fits u32"),
+        )
+    }
+
+    fn scalar_with_sequence(
+        offset: u64,
+        role: FeatureInputScalarRole,
+        sequence: u32,
+    ) -> FeatureInputScalar {
         let operands = [0_u16, 1]
             .into_iter()
             .enumerate()
@@ -1755,7 +1775,7 @@ mod relation_records_tests {
             parent: "lane".into(),
             feature_ref: Some("sketch".into()),
             ordinal: 0,
-            sequence: u32::try_from(offset).expect("fixture source order fits u32"),
+            sequence,
             offset: Some(offset),
             object_id: 1,
             name: "dimension".into(),
@@ -2168,8 +2188,8 @@ mod relation_records_tests {
     /// offset the span can name and declares one.
     #[test]
     fn a_class_whose_unknown_feature_span_is_unstatable_declares_no_relation() {
-        let unstatable = class(u64::MAX - 100, "sgPntPntHorDist");
-        let following = scalar(u64::MAX - 50, FeatureInputScalarRole::Driving);
+        let unstatable = class_with_sequence(u64::MAX - 100, "sgPntPntHorDist", 0);
+        let following = scalar_with_sequence(u64::MAX - 50, FeatureInputScalarRole::Driving, 1);
         assert!(relation_declaration_candidates(
             std::slice::from_ref(&unstatable),
             std::slice::from_ref(&following),
@@ -2403,8 +2423,9 @@ mod relation_records_tests {
         let history = sketch_history();
         let mut relation_scalar = scalar(10, FeatureInputScalarRole::Driving);
         relation_scalar.offset = Some(u64::MAX);
+        relation_scalar.sequence = 2;
         let mut lane = lane(
-            vec![class(u64::MAX - 1, "sgPntPntHorDist")],
+            vec![class_with_sequence(u64::MAX - 1, "sgPntPntHorDist", 1)],
             vec![relation_scalar],
         );
         lane.names = vec![FeatureInputName {

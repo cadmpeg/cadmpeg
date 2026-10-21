@@ -677,7 +677,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
             } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
             && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
             && source_value(angle.dimension(), &history.features).get() == std::f64::consts::FRAC_PI_2
-            && *count == cadmpeg_ir::Dimension::Literal(4))
+            && source_value(count, &history.features) == 4)
     ));
 }
 
