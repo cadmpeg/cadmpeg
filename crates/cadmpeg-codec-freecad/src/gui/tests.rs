@@ -1173,9 +1173,8 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
             .collect::<Vec<_>>(),
         ["VisualLayerList", "VisualLayer", "VisualLayer"]
     );
-    let logical = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let logical: Vec<crate::native::LogicalSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = logical
         .iter()
         .find(|span| span.classification.owner() == Some(property.id.as_str()))
@@ -1672,9 +1671,8 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
-    let logical = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let logical: Vec<crate::native::LogicalSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     assert!(properties.iter().all(|property| {
         logical.iter().any(|span| {
             span.classification.owner() == Some(property.id.as_str())
@@ -1769,11 +1767,13 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .find(|entry| entry.name() == "state.bin")
         .expect("state entry");
     assert_eq!(entry.referenced_by(), std::slice::from_ref(&property.id));
-    assert_eq!(entry.data(), payload);
+    assert_eq!(
+        crate::test_support::source_fidelity::bytes(result.source_fidelity(), entry.id()),
+        payload
+    );
 
-    let logical = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let logical: Vec<crate::native::LogicalSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = logical
         .iter()
         .find(|span| span.entry == entry.name())

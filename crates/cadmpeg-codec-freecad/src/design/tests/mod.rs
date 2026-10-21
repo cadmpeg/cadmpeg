@@ -156,8 +156,9 @@ fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: u
     for property in &unreadable {
         assert!(property.values().is_empty());
         assert!(
-            !property.xml.text().is_empty(),
-            "unreadable source XML remains diagnostic data"
+            !crate::test_support::source_fidelity::bytes(result.source_fidelity(), &property.id)
+                .is_empty(),
+            "unreadable source XML remains in fidelity"
         );
         let owner = format!("{}/{}", property.owner, property.name);
         assert!(

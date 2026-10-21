@@ -6,6 +6,8 @@ use cadmpeg_ir::{
     ids::UnknownId, ArenaClasses, RetainedBytes, RetainedSourceRecord, SourceFidelity,
 };
 
+pub(crate) mod validation;
+
 pub(crate) const SOURCE_IMAGE: &str = "fcstd:source:image#archive";
 
 pub(crate) fn retain(

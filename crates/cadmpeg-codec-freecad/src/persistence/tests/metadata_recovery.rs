@@ -84,8 +84,25 @@ fn malformed_unused_links_remain_explicitly_source_only() {
                 .note(String::new())
                 .code));
         let wire = serde_json::to_value(&graph.properties[0]).expect("serialize");
-        let property: crate::native::PropertyRecord =
+        let mut property: crate::native::PropertyRecord =
             serde_json::from_value(wire).expect("deserialize source-only property");
+        let decoded = cadmpeg_ir::Codec::decode(
+            &crate::FcstdCodec,
+            &mut std::io::Cursor::new(crate::test_support::test_archive::archive(&document)),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .expect("source-only property with its fidelity");
+        let source = decoded
+            .source_fidelity()
+            .retained_record(&property.id)
+            .expect("property source");
+        let xml =
+            crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &property.id);
+        property.xml = crate::native::RetainedXml::from_source(
+            std::str::from_utf8(xml).expect("original XML"),
+            source.offset(),
+        )
+        .expect("source XML span");
         assert_eq!(property, graph.properties[0]);
     }
 }
