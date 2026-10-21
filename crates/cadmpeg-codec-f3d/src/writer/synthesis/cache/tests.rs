@@ -18,7 +18,20 @@ fn decode(smbh: &[u8]) -> CadIr {
 
 #[test]
 fn generated_cache_is_reported_without_reducing_the_construction() {
-    let source = decode(&crate::test_support::smbh_surfaces_test::synthetic_cyl_spl_sur_smbh());
+    let decoded = crate::F3dCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
+                &crate::test_support::smbh_surfaces_test::synthetic_cyl_spl_sur_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the unchanged extrusion with its rejected source cache");
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
+            && loss.message.contains("fit tolerance Some(0.02)")
+    }));
+    let source = decoded.into_parts().0;
+    let expected_fit = source.tolerances.linear.get();
     let source_surface = source
         .model
         .surfaces
@@ -27,21 +40,27 @@ fn generated_cache_is_reported_without_reducing_the_construction() {
         .unwrap();
     assert!(source_surface.geometry.solved_cache().is_none());
     assert_eq!(
-        source.model.procedural_surfaces[0]
-            .cache_fit_tolerance()
-            .unwrap()
-            .get(),
-        0.02
+        source.model.procedural_surfaces[0].cache_fit_tolerance(),
+        None
     );
+    let input_construction = source.model.procedural_surfaces[0].clone();
     let before = cadmpeg_ir::validate_neutral(&source, vec![]).unwrap();
     assert!(before.is_ok(), "{before:#?}");
     let mut prepared = source.clone();
     let mut losses = vec![];
     prepare(&mut prepared, &mut losses).unwrap();
     assert_eq!(
-        prepared.model.procedural_surfaces,
-        source.model.procedural_surfaces
+        prepared.model.procedural_surfaces.len(),
+        source.model.procedural_surfaces.len()
     );
+    assert_eq!(
+        prepared.model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(expected_fit)
+    );
+    assert_eq!(source.model.procedural_surfaces[0], input_construction);
+    assert!(source_surface.geometry.solved_cache().is_none());
     assert_eq!(prepared.model.curves, source.model.curves);
     let surface = prepared
         .model
@@ -67,6 +86,17 @@ fn generated_cache_is_reported_without_reducing_the_construction() {
     );
     assert!(losses[0].message.contains(source_surface.id.as_str()));
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Info);
+    assert!(losses[0].message.contains(
+        "a new target fit contract is derived from the current document linear tolerance"
+    ));
+    assert!(losses[0]
+        .message
+        .contains(&format!("fit {:?} mm", Some(expected_fit))));
+    let mut retained_construction = prepared.model.procedural_surfaces[0].clone();
+    retained_construction
+        .clear_fitted_cache_contract()
+        .expect("remove only the new target cache contract for intrinsic comparison");
+    assert_eq!(retained_construction, input_construction);
     let after = cadmpeg_ir::validate_neutral(&prepared, vec![]).unwrap();
     assert!(after.is_ok(), "{after:#?}");
 
@@ -82,7 +112,7 @@ fn generated_cache_is_reported_without_reducing_the_construction() {
         written
             .coverage
             .disposition(cadmpeg_ir::schema::EntityKind::ProceduralSurface),
-        ArenaDisposition::Written
+        ArenaDisposition::Reported
     );
     assert_eq!(
         written
@@ -101,11 +131,24 @@ fn generated_cache_is_reported_without_reducing_the_construction() {
     assert!(validity.is_ok(), "{validity:#?}");
     assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
-        source.model.procedural_surfaces[0].cache_fit_tolerance()
+        round_trip.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(expected_fit)
     );
-    // The complete unchanged construction and its directrix still carry a
-    // Written claim; only the explicitly derived cache surface is Reported.
+    let mut current = round_trip.ir().model.procedural_surfaces[0].clone();
+    current
+        .clear_fitted_cache_contract()
+        .expect("remove only the derived output cache contract");
+    assert_eq!(
+        crate::test_support::smbh_revision_test::scrubbed_definition(current.definition()),
+        crate::test_support::smbh_revision_test::scrubbed_definition(
+            input_construction.definition()
+        )
+    );
+    assert_eq!(source.model.procedural_surfaces[0], input_construction);
+    // The cache and its new fit contract are Reported; unchanged directrix
+    // geometry and all other Written arenas retain full conservation.
     cadmpeg_test_support::contract::assert_written_arenas_agree(&written, &source, round_trip.ir());
 }
 
