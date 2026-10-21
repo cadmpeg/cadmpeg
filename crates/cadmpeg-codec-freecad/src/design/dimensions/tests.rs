@@ -53,3 +53,62 @@ fn magnitude_keeps_the_authored_source_formula_and_cache() {
     assert_eq!(dimension.value_from(&parameters).unwrap().get(), 2.0);
     assert!(!parameters[1].driving);
 }
+
+#[test]
+fn registered_angular_controls_keep_their_quantity_with_generic_float_carriers() {
+    use cadmpeg_ir::Codec;
+    let decoded = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(crate::test_support::test_archive::CORE_OPERATIONS),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .unwrap();
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Revolution"))
+        .unwrap();
+    let parameter = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "Angle"
+        })
+        .unwrap();
+    let ParameterValue::Angle(value) = parameter.value.as_ref().unwrap() else {
+        panic!("registered revolution angle must remain angular")
+    };
+    assert_eq!(value.get(), 225_f64.to_radians());
+    assert_eq!(
+        parameter
+            .expression
+            .literal_value_as(parameter.value.as_ref().unwrap()),
+        parameter.value
+    );
+    let dimension = Dimension::<cadmpeg_ir::scalar::PositiveAngle>::Parameter(parameter.id.clone());
+    assert_eq!(
+        decoded.ir().dimension_value(&dimension).unwrap().get(),
+        225_f64.to_radians()
+    );
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let source = properties
+        .iter()
+        .find(|property| property.id == parameter.native_ref.as_deref().unwrap())
+        .unwrap();
+    assert_eq!(source.type_name, "App::PropertyFloatConstraint");
+    assert_eq!(
+        source.values()[0].attributes["value"],
+        "225.0000000000000000"
+    );
+    crate::test_support::test_archive::assert_valid_document(decoded.ir());
+}
