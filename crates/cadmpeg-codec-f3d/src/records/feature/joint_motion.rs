@@ -23,6 +23,10 @@ pub(crate) struct DesignJointMotion {
     #[serde(skip)]
     pub(crate) motion_byte_offset: Option<u64>,
     /// Freedom codes in record order, each at the offset of its code.
+    #[serde(
+        serialize_with = "serialize_freedoms",
+        deserialize_with = "deserialize_freedoms"
+    )]
     pub(crate) freedoms: ReferenceRun<u32>,
     /// The joint record's limit lanes, when its self-reference is present.
     #[serde(
@@ -85,4 +89,17 @@ impl DesignJointMotion {
             }
         }
     }
+}
+
+fn serialize_freedoms<S: serde::Serializer>(
+    freedoms: &ReferenceRun<u32>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(freedoms.values())
+}
+
+fn deserialize_freedoms<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ReferenceRun<u32>, D::Error> {
+    Vec::<u32>::deserialize(deserializer).map(ReferenceRun::unlocated)
 }
