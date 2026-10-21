@@ -344,6 +344,10 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     );
 
     let duplicate = f3d_native(&source_less).creation_timestamps[0].clone();
+    assert_eq!(
+        duplicate.target,
+        AttributeTarget::Body(source_less.model.bodies[0].id.clone())
+    );
     f3d_native_mut(&mut source_less)
         .creation_timestamps
         .push(duplicate.clone());
@@ -355,7 +359,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             .creation_timestamps
             .iter()
             .filter(|timestamp| {
-                timestamp.target == duplicate.target
+                timestamp.target == AttributeTarget::Body(canonical.ir().model.bodies[0].id.clone())
                     && timestamp.unix_microseconds == duplicate.unix_microseconds
             })
             .count(),
