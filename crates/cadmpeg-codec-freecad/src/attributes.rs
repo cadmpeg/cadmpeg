@@ -27,6 +27,23 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
     {
         return true;
     }
+    // Cells belong to the spreadsheet even when the sheet is empty and has
+    // no parameter whose native_ref would otherwise consume the property.
+    if property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet" {
+        if ir
+            .model
+            .spreadsheets
+            .iter()
+            .any(|sheet| sheet.native_ref.as_deref() == Some(property.owner.as_str()))
+            || (!ir.scope.design
+                && objects.iter().any(|object| {
+                    object.id().as_str() == property.owner
+                        && object.type_name == "Spreadsheet::Sheet"
+                }))
+        {
+            return true;
+        }
+    }
     if ir.model.drawings.iter().any(|record| {
         record.object == property.owner
             && (matches!(
@@ -77,7 +94,10 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
                     object.type_name.as_str(),
                     "PartDesign::Feature" | "PartDesign::FeatureBase"
                 );
+                let scalar_operand = !matches!(property.name.as_str(), "Depth" | "Length2")
+                    || crate::persistence::scalar_value_tag(&property.type_name).is_some();
                 if crate::property_policy::has_neutral_form(&property.name)
+                    && scalar_operand
                     && (!native_only
                         || crate::persistence::scalar_value_tag(&property.type_name).is_some())
                 {
