@@ -1289,7 +1289,11 @@ struct DesignAssemblyOperandPathWire {
     /// Indexed-record class carrying this path.
     class_tag: String,
     /// Type GUID that admitted the path record, when its type admitted it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_type_guid"
+    )]
     type_guid: Option<DesignRelaxedGuidText>,
     /// Byte offset of the indexed header.
     byte_offset: u64,
@@ -1544,6 +1548,11 @@ pub(crate) struct DesignAssemblyOperandFrame {
 mod tests;
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_path_type_guid,
+    DesignRelaxedGuidText,
+    "type_guid"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_operand_frames,
     [DesignAssemblyOperandFrame; 2],

@@ -12,9 +12,13 @@ use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
+use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+
+/// Type GUID of the operand-path locator of the 945-byte `Assemble` scope.
+pub(super) const WIDE_PATH_LOCATOR_TYPE_GUID: &str = "2E3AC990-483D-4A55-8662-C064B976A957";
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -118,56 +122,114 @@ fn exact_assembly_operand_path_envelope(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         );
-        let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
-            if variable_reference {
-                if locator_class_tag != "390"
-                    || bytes
-                        .get(
-                            locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
-                                ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
-                        )?
-                        .iter()
-                        .any(|byte| *byte != 0)
-                    || rigid_transform_at(
-                        bytes,
-                        locator_at.checked_add(variable_path_locator::TRANSFORM)?,
-                    )
-                    .is_none()
-                {
-                    return None;
-                }
-                (
-                    variable_path_locator::LEN,
-                    variable_path_locator::SCOPE_BACKLINK,
-                    variable_path_locator::WRAPPER_REFERENCE,
-                    variable_path_locator::CONSTANT_TWO,
-                    variable_path_locator::ZERO_TAIL,
-                )
-            } else {
-                if bytes.get(
-                    locator_at.checked_add(path_locator::ZERO_RUN_10)?
-                        ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-                )? != [0; 10]
-                    || exact_same_segment_record_reference(
-                        bytes,
-                        locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+        // The wide scope's locator: its own record type and prologue.
+        let wide = matches!(
+            crate::design::assembly::AssemblyScopeGeneration::new(
+                scope.frame_length(),
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            )
+            .operand_frame_variant(),
+            Some(crate::design::assembly::AssemblyOperandFrameVariant::Wide)
+        ) && stream_types
+            .get(&u64::from(locator_record_index))
+            .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
+        let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) = if wide {
+            if bytes
+                .get(
+                    locator_at.checked_add(wide_locator::ZERO_RUN_28)?
+                        ..locator_at.checked_add(wide_locator::CONSTANT_THREE)?,
+                )?
+                .iter()
+                .any(|byte| *byte != 0)
+                || View::u32_le_at(bytes, locator_at.checked_add(wide_locator::CONSTANT_THREE)?)?
+                    != 3
+                || bytes
+                    .get(
+                        locator_at.checked_add(wide_locator::ZERO_RUN_13)?
+                            ..locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
                     )?
-                    .0 == 0
-                    || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
-                    || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
-                        .is_none()
-                    || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
-                {
-                    return None;
+                    .iter()
+                    .any(|byte| *byte != 0)
+                || exact_same_segment_record_reference(
+                    bytes,
+                    locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
+                )?
+                .0 == 0
+            {
+                return None;
+            }
+            // The transform is present only when the identity flag is 0.
+            let after_transform = match bytes
+                .get(locator_at.checked_add(wide_locator::IDENTITY_FLAG)?)?
+            {
+                1 => wide_locator::TRANSFORM,
+                0 => {
+                    rigid_transform_at(bytes, locator_at.checked_add(wide_locator::TRANSFORM)?)?;
+                    wide_locator::TRANSFORM + 16 * 8
                 }
-                (
-                    path_locator::LEN,
-                    path_locator::SCOPE_BACKLINK,
-                    path_locator::WRAPPER_REFERENCE,
-                    path_locator::CONSTANT_TWO,
-                    path_locator::ZERO_TAIL_2,
-                )
+                _ => return None,
             };
+            if bytes.get(locator_at.checked_add(after_transform)?) != Some(&0) {
+                return None;
+            }
+            let backlink = after_transform + 1;
+            (
+                backlink + 28,
+                backlink,
+                backlink + 11,
+                backlink + 22,
+                backlink + 26,
+            )
+        } else if variable_reference {
+            if locator_class_tag != "390"
+                || bytes
+                    .get(
+                        locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
+                            ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
+                    )?
+                    .iter()
+                    .any(|byte| *byte != 0)
+                || rigid_transform_at(
+                    bytes,
+                    locator_at.checked_add(variable_path_locator::TRANSFORM)?,
+                )
+                .is_none()
+            {
+                return None;
+            }
+            (
+                variable_path_locator::LEN,
+                variable_path_locator::SCOPE_BACKLINK,
+                variable_path_locator::WRAPPER_REFERENCE,
+                variable_path_locator::CONSTANT_TWO,
+                variable_path_locator::ZERO_TAIL,
+            )
+        } else {
+            if bytes.get(
+                locator_at.checked_add(path_locator::ZERO_RUN_10)?
+                    ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+            )? != [0; 10]
+                || exact_same_segment_record_reference(
+                    bytes,
+                    locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+                )?
+                .0 == 0
+                || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
+                || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
+                    .is_none()
+                || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
+            {
+                return None;
+            }
+            (
+                path_locator::LEN,
+                path_locator::SCOPE_BACKLINK,
+                path_locator::WRAPPER_REFERENCE,
+                path_locator::CONSTANT_TWO,
+                path_locator::ZERO_TAIL_2,
+            )
+        };
         let (scope_record_index, locator_scope_reference_offset) =
             exact_same_segment_record_reference(bytes, locator_at.checked_add(scope_backlink)?)?;
         let (wrapper_record_index, wrapper_reference_offset) =
