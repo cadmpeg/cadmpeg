@@ -247,20 +247,18 @@ fn construction_group_owns_actual_member_stride_and_derives_source_role_offset()
     }
     assert!(make([26, 37], 101).is_err());
     let before = group.clone();
-    assert!(
-        group
-            .try_set_members(vec![
-                Located {
-                    value: 10,
-                    offset: 26
-                },
-                Located {
-                    value: 11,
-                    offset: 36
-                }
-            ])
-            .is_err()
-    );
+    assert!(group
+        .try_set_members(vec![
+            Located {
+                value: 10,
+                offset: 26
+            },
+            Located {
+                value: 11,
+                offset: 36
+            }
+        ])
+        .is_err());
     assert_eq!(group, before);
     let wire = serde_json::to_value(&group).unwrap();
     let document: DesignConstructionOperandGroup = serde_json::from_value(wire.clone()).unwrap();
@@ -315,11 +313,9 @@ fn tracking_identities_preserve_optional_zero_values_without_source_locations() 
                 second.then_some(0)
             );
             assert!(document.wrapper_byte_offset().is_none());
-            assert!(
-                document
-                    .first_related_identity()
-                    .is_none_or(|value| value.offset.is_none())
-            );
+            assert!(document
+                .first_related_identity()
+                .is_none_or(|value| value.offset.is_none()));
             assert!(document.clone().into_draft().is_err());
             assert_eq!(serde_json::to_value(document).unwrap(), wire);
             for field in [
@@ -415,7 +411,40 @@ fn construction_path_borrowed_wire_matches_owned_wire_bytes() {
         r#"{"record_index":100,"class_tag":"304","entity_ref":174,"compact_variant":false,"scope_record_index":90,"nested_record_index":102,"following_record_index":101,"following_class_tag":"390"}"#,
         r#"{"record_index":100,"class_tag":"304","entity_ref":174,"transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":33,"scope_record_index":90,"nested_record_index":102,"following_record_index":101,"following_class_tag":"390"}"#,
     ] {
-        let path: super::DesignConstructionOperandPath = serde_json::from_str(wire).unwrap();
+        let mut content: serde_json::Value = serde_json::from_str(wire).unwrap();
+        let transform_offset = content.as_object_mut().unwrap().remove("transform_offset");
+        let path: super::DesignConstructionOperandPath = serde_json::from_value(content).unwrap();
+        let path = if let Some(transform_offset) = transform_offset {
+            let transform_offset = transform_offset.as_u64().unwrap();
+            // The stated matrix offset and the fixed 33-byte prefix locate
+            // this source frame. No default source origin is introduced.
+            let byte_offset = transform_offset.checked_sub(33).unwrap();
+            let content = super::DesignConstructionOperandPathWire::from(path);
+            let path = super::DesignConstructionOperandPath::try_new(
+                super::DesignConstructionOperandPathDraft {
+                    record_index: content.record_index,
+                    byte_offset,
+                    class_tag: content.class_tag.try_into().unwrap(),
+                    entity_ref: content.entity_ref,
+                    entity_ref_offset: byte_offset + 22,
+                    placement: super::DesignConstructionPathPlacement::Transform(
+                        content.transform.unwrap(),
+                    ),
+                    scope_record_index: content.scope_record_index,
+                    scope_record_index_offset: byte_offset + 163,
+                    nested_record_index: content.nested_record_index,
+                    nested_record_index_offset: byte_offset + 174,
+                    following_record_index: content.following_record_index,
+                    following_byte_offset: byte_offset + 190,
+                    following_class_tag: content.following_class_tag.try_into().unwrap(),
+                },
+            )
+            .unwrap();
+            assert_eq!(path.byte_offset().unwrap() + 33, transform_offset);
+            path
+        } else {
+            path
+        };
         let owned = super::DesignConstructionOperandPathWire::from(path.clone());
         assert_eq!(
             serde_json::to_vec(&path).unwrap(),
@@ -463,12 +492,10 @@ fn identity_wrapper_rows_keep_order_and_reject_unequal_semantic_columns() {
             if count == tags {
                 let identity = result.unwrap();
                 assert!(identity.following_byte_offset().is_none());
-                assert!(
-                    identity
-                        .wrappers()
-                        .iter()
-                        .all(|wrapper| wrapper.byte_offset.is_none())
-                );
+                assert!(identity
+                    .wrappers()
+                    .iter()
+                    .all(|wrapper| wrapper.byte_offset.is_none()));
                 assert_eq!(serde_json::to_value(identity).unwrap(), wire);
             } else {
                 assert!(result.is_err());
@@ -521,12 +548,10 @@ fn construction_auxiliary_rows_preserve_semantic_order_without_location_columns(
         }
         let frame: DesignConstructionOperandGroupFrame =
             serde_json::from_value(wire.clone()).unwrap();
-        assert!(
-            frame
-                .auxiliary_records
-                .iter()
-                .all(|row| row.offset.is_none())
-        );
+        assert!(frame
+            .auxiliary_records
+            .iter()
+            .all(|row| row.offset.is_none()));
         assert_eq!(
             frame
                 .auxiliary_records
@@ -549,12 +574,10 @@ fn construction_trailing_rows_keep_optional_reference_and_reject_multiple_target
         }
         let frame: DesignConstructionOperandGroupFrame =
             serde_json::from_value(wire.clone()).unwrap();
-        assert!(
-            frame
-                .trailing_records()
-                .iter()
-                .all(|row| row.offset.is_none())
-        );
+        assert!(frame
+            .trailing_records()
+            .iter()
+            .all(|row| row.offset.is_none()));
         assert_eq!(serde_json::to_value(frame).unwrap(), wire);
         wire["trailing_record_offsets"] = json!([1044]);
         assert!(serde_json::from_value::<DesignConstructionOperandGroupFrame>(wire).is_err());
@@ -611,12 +634,10 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
                     tagged
                 );
             } else {
-                assert!(
-                    parsed
-                        .expect_err("unpaired extrude role")
-                        .to_string()
-                        .contains("extrude_face_role")
-                );
+                assert!(parsed
+                    .expect_err("unpaired extrude role")
+                    .to_string()
+                    .contains("extrude_face_role"));
             }
         }
     }
