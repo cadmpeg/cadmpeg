@@ -1705,7 +1705,7 @@ fn untyped_feature_framing_is_not_written_as_content() {
             .unwrap();
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::Patched { .. }
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
         assert!(plan
             .report()
@@ -1713,6 +1713,9 @@ fn untyped_feature_framing_is_not_written_as_content() {
             .iter()
             .any(|loss| loss.code.namespace() == "export"
                 && loss.code.local_code() == "native.records-omitted"));
+        assert!(matches!(plan.report().synthesis_cause(),
+            Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
+                if reason.contains("reconstructible typed payload")));
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
         let output = SldprtCodec

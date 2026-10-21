@@ -16,18 +16,18 @@ use super::endpoints::{
 };
 use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates;
-use super::scalars::{operand_kind, FeatureObjectNames, FeatureObjectStarts};
+use super::scalars::{FeatureObjectNames, FeatureObjectStarts, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
-    is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
-    SPATIAL_VERTEX_PREFIX,
+    LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SPATIAL_VERTEX_PREFIX,
+    is_class_token,
 };
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{View, u64_from_index};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
@@ -1246,7 +1246,46 @@ pub(crate) fn reference_cells(
     Ok(cells)
 }
 
+fn generated_coordinate_identity_boundary(payload: &[u8], offset: usize) -> bool {
+    let Some(end) = offset.checked_add(142) else {
+        return false;
+    };
+    if payload.get(offset..offset.saturating_add(SKETCH_MARKER.len())) != Some(SKETCH_MARKER)
+        || payload.get(offset.saturating_add(23)..offset.saturating_add(27))
+            != Some(&[0x05, 0, 1, 0])
+        || payload.get(offset.saturating_add(64)..offset.saturating_add(66)) != Some(&[0x1e, 0])
+        || payload.get(offset.saturating_add(82)..offset.saturating_add(138)) != Some(&[0; 56])
+        || marker_coordinates(payload, offset).is_none()
+    {
+        return false;
+    }
+    if end == payload.len() {
+        return true;
+    }
+    if payload.get(end..end.saturating_add(super::CLASS_MARKER.len())) != Some(super::CLASS_MARKER)
+    {
+        return false;
+    }
+    let Some(length) = View::u16_le_at(payload, end.saturating_add(4)).map(usize::from) else {
+        return false;
+    };
+    let Some(name) = end.checked_add(6).and_then(|start| {
+        start
+            .checked_add(length)
+            .and_then(|finish| payload.get(start..finish))
+    }) else {
+        return false;
+    };
+    !name.is_empty() && std::str::from_utf8(name).is_ok()
+}
+
 pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<usize> {
+    // The authored 142-byte coordinate record is also complete when the
+    // next statement is a class declaration, or the lane ends. Its identity
+    // must not depend on another sketch marker following it.
+    if generated_coordinate_identity_boundary(payload, offset) {
+        return offset.checked_add(138);
+    }
     let relative = if compact_legacy_code_two_profile_point_coordinates(payload, offset).is_some() {
         128
     } else if legacy_wide_profile_roster_curve(payload, offset)
