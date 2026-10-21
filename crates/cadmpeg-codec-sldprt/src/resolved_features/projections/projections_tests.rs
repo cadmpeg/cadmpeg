@@ -411,12 +411,25 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         sketch_entities: Vec::new(),
     };
 
+    let lanes = [lane("lane-a", 40), lane("lane-b", 60)];
+    assert_eq!(
+        lanes
+            .each_ref()
+            .map(|lane| lane.surface_selections[0].offset),
+        [Some(40), Some(60)]
+    );
+    assert_eq!(
+        lanes
+            .each_ref()
+            .map(|lane| lane.surface_selections[0].ordinal),
+        [0, 0]
+    );
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
             ctx,
             &mut features,
             std::slice::from_ref(&history),
-            &[lane("lane-a", 40), lane("lane-b", 60)],
+            &lanes,
             &[],
             &[],
             &[],
@@ -439,7 +452,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
                     "7".into(),
                 )
                 .unwrap()]
-                && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
+                && native == "sldprt:feature-input:cylinder-reference:lane-a:0,lane-b:0"
     ));
     assert_eq!(
         features[1].dependencies.as_slice(),
