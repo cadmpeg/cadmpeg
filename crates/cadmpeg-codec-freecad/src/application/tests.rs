@@ -424,3 +424,44 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         assert_eq!(property.payloads[0].entry, entries[0].id());
     }
 }
+
+#[test]
+fn external_component_census_matches_its_typed_native_records() {
+    let input = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/external_component.FCStd"
+    ));
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let mut expected = super::wire_records(&objects, &properties, &entries);
+    expected.sort_by(|left, right| left.id.cmp(&right.id));
+    let actual = namespace.arenas().get("applications").unwrap();
+    let expected_json = serde_json::to_value(&expected).unwrap();
+    let actual_json = serde_json::to_value(actual).unwrap();
+    assert_eq!(
+        actual_json, expected_json,
+        "application census must use only its current typed sources"
+    );
+    assert!(
+        super::matches_native(
+            &cadmpeg_test_support::service_decode_context(),
+            namespace,
+            &objects,
+            &properties,
+            &entries
+        )
+        .unwrap(),
+        "equal typed census values must match their native serialization: {expected_json:#}"
+    );
+}
