@@ -2563,7 +2563,9 @@ mod tests {
             byte_offset: 0,
             coordinate_offset: 1,
             record_form: point.record_form().clone().into_raw(),
-            companion: point.companion().clone(),
+            companion: super::SketchPointCompanion {
+                incident_curves: point.companion().incident_curves.to_vec(),
+            },
             paired_reference: point.paired_reference,
             coordinates: point.coordinates(),
         })
