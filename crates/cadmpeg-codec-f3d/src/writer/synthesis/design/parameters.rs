@@ -125,7 +125,7 @@ pub(super) fn regenerate(
                 class_tag: owner.class_tag().clone(),
                 record_index: owner.record_index(),
                 scope_record_index: owner.scope_record_index(),
-                local_ordinal: owner.local_ordinal(),
+                local_ordinal: owner.local_ordinal().map(|_| parameter.ordinal),
                 evaluated_value: scalar,
                 parameter_record_index: owner.parameter_record_index(),
                 owned_ordinal: owner.owned_ordinal(),
