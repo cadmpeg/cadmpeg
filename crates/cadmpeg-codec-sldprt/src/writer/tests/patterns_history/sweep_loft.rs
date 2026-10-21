@@ -612,6 +612,7 @@ fn semantic_writer_round_trips_typed_rib() {
     }
 
     let owner = decoded.ir().model.features[1].id.clone();
+    let input_parameters = decoded.ir().model.parameters.clone();
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -642,49 +643,137 @@ fn semantic_writer_round_trips_typed_rib() {
     // D1/S-entity: this native form cannot carry an independent Draft while
     // also representing RibDraft::None. Retain the parameter and solved model,
     // and report the lost construction instead of reactivating its old angle.
+    assert_eq!(decoded.ir().model.parameters, input_parameters);
+    // Rebuilding the container remints history positions (340 -> 375 in this
+    // fixture). Prove one global role mapping instead of equating old byte IDs.
+    let mut owners = std::collections::BTreeMap::new();
+    let mut mapped_owners = std::collections::BTreeSet::new();
+    assert_eq!(
+        regenerated.ir().model.features.len(),
+        decoded.ir().model.features.len()
+    );
+    for expected in &decoded.ir().model.features {
+        let candidates = regenerated
+            .ir()
+            .model
+            .features
+            .iter()
+            .filter(|actual| actual.ordinal == expected.ordinal && actual.name == expected.name)
+            .collect::<Vec<_>>();
+        let [actual] = candidates.as_slice() else {
+            panic!("unique feature role: {expected:#?}");
+        };
+        assert!(mapped_owners.insert(actual.id.clone()));
+        owners.insert(expected.id.clone(), actual.id.clone());
+    }
+    assert_eq!(mapped_owners.len(), regenerated.ir().model.features.len());
+    let mut parameters = std::collections::BTreeMap::new();
+    let mut mapped_parameters = std::collections::BTreeSet::new();
+    assert_eq!(
+        regenerated.ir().model.parameters.len(),
+        input_parameters.len()
+    );
+    for expected in &input_parameters {
+        let written_owner = &owners[expected.owner.as_ref().unwrap()];
+        let candidates = regenerated
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .filter(|actual| {
+                actual.owner.as_ref() == Some(written_owner)
+                    && actual.ordinal == expected.ordinal
+                    && actual.name == expected.name
+            })
+            .collect::<Vec<_>>();
+        let [actual] = candidates.as_slice() else {
+            panic!("unique owned parameter role: {expected:#?}");
+        };
+        assert!(mapped_parameters.insert(actual.id.clone()));
+        parameters.insert(expected.id.clone(), actual.id.clone());
+        assert_eq!(actual.value, expected.value);
+        assert_eq!(actual.driving, expected.driving);
+        assert_eq!(actual.display, expected.display);
+        let cache = expected.value.as_ref().unwrap();
+        assert_eq!(
+            expected.expression.literal_value_as(cache).as_ref(),
+            Some(cache)
+        );
+        assert_eq!(
+            actual.expression.literal_value_as(cache).as_ref(),
+            Some(cache)
+        );
+    }
+    assert_eq!(
+        mapped_parameters.len(),
+        regenerated.ir().model.parameters.len()
+    );
     let draft = regenerated
         .ir()
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.id == draft_before.id)
-        .unwrap_or_else(|| panic!(
-            "source Draft={draft_before:#?}; source features={:#?}; written parameters={:#?}; written features={:#?}; written native features={:#?}",
-            decoded.ir().model.features,
-            regenerated.ir().model.parameters,
-            regenerated.ir().model.features,
-            sldprt_native(regenerated.ir()).feature_histories,
-        ));
+        .find(|parameter| parameter.id == parameters[&draft_before.id])
+        .unwrap();
     assert_eq!(draft.name, draft_before.name);
-    assert_eq!(draft.owner, draft_before.owner);
+    assert_eq!(
+        draft.owner.as_ref(),
+        Some(&owners[draft_before.owner.as_ref().unwrap()])
+    );
     assert_eq!(draft.expression, draft_before.expression);
     assert_eq!(draft.value, draft_before.value);
     assert!(matches!(
-        regenerated.ir().model.features[1].definition().operation(),
+        regenerated
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id == owners[&owner])
+            .unwrap()
+            .definition()
+            .operation(),
         FeatureOperation::StoredGeometry {}
     ));
-    let expected_model = serde_json::to_value(&decoded.ir().model).unwrap();
-    let actual_model = serde_json::to_value(&regenerated.ir().model).unwrap();
-    for arena in [
-        "bodies",
-        "regions",
-        "shells",
-        "faces",
-        "loops",
-        "coedges",
-        "edges",
-        "vertices",
-        "points",
-        "surfaces",
-        "curves",
-        "pcurves",
-        "tessellations",
-    ] {
-        assert_eq!(
-            actual_model[arena], expected_model[arena],
-            "held solved arena {arena}"
-        );
-    }
+    let synthesized = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(matches!(
+        synthesized.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let synthesized_report = synthesized.report().clone();
+    let mut synthesized_bytes = Vec::new();
+    synthesized.write_to(&mut synthesized_bytes).unwrap();
+    let source_free = SldprtCodec
+        .decode(
+            &mut Cursor::new(synthesized_bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &synthesized_report,
+        regenerated.ir(),
+        source_free.ir(),
+    );
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &synthesized_report,
+        decoded.ir(),
+        regenerated.ir(),
+    );
+    let point_bits = |ir: &cadmpeg_ir::CadIr| {
+        let mut points = ir
+            .model
+            .points
+            .iter()
+            .map(|point| {
+                let point = point.position().get();
+                [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]
+            })
+            .collect::<Vec<_>>();
+        points.sort_unstable();
+        points
+    };
+    assert_eq!(point_bits(decoded.ir()), point_bits(regenerated.ir()));
 }
 
 #[test]
