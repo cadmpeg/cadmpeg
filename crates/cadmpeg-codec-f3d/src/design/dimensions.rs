@@ -611,10 +611,7 @@ fn project_all_dimension_constraints(
                     }
                     None => distance.into(),
                 };
-                return Some(Definition::Offset {
-                    pairs,
-                    distance: distance,
-                });
+                return Some(Definition::Offset { pairs, distance });
             }
             let copied = parameter_id.clone();
             if let Some(definition) = directional_point_dimension(

@@ -2281,7 +2281,7 @@ fn bind_extrude_target_face(
                 faces: vec![face],
                 native,
             },
-            offset: offset,
+            offset,
         };
     }
 }
