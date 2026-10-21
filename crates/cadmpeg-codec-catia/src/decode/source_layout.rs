@@ -72,6 +72,9 @@ fn extract(value: &mut Value, path: &str, fidelity: &mut SourceFidelity) -> Resu
         Value::Object(object) => {
             if let Some(Value::Object(scalar)) = object.get_mut("Binary64") {
                 if let Some(bits) = scalar.get("bits").and_then(Value::as_u64) {
+                    fidelity
+                        .metadata
+                        .insert(format!("{path}.Binary64.bits"), bits.to_string());
                     let number = f64::from_bits(bits);
                     scalar.remove("bits");
                     if let Some(value) = serde_json::Number::from_f64(number) {
