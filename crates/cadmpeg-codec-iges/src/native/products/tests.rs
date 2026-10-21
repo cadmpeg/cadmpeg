@@ -52,6 +52,9 @@ fn nested_subfigures_project_names_and_local_placements() {
         ]
     );
     for record in &ir.native.namespace("iges").unwrap().arenas()["product_occurrences"] {
-        assert!(record.field("world_transform").is_none());
+        let world = record
+            .field("world_transform")
+            .expect("retained native world placement");
+        assert_eq!(world.as_array().unwrap().len(), 3);
     }
 }
