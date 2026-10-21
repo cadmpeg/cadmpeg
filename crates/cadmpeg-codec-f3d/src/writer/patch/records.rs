@@ -59,7 +59,7 @@ pub(super) fn patch_material_assignments(
         if let Some(field) = &assignment.physical_token {
             patch_utf16_if_changed(
                 bytes,
-                source_position(field.offset, "material-assignment string offset")?,
+                source_position(field.offset, "material-assignment physical_token_offset")?,
                 &field.value,
                 "material-assignment physical token",
             )?;
@@ -831,34 +831,36 @@ mod tests {
         value.encode_utf16().flat_map(u16::to_le_bytes).collect()
     }
 
-    fn assignment_document(located: bool) -> serde_json::Value {
-        let mut document = serde_json::json!({
+    fn assignment(located: bool) -> DesignMaterialAssignment {
+        let document = serde_json::json!({
             "id": "material#0",
+            "body_binding_id": "f3d:test:design-body-binding#42",
             "asm_body_key": 42,
-            "asm_body_key_offset": 200,
-            "entity_suffix_offset": SUFFIX_AT,
             "entity_id": "0_985",
-            "entity_id_offset": ENTITY_ID_AT,
             "visual_guid": "11111111-2222-3333-4444-555555555555",
-            "visual_guid_offset": VISUAL_GUID_AT,
             "physical_token": "Prism-002"
         });
+        let mut assignment: DesignMaterialAssignment = serde_json::from_value(document).unwrap();
+        assignment.asm_body_key_offset = Some(200);
+        assignment.entity_suffix_offset = Some(u64::try_from(SUFFIX_AT).unwrap());
+        assignment.entity_id_offset = Some(u64::try_from(ENTITY_ID_AT).unwrap());
+        assignment.visual_guid_offset = Some(u64::try_from(VISUAL_GUID_AT).unwrap());
         if located {
-            document["physical_token_offset"] = PHYSICAL_TOKEN_AT.into();
+            assignment.physical_token.as_mut().unwrap().offset =
+                Some(u64::try_from(PHYSICAL_TOKEN_AT).unwrap());
         }
-        document
+        assignment
     }
 
     #[test]
     fn every_admitted_material_physical_token_is_patched_into_the_source_bytes() {
-        let error = serde_json::from_value::<DesignMaterialAssignment>(assignment_document(false))
-            .expect_err("a token the patch cannot write is not admitted")
+        let error = patch_material_assignments(&mut [0; 128], &[assignment(false)])
+            .expect_err("a token without a source position is not admitted to patching")
             .to_string();
         assert!(error.contains("physical_token"), "{error}");
         assert!(error.contains("physical_token_offset"), "{error}");
 
-        let assignment: DesignMaterialAssignment =
-            serde_json::from_value(assignment_document(true)).expect("located material token");
+        let assignment = assignment(true);
         let mut bytes = vec![0u8; 128];
         patch_material_assignments(&mut bytes, std::slice::from_ref(&assignment))
             .expect("patch material assignment");
