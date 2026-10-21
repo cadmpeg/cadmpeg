@@ -281,6 +281,31 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         histories[0].features[0].parameters["D1"],
         "<MOD-DIAM>7.1374"
     );
+    // A semantic native load has no source offsets. Two unavailable offsets
+    // are not evidence that this scalar has the value-only wire framing.
+    let mut semantic_lane = lane.clone();
+    for name in &mut semantic_lane.names {
+        name.offset = None;
+    }
+    semantic_lane.scalars[0].offset = None;
+    histories[0].features[0].dimension_properties.insert(
+        cadmpeg_core::nonblank_literal!("D1"),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("Value"),
+            "<MOD-DIAM>25".into(),
+        )]),
+    );
+    enrich_history_parameters(&mut histories, [&semantic_lane], true);
+    assert_eq!(
+        histories[0].features[0].dimension_properties["D1"]["Value"],
+        "<MOD-DIAM>7.1374"
+    );
+    assert_eq!(
+        crate::history::parameters::source_parameter_value(&histories[0].features[0], "D1"),
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(7.1374).unwrap()
+        ))
+    );
     histories[0].features[0]
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
@@ -364,7 +389,8 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             name.sequence = u32::try_from(name.offset.expect("fixture source position")).unwrap();
         }
         for scalar in &mut lane.scalars {
-            scalar.sequence = u32::try_from(scalar.offset.expect("fixture source position")).unwrap();
+            scalar.sequence =
+                u32::try_from(scalar.offset.expect("fixture source position")).unwrap();
         }
 
         let declared = DeclaredParameters::new(&lane);
