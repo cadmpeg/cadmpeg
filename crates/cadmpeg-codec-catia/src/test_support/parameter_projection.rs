@@ -15,6 +15,14 @@ pub(crate) fn expression_text(ir: &CadIr, parameter: &DesignParameter) -> String
     let native =
         crate::native::CatiaNative::load(ir.native.namespace("catia").expect("CATIA namespace"))
             .expect("typed CATIA namespace");
+    expression_text_with_native(ir, parameter, &native)
+}
+
+pub(crate) fn expression_text_with_native(
+    ir: &CadIr,
+    parameter: &DesignParameter,
+    native: &crate::native::CatiaNative,
+) -> String {
     let mut names = std::collections::BTreeMap::new();
     for entity in &native.entity_records {
         let dependencies = if let Some(formula) = entity.formula_relation().filter(|formula| {
