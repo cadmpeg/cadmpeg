@@ -876,6 +876,7 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
     ),
     (F3dLossCode::RecipePrefixUntyped, Representation::Design),
     (F3dLossCode::ParameterUnprojected, Representation::Typed),
+    (F3dLossCode::ParameterRecordUnparsed, Representation::Design),
     (
         F3dLossCode::ParameterOwnerUnrecognized,
         Representation::Design,
@@ -1216,6 +1217,7 @@ mod tests {
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
+                "act.record-untyped",
                 "assembly.local-occurrence-unplaced",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
@@ -1224,6 +1226,7 @@ mod tests {
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
                 "feature.recipe-search-budget-exceeded",
+                "dimension.recipe-prefix-untyped",
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
