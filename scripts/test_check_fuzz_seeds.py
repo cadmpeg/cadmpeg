@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -296,9 +299,46 @@ class GeneratorSequence(unittest.TestCase):
 
     def test_missing_generator_binary_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(seeds, "CRATE", Path(tmp)):
+            with patch.object(seeds, "generator_target_directory", return_value=Path(tmp)):
                 failure = seeds.run_generators(Path(tmp) / "seeds")
             self.assertEqual(failure, "generator binary not built: generate_seeds")
+
+    def test_generators_use_cargos_effective_target_directory_with_an_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            effective = root / "cargo-selected-target"
+            seed_root = root / "generated-seeds"
+            for name in seeds.GENERATORS:
+                write(effective / "debug" / name, b"generator binary")
+
+            def invoke(command, **kwargs):
+                if command[0] == "cargo":
+                    self.assertEqual(
+                        command,
+                        ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+                    )
+                    self.assertEqual(kwargs["cwd"], seeds.CRATE)
+                    return subprocess.CompletedProcess(
+                        command, 0, json.dumps({"target_directory": str(effective)}), ""
+                    )
+                self.assertEqual(
+                    kwargs["env"][seeds.SEED_ROOT_ENV], str(seed_root)
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with patch.dict(os.environ, {"CARGO_TARGET_DIR": str(root / "requested")}), \
+                    patch.object(seeds.subprocess, "run", side_effect=invoke) as run:
+                self.assertIsNone(seeds.run_generators(seed_root))
+            self.assertEqual(
+                [call.args[0] for call in run.call_args_list[1:]],
+                [[str(effective / "debug" / name)] for name in seeds.GENERATORS],
+            )
+
+    def test_failed_metadata_does_not_fall_back_to_a_stale_default_target(self) -> None:
+        failure = subprocess.CompletedProcess(["cargo"], 101, "", "metadata unavailable")
+        with patch.object(seeds.subprocess, "run", return_value=failure):
+            with self.assertRaisesRegex(OSError, "cargo metadata failed: metadata unavailable"):
+                seeds.generator_target_directory()
 
 
 if __name__ == "__main__":
