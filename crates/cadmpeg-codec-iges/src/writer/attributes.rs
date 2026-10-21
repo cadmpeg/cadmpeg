@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Regenerate properties and attribute tables from their current neutral values.
 
-use super::{Entity, EntityStatus, IgesLossCode, reference_marker};
+use super::{reference_marker, Entity, EntityStatus, IgesLossCode};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::native::NativeRecord;

@@ -4,9 +4,9 @@
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{
-    ANONYMOUS, EmbeddedGeometry, GeometrySink, HISTORY_CLASS, HistoryRecord, HistoryValue,
-    RecordType, Value, evaluation, evaluation_properties, extended_geometry_json, parse_value,
-    parse_value_with_warnings, poly_edge, project, structured_value_properties,
+    evaluation, evaluation_properties, extended_geometry_json, parse_value,
+    parse_value_with_warnings, poly_edge, project, structured_value_properties, EmbeddedGeometry,
+    GeometrySink, HistoryRecord, HistoryValue, RecordType, Value, ANONYMOUS, HISTORY_CLASS,
 };
 use crate::chunks::TCODE_CRC;
 use crate::chunks::{ArchiveVersion, BoundedReader};
@@ -335,18 +335,14 @@ fn full_history_document_retains_geometry_without_a_physical_binding() {
             }));
         } else {
             assert!(feature.source_properties.contains_key("value_7.0.geometry"));
-            assert!(
-                !feature
-                    .source_properties
-                    .contains_key("value_7.0.source_fidelity_id")
-            );
-            assert!(
-                !result
-                    .source_fidelity()
-                    .retained_records()
-                    .keys()
-                    .any(|id| id.as_str().starts_with("rhino:history:source#"))
-            );
+            assert!(!feature
+                .source_properties
+                .contains_key("value_7.0.source_fidelity_id"));
+            assert!(!result
+                .source_fidelity()
+                .retained_records()
+                .keys()
+                .any(|id| id.as_str().starts_with("rhino:history:source#")));
         }
     }
 }
@@ -394,11 +390,10 @@ fn unknown_history_record_type_is_retained_opaque() {
     );
     let scan = crate::container::scan_owned(bytes).expect("history table");
     assert!(scan.history.is_empty());
-    assert!(
-        scan.warnings
-            .messages()
-            .any(|message| message.contains("record type"))
-    );
+    assert!(scan
+        .warnings
+        .messages()
+        .any(|message| message.contains("record type")));
     let retained = scan
         .opaque_records
         .iter()
@@ -717,11 +712,10 @@ fn unknown_history_subd_orientation_is_malformed() {
     );
     let scan = crate::container::scan_owned(bytes).expect("history table");
     assert!(scan.history.is_empty());
-    assert!(
-        scan.warnings
-            .messages()
-            .any(|message| message.contains("orientation"))
-    );
+    assert!(scan
+        .warnings
+        .messages()
+        .any(|message| message.contains("orientation")));
     let retained = scan
         .opaque_records
         .iter()
@@ -1235,11 +1229,9 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("hatch JSON");
     assert_eq!(semantic["basepoint"], serde_json::json!([3.0, 4.0]));
     assert!(semantic.get("gradient").is_none());
-    assert!(
-        warnings
-            .messages()
-            .any(|message| message.contains("invalid gradient type"))
-    );
+    assert!(warnings
+        .messages()
+        .any(|message| message.contains("invalid gradient type")));
 }
 
 #[test]
@@ -1310,11 +1302,9 @@ fn embedded_history_mesh_keeps_geometry_and_checked_identity() {
     let json: serde_json::Value = serde_json::from_str(&text).expect("mesh JSON");
     assert_eq!(json["id"], "rhino:history:mesh#embedded");
     assert_eq!(json["kind"], "mesh");
-    assert!(
-        json["vertices"]
-            .as_array()
-            .is_some_and(|vertices| !vertices.is_empty())
-    );
+    assert!(json["vertices"]
+        .as_array()
+        .is_some_and(|vertices| !vertices.is_empty()));
 }
 
 #[test]

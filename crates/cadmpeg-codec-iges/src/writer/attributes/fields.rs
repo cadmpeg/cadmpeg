@@ -2,7 +2,7 @@
 //! Resolve current neutral attribute references or out-of-scope typed values.
 
 use super::{
-    AttributeTarget, AttributeValue, BTreeMap, NativeRecord, SourceAttribute, string_field,
+    string_field, AttributeTarget, AttributeValue, BTreeMap, NativeRecord, SourceAttribute,
 };
 use serde_json::Value;
 

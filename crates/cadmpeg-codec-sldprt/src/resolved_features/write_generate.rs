@@ -790,7 +790,7 @@ fn unique_generated_locus_marker(
     )))
 }
 
-pub(super) fn append_coordinate_marker(
+pub(crate) fn append_coordinate_marker(
     payload: &mut Vec<u8>,
     kind: SketchInputKind,
     coordinates_m: [f64; 2],

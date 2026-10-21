@@ -314,7 +314,9 @@ pub(super) fn write_semantic_at(
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
-        crate::resolved_features::native_lane_write::require_reconstructible_content(lane, histories)?;
+        crate::resolved_features::native_lane_write::require_reconstructible_content(
+            lane, histories,
+        )?;
         sections.push((
             section,
             resolved_feature_payload(lane, histories, &feature_input_renames)?,

@@ -2,8 +2,8 @@
 //! Text and leader objects regenerated from current semantic annotations.
 
 use super::{
-    CadIr, CodecError, LossNote, Map, RhinoLossCode, Value, anonymous, anonymous_with_children,
-    framed_object_record, integer, object_attributes_payload, utf16, wire_index,
+    anonymous, anonymous_with_children, framed_object_record, integer, object_attributes_payload,
+    utf16, wire_index, CadIr, CodecError, LossNote, Map, RhinoLossCode, Value,
 };
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 

@@ -3,17 +3,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::Pcurve,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
 use super::{
-    EPS_WRITE_DEGENERATE, admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface,
-    close_point, generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
+    admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, close_point,
+    generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
+    EPS_WRITE_DEGENERATE,
 };
 
 pub(super) struct WritableModel<'a> {

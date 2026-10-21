@@ -16,18 +16,18 @@ use super::endpoints::{
 };
 use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates;
-use super::scalars::{FeatureObjectNames, FeatureObjectStarts, operand_kind};
+use super::scalars::{operand_kind, FeatureObjectNames, FeatureObjectStarts};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
-    LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SPATIAL_VERTEX_PREFIX,
-    is_class_token,
+    is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
+    SPATIAL_VERTEX_PREFIX,
 };
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::{View, u64_from_index};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{

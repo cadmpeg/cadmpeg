@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
     target::{ResolvedTarget, ResolvedWrite},
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY;
 use cadmpeg_ir::{CadIr, SourceFidelity};

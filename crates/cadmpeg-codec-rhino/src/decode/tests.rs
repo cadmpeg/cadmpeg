@@ -2,12 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError, CommittedExtrusionBoundary,
-    DecodeContext, ReferenceFailure, append_record_links, brep_free_vertex_indices,
-    c2_curve_to_nurbs_join, coedge_sense, edge_param_range, edge_vertices, face_components,
-    face_sense, hatch_plane_transform, region_shell_groups, region_shell_groups_without_records,
-    scaled_tolerance, seal_for_test, set_exactness, stage_brep, stage_extrusion_caps,
-    transform_decoded_curve, with_expand, with_expand_bytes,
+    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
+    edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
+    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
+    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -15,13 +15,13 @@ use crate::loss::RhinoLossCode;
 use crate::objects::ObjectRecord;
 use crate::settings::MillimeterScale;
 use crate::test_support::test_dump::{
-    MESH_CLASS, POINT_CLASS, REV_SURFACE_CLASS, minimal_document, object_record,
-    object_record_with_payload, point_payload, scan_with_objects, set_test_units, table,
+    minimal_document, object_record, object_record_with_payload, point_payload, scan_with_objects,
+    set_test_units, table, MESH_CLASS, POINT_CLASS, REV_SURFACE_CLASS,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::ModelCheckpoint;
-use cadmpeg_ir::geometry::{Curve, SolvedSurfaceGeometry, Surface, pcurve::PcurveGeometry};
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, nurbs::NurbsCurve};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, Curve, SolvedSurfaceGeometry, Surface};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -169,11 +169,9 @@ fn point_cloud_commits_one_vertex() {
     };
     crate::decode::with_expand_bytes(scan.data, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        assert!(
-            context
-                .commit_geometry(0, cloud())
-                .expect("vertex admitted")
-        );
+        assert!(context
+            .commit_geometry(0, cloud())
+            .expect("vertex admitted"));
         assert_eq!(context.session.document().model.vertices.len(), 1);
     });
 }
@@ -996,21 +994,17 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
             None
         );
         extrusion.cap_normals[0] = cadmpeg_ir::units::UnitVector3::X_AXIS;
-        assert!(
-            !context
-                .commit_extrusion(0, extrusion)
-                .expect("candidate validation completes")
-        );
+        assert!(!context
+            .commit_extrusion(0, extrusion)
+            .expect("candidate validation completes"));
         assert!(context.report.phase_warnings.iter().any(|warning| {
             warning.contains("extrusion cap staging: PlaneSurface.normal/u_axis")
         }));
-        assert!(
-            context
-                .report
-                .phase_warnings
-                .iter()
-                .all(|warning| { !warning.contains("IR validation") })
-        );
+        assert!(context
+            .report
+            .phase_warnings
+            .iter()
+            .all(|warning| { !warning.contains("IR validation") }));
         assert!(context.session.document().model.surfaces.is_empty());
     });
 }
@@ -1065,14 +1059,12 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                 });
                 candidate.native.namespace_mut("rhino").arenas_mut().insert(
                     "history_records".into(),
-                    vec![
-                        NativeRecord::new(
-                            cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
-                                .expect("valid identity"),
-                            serde_json::Map::new(),
-                        )
-                        .unwrap(),
-                    ],
+                    vec![NativeRecord::new(
+                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
+                            .expect("valid identity"),
+                        serde_json::Map::new(),
+                    )
+                    .unwrap()],
                 );
                 {
                     set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
@@ -1109,14 +1101,12 @@ fn successful_candidate_leaves_final_unknown_attachment_as_its_single_owner() {
         context
             .validate_candidate(|_, _| ())
             .expect("empty candidate admitted");
-        assert!(
-            context
-                .session
-                .document()
-                .native_unknowns("rhino")
-                .unwrap()
-                .is_empty()
-        );
+        assert!(context
+            .session
+            .document()
+            .native_unknowns("rhino")
+            .unwrap()
+            .is_empty());
         let decoded = context.commit().expect("one final unknown attachment");
         assert_eq!(decoded.ir.native_unknowns("rhino").unwrap().len(), 1);
         assert_eq!(decoded.source_fidelity.retained_records().len(), 1);
@@ -1200,17 +1190,15 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                 }
             })
             .collect::<Vec<_>>();
-        assert!(
-            stage_extrusion_caps(
-                &mut ir,
-                &mut cadmpeg_ir::Annotations::default(),
-                "caps",
-                &association,
-                &extrusion,
-                &boundaries,
-            )
-            .is_ok()
-        );
+        assert!(stage_extrusion_caps(
+            &mut ir,
+            &mut cadmpeg_ir::Annotations::default(),
+            "caps",
+            &association,
+            &extrusion,
+            &boundaries,
+        )
+        .is_ok());
         assert_eq!(ir.model.faces.len(), expected_faces);
         assert_eq!(ir.model.regions.len(), expected_faces);
         assert_eq!(ir.model.shells.len(), expected_faces);
@@ -1237,49 +1225,41 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         .expect("fixture identities are valid");
     let annotations = cadmpeg_ir::Annotations::default();
 
-    assert!(
-        cadmpeg_ir::admit_with_annotations(
-            &cadmpeg_test_support::service_decode_context(),
-            &accepted,
-            &annotations,
-            cadmpeg_ir::RHINO_DRAFT_CHECKS,
-            Vec::new(),
-        )
-        .expect("admit the model")
-        .is_ok()
-    );
-    assert!(
-        cadmpeg_ir::admit(
-            &cadmpeg_test_support::service_decode_context(),
-            &accepted,
-            cadmpeg_ir::RHINO_INSTANCE_CHECKS,
-            Vec::new()
-        )
-        .expect("admit the model")
-        .is_ok()
-    );
+    assert!(cadmpeg_ir::admit_with_annotations(
+        &cadmpeg_test_support::service_decode_context(),
+        &accepted,
+        &annotations,
+        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        Vec::new(),
+    )
+    .expect("admit the model")
+    .is_ok());
+    assert!(cadmpeg_ir::admit(
+        &cadmpeg_test_support::service_decode_context(),
+        &accepted,
+        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        Vec::new()
+    )
+    .expect("admit the model")
+    .is_ok());
 
-    assert!(
-        !cadmpeg_ir::admit_with_annotations(
-            &cadmpeg_test_support::service_decode_context(),
-            &rejected,
-            &annotations,
-            cadmpeg_ir::RHINO_DRAFT_CHECKS,
-            Vec::new(),
-        )
-        .expect("admit the model")
-        .is_ok()
-    );
-    assert!(
-        !cadmpeg_ir::admit(
-            &cadmpeg_test_support::service_decode_context(),
-            &rejected,
-            cadmpeg_ir::RHINO_INSTANCE_CHECKS,
-            Vec::new()
-        )
-        .expect("admit the model")
-        .is_ok()
-    );
+    assert!(!cadmpeg_ir::admit_with_annotations(
+        &cadmpeg_test_support::service_decode_context(),
+        &rejected,
+        &annotations,
+        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        Vec::new(),
+    )
+    .expect("admit the model")
+    .is_ok());
+    assert!(!cadmpeg_ir::admit(
+        &cadmpeg_test_support::service_decode_context(),
+        &rejected,
+        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        Vec::new()
+    )
+    .expect("admit the model")
+    .is_ok());
 }
 
 #[test]
@@ -1353,13 +1333,11 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .clear();
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert!(
-            result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.severity == Severity::Info)
-        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.severity == Severity::Info));
         assert_eq!(
             result
                 .ir()
@@ -1494,12 +1472,10 @@ fn unreadable_surface_has_one_source_home_and_no_geometry_transfer() {
     let unknowns = result.ir().native_unknowns("rhino").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert!(unknowns[0].links.is_empty());
-    assert!(
-        result
-            .source_fidelity()
-            .unrepresented()
-            .contains(&cadmpeg_ir::ArenaClass::Model)
-    );
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
     assert!(!result.report().geometry_transferred());
 }
 
@@ -1515,13 +1491,11 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
     assert!(first.ir().model.points.is_empty());
     assert_eq!(first.ir(), second.ir());
     assert_eq!(first.report(), second.report());
-    assert!(
-        first
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.severity == Severity::Error)
-    );
+    assert!(first
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.severity == Severity::Error));
 }
 
 /// The body-kind and B-rep domain charges reach the report as typed codes.

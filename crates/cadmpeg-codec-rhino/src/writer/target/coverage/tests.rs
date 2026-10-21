@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::write::{ArenaDisposition, EncodeInput, Encoder, target::TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::schema::EntityKind;
 
@@ -74,12 +74,11 @@ fn unsupported_brep_does_not_claim_omitted_topology() {
         plan.report().coverage.disposition(EntityKind::Face),
         ArenaDisposition::Reported
     );
-    assert!(
-        plan.report()
-            .losses
-            .iter()
-            .any(|loss| { loss.severity == cadmpeg_ir::report::Severity::Error })
-    );
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.severity == cadmpeg_ir::report::Severity::Error }));
 }
 
 #[test]

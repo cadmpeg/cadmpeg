@@ -2,9 +2,9 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    ARENAS, BTreeSet, CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, IgesLossCode,
-    NativeExport, NativeRecord, Targets, Value, attributes, coordinates, count, entity, fonts,
-    real, shape, structure, text,
+    attributes, coordinates, count, entity, fonts, real, shape, structure, text, BTreeSet, CadIr,
+    DirectoryLineFont, Entity, EntityStatus, Fields, IgesLossCode, NativeExport, NativeRecord,
+    Targets, Value, ARENAS,
 };
 
 fn encode(

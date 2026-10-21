@@ -2,7 +2,7 @@
 //! Typed group and associativity parameter grammars.
 
 use super::{
-    Entity, Fields, NativeRecord, Value, boolean, coordinates, count, entity, integer, real, text,
+    boolean, coordinates, count, entity, integer, real, text, Entity, Fields, NativeRecord, Value,
 };
 
 pub(super) fn shape(record: &NativeRecord) -> Result<(u32, i64), String> {
