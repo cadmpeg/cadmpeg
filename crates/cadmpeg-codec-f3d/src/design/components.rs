@@ -782,7 +782,7 @@ pub(crate) fn neutral_transform(
 ) -> Result<cadmpeg_ir::transform::Transform, cadmpeg_core::CodecError> {
     neutral_affine(transform).ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented(
-            "F3D placement must project to a finite affine transform".into(),
+            "F3D placement is not a finite affine transform".into(),
         )
     })
 }
