@@ -562,6 +562,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &design.design_parameter_scopes,
     )?;
+    let indices = crate::design::decode::sheet_metal_settings::linked_record_indices(
+        &design.design_sheet_metal_settings,
+    );
+    append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
             scan,
