@@ -609,7 +609,7 @@ fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
         .model
         .attributes
         .push(cadmpeg_ir::attributes::SourceAttribute {
-            id: cadmpeg_ir::ids::AttributeId::mint("authored:attribute#unsupported").unwrap(),
+            id: cadmpeg_ir::ids::AttributeId::mint("authored:model:attribute#999").unwrap(),
             target: cadmpeg_ir::attributes::AttributeTarget::Document,
             name: "unsupported-attribute".into(),
             values: Vec::new(),

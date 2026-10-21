@@ -164,7 +164,7 @@ fn a_retained_f3d_with_zstandard_members_patches() {
     // The supported timestamp and all name carriers are the same as above.
     let mut unsupported = target.clone();
     let mut attribute = unsupported.model.attributes[0].clone();
-    attribute.id = cadmpeg_ir::ids::AttributeId::mint("authored:attribute#unsupported").unwrap();
+    attribute.id = cadmpeg_ir::ids::AttributeId::mint("authored:model:attribute#999").unwrap();
     attribute.name = "unsupported-attribute".into();
     unsupported.model.attributes.push(attribute);
     let plan = F3dCodec
