@@ -158,7 +158,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         .canonical_parameters
                         .iter()
                         .find(|parameter| parameter.id == *id)?;
-                    let mut name = parameter.name.to_string();
+                    let mut name = parameter.name.clone();
                     if parameter.owner.as_ref() != Some(&self.feature.id) {
                         if let Some(owner) = parameter
                             .owner

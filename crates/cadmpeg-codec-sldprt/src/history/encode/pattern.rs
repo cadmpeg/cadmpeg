@@ -266,7 +266,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         spacing_key.clone(),
                         format_length_like(
-                            self.dimension(spacing)?.into(),
+                            self.dimension(spacing)?,
                             existing
                                 .and_then(|record| record.parameters.get(spacing_key.as_str()))
                                 .map(String::as_str),
@@ -284,7 +284,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         };
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("D4"),
-                            format_length_like(self.dimension(spacing)?.into(), None),
+                            format_length_like(self.dimension(spacing)?, None),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("D2"),

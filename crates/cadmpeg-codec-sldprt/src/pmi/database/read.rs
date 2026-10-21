@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Traverse UnQLite hash cells and reconstruct overflow values.
+//! Traverse `UnQLite` hash cells and reconstruct overflow values.
 
 use std::cell::Cell;
 use std::collections::BTreeSet;
@@ -39,7 +39,7 @@ pub(in crate::pmi) fn images(
         .ok_or_else(malformed)?;
     if !(512..=65536).contains(&page_size)
         || !page_size.is_power_of_two()
-        || payload.len() % page_size != 0
+        || !payload.len().is_multiple_of(page_size)
     {
         return Err(malformed());
     }

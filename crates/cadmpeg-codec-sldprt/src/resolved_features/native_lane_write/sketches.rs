@@ -93,7 +93,7 @@ pub(super) fn merge(
                 native.feature_input_lanes[position]
                     .names
                     .iter()
-                    .filter_map(|name| name.object_id.and_then(|id| id.value())),
+                    .filter_map(|name| name.object_id.and_then(crate::records::ObjectId::value)),
             )
             .max()
             .unwrap_or(0);

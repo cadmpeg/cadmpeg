@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Author a genuine UnQLite linear-hash database without a source image.
+//! Author a genuine `UnQLite` linear-hash database without a source image.
 //!
-//! Page semantics follow the publicly published Symisc UnQLite 1.2.1 storage
+//! Page semantics follow the publicly published Symisc `UnQLite` 1.2.1 storage
 //! implementation (`pager_write_db_header`, `lhash_write_header`,
 //! `lhCellWriteHeader`, and `lhCellWriteOvflPayload`). This implementation
 //! authors one logical bucket with an ordered chain of slave pages. Each cell

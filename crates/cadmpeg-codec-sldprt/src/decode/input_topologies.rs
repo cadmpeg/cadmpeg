@@ -110,10 +110,10 @@ fn state(owner: &FeatureId) -> FeatureInputTopology {
             owner.key(),
         ),
         input_of: owner.clone(),
-        bodies: Default::default(),
-        faces: Default::default(),
-        edges: Default::default(),
-        vertices: Default::default(),
+        bodies: cadmpeg_ir::features::DistinctMembers::default(),
+        faces: cadmpeg_ir::features::DistinctMembers::default(),
+        edges: cadmpeg_ir::features::DistinctMembers::default(),
+        vertices: cadmpeg_ir::features::DistinctMembers::default(),
         native_ref: None,
     }
 }

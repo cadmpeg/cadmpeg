@@ -4,9 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::CadIr;
 
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
@@ -137,7 +137,7 @@ pub(crate) fn regenerate(
                         .as_deref()
                         .is_none_or(|id| feature_ids.contains(id))
             })
-            .map(|marker| marker.id())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<BTreeSet<_>>();
         let mut dependents = BTreeMap::<&str, Vec<&str>>::new();
         let mut unavailable = Vec::new();
