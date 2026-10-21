@@ -154,7 +154,7 @@ pub(crate) fn complete_marker_source() -> crate::native::SldprtNative {
     let history = crate::records::FeatureHistory {
         id: "sldprt:history#operand-control".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![crate::records::Feature {
@@ -168,9 +168,9 @@ pub(crate) fn complete_marker_source() -> crate::native::SldprtNative {
             kind: "Sketch".into(),
             input_class: Some("moProfileFeature_c".into()),
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: std::collections::BTreeMap::default(),
+            dimension_properties: std::collections::BTreeMap::default(),
+            properties: std::collections::BTreeMap::default(),
             text: None,
             content: Vec::new(),
         }],
