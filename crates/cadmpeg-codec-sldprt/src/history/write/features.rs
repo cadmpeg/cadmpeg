@@ -564,7 +564,7 @@ fn synchronize_features(
         if let Some(value) = &parameter.value {
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Value"),
-                crate::history::literals::format_parameter_value(value),
+                crate::history::literals::format_parameter_cache_value(value),
             );
         }
         properties.insert(
@@ -607,7 +607,7 @@ fn synchronize_features(
             if let Some(value) = &parameter.value {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Value"),
-                    crate::history::literals::format_parameter_value(value),
+                    crate::history::literals::format_parameter_cache_value(value),
                 );
             }
             properties.insert(
