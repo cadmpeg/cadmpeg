@@ -38,6 +38,8 @@ use super::{
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
+mod free_surfaces;
+
 pub(super) fn encode_smbh(
     target: &CadIr,
     native: &F3dNative,
@@ -67,10 +69,7 @@ pub(super) fn encode_smbh(
                 native_history_tail(&mut bytes, native)?;
                 return Ok(bytes);
             }
-            return Err(CodecError::UnsupportedContent(
-                "source-less F3D generation requires owned face topology or a nonempty wire shell"
-                    .into(),
-            ));
+            return free_surfaces::encode(&cache_ctx, target, native);
         }
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
