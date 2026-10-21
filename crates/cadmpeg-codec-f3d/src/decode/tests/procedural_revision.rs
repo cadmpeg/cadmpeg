@@ -1450,12 +1450,20 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated extrusion decode");
+    // Recovered free construction is saved as a root. Native positional IDs
+    // change when its rejected face is omitted; follow the actual typed owner.
+    assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
+    let ProceduralSurfaceDefinition::Extrusion(payload) =
+        round_trip.ir().model.procedural_surfaces[0].definition()
+    else {
+        panic!("expected round-trip extrusion")
+    };
     let curve = round_trip
         .ir()
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == directrix_id)
+        .find(|curve| curve.id == *payload.directrix())
         .expect("round-trip directrix");
     assert_eq!(
         curve.geometry,
