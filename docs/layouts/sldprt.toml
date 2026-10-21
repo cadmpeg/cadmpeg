@@ -18,6 +18,131 @@ the table says `unstated` and says so in the field note.
 """
 
 [[record]]
+name = "feature_input_class_declaration_prefix"
+kind = "byte"
+section = "2"
+anchor = "A feature-input class declaration is `ff ff 01 00`"
+size = 6
+endianness = "little"
+note = "The counted ASCII class name follows this fixed prefix."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "A feature-input class declaration is `ff ff 01 00`"
+value = [255, 255, 1, 0]
+
+[[record.field]]
+name = "name_length"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "byte length at prefix +4"
+
+[[record]]
+name = "current_coordinate_marker_identity"
+kind = "byte"
+section = "2"
+anchor = "The current zero-tail coordinate marker has a 142-byte identity-bearing form"
+size = 142
+endianness = "little"
+note = "The complete zero-tail coordinate form carries its own local identity before the lane end or a complete class declaration."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "`ResolvedFeatures` sketch entities begin with `ff ff 1f 00 03`"
+value = [255, 255, 31, 0, 3]
+
+[[record.field]]
+name = "geometry_prefix"
+offset = 5
+type = "bytes[12]"
+source = "spec"
+anchor = "12-byte prefix `ff ff ff ff ff ff ff ff 00 00 80 bf` at marker +5"
+value = [255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 128, 191]
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "A little-endian u32 at marker +17"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "geometry locus `05 00 01 00`"
+value = [5, 0, 1, 0]
+
+[[record.field]]
+name = "state"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "Marker +48 stores a finite little-endian f64 state value"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "`1e 00` at marker +64"
+value = [30, 0]
+
+[[record.field]]
+name = "coordinate_first"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "coordinate fields at marker +66 and +74"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 74
+type = "f64"
+source = "spec"
+anchor = "coordinate fields at marker +66 and +74"
+
+[[record.field]]
+name = "zero_tail"
+offset = 82
+type = "bytes[56]"
+source = "spec"
+anchor = "The 56-byte tail after the coordinate pair is zero"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "local_id"
+offset = 138
+type = "u32"
+source = "spec"
+anchor = "object identifier is layout-selected at marker +138"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "Reserved zero bytes before the state or coordinate tag."
+
+[[record.gap]]
+offset = 27
+size = 21
+note = "Reserved zero bytes before the state or coordinate tag."
+
+[[record.gap]]
+offset = 56
+size = 8
+note = "Reserved zero bytes before the state or coordinate tag."
+
+[[record]]
 name = "feature_input_shifted_scalar_trailer"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/relation_records.rs"
 kind = "byte"
