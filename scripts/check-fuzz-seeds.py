@@ -21,6 +21,7 @@ Exit 2 when the build or a generator fails, or the work directory is unusable.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -139,12 +140,32 @@ def build_generators() -> int:
     return result.returncode
 
 
+def generator_target_directory() -> Path:
+    """Ask Cargo where this invocation builds, including environment overrides."""
+    result = subprocess.run(
+        ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+        cwd=CRATE,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise OSError(f"cargo metadata failed: {result.stderr.strip()}")
+    try:
+        directory = json.loads(result.stdout)["target_directory"]
+        if not isinstance(directory, str) or not directory:
+            raise ValueError("target_directory must be a nonempty path")
+        return Path(directory)
+    except (ValueError, KeyError, TypeError) as error:
+        raise OSError(f"invalid cargo target_directory: {error}") from error
+
+
 def run_generators(seed_root: Path) -> str | None:
     """Run the generators in order into ``seed_root``. Return a failure line."""
     environment = dict(os.environ)
     environment[SEED_ROOT_ENV] = str(seed_root)
+    target_directory = generator_target_directory()
     for name in GENERATORS:
-        binary = CRATE / "target" / "debug" / name
+        binary = target_directory / "debug" / name
         if not binary.is_file():
             return f"generator binary not built: {name}"
         result = subprocess.run(
