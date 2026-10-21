@@ -1538,11 +1538,28 @@ pub(crate) fn configuration_for_source_slot(
     configurations: &[DesignConfiguration],
     slot: u32,
 ) -> Option<usize> {
+    configuration_for_source_slot_with_ordinal(configurations, slot, true)
+}
+
+/// Active selection requires a stated native id or an observed partition
+/// identity. An unrelated ordinal cannot conflict with that source identity.
+pub(crate) fn configuration_for_selected_source_slot(
+    configurations: &[DesignConfiguration],
+    slot: u32,
+) -> Option<usize> {
+    configuration_for_source_slot_with_ordinal(configurations, slot, false)
+}
+
+fn configuration_for_source_slot_with_ordinal(
+    configurations: &[DesignConfiguration],
+    slot: u32,
+    ordinal_proven: bool,
+) -> Option<usize> {
     let slots = ConfigurationSlots::new(configurations);
     let native_match = slots
         .explicit
         .get(&slot)
-        .or_else(|| slots.ordinal.get(&slot));
+        .or_else(|| ordinal_proven.then(|| slots.ordinal.get(&slot)).flatten());
     if native_match.is_some_and(|found| !found.unique) {
         return None;
     }
