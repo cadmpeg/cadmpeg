@@ -1497,8 +1497,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("project the extrude feature")
         .expect("typed two-sided Extrude");
         assert!(matches!(
-            two_sided,
+            &two_sided,
             FeatureDefinition::Operation(FeatureOperation::Extrude {
+                direction: ExtrudeDirection::ProfileNormal {},
+                op: BooleanOp::NewBody,
                 extent: ExtrudeExtent::TwoSided {
                     first: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -1515,8 +1517,41 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == 0.5 && super::dimension_value(&actual_draft, &native_parameters.borrow()).get() == -0.3
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_length_2, &native_parameters.borrow()).get() == -0.5 && super::dimension_value(actual_length_2, &native_parameters.borrow()).get().abs() == 0.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == -0.3
         ));
+        assert_eq!(against.evaluated_value().get(), -0.05);
+        assert!(!scope.extrude_prologue().unwrap().direction_reversed());
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent:
+                ExtrudeExtent::TwoSided {
+                    second:
+                        ExtrudeSide {
+                            termination: LinearTermination::Blind { length },
+                            ..
+                        },
+                    ..
+                },
+            ..
+        }) = &two_sided
+        else {
+            panic!("two-sided blind extent");
+        };
+        let parameter_id = crate::ids::neutral_parameter_id(&against);
+        assert_eq!(length.parameter(), Some(&parameter_id));
+        let ir = super::parameter_document(&native_parameters.borrow());
+        let bound = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == parameter_id)
+            .unwrap();
+        assert_eq!(bound.expression.literal_text().as_deref(), Some("value"));
+        assert_eq!(
+            bound.value,
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(-0.5).unwrap()
+            ))
+        );
         set_extrude_direction_reversed(&mut scope, true);
         assert!(
             crate::test_support::with_decode_context(|decode_ctx| project_extrude(
@@ -1549,9 +1584,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("project the extrude feature")
         .expect("typed reversed Extrude");
         assert!(matches!(
-            reversed,
+            &reversed,
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                direction: ExtrudeDirection::ReversedProfileNormal {},
+                direction: ExtrudeDirection::ProfileNormal {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -1561,9 +1596,29 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 6.0
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == -6.0 && super::dimension_value(actual_length, &native_parameters.borrow()).get().abs() == 6.0
         ));
 
+        assert_eq!(reversed_along.evaluated_value().get(), -0.6);
+        assert!(!scope.extrude_prologue().unwrap().direction_reversed());
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent:
+                ExtrudeExtent::OneSided {
+                    side:
+                        ExtrudeSide {
+                            termination: LinearTermination::Blind { length },
+                            ..
+                        },
+                },
+            ..
+        }) = &reversed
+        else {
+            panic!("signed one-sided blind extent");
+        };
+        assert_eq!(
+            length.parameter(),
+            Some(&crate::ids::neutral_parameter_id(&reversed_along))
+        );
         set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
         set_extrude_direction_reversed(&mut scope, true);
