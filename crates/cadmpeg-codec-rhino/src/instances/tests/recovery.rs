@@ -215,7 +215,7 @@ fn duplicate_definitions_retain_every_record_and_locate_every_ambiguity() {
 }
 
 #[test]
-fn bounded_definition_members_do_not_become_ordinary_geometry_after_metadata_failure() {
+fn bounded_definition_members_keep_local_geometry_after_metadata_failure() {
     for metadata in [
         Metadata::Valid,
         Metadata::InvalidCustomScale,
@@ -273,8 +273,23 @@ fn bounded_definition_members_do_not_become_ordinary_geometry_after_metadata_fai
         }
         let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
         for ir in [decoded.ir(), &reread] {
-            assert_eq!(ir.model.points.len(), 1, "{metadata:?}");
-            assert_eq!(ir.model.points[0].position().get().x, 9.0);
+            // #209 §2.2/§4.5: failed definition metadata cannot delete its
+            // independently readable member or invent a placed instance.
+            assert_eq!(ir.model.points.len(), 2, "{metadata:?}");
+            for (id, expected_x) in [(member, 3.0), (ordinary, 9.0)] {
+                let point = ir
+                    .model
+                    .points
+                    .iter()
+                    .find(|point| {
+                        point.source_object.as_ref().is_some_and(|source| {
+                            source.object_id == Uuid::from_wire(id).to_string()
+                        })
+                    })
+                    .expect("readable local point retained by source UUID");
+                assert_eq!(point.position().get().x, expected_x);
+            }
+            assert!(ir.model.occurrences.is_empty());
         }
         assert!(
             scan.definitions
@@ -369,10 +384,24 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
                 .any(|loss| { loss.code == RhinoLossCode::IntegrityFailure.kind() }));
             let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
             for ir in [decoded.ir(), &reread] {
-                assert_eq!(ir.model.points.len(), usize::from(!container_only));
+                assert_eq!(ir.model.points.len(), 2 * usize::from(!container_only));
                 if !container_only {
-                    assert_eq!(ir.model.points[0].position().get().x, 9.0);
+                    for (id, expected_x) in [(member, 3.0), (ordinary, 9.0)] {
+                        let point = ir
+                            .model
+                            .points
+                            .iter()
+                            .find(|point| {
+                                point.source_object.as_ref().is_some_and(|source| {
+                                    source.object_id == Uuid::from_wire(id).to_string()
+                                })
+                            })
+                            .expect("readable local point retained by source UUID");
+                        assert_eq!(point.position().get().x, expected_x);
+                    }
                 }
+                assert!(ir.model.product_definitions.is_empty());
+                assert!(ir.model.occurrences.is_empty());
             }
             if !container_only {
                 assert!(decoded
