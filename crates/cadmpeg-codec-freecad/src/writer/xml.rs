@@ -156,6 +156,28 @@ pub(crate) fn native_named(
     property_record: &PropertyRecord,
     names: &std::collections::HashMap<String, String>,
 ) -> Result<Option<String>, CodecError> {
+    native_named_impl(property_record, names, &std::collections::BTreeSet::new())
+}
+
+/// Projection may emit structural references whose exact property and entry
+/// are independently owned by current typed payloads. This emits no payload
+/// bytes and is not used to author a synthesized archive.
+pub(in crate::writer) fn native_projection(
+    property_record: &PropertyRecord,
+    typed_entries: &std::collections::BTreeSet<String>,
+) -> Result<Option<String>, CodecError> {
+    native_named_impl(
+        property_record,
+        &std::collections::HashMap::new(),
+        typed_entries,
+    )
+}
+
+fn native_named_impl(
+    property_record: &PropertyRecord,
+    names: &std::collections::HashMap<String, String>,
+    typed_entries: &std::collections::BTreeSet<String>,
+) -> Result<Option<String>, CodecError> {
     let PropertyBody::Persisted {
         values,
         side_entries,
@@ -178,10 +200,13 @@ pub(crate) fn native_named(
     if (property_record.type_name.contains("PropertyPythonObject")
         && !values.iter().any(|value| value.decoded_json.is_some()))
         || crate::persistence::opaque_python_payload(property_record)
-        || !side_entries.is_empty()
+        || side_entries
+            .iter()
+            .any(|entry| !typed_entries.contains(entry))
         || values.iter().any(|value| {
             value.attributes.iter().any(|(key, name)| {
                 !name.is_empty()
+                    && !typed_entries.contains(name)
                     && ((matches!(key.as_str(), "file" | "File")
                         && !crate::persistence::is_xlink_type(&property_record.type_name))
                         || (property_record.family == crate::native::PropertyFamily::File
