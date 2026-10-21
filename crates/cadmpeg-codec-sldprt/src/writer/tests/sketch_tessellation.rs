@@ -751,7 +751,7 @@ fn synthesis_writes_supported_lanes_from_neutral_content() {
         .model
         .configurations
         .iter()
-        .position(|configuration| configuration.name == "Default")
+        .position(|configuration| configuration.name.as_deref() == Some("Default"))
         .unwrap();
     decoded.ir_mut().model.configurations[selected].active = true;
     let moved = decoded.ir_mut().model.points[0].position().get();
