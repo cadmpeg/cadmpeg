@@ -151,7 +151,14 @@ fn materialize_configuration_associations(
     native: &SldprtNative,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    for configuration in &mut ir.model.configurations {
+    let mut namespace = ir
+        .native
+        .namespace("sldprt")
+        .map(SldprtNative::load)
+        .transpose()?
+        .unwrap_or_default();
+    let mut associations = Vec::new();
+    for (index, configuration) in ir.model.configurations.iter().enumerate() {
         if configuration.native_ref.is_some() {
             continue;
         }
@@ -163,8 +170,13 @@ fn materialize_configuration_associations(
         let mut matching = native
             .feature_histories
             .iter()
-            .flat_map(|history| &history.configurations)
-            .filter(|record| {
+            .flat_map(|history| {
+                history
+                    .configurations
+                    .iter()
+                    .map(move |record| (history, record))
+            })
+            .filter(|(_, record)| {
                 let record_slot = record
                     .properties
                     .get("id")
@@ -174,7 +186,7 @@ fn materialize_configuration_associations(
                     && record.source_index == configuration.source_index
                     && Some(record.name.as_str()) == configuration.name.as_deref()
             });
-        let record = matching.next().ok_or_else(|| {
+        let (parent, record) = matching.next().ok_or_else(|| {
             CodecError::UnsupportedContent(format!(
                 "configuration {} has no authored native counterpart",
                 configuration.id
@@ -186,11 +198,52 @@ fn materialize_configuration_associations(
                 configuration.id
             )));
         }
-        configuration.native_ref = Some(record.id.clone());
+        let parent_index = match namespace
+            .feature_histories
+            .iter()
+            .position(|history| history.id == parent.id)
+        {
+            Some(index) => index,
+            None => {
+                // Only the association's required parent and native record
+                // enter the prepared namespace, never transient lane buffers.
+                let mut history = parent.clone();
+                history.features.clear();
+                history.content.clear();
+                history.configurations.clear();
+                namespace.feature_histories.push(history);
+                namespace.feature_histories.len() - 1
+            }
+        };
+        let configurations = &mut namespace.feature_histories[parent_index].configurations;
+        if let Some(existing) = configurations
+            .iter_mut()
+            .find(|existing| existing.id == record.id)
+        {
+            *existing = record.clone();
+        } else {
+            configurations.push(record.clone());
+        }
+        associations.push((index, record.id.clone(), slot));
+    }
+    if associations.is_empty() {
+        return Ok(());
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    namespace.store(&ctx, ir.native.namespace_mut("sldprt"))?;
+    // Publish associations only after the actual native records were admitted.
+    for (index, native_ref, slot) in associations {
+        let configuration = &mut ir.model.configurations[index];
+        configuration.native_ref = Some(native_ref.clone());
         losses.push(
             SldprtLossCode::WriterConfigurationAssociationGenerated.note(format!(
-                "configuration {} acquired authored native association {} at slot {slot}",
-                configuration.id, record.id
+                "configuration {} acquired authored native association {native_ref} at slot {slot}",
+                configuration.id
             )),
         );
     }

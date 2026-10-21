@@ -49,6 +49,24 @@ fn partition_configuration_reports_only_its_new_native_association() {
     let native = super::design::prepare(&mut projected, &mut losses, &Default::default())
         .unwrap()
         .unwrap();
+    let namespace = crate::test_support::native::sldprt_native(&projected);
+    assert_eq!(
+        namespace
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.configurations)
+            .filter(
+                |record| projected.model.configurations[0].native_ref.as_deref()
+                    == Some(record.id.as_str())
+            )
+            .count(),
+        1
+    );
+    let validation = cadmpeg_ir::validate::validate_neutral(&projected, Vec::new()).unwrap();
+    assert!(
+        validation.is_ok(),
+        "prepared document must remain valid: {validation:#?}"
+    );
     let association = projected.model.configurations[0]
         .native_ref
         .as_ref()
