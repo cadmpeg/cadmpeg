@@ -166,7 +166,7 @@ fn tensor(
     .map_err(CodecError::malformed)
 }
 
-pub(super) fn generate(
+pub(in crate::writer) fn generate(
     ctx: &DecodeContext<'_>,
     target: &CadIr,
     construction: &ProceduralSurface,
