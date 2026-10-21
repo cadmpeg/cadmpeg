@@ -314,6 +314,8 @@ fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_report
     let definition = serde_json::to_string(&constraint.definition).unwrap();
     let expected_loss = format!("Sketch constraint {constraint_id} is omitted: no exact regenerated encoding for canonical definition {definition}");
     let expected_d1 = owned_dimension_definition(&ir, "d1");
+    let expected_relations =
+        ["parallel", "concentric"].map(|kind| native_relation_content(&ir, kind));
     let original_entities = ir
         .model
         .sketch_entities
@@ -381,6 +383,10 @@ fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_report
     );
     assert_eq!(written.ir().model.sketch_constraints.len(), 3);
     assert_eq!(owned_dimension_definition(written.ir(), "d1"), expected_d1);
+    assert_eq!(
+        ["parallel", "concentric"].map(|kind| native_relation_content(written.ir(), kind)),
+        expected_relations
+    );
     assert_eq!(
         written
             .ir()
@@ -721,4 +727,40 @@ fn owned_dimension_definition(ir: &cadmpeg_ir::CadIr, name: &str) -> serde_json:
         }
     }
     definition
+}
+
+/// Resolve relation identities through their actual typed point carriers before
+/// comparing all remaining fields, including ordered and repeated operands.
+fn native_relation_content(ir: &cadmpeg_ir::CadIr, kind: &str) -> serde_json::Value {
+    let native = crate::test_support::native_test::f3d_native(ir);
+    let mut matches = ir.model.sketch_constraints.iter().filter(|constraint| {
+        serde_json::to_value(&constraint.definition).unwrap()["native_kind"] == kind
+    });
+    let constraint = matches.next().unwrap();
+    assert!(matches.next().is_none());
+    let relation = native
+        .sketch_relations
+        .iter()
+        .find(|relation| Some(&relation.id) == constraint.native_ref.as_ref())
+        .unwrap();
+    let mut value = serde_json::to_value(constraint).unwrap();
+    for field in ["id", "sketch", "native_ref"] {
+        value.as_object_mut().unwrap().remove(field);
+    }
+    value["relation_record_index"] = serde_json::json!(relation.record_index);
+    for identity in value["definition"]["entities"].as_array_mut().unwrap() {
+        let entity = ir
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| identity.as_str() == Some(entity.id().as_str()))
+            .unwrap();
+        let point = native
+            .sketch_points
+            .iter()
+            .find(|point| Some(&point.id) == entity.native_ref.as_ref())
+            .unwrap();
+        *identity = serde_json::json!({"point_record_index":point.record_index, "construction":entity.construction, "geometry":entity.geometry});
+    }
+    value
 }
