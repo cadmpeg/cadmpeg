@@ -8,7 +8,24 @@ use cadmpeg_ir::geometry::{CompoundCurveConstruction, Curve, ProceduralCurveDefi
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::CadIr;
 
-use super::{class_wrapper, native_i32_count, ClassPayload, WritableObjectCurve};
+use super::{class_wrapper_with_direct, native_i32_count, ClassPayload, WritableObjectCurve};
+
+/// A curve class body and the bytes written directly at its own chunk level.
+pub(super) struct CurvePayload {
+    pub(super) class: [u8; 16],
+    pub(super) body: Vec<u8>,
+    pub(super) direct: Vec<u8>,
+}
+
+impl CurvePayload {
+    fn leaf((class, body): ClassPayload) -> Self {
+        Self {
+            class,
+            direct: body.clone(),
+            body,
+        }
+    }
+}
 
 fn construction<'a>(ir: &'a CadIr, curve: &Curve) -> Option<&'a CompoundCurveConstruction> {
     let id = curve.geometry.procedural_construction()?;
@@ -124,11 +141,11 @@ pub(super) fn payload(
     ir: &CadIr,
     curve: &Curve,
     active: &mut BTreeSet<CurveId>,
-) -> Result<(ClassPayload, bool), CodecError> {
+) -> Result<(CurvePayload, bool), CodecError> {
     let Some(compound) = construction(ir, curve) else {
         return WritableObjectCurve::try_new(curve)
             .and_then(|value| value.payload())
-            .map(|payload| (payload, false));
+            .map(|payload| (CurvePayload::leaf(payload), false));
     };
     if !active.insert(curve.id.clone()) {
         // (C) The neutral construction graph contains a cycle.
@@ -140,7 +157,7 @@ pub(super) fn payload(
         Err(CodecError::UnsupportedContent(_)) if curve.geometry.solved().is_some() => {
             WritableObjectCurve::try_new(curve)
                 .and_then(|value| value.payload())
-                .map(|payload| (payload, true))
+                .map(|payload| (CurvePayload::leaf(payload), true))
         }
         other => other,
     }
@@ -150,7 +167,7 @@ fn compound_payload(
     ir: &CadIr,
     compound: &CompoundCurveConstruction,
     active: &mut BTreeSet<CurveId>,
-) -> Result<(ClassPayload, bool), CodecError> {
+) -> Result<(CurvePayload, bool), CodecError> {
     if active.len() > crate::curves::MAX_CURVE_DEPTH {
         return Err(CodecError::UnsupportedContent(
             "compound curve nesting exceeds the native decoder's supported depth".into(),
@@ -193,6 +210,8 @@ fn compound_payload(
     for parameter in parameters {
         data.extend(parameter.get().to_le_bytes());
     }
+    // Complete child chunks do not contribute to their parent's CRC (§4.1).
+    let direct = data.clone();
     let mut reduced = false;
     for component in components {
         let child = ir
@@ -203,9 +222,20 @@ fn compound_payload(
             .ok_or_else(|| {
                 CodecError::malformed(format!("compound child {} is missing", component.component))
             })?;
-        let ((class, child_data), child_reduced) = payload(ir, child, active)?;
+        let (child, child_reduced) = payload(ir, child, active)?;
         reduced |= child_reduced;
-        data.extend(class_wrapper(class, &child_data)?);
+        data.extend(class_wrapper_with_direct(
+            child.class,
+            &child.body,
+            &child.direct,
+        )?);
     }
-    Ok(((crate::curves::POLYCURVE.to_wire(), data), reduced))
+    Ok((
+        CurvePayload {
+            class: crate::curves::POLYCURVE.to_wire(),
+            body: data,
+            direct,
+        },
+        reduced,
+    ))
 }
