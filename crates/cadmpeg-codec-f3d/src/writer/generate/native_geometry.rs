@@ -1654,6 +1654,29 @@ fn native_loft_curve(
     )
 }
 
+/// Encode the current finite profile without using a solved surface cache to
+/// supply its domain. NURBS retain their knot domain; analytic profiles use
+/// their own canonical parameter range.
+fn native_cacheless_profile_curve(
+    target: &CadIr,
+    id: &cadmpeg_ir::ids::CurveId,
+) -> Result<NurbsCurve, CodecError> {
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *id)
+        .ok_or_else(|| CodecError::malformed(format_args!("surface profile {id} is missing")))?;
+    native_spline_field_curve(
+        curve.geometry.solved().ok_or_else(|| {
+            CodecError::UnsupportedContent("surface profile has no solved geometry".into())
+        })?,
+        curve
+            .parameter_range
+            .map(IncreasingParameterInterval::endpoints),
+    )
+}
+
 fn native_compound_loft_scale(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -2110,8 +2133,8 @@ fn native_cacheless_procedural_surface_definition(
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "rule_sur")?;
-        native_nurbs_curve(bytes, &native_loft_curve(target, first, None)?)?;
-        native_nurbs_curve(bytes, &native_loft_curve(target, second, None)?)?;
+        native_nurbs_curve(bytes, &native_cacheless_profile_curve(target, first)?)?;
+        native_nurbs_curve(bytes, &native_cacheless_profile_curve(target, second)?)?;
         bytes.push(0x10);
         return Ok(true);
     }
@@ -2128,11 +2151,11 @@ fn native_cacheless_procedural_surface_definition(
             native_ident(bytes, "sum_spl_sur")?;
             native_nurbs_curve(
                 bytes,
-                &native_loft_curve(target, definition_payload.first(), None)?,
+                &native_cacheless_profile_curve(target, definition_payload.first())?,
             )?;
             native_nurbs_curve(
                 bytes,
-                &native_loft_curve(target, definition_payload.second(), None)?,
+                &native_cacheless_profile_curve(target, definition_payload.second())?,
             )?;
             native_point(
                 bytes,
