@@ -446,3 +446,67 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
         None,
     )));
 }
+
+#[test]
+fn knit_completeness_resolves_the_canonical_bound_gap_tolerance() {
+    use cadmpeg_ir::features::{
+        DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureEvaluation,
+        FeatureOperation, ParameterValue,
+    };
+    let parameter_id: cadmpeg_ir::features::ParameterId =
+        "test:model:parameter#knit-gap".try_into().unwrap();
+    for value in [0.0, 0.1] {
+        let value = ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value).unwrap());
+        let parameter = DesignParameter {
+            id: parameter_id.clone(),
+            owner: None,
+            ordinal: 0,
+            name: "Gap".into(),
+            expression: value.literal_expression(),
+            driving: true,
+            display: None,
+            value: Some(value.clone()),
+            properties: Default::default(),
+            pmi: None,
+            native_ref: None,
+        };
+        let definition = FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+            faces: FaceSelection::Faces(vec!["test:model:face#1".try_into().unwrap()]),
+            merge_entities: Some(true),
+            create_solid: Some(true),
+            gap_tolerance: Some(cadmpeg_ir::Dimension::Parameter(parameter_id.clone())),
+        });
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.parameters.push(parameter);
+        ir.model.features.push(Feature {
+            id: "test:model:feature#knit".try_into().unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            needs_recompute: false,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: Some("SurfaceStitch".into()),
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: FeatureEvaluation::from_definition(definition.clone()),
+            native_ref: None,
+        });
+        let incomplete = matches!(value, ParameterValue::Length(value) if value.get() == 0.0);
+        assert_eq!(
+            super::super::feature_definition_is_incomplete_with_parameters(
+                &definition,
+                &ir.model.parameters,
+            ),
+            incomplete
+        );
+        assert_eq!(
+            super::super::incomplete_feature_families(&ir)
+                .get("SurfaceStitch")
+                .copied()
+                .unwrap_or(0),
+            usize::from(incomplete)
+        );
+        assert!(super::super::feature_definition_is_incomplete_with_parameters(&definition, &[],));
+    }
+}

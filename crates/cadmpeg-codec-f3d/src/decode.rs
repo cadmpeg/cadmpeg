@@ -570,7 +570,15 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
     }
 }
 
+#[cfg(test)]
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
+    feature_definition_is_incomplete_with_parameters(definition, &[])
+}
+
+fn feature_definition_is_incomplete_with_parameters(
+    definition: &cadmpeg_ir::features::FeatureDefinition,
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) -> bool {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
 
     match definition {
@@ -859,7 +867,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !face_selection_is_resolved(faces)
                 || merge_entities.is_none()
                 || create_solid.is_none()
-                || gap_tolerance.is_none()
+                || gap_tolerance
+                    .as_ref()
+                    .and_then(|tolerance| tolerance.value_from(parameters))
+                    .is_none_or(|tolerance| tolerance.get() <= 0.0)
         }
         FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions,
@@ -1069,7 +1080,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, usize> {
     let mut families = std::collections::BTreeMap::new();
     for feature in &ir.model.features {
-        if !feature_definition_is_incomplete(feature.evaluation.definition()) {
+        if !feature_definition_is_incomplete_with_parameters(
+            feature.evaluation.definition(),
+            &ir.model.parameters,
+        ) {
             continue;
         }
         let family = feature.source_tag.as_deref().unwrap_or_else(|| {
@@ -1488,8 +1502,9 @@ fn design_projection_gaps(
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
-        gaps.incomplete_features += usize::from(feature_definition_is_incomplete(
+        gaps.incomplete_features += usize::from(feature_definition_is_incomplete_with_parameters(
             feature.evaluation.definition(),
+            &ir.model.parameters,
         ));
         gaps.native_reference_images += usize::from(matches!(
             feature.evaluation.definition(),
@@ -1915,8 +1930,9 @@ fn report_design_projection_gaps(
                 ir.model
                     .features
                     .iter()
-                    .filter(|feature| feature_definition_is_incomplete(
-                        feature.evaluation.definition()
+                    .filter(|feature| feature_definition_is_incomplete_with_parameters(
+                        feature.evaluation.definition(),
+                        &ir.model.parameters,
                     ))
                     .filter_map(|feature| feature.native_ref.as_deref())
             )
