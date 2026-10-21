@@ -140,6 +140,7 @@ fn extract(value: &mut Value, path: &str, fidelity: &mut SourceFidelity) -> Resu
                         .and_then(decode_hex)
                         .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
                     {
+                        // endian-exception: reconstructed-scalar
                         *child = Value::from(u32::from_be_bytes(bytes));
                         continue;
                     }
