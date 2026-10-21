@@ -154,7 +154,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
                 record_index: 169,
                 class_tag: crate::records::references::DesignClassTag::try_from("410".to_owned())
                     .unwrap(),
-                byte_offset: Some(100),
+                byte_offset: 100,
             },
         ]);
         native.design_parameter_scopes.push(scope);
@@ -359,10 +359,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                 entities: crate::records::identity::ReferenceRun::located(
                     entities
                         .into_iter()
-                        .map(|value| crate::records::identity::Located {
-                            value,
-                            offset: Some(100),
-                        })
+                        .map(|value| crate::records::identity::Located { value, offset: 100 })
                         .collect(),
                 ),
             },
@@ -1046,8 +1043,12 @@ fn validation_checks_pipe_path_group_roles() {
                     .copied()
                     .chain([crate::records::identity::Located {
                         value: 21,
-                        offset: 1_026,
+                        offset: Some(1_026),
                     }])
+                    .map(|member| crate::records::identity::Located {
+                        value: member.value,
+                        offset: member.offset.unwrap(),
+                    })
                     .collect(),
             )
             .unwrap();
@@ -1361,7 +1362,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             scope_record_index: 0,
             local_ordinal: 0,
             evaluated_value: 6.0,
-            evaluated_value_offset: owned_parameter.evaluated_value_offset(),
+            evaluated_value_offset: owned_parameter.evaluated_value_offset().unwrap(),
             parameter_record_index: 101,
             owned_ordinal: 0,
             variant: None,

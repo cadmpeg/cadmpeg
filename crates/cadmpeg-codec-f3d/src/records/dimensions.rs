@@ -267,6 +267,7 @@ impl DesignDimensionLocusPair {
     }
 
     /// Length from the primary header to the paired header.
+    #[cfg(test)]
     pub(crate) fn frame_length(&self) -> Option<u64> {
         self.frame_length
     }
@@ -668,11 +669,6 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
 }
 
 impl DesignDimensionAnnotationFrame {
-    pub(crate) fn authored(
-        content: DesignDimensionAnnotationContent,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Self::from_content(content).map_err(cadmpeg_core::CodecError::malformed)
-    }
     fn from_content(content: DesignDimensionAnnotationContent) -> Result<Self, String> {
         if content.operands.is_empty() {
             return Err("operands must not be empty".into());

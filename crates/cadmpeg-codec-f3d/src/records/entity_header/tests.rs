@@ -1,6 +1,6 @@
 use super::{
     DesignEntityHeader, DesignEntityHeaderWire, DesignFeatureTimeline, DesignFeatureTimelineWire,
-    ENTITY_HEADER_CLONE_COUNT, SEGMENT_TYPE_CLONE_COUNT, SegmentType, SegmentTypeWire,
+    SegmentType, SegmentTypeWire, ENTITY_HEADER_CLONE_COUNT, SEGMENT_TYPE_CLONE_COUNT,
     TIMELINE_CLONE_COUNT,
 };
 
@@ -197,13 +197,11 @@ fn semantic_registry_keeps_dynamic_discriminator_without_source_positions() {
 fn semantic_timeline_keeps_order_and_rejects_duplicate_items() {
     let value = timeline();
     assert!(value.frame().byte_offset().is_none());
-    assert!(
-        value
-            .frame()
-            .items()
-            .iter()
-            .all(|item| item.offset.is_none())
-    );
+    assert!(value
+        .frame()
+        .items()
+        .iter()
+        .all(|item| item.offset.is_none()));
     assert_eq!(
         value
             .frame()

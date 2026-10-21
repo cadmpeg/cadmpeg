@@ -606,7 +606,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 ..
             } if native_kind == "Linear Dimension-4"
             && entities.is_empty()
-            && actual_parameter.parameter().unwrap().as_str() == expected_parameter.as_str()
+            && actual_parameter.as_str() == expected_parameter.as_str()
             && native_ref == companion.id()
             && matches!(operands.as_slice(), [cadmpeg_ir::sketches::SketchNativeOperand {
                 native_kind,
@@ -805,7 +805,7 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
         [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
             if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
                 && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
-                && *actual == cadmpeg_ir::Dimension::Parameter(parameter)
+                && *actual == cadmpeg_ir::Dimension::Parameter(parameter.clone())
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
@@ -1035,7 +1035,7 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance { first, second, parameter: actual })
             if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#carrier-start").unwrap())
                 && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#extension").unwrap())
-                && actual == cadmpeg_ir::Dimension::Parameter(parameter)
+                && actual == cadmpeg_ir::Dimension::Parameter(parameter.clone())
     ));
 
     let mut ambiguous = entities;

@@ -1171,7 +1171,7 @@ fn parallel_group_binds_one_common_axis_angle() {
             entity,
             axis: SketchAxis::Horizontal,
             parameter,
-        }) if entity == first.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
+        }) if entity == first.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
     assert!(
         crate::design::dimensions::parallel_group_axis_angle_definition(

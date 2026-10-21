@@ -706,6 +706,7 @@ impl DesignEntityRegistration {
 
 impl DesignEntityHeader {
     /// Declared reference count for a present sketch reference list.
+    #[cfg(test)]
     pub(crate) fn declared_reference_count(&self) -> Option<usize> {
         self.sketch_references().map(|list| list.references.len())
     }

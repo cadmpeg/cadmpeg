@@ -1237,6 +1237,7 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
     assert_eq!(
         groups[0]
             .tangency_weight
+            .as_ref()
             .map(|dimension| dimension.literal().unwrap().get()),
         Some(0.75)
     );
