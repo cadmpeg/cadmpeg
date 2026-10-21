@@ -747,7 +747,6 @@ fn equation_function_six_emits_fixed_distance_constraint() {
             distance: cadmpeg_ir::Dimension::Literal(
                 Length::new(5.0).expect("finite length fixture")
             ),
-            parameter: None,
         }
     );
 
