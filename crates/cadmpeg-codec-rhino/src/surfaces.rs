@@ -185,7 +185,9 @@ impl DecodedProceduralSurface {
                             angular_interval,
                             None,
                             Some(parameter_interval),
-                            transposed,
+                            // Rhino's untransposed tensor is angle × profile;
+                            // CADIR's untransposed revolution is profile × angle.
+                            !transposed,
                             cadmpeg_ir::geometry::CacheContract::from_form(None),
                         )
                     })
