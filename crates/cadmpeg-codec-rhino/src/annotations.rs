@@ -1259,7 +1259,11 @@ mod tests {
                         "class={class} unit={unit:?}"
                     );
                     assert_eq!(
-                        record["source_offset"],
+                        decoded
+                            .source_fidelity()
+                            .retained_record("rhino:object:record#000000")
+                            .expect("source annotation extent")
+                            .offset(),
                         cadmpeg_core::decode::u64_from_index(source.range.start)
                     );
                     assert_eq!(

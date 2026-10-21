@@ -86,7 +86,7 @@ fn extreme_finite_instance_transforms_keep_native_occurrences_and_geometry() {
             let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
             let occurrences = native["product_occurrences"].as_array().unwrap();
             assert_eq!(occurrences.len(), 1);
-            assert!(occurrences[0].get("transform").is_none());
+            assert_eq!(occurrences[0]["transform"], serde_json::json!(rows));
             assert_eq!(ir.model.occurrences.len(), 1);
             assert_eq!(ir.model.occurrences[0].transform.rows(), rows);
         }

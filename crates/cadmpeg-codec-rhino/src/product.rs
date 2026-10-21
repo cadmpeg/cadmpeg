@@ -459,8 +459,9 @@ mod tests {
             if expected_units == "millimeter" {
                 assert_eq!(ir.model.occurrences.len(), 1);
                 assert_eq!(ir.model.occurrences[0].transform.rows(), expected_rows);
-                assert!(occurrence.get("transform").is_none());
-                assert!(occurrence.get("transform_units").is_none());
+                // #213 keeps source fields after projection.
+                assert_eq!(occurrence["transform"], serde_json::json!(expected_rows));
+                assert_eq!(occurrence["transform_units"], expected_units);
                 assert_eq!(
                     occurrence["neutral_refs"],
                     serde_json::json!([ir.model.occurrences[0].id.as_str()])
