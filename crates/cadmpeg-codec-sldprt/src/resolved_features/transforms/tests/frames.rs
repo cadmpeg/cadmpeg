@@ -654,7 +654,9 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         parameter.value,
         Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(parameter.expression, "<MOD-DIAM>12mm".into());
+    // Diameter presentation has its own field; it does not decorate the
+    // authoritative typed scalar expression with a native display token.
+    assert_eq!(parameter.expression, "12 mm".into());
     assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
 
     parameter.value = Some(ParameterValue::Real(
@@ -696,7 +698,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         parameter.value,
         Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(parameter.expression, "12mm".into());
+    assert_eq!(parameter.expression, "12 mm".into());
 }
 
 #[test]
