@@ -205,12 +205,8 @@ fn display_relation_synthesis_preserves_reference_parameter() {
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].name, "D1@reference");
     assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
-    assert_eq!(
-        parameters[0]
-            .properties
-            .get("sldprt_relation_parameter_role"),
-        Some(&"reference".into())
-    );
+    // D11: the typed driving field is the sole reference/driving fact.
+    assert!(!parameters[0].driving);
 }
 
 #[test]

@@ -495,7 +495,8 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let synthetic = synthesized_parameters
         .iter()
         .find(|parameter| {
-            parameter.properties.get("sldprt_relation_parameter_role") == Some(&"reference".into())
+            !parameter.driving
+                && parameter.properties.get("sldprt_relation_id") == Some(&relation.id)
         })
         .expect("display-only relation parameter");
     assert_eq!(
@@ -512,7 +513,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         &mut nested_parameters,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
-            relation_instances: vec![nested_relation],
+            relation_instances: vec![nested_relation.clone()],
             ..lane.clone()
         }),
     )
@@ -520,7 +521,8 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let nested = nested_parameters
         .iter()
         .find(|parameter| {
-            parameter.properties.get("sldprt_relation_parameter_role") == Some(&"reference".into())
+            !parameter.driving
+                && parameter.properties.get("sldprt_relation_id") == Some(&nested_relation.id)
         })
         .expect("nested display-only relation parameter");
     assert_eq!(
