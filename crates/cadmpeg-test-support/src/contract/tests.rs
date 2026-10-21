@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{assert_written_arenas_agree, neutral_view, translate_model, written_arenas};
-use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder, target::TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::{ArenaClass, CadIr};
 
@@ -101,11 +101,11 @@ fn written_comparison_accepts_only_consistent_global_identity_renaming() {
     ir.model.points[0].source_object = Some(
         serde_json::from_value(serde_json::json!({
             "format":"rhino", "object_id":"11111111-1111-1111-1111-111111111111",
-            "name":"11111111-1111-1111-1111-111111111111", "layer":"layer-old",
             "instance_path":["instance-old"]
         }))
         .expect("typed source association"),
     );
+    ir.model.bodies[0].name = Some("11111111-1111-1111-1111-111111111111".into());
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("CADIR plan");
@@ -113,11 +113,7 @@ fn written_comparison_accepts_only_consistent_global_identity_renaming() {
     let mut renamed = ir.clone();
     renamed.model = serde_json::from_value(marked).expect("renamed model remains valid");
     assert_written_arenas_agree(plan.report(), &ir, &renamed);
-    renamed.model.points[0]
-        .source_object
-        .as_mut()
-        .expect("source association")
-        .name = Some("22222222-2222-2222-2222-222222222222".into());
+    renamed.model.bodies[0].name = Some("22222222-2222-2222-2222-222222222222".into());
     assert!(
         std::panic::catch_unwind(|| assert_written_arenas_agree(plan.report(), &ir, &renamed))
             .is_err(),
