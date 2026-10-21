@@ -4116,14 +4116,11 @@ fn project_hem(
         (
             SheetMetalHemForm::GapLength { gap: _, length },
             Some(crate::history::HemGapLengthForm::Flat),
-        ) => SheetMetalHemForm::Flat { length: length },
+        ) => SheetMetalHemForm::Flat { length },
         (
             SheetMetalHemForm::GapLength { gap, length },
             Some(crate::history::HemGapLengthForm::Open),
-        ) => SheetMetalHemForm::Open {
-            gap: gap,
-            length: length,
-        },
+        ) => SheetMetalHemForm::Open { gap, length },
         (form, _) => form,
     };
     let direction = if operation.flipped {
@@ -4848,7 +4845,7 @@ fn project_variable_fillet(
                     ctx,
                 )?,
                 radius: RadiusSpec::Variable { points },
-                tangency_weight: tangency_weight,
+                tangency_weight,
             }),
         },
     )))
