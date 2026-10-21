@@ -903,9 +903,11 @@ fn encoder_writes_source_less_curved_sketches() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("not satisfied by measured geometry"));
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::Malformed(message)
+        if message == "solved locus distance disagrees with its canonical dimension"),
+        "{error}"
+    );
 }
 
 #[test]
