@@ -185,7 +185,9 @@ fn decoded(
     unknowns: Vec<UnknownRecord>,
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
-    if !ctx.container_only() {
+    if ctx.container_only() {
+        ir.scope = cadmpeg_ir::ContentScope::container();
+    } else {
         document_projection::project(ctx, &mut ir, &mut body.losses)?;
     }
     ir.scope.model = body.transfer.geometry_transferred

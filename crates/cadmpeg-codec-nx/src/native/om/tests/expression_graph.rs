@@ -454,14 +454,11 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
     })
     .expect("valid exactness fields");
 
-    assert_eq!(
-        ir.model.parameters[2]
-            .expression
-            .dependencies()
-            .cloned()
-            .collect::<Vec<_>>(),
-        vec![ir.model.parameters[3].id.clone()]
-    );
+    assert!(ir.model.parameters[2]
+        .expression
+        .dependencies()
+        .next()
+        .is_none());
 }
 
 #[test]
@@ -846,11 +843,14 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
             .as_slice(),
         [ir.model.parameters[0].id.clone()]
     );
-    assert!(ir.model.parameters[2]
-        .expression
-        .dependencies()
-        .next()
-        .is_none());
+    assert_eq!(
+        ir.model.parameters[2]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![ir.model.parameters[3].id.clone()]
+    );
     assert_eq!(
         ir.model.parameters[3]
             .expression

@@ -31,10 +31,11 @@ fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
 #[test]
 fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
     let result = decode(3);
-    let wire = serde_json::to_value(
-        &result.ir().native.namespace("nx").unwrap().arenas()["feature_symbolic_threads"][0],
-    )
-    .unwrap();
+    let namespace = crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    );
+    let wire = serde_json::to_value(&namespace.arenas()["feature_symbolic_threads"][0]).unwrap();
     assert_eq!(wire["construction"]["parameter_class_index"], 3);
     assert_eq!(
         wire["construction"]["coordinates"][2],
