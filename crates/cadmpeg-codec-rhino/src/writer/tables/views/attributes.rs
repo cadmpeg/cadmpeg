@@ -191,9 +191,9 @@ pub(super) fn encode(
     }
     let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
         .map_err(CodecError::malformed)?;
-    let direct = ranges
-        .iter()
-        .flat_map(|range| body[range.clone()].iter().copied())
+    let direct = (&ranges)
+        .into_iter()
+        .flat_map(|range| body[range].iter().copied())
         .collect::<Vec<_>>();
     crc_chunk_with_direct(0x2000_8c3b, &body, &direct)
 }

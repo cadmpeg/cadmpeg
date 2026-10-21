@@ -43,24 +43,6 @@ pub(crate) fn serialize_optional_color<S: serde::Serializer>(
         .serialize(serializer)
 }
 
-pub(crate) fn serialize_version<S: serde::Serializer>(
-    value: &cadmpeg_ir::native::bytes::NativeBytes<[u8; 2]>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    #[derive(serde::Serialize)]
-    struct Version {
-        major: u8,
-        minor: u8,
-    }
-    use serde::Serialize;
-    let bytes: &[u8] = value.as_ref();
-    Version {
-        major: bytes[0],
-        minor: bytes[1],
-    }
-    .serialize(serializer)
-}
-
 pub(crate) fn serialize_panose<S: serde::Serializer>(
     value: &Option<cadmpeg_ir::native::bytes::NativeBytes<[u8; 10]>>,
     serializer: S,

@@ -14,6 +14,8 @@ use cadmpeg_ir::CadIr;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
+const EPS_CAMERA_FRAME: f64 = 1e-10;
+
 fn vector(fields: &Map<String, Value>, key: &str) -> Option<[f64; 3]> {
     let values = fields.get(key)?.as_array()?;
     (values.len() == 3).then_some(())?;
@@ -29,7 +31,9 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 fn close(a: [f64; 3], b: [f64; 3]) -> bool {
-    a.into_iter().zip(b).all(|(a, b)| (a - b).abs() <= 1e-10)
+    a.into_iter()
+        .zip(b)
+        .all(|(a, b)| (a - b).abs() <= EPS_CAMERA_FRAME)
 }
 
 fn orientation(viewport: &Map<String, Value>) -> Option<NonzeroVector<4>> {
@@ -40,10 +44,10 @@ fn orientation(viewport: &Map<String, Value>) -> Option<NonzeroVector<4>> {
     // of an inconsistent source frame or a geometric tolerance substitution.
     if [x, y, z]
         .into_iter()
-        .any(|axis| (dot(axis, axis) - 1.0).abs() > 1e-10)
+        .any(|axis| (dot(axis, axis) - 1.0).abs() > EPS_CAMERA_FRAME)
         || [dot(x, y), dot(x, z), dot(y, z)]
             .into_iter()
-            .any(|value| value.abs() > 1e-10)
+            .any(|value| value.abs() > EPS_CAMERA_FRAME)
         || !close(
             [
                 x[1] * y[2] - x[2] * y[1],
@@ -108,7 +112,9 @@ fn property(
     name: &str,
     value: String,
 ) -> Result<(), CodecError> {
-    properties.insert(name.try_into().map_err(CodecError::malformed)?, value);
+    let name = cadmpeg_core::text::NonBlankString::new(name)
+        .ok_or_else(|| CodecError::malformed("Rhino view property name is blank"))?;
+    properties.insert(name, value);
     Ok(())
 }
 
