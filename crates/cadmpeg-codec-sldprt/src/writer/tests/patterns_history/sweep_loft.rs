@@ -750,11 +750,30 @@ fn semantic_writer_round_trips_typed_rib() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let diagnostics = |stage: &str, left: &cadmpeg_ir::CadIr, right: &cadmpeg_ir::CadIr| {
+        eprintln!(
+            "Rib conservation stage={stage}; coverage={:?}",
+            synthesized_report.coverage
+        );
+        let left = serde_json::to_value(&left.model).unwrap();
+        let right = serde_json::to_value(&right.model).unwrap();
+        for arena in cadmpeg_test_support::contract::written_arenas(&synthesized_report) {
+            let key = arena.as_str();
+            if left[key] != right[key] {
+                eprintln!(
+                    "Rib conservation stage={stage} arena={key} left={} right={}",
+                    left[key], right[key]
+                );
+            }
+        }
+    };
+    diagnostics("retained-vs-sourcefree", regenerated.ir(), source_free.ir());
     cadmpeg_test_support::contract::assert_written_arenas_agree(
         &synthesized_report,
         regenerated.ir(),
         source_free.ir(),
     );
+    diagnostics("input-vs-written", decoded.ir(), regenerated.ir());
     cadmpeg_test_support::contract::assert_written_arenas_agree(
         &synthesized_report,
         decoded.ir(),
