@@ -73,3 +73,85 @@ fn local_joint_reference_absent_from_current_document_is_a_precondition() {
         .expect_err("absent operand");
     assert!(matches!(error, CodecError::Malformed(_)));
 }
+
+#[test]
+fn nested_occurrence_reference_keeps_the_complete_object_path() {
+    let occurrence = "authored:model:occurrence#Outer".try_into().expect("id");
+    let operand = JointOperand::nested_occurrence(
+        occurrence,
+        vec!["Inner".into(), "Leaf".into()],
+        "Part",
+        vec!["Face1".into(), "Vertex2".into()],
+    );
+    let names = HashMap::from([("authored:model:occurrence#Outer".into(), "Outer".into())]);
+    let mut losses = Vec::new();
+    let xml = reference(&operand, &names, &mut losses).expect("reference");
+    let document = roxmltree::Document::parse(&xml).expect("XML");
+    assert_eq!(document.root_element().attribute("name"), Some("Outer"));
+    let selections: Vec<_> = document
+        .descendants()
+        .filter(|node| node.has_tag_name("Sub"))
+        .map(|node| node.attribute("value").expect("selection"))
+        .collect();
+    assert_eq!(
+        selections,
+        ["Inner.Leaf.Part.Face1", "Inner.Leaf.Part.Vertex2"]
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn unsupported_joint_families_report_each_omission_and_keep_supported_siblings() {
+    use cadmpeg_ir::products::{PlaneSense, TangentContact};
+
+    let unsupported = [
+        PairedJointKind::PlaneCoincidence {
+            sense: PlaneSense::Aligned,
+            offset: FiniteReal::new(2.0),
+        },
+        PairedJointKind::AxisCoincidence {},
+        PairedJointKind::PointOnAxis {
+            distance: FiniteReal::new(3.0),
+        },
+        PairedJointKind::Insert {
+            sense: PlaneSense::Aligned,
+            offset: FiniteReal::new(4.0),
+        },
+        PairedJointKind::Tangent {
+            contact: TangentContact::Outside,
+        },
+    ];
+    let mut ir = CadIr::empty();
+    let connector = || JointConnector {
+        operand: JointOperand::root("part", Vec::new()),
+        frame: Transform::identity(),
+        detached: false,
+    };
+    for (index, kind) in unsupported.into_iter().enumerate() {
+        ir.model.assembly_joints.push(AssemblyJoint::paired(
+            JointId::mint(format!("authored:model:joint#Omitted{index}")).expect("id"),
+            kind,
+            [connector(), connector()],
+            None,
+        ));
+    }
+    ir.model.assembly_joints.push(AssemblyJoint::paired(
+        JointId::mint("authored:model:joint#Ball").expect("id"),
+        PairedJointKind::Ball {},
+        [connector(), connector()],
+        None,
+    ));
+    let mut objects = vec![Object::new("Part".into(), "Part::Feature", "Part")];
+    let mut names = HashMap::from([("part".into(), "Part".into())]);
+    let mut losses = Vec::new();
+    write(&ir, &mut objects, &mut names, &mut losses).expect("joint write");
+    assert_eq!(objects.len(), 2);
+    assert!(objects[1].properties["JointType"].contains("value=\"Ball\""));
+    assert_eq!(losses.len(), 5);
+    for (index, loss) in losses.iter().enumerate() {
+        assert_eq!(loss.code.local_code(), "joint.not-transferred");
+        assert!(loss
+            .message
+            .contains(&format!("authored:model:joint#Omitted{index}")));
+    }
+}

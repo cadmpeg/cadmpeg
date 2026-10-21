@@ -9,6 +9,8 @@ use std::collections::BTreeSet;
 
 pub(crate) const PROPERTY: &str = "CadmpegParameterNames";
 
+cadmpeg_core::named_optional_field!(deserialize_driving, bool, "driving");
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ParameterName {
@@ -16,7 +18,11 @@ pub(crate) struct ParameterName {
     pub(crate) name: String,
     /// Generic scalar/cell controls have no native solver-driving flag.
     /// Sketch constraints use their existing isDriving lane instead.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_driving"
+    )]
     pub(crate) driving: Option<bool>,
 }
 
