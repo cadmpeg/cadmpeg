@@ -108,6 +108,7 @@ impl MetaStreamDeclaration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SegmentKind {
     PmBRep,
+    MbBRep,
     PmDc,
     PmGraphics,
     PmApp,
@@ -172,6 +173,7 @@ impl SegmentKind {
     fn classify(display_name: &str, type_name: Option<&str>) -> Self {
         match type_name {
             Some("PmBrepSegmentType") => Self::PmBRep,
+            Some("MbBrepSegmentType") => Self::MbBRep,
             Some("PmDcSegmentType") => Self::PmDc,
             Some("PmGRxSegmentType") => Self::PmGraphics,
             Some("PmAppSegmentType") => Self::PmApp,
@@ -194,6 +196,7 @@ impl SegmentKind {
     pub(crate) fn label(&self) -> &str {
         match self {
             Self::PmBRep => "pm_brep",
+            Self::MbBRep => "mb_brep",
             Self::PmDc => "pm_dc",
             Self::PmGraphics => "pm_graphics",
             Self::PmApp => "pm_app",

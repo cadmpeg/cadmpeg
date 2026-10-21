@@ -38,7 +38,7 @@ fn path_bytes() -> Vec<u8> {
 #[test]
 fn assembly_path_keeps_one_occurrence() {
     let bytes = path_bytes();
-    let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link())
+    let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), None)
         .unwrap()
         .unwrap();
     assert_eq!(path.occurrence_guids().len(), 1);
@@ -86,8 +86,147 @@ fn assembly_path_span_keeps_its_record_index() {
         10,
     );
     let bytes = envelope_bytes(scope.record_index);
-    let path = exact_assembly_operand_path_envelope(&bytes, &scope, 64, 0, 0)
-        .unwrap()
-        .unwrap();
+    let path = exact_assembly_operand_path_envelope(
+        &bytes,
+        &scope,
+        &std::collections::HashMap::new(),
+        64,
+        0,
+        0,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(path.record_index, 65);
+}
+
+fn push_guid(bytes: &mut Vec<u8>, guid: &str) {
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    for unit in guid.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+}
+
+/// An identity-qualified counted path record whose dynamic class tag is
+/// `class_tag`: one occurrence GUID, then the four identity GUIDs.
+fn identity_qualified_path_bytes(class_tag: [u8; 3], identities: bool) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(&class_tag);
+    bytes.extend_from_slice(&65_u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    push_guid(&mut bytes, GUID);
+    if identities {
+        push_guid(&mut bytes, "22222222-2222-2222-2222-222222222222");
+        push_guid(&mut bytes, "33333333-3333-3333-3333-333333333333");
+        bytes.extend_from_slice(&2_u64.to_le_bytes());
+        push_guid(&mut bytes, "44444444-4444-4444-4444-444444444444");
+        push_guid(&mut bytes, "55555555-5555-5555-5555-555555555555");
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+    }
+    bytes
+}
+
+#[test]
+fn typed_path_record_reads_whatever_its_class_tag() {
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID as TYPED;
+    let bytes = identity_qualified_path_bytes(*b"384", true);
+    let read = |type_guid| {
+        exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), type_guid).unwrap()
+    };
+    assert!(
+        read(None).is_none(),
+        "class 384 is not an admitted path class"
+    );
+    let path = read(Some(TYPED)).expect("typed path");
+    assert!(path.admitted_by_type());
+    assert_eq!(path.occurrence_guids().len(), 1);
+    assert_eq!(path.identity_guids().len(), 4);
+
+    // A typed path stores its identity suffix.
+    let bare = identity_qualified_path_bytes(*b"384", false);
+    assert!(
+        exact_assembly_operand_path(&bare, 0, 65, bare.len(), path_link(), Some(TYPED))
+            .unwrap()
+            .is_none()
+    );
+
+    // An admitted class keeps its own reading and is not marked typed.
+    let listed = identity_qualified_path_bytes(*b"390", true);
+    let path = exact_assembly_operand_path(&listed, 0, 65, listed.len(), path_link(), None)
+        .unwrap()
+        .expect("class 390 path");
+    assert!(!path.admitted_by_type());
+}
+
+/// A wide locator (record 64) with or without its transform, then the path
+/// (65), its wrapper (66) and the next header.
+fn wide_envelope_bytes(scope_record_index: u32, transform: bool) -> Vec<u8> {
+    let mut locator = vec![0; 68];
+    locator[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    locator[4..7].copy_from_slice(b"337");
+    locator[7..11].copy_from_slice(&64_u32.to_le_bytes());
+    locator[39..43].copy_from_slice(&3_u32.to_le_bytes());
+    write_reference(&mut locator, 56, 164);
+    if transform {
+        for ordinal in 0..16 {
+            let value = if ordinal % 5 == 0 { 1.0_f64 } else { 0.0 };
+            locator.extend_from_slice(&value.to_le_bytes());
+        }
+    } else {
+        locator[67] = 1;
+    }
+    let backlink = locator.len() + 1;
+    locator.resize(backlink + 28, 0);
+    write_reference(&mut locator, backlink, scope_record_index);
+    write_reference(&mut locator, backlink + 11, 66);
+    locator[backlink + 22..backlink + 26].copy_from_slice(&2_u32.to_le_bytes());
+    locator.extend_from_slice(&path_bytes());
+
+    let mut wrapper = vec![0; 37];
+    wrapper[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    wrapper[4..7].copy_from_slice(b"341");
+    wrapper[7..11].copy_from_slice(&66_u32.to_le_bytes());
+    wrapper[21] = 1;
+    wrapper[22..26].copy_from_slice(&1_u32.to_le_bytes());
+    write_reference(&mut wrapper, 26, 65);
+    locator.extend_from_slice(&wrapper);
+    locator.extend_from_slice(&3_u32.to_le_bytes());
+    locator.extend_from_slice(b"396");
+    locator.extend_from_slice(&67_u32.to_le_bytes());
+    locator
+}
+
+#[test]
+fn wide_scope_locator_is_admitted_by_its_record_type() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        DesignFeatureKind::Assemble,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 945;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let typed = std::collections::HashMap::from([(64, (super::WIDE_PATH_LOCATOR_TYPE_GUID, 5))]);
+    for transform in [true, false] {
+        let bytes = wide_envelope_bytes(scope.record_index, transform);
+        let locator_length = if transform { 225 } else { 97 };
+        assert_eq!(bytes.len(), locator_length + path_bytes().len() + 37 + 11);
+        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0)
+            .unwrap()
+            .expect("wide locator");
+        assert_eq!(path.record_index, 65);
+        let untyped = std::collections::HashMap::new();
+        assert!(
+            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+                .unwrap()
+                .is_none()
+        );
+    }
 }

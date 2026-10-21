@@ -1178,6 +1178,10 @@ pub(crate) struct DesignAssemblyOperandPathLink {
     pub(crate) path_reference_offset: u64,
 }
 
+/// Type GUID of the identity-qualified counted occurrence-path record. A path
+/// record of this type reads in that form whatever its dynamic class tag.
+pub(crate) const TYPED_OCCURRENCE_PATH_TYPE_GUID: &str = "96CBEA21-17E0-4BCB-BA77-04EA87B47934";
+
 /// Counted occurrence path qualifying one assembly operand construction.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignAssemblyOperandPathWire")]
@@ -1185,6 +1189,8 @@ pub(crate) struct DesignAssemblyOperandPath {
     link: DesignAssemblyOperandPathLink,
     pub(crate) record_index: u32,
     class_tag: DesignClassTag,
+    /// Type GUID that admitted the path record, when its type admitted it.
+    type_guid: Option<DesignRelaxedGuidText>,
     byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
     occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
@@ -1205,6 +1211,7 @@ impl Clone for DesignAssemblyOperandPath {
             link: self.link.clone(),
             record_index: self.record_index,
             class_tag: self.class_tag.clone(),
+            type_guid: self.type_guid.clone(),
             byte_offset: self.byte_offset,
             occurrence_guids: self.occurrence_guids.clone(),
             identity_guids: self.identity_guids.clone(),
@@ -1244,6 +1251,8 @@ struct DesignAssemblyOperandPathRef<'a> {
     link: &'a DesignAssemblyOperandPathLink,
     record_index: u32,
     class_tag: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    type_guid: Option<&'a DesignRelaxedGuidText>,
     byte_offset: u64,
     occurrence_guids: PathGuidValues<'a>,
     occurrence_guid_offsets: PathGuidOffsets<'a>,
@@ -1259,6 +1268,7 @@ impl Serialize for DesignAssemblyOperandPath {
             link: &self.link,
             record_index: self.record_index,
             class_tag: self.class_tag.as_str(),
+            type_guid: self.type_guid.as_ref(),
             byte_offset: self.byte_offset,
             occurrence_guids: PathGuidValues(&self.occurrence_guids),
             occurrence_guid_offsets: PathGuidOffsets(&self.occurrence_guids),
@@ -1278,6 +1288,13 @@ struct DesignAssemblyOperandPathWire {
     record_index: u32,
     /// Indexed-record class carrying this path.
     class_tag: String,
+    /// Type GUID that admitted the path record, when its type admitted it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_type_guid"
+    )]
+    type_guid: Option<DesignRelaxedGuidText>,
     /// Byte offset of the indexed header.
     byte_offset: u64,
     /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
@@ -1301,12 +1318,46 @@ impl DesignAssemblyOperandPath {
         occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
         identity_guids: Vec<Located<DesignRelaxedGuidText>>,
     ) -> Result<Self, String> {
+        Self::try_new_typed(
+            link,
+            record_index,
+            class_tag,
+            None,
+            byte_offset,
+            occurrence_guids,
+            identity_guids,
+        )
+    }
+    /// A path whose record `type_guid` admitted it, or `None` for a path
+    /// admitted by its class tag.
+    pub(crate) fn try_new_typed(
+        link: DesignAssemblyOperandPathLink,
+        record_index: u32,
+        class_tag: DesignClassTag,
+        type_guid: Option<DesignRelaxedGuidText>,
+        byte_offset: u64,
+        occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+        identity_guids: Vec<Located<DesignRelaxedGuidText>>,
+    ) -> Result<Self, String> {
+        let typed = match &type_guid {
+            Some(guid)
+                if guid
+                    .as_str()
+                    .eq_ignore_ascii_case(TYPED_OCCURRENCE_PATH_TYPE_GUID) =>
+            {
+                true
+            }
+            Some(_) => return Err("type_guid names no occurrence-path record type".into()),
+            None => false,
+        };
         let legacy_pair =
             class_tag.as_str() == "386" && matches!(link.locator_class_tag.as_str(), "363" | "378");
         if occurrence_guids.is_empty() || (legacy_pair && occurrence_guids.len() != 1) {
             return Err("occurrence_guids has invalid assembly path arity".into());
         }
-        let identity_arity = if legacy_pair {
+        let identity_arity = if typed {
+            identity_guids.len() == 4
+        } else if legacy_pair {
             identity_guids.len() == 1
         } else {
             match class_tag.as_str() {
@@ -1337,6 +1388,7 @@ impl DesignAssemblyOperandPath {
             link,
             record_index,
             class_tag,
+            type_guid,
             byte_offset,
             occurrence_guids,
             identity_guids,
@@ -1347,6 +1399,10 @@ impl DesignAssemblyOperandPath {
     }
     pub(crate) fn class_tag(&self) -> &DesignClassTag {
         &self.class_tag
+    }
+    /// Whether the path record's type, not its class tag, admitted it.
+    pub(crate) fn admitted_by_type(&self) -> bool {
+        self.type_guid.is_some()
     }
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
@@ -1389,10 +1445,11 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
         if wire.identity_guids.len() != wire.identity_guid_offsets.len() {
             return Err("identity_guids and identity_guid_offsets must have equal lengths".into());
         }
-        Self::try_new(
+        Self::try_new_typed(
             wire.link,
             wire.record_index,
             wire.class_tag.try_into()?,
+            wire.type_guid,
             wire.byte_offset,
             wire.occurrence_guids
                 .into_iter()
@@ -1425,6 +1482,7 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
             link: path.link,
             record_index: path.record_index,
             class_tag: path.class_tag.into(),
+            type_guid: path.type_guid,
             byte_offset: path.byte_offset,
             occurrence_guids,
             occurrence_guid_offsets,
@@ -1490,6 +1548,11 @@ pub(crate) struct DesignAssemblyOperandFrame {
 mod tests;
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_path_type_guid,
+    DesignRelaxedGuidText,
+    "type_guid"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_operand_frames,
     [DesignAssemblyOperandFrame; 2],
