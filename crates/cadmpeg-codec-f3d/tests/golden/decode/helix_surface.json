@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "7",
+    "ir_version": "8",
     "decode_depth": "full",
     "source": {
       "identity": {
@@ -331,8 +331,8 @@
                 0.5
               ],
               "dimension_range": [
-                -20.0,
-                30.0
+                -2.0,
+                3.0
               ],
               "path": {
                 "angle_range": [
@@ -368,7 +368,7 @@
               },
               "profile": {
                 "kind": "circle",
-                "length": 12.5,
+                "length": 1.25,
                 "radius": 7.5
               }
             }
