@@ -1694,14 +1694,16 @@ impl SketchInputEntity {
         payload[position..position + 5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[position + 5..position + 13].fill(0xff);
         payload[position + 13..position + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        Self::try_new(id.into(), parent.into(), ordinal, offset, kind, &payload).unwrap()
+        let mut entity = Self::try_new(id.into(), parent.into(), ordinal, offset, kind, &payload).unwrap();
+        entity.sequence = u32::try_from(offset).expect("fixture source order fits u32");
+        entity
     }
 
     #[cfg(test)]
     pub(crate) fn with_test_position(&self, ordinal: u32, offset: u64) -> Self {
         let mut updated = self.clone();
         updated.ordinal = ordinal;
-        updated.sequence = ordinal;
+        updated.sequence = u32::try_from(offset).expect("fixture source order fits u32");
         updated.offset = Some(offset);
         updated
     }

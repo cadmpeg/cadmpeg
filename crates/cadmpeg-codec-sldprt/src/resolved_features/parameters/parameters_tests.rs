@@ -357,6 +357,16 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             })
             .collect();
 
+        for class in &mut lane.classes {
+            class.sequence = u32::try_from(class.offset.expect("fixture source position")).unwrap();
+        }
+        for name in &mut lane.names {
+            name.sequence = u32::try_from(name.offset.expect("fixture source position")).unwrap();
+        }
+        for scalar in &mut lane.scalars {
+            scalar.sequence = u32::try_from(scalar.offset.expect("fixture source position")).unwrap();
+        }
+
         let declared = DeclaredParameters::new(&lane);
         for name in &lane.names {
             let expected = lane
