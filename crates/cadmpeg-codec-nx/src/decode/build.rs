@@ -1101,7 +1101,7 @@ pub(super) fn try_decode_geometry(
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
         let initial_endpoint_witnesses = emit_topology(
-            &mut scan.source_untyped(),
+            (&mut scan.source_untyped(), &mut topology_losses),
             ctx,
             &mut ir,
             &crate::decode::emit::TopologyStream {
@@ -1125,7 +1125,6 @@ pub(super) fn try_decode_geometry(
                 adaptive_geometry: &adaptive_geometry_budget,
                 completion_geometry: &completion_geometry_budget,
             },
-            &mut topology_losses,
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful

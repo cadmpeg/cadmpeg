@@ -81,15 +81,18 @@ pub(super) struct TopologyBudgets<'inputs> {
 }
 
 pub(super) fn emit_topology(
-    source_untyped: &mut cadmpeg_ir::ArenaClasses,
+    reporting: (
+        &mut cadmpeg_ir::ArenaClasses,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     topology_stream: &TopologyStream<'_>,
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
     topology_budgets: &TopologyBudgets<'_>,
-    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    let (source_untyped, topology_losses) = reporting;
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
         cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
@@ -1895,7 +1898,7 @@ mod tests {
 
     fn empty_source_scan() -> Scan<'static> {
         Scan {
-            source_untyped: Default::default(),
+            source_untyped: std::cell::RefCell::default(),
             container: Container {
                 data: Vec::new().into(),
                 physical_size: 0,

@@ -69,12 +69,12 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
             &DecodeOptions::default(),
         )
         .expect("native decode");
-    let emitted = (&crate::test_support::source_fidelity::native_namespace(
+    let emitted = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<OmOperationStateCounter>("om_operation_state_counters")
-        .expect("state-counter arena");
+    )
+    .arena_as::<OmOperationStateCounter>("om_operation_state_counters")
+    .expect("state-counter arena");
     assert_eq!(emitted, rows.as_slice());
 }
 
@@ -103,12 +103,12 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
             &DecodeOptions::default(),
         )
         .expect("native decode");
-    let emitted = (&crate::test_support::source_fidelity::native_namespace(
+    let emitted = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<OmAuditTrailRow>("om_audit_trail_rows")
-        .expect("audit-trail row arena");
+    )
+    .arena_as::<OmAuditTrailRow>("om_audit_trail_rows")
+    .expect("audit-trail row arena");
     assert_eq!(emitted, rows.as_slice());
 }
 
@@ -151,20 +151,20 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
             &DecodeOptions::default(),
         )
         .expect("native decode");
-    let emitted = (&crate::test_support::source_fidelity::native_namespace(
+    let emitted = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<OmOperationStateJournalGroup>("om_operation_state_journal_groups")
-        .expect("state-journal arena");
+    )
+    .arena_as::<OmOperationStateJournalGroup>("om_operation_state_journal_groups")
+    .expect("state-journal arena");
     assert_eq!(emitted, groups.as_slice());
 
-    let uses = (&crate::test_support::source_fidelity::native_namespace(
+    let uses = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<FeatureOperationStateJournalUse>("feature_operation_state_journal_uses")
-        .expect("operation-state journal use arena");
+    )
+    .arena_as::<FeatureOperationStateJournalUse>("feature_operation_state_journal_uses")
+    .expect("operation-state journal use arena");
     assert_eq!(uses.len(), 1);
     assert_eq!(serde_json::to_value(&uses[0]).unwrap()["state_ordinal"], 2);
     assert_eq!(uses[0].journal_row_ordinal, 0);
@@ -217,12 +217,12 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
             &DecodeOptions::default(),
         )
         .expect("native decode");
-    let emitted = (&crate::test_support::source_fidelity::native_namespace(
+    let emitted = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<OmRollForwardStateGroup>("om_roll_forward_state_groups")
-        .expect("roll-forward group arena");
+    )
+    .arena_as::<OmRollForwardStateGroup>("om_roll_forward_state_groups")
+    .expect("roll-forward group arena");
     assert_eq!(emitted.iter().collect::<Vec<_>>(), groups);
 }
 
@@ -256,12 +256,12 @@ fn native_catalog_emits_bounded_operation_state_messages() {
             &DecodeOptions::default(),
         )
         .expect("native decode");
-    let emitted = (&crate::test_support::source_fidelity::native_namespace(
+    let emitted = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<OmOperationStateMessage>("om_operation_state_messages")
-        .expect("state-message arena");
+    )
+    .arena_as::<OmOperationStateMessage>("om_operation_state_messages")
+    .expect("state-message arena");
     assert_eq!(emitted, messages.as_slice());
 }
 

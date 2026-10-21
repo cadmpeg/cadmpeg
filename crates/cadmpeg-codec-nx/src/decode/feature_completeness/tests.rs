@@ -363,7 +363,9 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         ),
-        thickness: (Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap())).map(Into::into),
+        thickness: Some(Into::into(
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+        )),
         side: Some(RibSide::Centered),
         draft: RibDraft::None,
     };
@@ -1530,7 +1532,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle: (Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap())).map(Into::into),
+            angle: Some(Into::into(
+                cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
+            )),
             outward: Some(false),
         }));
     losses.clear();
@@ -1657,8 +1661,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             ))
             .try_into()
             .unwrap(),
-            gap_tolerance: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()))
-                .map(Into::into),
+            gap_tolerance: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap(),
+            )),
         }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
@@ -1675,8 +1680,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             .unwrap())
             .try_into()
             .unwrap(),
-            gap_tolerance: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()))
-                .map(Into::into),
+            gap_tolerance: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap(),
+            )),
         }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);

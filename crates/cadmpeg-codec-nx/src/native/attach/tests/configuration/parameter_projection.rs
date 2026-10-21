@@ -127,11 +127,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             .map(String::as_str),
         Some("inch")
     );
-    assert!(
-        crate::decode::feature_completeness::incomplete_expression_parameters(&ir)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(crate::decode::feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 }
 
 #[test]
@@ -173,7 +169,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         Some("custom/unit")
     );
     assert_eq!(
-        crate::decode::feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
+        crate::decode::feature_completeness::incomplete_expression_parameters(&ir),
         [ir.model.parameters[0].id.clone()].into()
     );
 }

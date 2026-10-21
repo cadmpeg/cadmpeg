@@ -53,7 +53,7 @@ fn classify(container: &Container<'_>) -> DialectMatch {
 fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
-        source_untyped: Default::default(),
+        source_untyped: std::cell::RefCell::default(),
         container: { crate::container::scan_bytes(bytes.clone()) }.unwrap(),
         streams: extract_streams(&bytes),
     };
@@ -89,7 +89,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
             .expect("the fixture text is a schema token"),
     );
     let scan = crate::decode::Scan {
-        source_untyped: Default::default(),
+        source_untyped: std::cell::RefCell::default(),
         container: { crate::container::scan_bytes(bytes) }.unwrap(),
         streams,
     };
@@ -116,7 +116,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let mut streams = extract_streams(&bytes);
     streams.push(streams[0].clone());
     let scan = crate::decode::Scan {
-        source_untyped: Default::default(),
+        source_untyped: std::cell::RefCell::default(),
         container: { crate::container::scan_bytes(bytes) }.unwrap(),
         streams,
     };

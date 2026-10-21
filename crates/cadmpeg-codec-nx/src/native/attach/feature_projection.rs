@@ -64,7 +64,7 @@ impl<'a> SolidBodyIndex<'a> {
         shell
             .faces()
             .iter()
-            .map(|face_id| self.faces.get(&(face_id, &shell.id)).cloned())
+            .map(|face_id| self.faces.get(&(face_id, &shell.id)).copied())
             .collect()
     }
 
@@ -154,7 +154,7 @@ impl<'a> FeatureProjectionIndex<'a> {
         let owners = procedural_surface_owners(arenas.surfaces);
         let mut owned_procedurals = BTreeMap::<_, Vec<_>>::new();
         for (position, procedural) in arenas.procedural_surfaces.iter().enumerate() {
-            if let Some(owner) = owners.get(&procedural.id).cloned().flatten() {
+            if let Some(owner) = owners.get(&procedural.id).copied().flatten() {
                 owned_procedurals
                     .entry(owner)
                     .or_default()
@@ -248,7 +248,7 @@ impl<'a> CarrierIndex<'a> {
     }
 
     pub(super) fn surface(&self, id: &SurfaceId) -> Option<&'a Surface> {
-        self.surfaces.get(id).cloned()
+        self.surfaces.get(id).copied()
     }
 
     pub(super) fn loop_coedges(&self, loop_id: &LoopId) -> &[&'a Coedge] {
@@ -258,7 +258,7 @@ impl<'a> CarrierIndex<'a> {
     /// The curve carrying the last edge of `edge_id`.
     pub(super) fn edge_curve(&self, edge_id: &EdgeId) -> Option<&'a Curve> {
         let curve_id = self.edges.get(edge_id)?.curve()?;
-        self.curves.get(curve_id).cloned()
+        self.curves.get(curve_id).copied()
     }
 }
 
@@ -629,7 +629,7 @@ pub(super) fn thicken_feature_definition(
     Some((
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
-            thickness: (Some(thickness)).map(Into::into),
+            thickness: Some(Into::into(thickness)),
             side,
         }),
         supports,
@@ -898,7 +898,7 @@ pub(super) fn block_placement(
     };
     let faces = solid_bodies.connected_solid_body_faces(body)?;
     let mut bands = Vec::<PlaneBand>::new();
-    for face in faces.iter().cloned() {
+    for face in faces.iter().copied() {
         let geometry = index
             .last_surfaces
             .get(&face.surface)
@@ -1259,7 +1259,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
     if matches!(kind, "BLEND" | "FACE_BLEND") {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: kind.into(),
-            parameters: (native_parameters).into(),
+            parameters: native_parameters,
         }));
     }
     if let ("BLOCK", Some([Some(length), Some(width), Some(height)])) = (
@@ -1615,7 +1615,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         }
         _ => FeatureDefinition::Operation(FeatureOperation::Native {
             kind: kind.into(),
-            parameters: (native_parameters).into(),
+            parameters: native_parameters,
         }),
     })
 }
@@ -1924,7 +1924,7 @@ pub(super) fn hole_package_projection(
 
         let Some(group) = groups_by_id
             .get(use_.simple_hole_construction_group.as_str())
-            .cloned()
+            .copied()
         else {
             continue;
         };
@@ -1942,7 +1942,7 @@ pub(super) fn hole_package_projection(
         for member in group.members.iter() {
             let Some(Some(template)) = templates_by_operation
                 .get(member.operation_label.as_str())
-                .cloned()
+                .copied()
             else {
                 complete_templates = false;
                 break;
@@ -1983,7 +1983,7 @@ pub(super) fn hole_package_projection(
             .first()
             .map(|member| &member.operation_label)
             .and_then(|operation| diameters.get(operation))
-            .cloned()
+            .copied()
         else {
             continue;
         };
@@ -1991,7 +1991,7 @@ pub(super) fn hole_package_projection(
             .members
             .iter()
             .map(|member| &member.operation_label)
-            .any(|operation| diameters.get(operation).cloned() != Some(diameter))
+            .any(|operation| diameters.get(operation).copied() != Some(diameter))
         {
             continue;
         }
@@ -2533,7 +2533,7 @@ pub(super) fn cylindrical_face_witnesses(
 
     for face in body_faces
         .iter()
-        .cloned()
+        .copied()
         .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
     {
         let Some(surface) = carriers.surface(&face.surface) else {
@@ -3154,7 +3154,7 @@ pub(super) fn unique_simple_hole_template(
 )> {
     let mut candidates = payload_strings
         .iter()
-        .cloned()
+        .copied()
         .filter(|value| value.starts_with("Hole_"));
     let candidate = candidates.next()?;
     if candidates.next().is_some() {

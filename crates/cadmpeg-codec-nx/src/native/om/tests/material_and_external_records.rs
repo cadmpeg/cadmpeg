@@ -53,14 +53,14 @@ fn decode_retains_strict_tiff_material_texture_assets() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let assets = (&crate::test_support::source_fidelity::native_namespace(
+    let assets = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
-            "material_texture_assets",
-        )
-        .expect("required invariant");
+    )
+    .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
+        "material_texture_assets",
+    )
+    .expect("required invariant");
 
     assert_eq!(assets.len(), 1);
     assert_eq!(assets[0].name(), "AISI Steel 4340");
@@ -200,12 +200,12 @@ fn assembly_metadata_lists_external_child_paths() {
         attrs.get("external_reference.1").map(String::as_str),
         Some("nested/b.prt")
     );
-    let references = (&crate::test_support::source_fidelity::native_namespace(
+    let references = crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ))
-        .arena_as::<super::super::ExternalReference>("external_references")
-        .expect("typed external references");
+    )
+    .arena_as::<super::super::ExternalReference>("external_references")
+    .expect("typed external references");
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].ordinal, 0);
     assert_eq!(references[0].path, "child.prt");

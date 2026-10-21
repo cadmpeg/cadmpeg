@@ -315,7 +315,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             }, Some(actual_diameter),) if (placements.as_deref() == Some(&[HolePlacement::Directed {
             position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-        }][..])) && ir.dimension_value(&actual_diameter).expect("dimension value").get() == 4.0 && ir.dimension_value(&actual_length).expect("dimension value").get() == 3.0)));
+        }][..])) && ir.dimension_value(actual_diameter).expect("dimension value").get() == 4.0 && ir.dimension_value(&actual_length).expect("dimension value").get() == 3.0)));
 
         let mut missing_cap = ir.clone();
         missing_cap.model.shells[0]
@@ -702,7 +702,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             }, Some(actual_diameter_2),) if (placements.as_deref() == Some(&[HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-        }][..])) && ir.dimension_value(&actual_diameter).expect("dimension value").get() == 8.0 && ir.dimension_value(&actual_depth).expect("dimension value").get() == 2.0 && ir.dimension_value(&actual_diameter_2).expect("dimension value").get() == 4.0)));
+        }][..])) && ir.dimension_value(actual_diameter).expect("dimension value").get() == 8.0 && ir.dimension_value(actual_depth).expect("dimension value").get() == 2.0 && ir.dimension_value(actual_diameter_2).expect("dimension value").get() == 4.0)));
 
         let mut missing_shoulder = ir.clone();
         missing_shoulder.model.shells[0]
@@ -1187,7 +1187,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: RadiusSpec::Constant { radius: actual_radius },
             ..
-        }] if ir.dimension_value(&actual_radius).expect("dimension value").get() == 5.0)
+        }] if ir.dimension_value(actual_radius).expect("dimension value").get() == 5.0)
     ));
     let (definition, _) = project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Face)
         .expect("face blend retains unresolved supports");
@@ -1283,7 +1283,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: RadiusSpec::Constant { radius: actual_radius },
             ..
-        }] if ir.dimension_value(&actual_radius).expect("dimension value").get() == 5.0)
+        }] if ir.dimension_value(actual_radius).expect("dimension value").get() == 5.0)
     ));
     ir.model.procedural_surfaces.pop();
     ir.model.surfaces.pop();

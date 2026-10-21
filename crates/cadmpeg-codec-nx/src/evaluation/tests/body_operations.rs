@@ -657,8 +657,9 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
                 radius: RadiusSpec::Constant {
                     radius: (cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap()).into(),
                 },
-                tangency_weight: (Some(cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()))
-                    .map(Into::into),
+                tangency_weight: Some(Into::into(
+                    cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+                )),
             }),
         }),
     ));
@@ -718,12 +719,13 @@ fn complete_single_body_dress_up_families_preserve_identity() {
         }),
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: first.clone(),
-            distance: (Some(Length::new(0.1).unwrap())).map(Into::into),
+            distance: Some(Into::into(Length::new(0.1).unwrap())),
         }),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: first.clone(),
-            thickness: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()))
-                .map(Into::into),
+            thickness: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap(),
+            )),
             side: Some(ThickenSide::Forward),
         }),
         FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -738,7 +740,9 @@ fn complete_single_body_dress_up_families_preserve_identity() {
                     plane: None,
                 }),
             },
-            angle: (Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap())).map(Into::into),
+            angle: Some(Into::into(
+                cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
+            )),
             outward: Some(false),
         }),
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
@@ -806,7 +810,9 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         2,
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces,
-            distance: (Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap())).map(Into::into),
+            distance: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
+            )),
             method: SurfaceExtension::Natural,
         }),
     );
@@ -1020,7 +1026,7 @@ fn output_free_fset_is_body_census_neutral() {
         1,
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "FSET".into(),
-            parameters: (BTreeMap::new()).into(),
+            parameters: BTreeMap::new(),
         }),
     );
     fset.suppressed = None;
@@ -1132,7 +1138,7 @@ fn native_delete_without_a_primary_body_is_body_neutral() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "DELETE".into(),
-                parameters: (BTreeMap::new()).into(),
+                parameters: BTreeMap::new(),
             }),
         ),
         native_ref: None,

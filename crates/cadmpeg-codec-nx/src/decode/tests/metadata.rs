@@ -41,7 +41,7 @@ fn decoded_unknown_limit_error(
     let scan = super::super::Scan {
         container: crate::container::scan_bytes(file.as_slice()).expect("empty test container"),
         streams: Vec::new(),
-        source_untyped: Default::default(),
+        source_untyped: std::cell::RefCell::default(),
     };
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
         match super::super::decoded(
@@ -88,7 +88,7 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
         })
         .expect("the cache is empty");
     let scan = super::super::Scan {
-        source_untyped: Default::default(),
+        source_untyped: std::cell::RefCell::default(),
         container,
         streams: Vec::new(),
     };

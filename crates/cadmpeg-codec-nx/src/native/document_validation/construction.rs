@@ -5,7 +5,10 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde_json::Value;
 
-use super::values::*;
+use super::values::{
+    array, data_block, fail, field, finite, index, link, nonzero_byte, optional_link, sized_array,
+    uint, unique,
+};
 
 pub(super) fn validate(
     ctx: &DecodeContext<'_>,
@@ -37,26 +40,26 @@ pub(super) fn validate(
                         namespace,
                         &record,
                         arena == "feature_unlabeled_operation_body_writes",
-                    )?
+                    )?;
                 }
                 "assembly_placements" => super::values::placement(&record)?,
                 "rmfastload_physical_storages" => super::values::storage(&record)?,
                 _ => return Err(fail(&record, "unknown construction arena")),
             }
-            if !matches!(
+            if matches!(
                 arena,
                 "assembly_placements"
                     | "rmfastload_physical_storages"
                     | "feature_unlabeled_operation_body_writes"
             ) {
-                link(
+                optional_link(
                     namespace,
                     &record,
                     "operation_label",
                     "feature_operation_labels",
                 )?;
             } else {
-                optional_link(
+                link(
                     namespace,
                     &record,
                     "operation_label",
@@ -115,9 +118,9 @@ fn operation_record(record: &Value) -> Result<(), NativeConvertError> {
         }
     }
     if record.get("stable_identity").is_some()
-        && !record["stable_identity"]
+        && record["stable_identity"]
             .as_str()
-            .is_some_and(|value| !value.is_empty())
+            .is_none_or(|value| value.is_empty())
     {
         return Err(fail(record, "stable_identity must be nonempty text"));
     }
