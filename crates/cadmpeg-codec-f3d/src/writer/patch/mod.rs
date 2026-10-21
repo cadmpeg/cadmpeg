@@ -429,12 +429,13 @@ pub(crate) fn write_semantic(
             continue;
         }
         let mut normalized = after.clone();
-        for value in &mut normalized.values {
-            if let cadmpeg_ir::attributes::AttributeValue::Float(value) = value {
-                if *value == after_value {
-                    *value = before_value;
-                }
-            }
+        let scalar_slot = normalized.values.iter().position(|value| {
+            matches!(value, cadmpeg_ir::attributes::AttributeValue::String(marker) if marker == "Timestamp_attrib_def")
+        }).and_then(|index| index.checked_add(2));
+        if let Some(cadmpeg_ir::attributes::AttributeValue::Float(value)) =
+            scalar_slot.and_then(|index| normalized.values.get_mut(index))
+        {
+            *value = before_value;
         }
         if &normalized == attribute {
             *attribute = after.clone();
