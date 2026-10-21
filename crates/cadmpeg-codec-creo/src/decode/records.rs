@@ -2812,10 +2812,7 @@ pub(super) fn feature_operation_state_records<'a>(
                 .name
                 .stored_name_bytes()
                 .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
-            stored_name_bytes: state
-                .name
-                .stored_name_bytes()
-                .map(|bytes| NativeBytes::from(bytes)),
+            stored_name_bytes: state.name.stored_name_bytes().map(NativeBytes::from),
             identifier_keyword: state.name.identifier_keyword(),
             stored_name_prefix: state
                 .name

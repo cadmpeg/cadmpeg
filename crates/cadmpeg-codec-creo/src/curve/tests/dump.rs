@@ -1346,14 +1346,8 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
         panic!("four curve-expression parameters");
     };
 
-    assert_eq!(
-        r.expression.dependencies().cloned().collect::<Vec<_>>(),
-        [a.id.clone()]
-    );
-    assert_eq!(
-        a.expression.dependencies().cloned().collect::<Vec<_>>(),
-        [r.id.clone()]
-    );
+    assert_eq!(r.expression.dependencies().collect::<Vec<_>>(), [&a.id]);
+    assert_eq!(a.expression.dependencies().collect::<Vec<_>>(), [&r.id]);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");

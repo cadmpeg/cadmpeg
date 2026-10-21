@@ -1044,13 +1044,10 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     SketchConstraintDefinitionInput::DistanceLociValue {
                         first,
                         second,
-                        distance: (parameter)
-                            .map(cadmpeg_ir::features::Dimension::Parameter)
-                            .unwrap_or_else(|| {
-                                cadmpeg_ir::features::Dimension::Literal(
-                                    (Length::from(distance)).into(),
-                                )
-                            }),
+                        distance: parameter.map_or_else(
+                            || cadmpeg_ir::features::Dimension::Literal(Length::from(distance)),
+                            cadmpeg_ir::features::Dimension::Parameter,
+                        ),
                     },
                     equation.active(),
                     equation.offset,
@@ -1255,11 +1252,10 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                     SketchConstraintDefinitionInput::PolarDistance {
                         first,
                         second,
-                        distance: (distance_parameter)
-                            .map(cadmpeg_ir::features::Dimension::Parameter)
-                            .unwrap_or_else(|| {
-                                cadmpeg_ir::features::Dimension::Literal(Length::from(distance))
-                            }),
+                        distance: distance_parameter.map_or_else(
+                            || cadmpeg_ir::features::Dimension::Literal(Length::from(distance)),
+                            cadmpeg_ir::features::Dimension::Parameter,
+                        ),
                         angle: (angle).map(Into::into),
                     },
                     equation.active,

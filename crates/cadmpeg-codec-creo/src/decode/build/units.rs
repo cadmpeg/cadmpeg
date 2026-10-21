@@ -837,15 +837,11 @@ fn scale_radius_spec(
     *radius = match owned {
         RadiusSpec::Constant { mut radius } => {
             scale_positive_length(&mut radius, scale)?;
-            RadiusSpec::Constant {
-                radius: (radius).into(),
-            }
+            RadiusSpec::Constant { radius }
         }
         RadiusSpec::Chordal { mut chord_length } => {
             scale_positive_length(&mut chord_length, scale)?;
-            RadiusSpec::Chordal {
-                chord_length: (chord_length).into(),
-            }
+            RadiusSpec::Chordal { chord_length }
         }
         RadiusSpec::Asymmetric {
             mut offset_one,
@@ -854,8 +850,8 @@ fn scale_radius_spec(
             scale_positive_length(&mut offset_one, scale)?;
             scale_positive_length(&mut offset_two, scale)?;
             RadiusSpec::Asymmetric {
-                offset_one: (offset_one).into(),
-                offset_two: (offset_two).into(),
+                offset_one,
+                offset_two,
             }
         }
         RadiusSpec::Variable { points } => {
@@ -1383,10 +1379,9 @@ mod tests {
                                         face: cadmpeg_ir::features::FaceSelection::Native(
                                             "face".into(),
                                         ),
-                                        offset: (Some(
+                                        offset: Some(Into::into(
                                             Length::new(4.0).expect("finite length fixture"),
-                                        ))
-                                        .map(Into::into),
+                                        )),
                                     },
                                     draft: None,
                                 },
@@ -1621,7 +1616,7 @@ mod tests {
         let mut definition = FeatureDefinition::PostProcess {
             operation: FeatureOperation::Native {
                 kind: "Boolean".into(),
-                parameters: (BTreeMap::new()).into(),
+                parameters: BTreeMap::new(),
             },
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(cadmpeg_ir::Dimension::Literal(
@@ -2315,7 +2310,7 @@ mod tests {
                     depth: HoleThreadDepth::Blind {
                         depth: (positive_length(3.0)).into(),
                     },
-                    clearance: (Some(Length::new(1.0).expect("length"))).map(Into::into),
+                    clearance: Some(Into::into(Length::new(1.0).expect("length"))),
                 })),
             },
             None,

@@ -147,14 +147,14 @@ mod tests {
 
     fn document(operation: FeatureOperation) -> CadIr {
         let mut ir = CadIr::empty();
-        let feature = FeatureId::mint("creo:test:feature#1").unwrap();
+        let feature = FeatureId::mint("creo:test:feature#1").expect("fixture value is valid");
         ir.model.features.push(Feature {
             id: feature.clone(),
             ordinal: 0,
             name: None,
             suppressed: None,
             needs_recompute: false,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -162,9 +162,9 @@ mod tests {
             native_ref: None,
             evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
         });
-        let value = ParameterValue::Length(Length::new(3.0).unwrap());
+        let value = ParameterValue::Length(Length::new(3.0).expect("fixture value is valid"));
         ir.model.parameters.push(DesignParameter {
-            id: ParameterId::mint("creo:test:parameter#1").unwrap(),
+            id: ParameterId::mint("creo:test:parameter#1").expect("fixture value is valid"),
             owner: Some(feature),
             ordinal: 0,
             name: "d1".into(),
@@ -183,10 +183,10 @@ mod tests {
     fn unique_source_owned_quantity_binds_without_a_value_copy() {
         let mut ir = document(FeatureOperation::DatumOffsetPlane {
             reference: None,
-            distance: Length::new(3.0).unwrap().into(),
+            distance: Length::new(3.0).expect("fixture value is valid").into(),
         });
         let mut losses = Vec::new();
-        bind_owned_dimensions(&mut ir, &mut losses).unwrap();
+        bind_owned_dimensions(&mut ir, &mut losses).expect("fixture value is valid");
         assert!(
             matches!(ir.model.features[0].definition(), FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance: Dimension::Parameter(id), .. }) if id == &ir.model.parameters[0].id)
         );
@@ -198,10 +198,10 @@ mod tests {
     fn station_disagreement_is_stale_and_parameter_is_canonical() {
         let mut ir = document(FeatureOperation::DatumOffsetPlane {
             reference: None,
-            distance: Length::new(2.0).unwrap().into(),
+            distance: Length::new(2.0).expect("fixture value is valid").into(),
         });
         let mut losses = Vec::new();
-        bind_owned_dimensions(&mut ir, &mut losses).unwrap();
+        bind_owned_dimensions(&mut ir, &mut losses).expect("fixture value is valid");
         assert!(ir.model.features[0].needs_recompute);
         assert!(losses
             .iter()
@@ -218,11 +218,15 @@ mod tests {
     #[test]
     fn equal_numbers_do_not_disambiguate_source_slots() {
         let mut ir = document(FeatureOperation::PlanarPatch {
-            length: PositiveLength::new(3.0).unwrap().into(),
-            width: PositiveLength::new(3.0).unwrap().into(),
+            length: PositiveLength::new(3.0)
+                .expect("fixture value is valid")
+                .into(),
+            width: PositiveLength::new(3.0)
+                .expect("fixture value is valid")
+                .into(),
         });
         let mut losses = Vec::new();
-        bind_owned_dimensions(&mut ir, &mut losses).unwrap();
+        bind_owned_dimensions(&mut ir, &mut losses).expect("fixture value is valid");
         assert!(matches!(
             ir.model.features[0].definition(),
             FeatureDefinition::Operation(FeatureOperation::PlanarPatch {
