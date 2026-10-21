@@ -358,18 +358,36 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     );
     assert_eq!(bounded.record_index.map(|index| index.value), Some(102));
     assert_eq!(native.persistent_references.len(), 3);
-    assert_eq!(
-        native
-            .persistent_references
-            .iter()
-            .map(|reference| reference.value)
-            .collect::<Vec<_>>(),
-        [900, 100, 500]
+    let reference_counts = native.persistent_references.iter().fold(
+        std::collections::BTreeMap::new(),
+        |mut counts, reference| {
+            *counts
+                .entry((
+                    match reference.kind {
+                        PersistentReferenceKind::Point => "point",
+                        PersistentReferenceKind::CurvePrimary => "curve_primary",
+                        PersistentReferenceKind::CurveSecondary => "curve_secondary",
+                    },
+                    reference.value,
+                ))
+                .or_insert(0usize) += 1;
+            counts
+        },
     );
     assert_eq!(
-        native.persistent_references[1].kind,
-        PersistentReferenceKind::CurvePrimary
+        reference_counts,
+        std::collections::BTreeMap::from([
+            (("point", 900), 1),
+            (("curve_primary", 100), 1),
+            (("curve_secondary", 500), 1),
+        ])
     );
+    let primary = native
+        .persistent_references
+        .iter()
+        .find(|reference| reference.kind == PersistentReferenceKind::CurvePrimary)
+        .expect("the named primary curve reference");
+    assert_eq!(primary.value, 100);
     assert_eq!(native.lost_edge_references.len(), 1);
     assert_eq!(native.lost_edge_references[0].class_tag.as_str(), "419");
     assert_eq!(native.lost_edge_references[0].record_index, 4645);
