@@ -1115,6 +1115,7 @@ mod tests {
                 "writer.native-records-omitted",
                 "export.no-exportable-solids",
                 "writer.design-reduced",
+                "writer.configuration-association-generated",
                 "source.opaque-records-unrepresented",
                 "writer.procedural-reduced",
                 "source.property-key-blank",
