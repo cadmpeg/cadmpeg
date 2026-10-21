@@ -1329,7 +1329,20 @@ fn append_operation_parameters(
             continue;
         }
         let expression = expression_binding(properties, &property.name);
-        let is_angle = property.type_name.contains("Angle");
+        let is_angle = property.type_name.contains("Angle")
+            || matches!(
+                property.name.as_str(),
+                "Angle"
+                    | "Angle0"
+                    | "Angle1"
+                    | "Angle2"
+                    | "Angle3"
+                    | "TaperAngle"
+                    | "TaperAngle2"
+                    | "HoleCutCountersinkAngle"
+                    | "DrillPointAngle"
+                    | "TaperedAngle"
+            );
         let retained = BTreeMap::new();
         let value = if is_angle {
             cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
