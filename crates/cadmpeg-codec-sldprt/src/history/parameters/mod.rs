@@ -22,7 +22,7 @@ use crate::history::classify::{
 use crate::history::literals::{
     dimension_display, format_angle_rad, format_f64_literal, format_length_mm,
     format_length_number, format_parameter_value, parse_angle_rad, parse_dimension_display_length,
-    parse_parameter_literal, parse_dimension_length_mm,
+    parse_dimension_length_mm, parse_parameter_literal,
 };
 use crate::history::project::pattern::{pattern_form, NativePatternClass};
 use crate::history::project::{
@@ -300,6 +300,14 @@ pub(crate) fn parse_native_parameter_literal(
             }
         }
     }
+    if native_parameter_is_real(feature, name) {
+        return expression
+            .trim()
+            .parse()
+            .ok()
+            .and_then(FiniteReal::new)
+            .map(ParameterValue::Real);
+    }
     if native_parameter_is_length(feature, name, Some(expression)) {
         return parse_dimension_length_mm(expression).map(ParameterValue::Length);
     }
@@ -312,6 +320,9 @@ pub(super) fn native_parameter_is_length(
     expression: Option<&str>,
 ) -> bool {
     let cosmetic_thread = classify(feature) == Some(FeatureClass::CosmeticThread);
+    if sole_source_extrusion_depth(feature, name) {
+        return true;
+    }
     if is_chamfer(feature) && ordered_chamfer_length_control(feature, name) {
         return true;
     }
@@ -363,6 +374,33 @@ pub(super) fn native_parameter_is_length(
                 && feature.parameters.contains_key(name)
         }
     }
+}
+
+/// These controls have dimensionless real roles in their native operation schemas.
+fn native_parameter_is_real(feature: &Feature, name: &str) -> bool {
+    match classify(feature) {
+        Some(FeatureClass::Scale) => matches!(name, "Factor" | "ScaleX" | "ScaleY" | "ScaleZ"),
+        Some(FeatureClass::Flex) => name == "Factor",
+        Some(FeatureClass::Helix) => name == "Revolutions",
+        _ => false,
+    }
+}
+
+/// The history extrusion schema uses one authored source control for its depth.
+/// Repeated markers name the same control; unrelated auxiliary parameters do not.
+fn sole_source_extrusion_depth(feature: &Feature, name: &str) -> bool {
+    if !(feature.input_class.as_deref() == Some("moExtrusion_c")
+        || (feature.input_class.is_none() && feature.xml_tag.eq_ignore_ascii_case("Extrusion")))
+    {
+        return false;
+    }
+    let mut dimensions = feature.content.iter().filter_map(|content| match content {
+        crate::records::FeatureContent::Dimension(name) => Some(name.as_str()),
+        crate::records::FeatureContent::Feature(_) | crate::records::FeatureContent::Text(_) => {
+            None
+        }
+    });
+    dimensions.next() == Some(name) && dimensions.all(|candidate| candidate == name)
 }
 
 /// The ordered one- or two-control chamfer schema used by operation projection.
