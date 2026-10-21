@@ -39,6 +39,18 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         .unwrap();
     let native = crate::test_support::native_test::f3d_native(&ir);
     assert_eq!(native.design_parameters.len(), 2);
+    let recipe = native
+        .design_dimension_recipe_records
+        .iter()
+        .find(|record| record.record_index == 1305)
+        .unwrap();
+    assert_eq!(recipe.companion_record_index, 1202);
+    assert_eq!(recipe.program, [0, 0]);
+    assert!(recipe.references.is_empty());
+    assert!(
+        recipe.prefix_bytes.data().is_none(),
+        "the CADIR document has no source recipe prefix bytes"
+    );
     assert!(native
         .design_parameters
         .iter()
@@ -157,6 +169,18 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         Some(ParameterValue::Length(Length::new(15.0).unwrap()))
     );
     let native = crate::test_support::native_test::f3d_native(written.ir());
+    let recipe = native
+        .design_dimension_recipe_records
+        .iter()
+        .find(|record| record.record_index == 1305)
+        .expect("the companion-owned typed recipe survives source-free synthesis");
+    assert_eq!(recipe.companion_record_index, 1202);
+    assert_eq!(recipe.program, [0, 0]);
+    assert!(recipe.references.is_empty());
+    assert_eq!(
+        recipe.recipe_kind,
+        crate::records::recipes::ConstructionRecipeKind::Body
+    );
     assert!(!native
         .sketch_curve_identities
         .iter()
