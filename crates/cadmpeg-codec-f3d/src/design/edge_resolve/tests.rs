@@ -305,11 +305,35 @@ fn multiple_full_layout_members_use_a_uniform_proven_transition_chain() {
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
 
+    // Uniform identity candidates alone do not prove why two source members
+    // select three edges. Preserve that original no-recipe case as a refusal.
     assert!(matches!(
         resolved_edge_treatment_group(
             &selection_group,
             std::slice::from_ref(&selection_group),
             &[],
+            &[first.clone(), second.clone()],
+            Some(7),
+            &feature_id,
+            None,
+        )
+        .unwrap(),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
+    let recipes = [
+        recipe_edge_operand(10, &[17, 18, 19], &[17]),
+        recipe_edge_operand(11, &[17, 18, 19], &[18]),
+    ];
+    assert!(transition_chain_is_supported_by_recipe(
+        &[17, 18, 19],
+        2,
+        &[&recipes[0], &recipes[1]],
+    ));
+    assert!(matches!(
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            &recipes,
             &[first, second],
             Some(7),
             &feature_id,
