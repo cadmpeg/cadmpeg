@@ -1008,6 +1008,11 @@ fn remap_written_geometry_references(
     let mut projected = ir.clone();
     projected.model = model;
     crate::history::write::parameters::synchronize_parameter_records(&projected, native)?;
+    if let Some(native) = native.as_mut() {
+        // Feature synchronization above replaces the generated class lane.
+        // Re-author its dimension cells from the same current, remapped model.
+        crate::resolved_features::write_feature_parameters::synthesize(&projected, native)?;
+    }
 
     Ok(())
 }
