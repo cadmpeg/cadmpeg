@@ -396,7 +396,7 @@ fn exact_assembly_operand_path(
                         Err(error) => return Some(Err(error)),
                     };
                 occurrence_guids.push(crate::records::identity::Located {
-                    value: occurrence,
+                    value: occurrence.into(),
                     offset: u64::try_from(position + 4).ok()?,
                 });
                 position = after_occurrence;
@@ -447,12 +447,14 @@ fn exact_assembly_operand_path(
 
                 let mut position = after_tag + 18;
                 for _ in 0..count {
-                    let (guid, after_guid) =
-                        match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
-                            Ok(Some(value)) => value,
-                            Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
-                        };
+                    let (guid, after_guid) = match crate::design::decode::text::occurrence_key_text(
+                        bytes.get(..limit)?,
+                        position,
+                    ) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
                     occurrence_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,

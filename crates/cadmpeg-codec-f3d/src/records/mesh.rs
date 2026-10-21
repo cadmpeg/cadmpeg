@@ -64,6 +64,84 @@ impl From<DesignGuidText> for String {
     }
 }
 
+/// The identity of a placed component occurrence: a relaxed GUID, or the
+/// positive decimal key that the attributed occurrence frame can store.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
+pub(crate) struct DesignOccurrenceKey(cadmpeg_ir::ids::IdentityKey);
+
+/// Longest decimal occurrence key.
+const DECIMAL_OCCURRENCE_KEY_DIGITS: usize = 9;
+
+impl Serialize for DesignOccurrenceKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl DesignOccurrenceKey {
+    /// The original key text.
+    pub(crate) fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// The key with ASCII letters converted to lowercase.
+    pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
+        self.0.to_ascii_lowercase()
+    }
+
+    /// Whether `value` is a decimal occurrence key rather than a GUID.
+    pub(crate) fn is_decimal_key(value: &str) -> bool {
+        (1..=DECIMAL_OCCURRENCE_KEY_DIGITS).contains(&value.len())
+            && value.bytes().all(|byte| byte.is_ascii_digit())
+            && !value.starts_with('0')
+    }
+}
+
+impl TryFrom<String> for DesignOccurrenceKey {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !Self::is_decimal_key(&value) && !crate::bytes::is_guid_relaxed(&value) {
+            return Err("occurrence key must be a relaxed GUID or a positive decimal key".into());
+        }
+        cadmpeg_ir::ids::IdentityKey::try_new(value)
+            .map(Self)
+            .map_err(|error| error.to_string())
+    }
+}
+
+impl From<DesignRelaxedGuidText> for DesignOccurrenceKey {
+    fn from(value: DesignRelaxedGuidText) -> Self {
+        Self(value.0)
+    }
+}
+
+/// Text that identifies a placed component occurrence.
+pub(crate) trait OccurrenceIdentity {
+    /// The original text.
+    fn identity_text(&self) -> &str;
+    /// The identity with ASCII letters converted to lowercase.
+    fn occurrence_identity_key(&self) -> cadmpeg_ir::ids::IdentityKey;
+}
+
+impl OccurrenceIdentity for DesignOccurrenceKey {
+    fn identity_text(&self) -> &str {
+        self.as_str()
+    }
+    fn occurrence_identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
+        self.identity_key()
+    }
+}
+
+impl OccurrenceIdentity for DesignRelaxedGuidText {
+    fn identity_text(&self) -> &str {
+        self.as_str()
+    }
+    fn occurrence_identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
+        self.identity_key()
+    }
+}
+
 /// A relaxed GUID with its original text.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String")]
