@@ -99,10 +99,12 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     let Some(head) = head else {
         return false;
     };
-    if let Some(preamble) = history.preamble {
-        if head.state_id != preamble.stream_size || preamble.history_entry_count < 0 {
-            return false;
-        }
+    // The preamble's first field need not name the head state (asm-open-items HS-01).
+    if history
+        .preamble
+        .is_some_and(|preamble| preamble.history_entry_count < 0)
+    {
+        return false;
     }
     let mut visited = HashSet::new();
     let mut previous = None;
