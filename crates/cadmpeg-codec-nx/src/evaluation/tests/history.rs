@@ -554,6 +554,7 @@ fn incomplete_hole_construction_does_not_change_its_body_identity_effect() {
     ir.model.features.push(hole);
 
     assert!(feature_completeness::hole_definition_is_incomplete(
+        &ir,
         &ir.model.features[1]
     ));
     assert_eq!(

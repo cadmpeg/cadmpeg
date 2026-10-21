@@ -37,9 +37,17 @@ fn decoded_unknown_limit_error(
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
 
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[]);
+    let scan = super::super::Scan {
+        container: crate::container::scan_bytes(file.as_slice()).expect("empty test container"),
+        streams: Vec::new(),
+        source_untyped: Default::default(),
+    };
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
         match super::super::decoded(
             ctx,
+            cadmpeg_core::decode::View::over_retained(&[]),
+            &scan,
             ir,
             body,
             cadmpeg_ir::Annotations::default(),

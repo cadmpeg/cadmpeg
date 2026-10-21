@@ -698,7 +698,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     ));
     assert_eq!(result.ir().model.features[0].suppressed, Some(false));
     assert_eq!(result.ir().model.parameters.len(), 1);
-    assert_eq!(result.ir().model.parameters[0].expression, "120");
+    assert_eq!(result.ir().model.parameters[0].expression, "120".into());
     let parameter = &result.ir().model.parameters[0];
     assert_eq!(parameter.name, expressions[0].name.as_str());
     assert!(matches!(

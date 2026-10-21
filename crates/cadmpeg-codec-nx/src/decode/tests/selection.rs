@@ -1364,7 +1364,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: kind.into(),
-                    parameters: (Default::default()).into(),
+                    parameters: Default::default(),
                 }),
             ),
             native_ref: None,
@@ -1536,7 +1536,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     ]);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 7);
     assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
@@ -1583,7 +1583,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
         }));
     losses.clear();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
     assert!(losses[4].message.contains("block (1)"));
@@ -1661,7 +1661,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DELETE".into(),
-                    parameters: (Default::default()).into(),
+                    parameters: Default::default(),
                 }),
             ),
             native_ref: None,
@@ -1707,7 +1707,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
     ]);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -1759,7 +1759,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DELETE".into(),
-                    parameters: (Default::default()).into(),
+                    parameters: Default::default(),
                 }),
             ),
             native_ref: None,
@@ -1767,7 +1767,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     ]);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 2);
     assert!(losses[0]
@@ -1818,7 +1818,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1857,7 +1857,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     ir.model.features.push(feature);
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1870,7 +1870,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         "42".into(),
     );
     losses.clear();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message
@@ -1913,14 +1913,14 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
     });
 
     let mut losses = Vec::new();
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0].source_properties.insert(
         cadmpeg_core::nonblank_literal!("body_reference.0"),
         "42".into(),
     );
-    append_design_intent_losses(&mut cadmpeg_ir::ArenaClasses::default(), &ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message

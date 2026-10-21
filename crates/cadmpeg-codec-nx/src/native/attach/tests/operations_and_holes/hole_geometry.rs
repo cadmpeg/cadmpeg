@@ -880,21 +880,25 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     (
                         "hole-a".into(),
                         cadmpeg_ir::features::holes::HoleKind::Chamfer {
-                            diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
-                            angle: cadmpeg_ir::scalar::InteriorAngle::new(
-                                std::f64::consts::FRAC_PI_2
-                            )
-                            .unwrap(),
+                            diameter: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap()
+                            ),
+                            angle: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
+                                    .unwrap()
+                            ),
                         },
                     ),
                     (
                         "hole-b".into(),
                         cadmpeg_ir::features::holes::HoleKind::Chamfer {
-                            diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
-                            angle: cadmpeg_ir::scalar::InteriorAngle::new(
-                                std::f64::consts::FRAC_PI_2
-                            )
-                            .unwrap(),
+                            diameter: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap()
+                            ),
+                            angle: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
+                                    .unwrap()
+                            ),
                         },
                     ),
                 ])

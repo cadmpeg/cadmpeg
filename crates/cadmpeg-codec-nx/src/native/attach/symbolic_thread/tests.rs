@@ -138,7 +138,12 @@ fn selected(ir: &CadIr) -> FaceSelection {
         else {
             panic!("cosmetic thread")
         };
-        assert_eq!(diameter.unwrap().get(), 3.);
+        assert_eq!(
+            ir.dimension_value(&diameter.unwrap())
+                .expect("dimension value")
+                .get(),
+            3.
+        );
         assert!(extent.is_none());
         face
     })

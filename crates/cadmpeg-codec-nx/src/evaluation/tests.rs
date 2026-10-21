@@ -69,21 +69,7 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
         .model
         .features
         .iter()
-        .map(|feature| {
-            (
-                feature.id.clone(),
-                ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::try_from(
-                            feature.evaluation.outputs().clone(),
-                        )
-                        .unwrap(),
-                    },
-                    dependencies: feature.dependencies.clone(),
-                    definition: feature.evaluation.definition().clone(),
-                },
-            )
-        })
+        .map(|feature| (feature.id.clone(), ConfigurationFeatureState::Active {}))
         .collect();
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:id#active".to_string())
@@ -141,7 +127,9 @@ fn complete_hole(body: BodyId) -> Feature {
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
+                    )),
                 )
                 .unwrap(),
 
