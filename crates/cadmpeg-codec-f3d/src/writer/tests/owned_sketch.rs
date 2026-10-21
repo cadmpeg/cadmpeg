@@ -284,6 +284,170 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
 }
 
 #[test]
+fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_reported() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_sketch_constraints.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir: cadmpeg_ir::CadIr =
+        serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap()).unwrap();
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d2")
+        .unwrap();
+    let parameter_id = parameter.id.clone();
+    let owner_id = parameter.owner.clone().unwrap();
+    let constraint = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .find(|constraint| {
+            let value = serde_json::to_value(&constraint.definition).unwrap();
+            value["kind"] == "horizontal_distance"
+                && value["parameter"]
+                    == serde_json::json!({"kind":"parameter", "value":parameter_id})
+        })
+        .unwrap();
+    let constraint_id = constraint.id.clone();
+    let definition = serde_json::to_string(&constraint.definition).unwrap();
+    let expected_loss = format!("Sketch constraint {constraint_id} is omitted: no exact regenerated encoding for canonical definition {definition}");
+    let expected_d1 = owned_dimension_definition(&ir, "d1");
+    let original_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.construction, entity.geometry.clone()))
+        .collect::<Vec<_>>();
+    let pair_id = crate::test_support::native_test::f3d_native(&ir).design_dimension_locus_pairs[0]
+        .id
+        .clone();
+    let value = ParameterValue::Length(Length::new(15.0).unwrap());
+    ir.set_parameter_expression(&parameter_id, Expression::literal(&value), Some(value))
+        .unwrap();
+    assert!(
+        ir.model
+            .features
+            .iter()
+            .find(|feature| feature.id == owner_id)
+            .unwrap()
+            .needs_recompute
+    );
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let losses = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message == expected_loss)
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "writer.design-records-omitted");
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
+    let cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage) = plan.report().coverage else {
+        panic!("per-constraint reduction needs declared coverage")
+    };
+    assert_eq!(
+        coverage.sketch_constraints,
+        cadmpeg_ir::codec::write::ArenaDisposition::Reported
+    );
+    assert_eq!(
+        plan.report().native_dispositions.record_disposition(
+            "f3d",
+            "design_dimension_locus_pairs",
+            &pair_id
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    let mut output = Vec::new();
+    let report = plan.write_to(&mut output).unwrap();
+    let written = F3dCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(ir.model.sketch_constraints.len(), 4);
+    assert_eq!(
+        serde_json::to_string(
+            &ir.model
+                .sketch_constraints
+                .iter()
+                .find(|constraint| constraint.id == constraint_id)
+                .unwrap()
+                .definition
+        )
+        .unwrap(),
+        definition
+    );
+    assert_eq!(written.ir().model.sketch_constraints.len(), 3);
+    assert_eq!(owned_dimension_definition(written.ir(), "d1"), expected_d1);
+    assert_eq!(
+        written
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .map(|entity| (entity.construction, entity.geometry.clone()))
+            .collect::<Vec<_>>(),
+        original_entities
+    );
+    assert_eq!(written.ir().model.features.len(), 1);
+    assert_eq!(written.ir().model.sketches.len(), 1);
+    assert_eq!(written.ir().model.parameters.len(), 2);
+    let parameter = written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d2")
+        .unwrap();
+    assert!(parameter.owner.is_some());
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(15.0).unwrap()))
+    );
+    assert!(written
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .all(|constraint| {
+            !crate::design::dimensions::constraint_parameters(constraint.definition.kind())
+                .any(|id| id == &parameter.id)
+        }));
+    let native = crate::test_support::native_test::f3d_native(written.ir());
+    let parameter = native
+        .design_parameters
+        .iter()
+        .find(|parameter| parameter.name() == "d2")
+        .unwrap();
+    assert_eq!(parameter.evaluated_value().get(), 1.5);
+    let owner = native
+        .design_parameter_owners
+        .iter()
+        .find(|owner| Some(owner.record_index()) == parameter.owner_record_index())
+        .unwrap();
+    assert_eq!(owner.evaluated_value().get(), 1.5);
+    assert_eq!(native.sketch_relations.len(), 2);
+    assert_eq!(native.design_dimension_recipe_records.len(), 1);
+    assert!(native.design_dimension_locus_pairs.is_empty());
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "evaluation.stale"));
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, written.ir()).unwrap()
+    });
+    assert!(findings.is_empty(), "native findings: {findings:?}");
+    let validation = cadmpeg_ir::validate::validate_neutral(written.ir(), Vec::new()).unwrap();
+    assert!(
+        validation.is_ok(),
+        "neutral findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
 fn unchanged_owned_dimension_retains_all_six_entity_links_without_source_bytes() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_sketch_constraints.f3d");
     let decoded = F3dCodec
