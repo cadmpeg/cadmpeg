@@ -1570,6 +1570,17 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             ..
         }) if result.ir().dimension_value(&actual_distance).expect("resolved dimension").get() == 3.0
     ));
+    super::computed_controls::assert_computed_control(
+        result.ir(),
+        "Thickness",
+        "/thickness",
+        "Value",
+        cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(-2.0).unwrap(),
+        ),
+        "abs(",
+        cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+    );
 }
 
 #[test]
@@ -1821,6 +1832,17 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && (result.ir().dimension_value(&angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
+    super::computed_controls::assert_computed_control(
+        result.ir(),
+        "Draft",
+        "/angle",
+        "Angle",
+        cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::scalar::Angle::new(5f64.to_radians()).unwrap(),
+        ),
+        "-(",
+        cadmpeg_ir::scalar::Angle::new(-5f64.to_radians()).unwrap(),
+    );
     let face_draft = result
         .ir()
         .model

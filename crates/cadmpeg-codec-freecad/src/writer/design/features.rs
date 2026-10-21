@@ -134,7 +134,17 @@ pub(in crate::writer) fn write(
             object.kind = "PartDesign::Draft".into();
             selection(object, "Base", &value["faces"], names)?;
             selection(object, "NeutralPlane", &value["anchor"]["plane"], names)?;
-            angle(object, "Angle", number(&value["angle"], "draft angle")?);
+            let reversed = value["outward"].as_bool().unwrap_or(false);
+            let signed_angle = number(&value["angle"], "draft angle")?;
+            angle(
+                object,
+                "Angle",
+                if reversed {
+                    -signed_angle
+                } else {
+                    signed_angle
+                },
+            );
             boolean(
                 object,
                 "Reversed",

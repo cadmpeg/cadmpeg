@@ -2,9 +2,15 @@
 //! Source-property identities bound into operation dimensions.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, FeatureDefinition, FeatureId, ParameterId};
+use cadmpeg_ir::features::{
+    DesignParameter, Dimension, DimensionValue, Expression, ExpressionToken, FeatureDefinition,
+    FeatureId, FeatureOperation, ParameterId,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
+
+#[cfg(test)]
+mod tests;
 
 /// Each mapping names a persistence operand, rather than comparing scalar
 /// values. Equal dimensions on two different source properties stay distinct.
@@ -127,10 +133,11 @@ fn operand(
 }
 
 pub(super) fn bind(
-    definition: FeatureDefinition,
+    mut definition: FeatureDefinition,
     owner: &FeatureId,
-    parameters: &[DesignParameter],
+    parameters: &mut Vec<DesignParameter>,
 ) -> Result<FeatureDefinition, CodecError> {
+    bind_semantic_controls(&mut definition, owner, parameters)?;
     let mut ids: BTreeMap<&str, &ParameterId> = parameters
         .iter()
         .filter(|parameter| parameter.owner.as_ref() == Some(owner))
@@ -174,6 +181,111 @@ pub(super) fn bind(
         visit(operation, &tag, &mut Vec::new(), &ids);
     }
     serde_json::from_value(value).map_err(CodecError::malformed)
+}
+
+/// Native signs can encode direction separately from a neutral magnitude. Keep
+/// the authored native driver and its formula intact: the operation consumes an
+/// explicit computation, rather than a second independently editable value.
+fn bind_semantic_controls(
+    definition: &mut FeatureDefinition,
+    owner: &FeatureId,
+    parameters: &mut Vec<DesignParameter>,
+) -> Result<(), CodecError> {
+    let operation = match definition {
+        FeatureDefinition::Operation(operation)
+        | FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    match operation {
+        FeatureOperation::Shell {
+            thickness: Some(dimension),
+            ..
+        } => {
+            computed_control(dimension, owner, parameters, "Value", "magnitude", "abs(")?;
+        }
+        FeatureOperation::Draft {
+            angle: Some(dimension),
+            outward: Some(true),
+            ..
+        } => {
+            computed_control(dimension, owner, parameters, "Angle", "oriented", "-(")?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn computed_control<Q: DimensionValue>(
+    dimension: &mut Dimension<Q>,
+    owner: &FeatureId,
+    parameters: &mut Vec<DesignParameter>,
+    source_name: &str,
+    role: &str,
+    prefix: &str,
+) -> Result<(), CodecError> {
+    let Some(value) = dimension
+        .literal()
+        .and_then(DimensionValue::to_parameter_value)
+    else {
+        return Ok(());
+    };
+    let Some(source) = parameters.iter().find(|parameter| {
+        parameter.owner.as_ref() == Some(owner)
+            && parameter.name == source_name
+            && parameter.native_ref.is_some()
+    }) else {
+        return Ok(());
+    };
+    let source_id = source.id.clone();
+    // At most N names/identities can already be occupied, so N+1 candidates
+    // always include a free one without an unbounded search.
+    let mut candidate = None;
+    for index in 0..=parameters.len() {
+        let suffix = if index == 0 {
+            String::new()
+        } else {
+            format!("_{index}")
+        };
+        let name = format!("{source_name}_{role}{suffix}");
+        let id = ParameterId::mint(format!("{source_id}:semantic-{role}{suffix}"))
+            .map_err(CodecError::malformed)?;
+        if parameters.iter().all(|parameter| {
+            parameter.id != id
+                && !(parameter.owner.as_ref() == Some(owner) && parameter.name == name)
+        }) {
+            candidate = Some((id, name));
+            break;
+        }
+    }
+    let (id, name) =
+        candidate.ok_or_else(|| CodecError::malformed("no free semantic control identity"))?;
+    let ordinal = parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(owner))
+        .map(|parameter| parameter.ordinal)
+        .max()
+        .map_or(Some(0), |ordinal| ordinal.checked_add(1))
+        .ok_or_else(|| CodecError::malformed("semantic control ordinal overflow"))?;
+    parameters.push(DesignParameter {
+        id: id.clone(),
+        owner: Some(owner.clone()),
+        ordinal,
+        name,
+        expression: Expression {
+            tokens: vec![
+                ExpressionToken::Text(prefix.into()),
+                ExpressionToken::Parameter(source_id),
+                ExpressionToken::Text(")".into()),
+            ],
+        },
+        driving: false,
+        display: None,
+        value: Some(value),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    *dimension = Dimension::Parameter(id);
+    Ok(())
 }
 
 fn visit(

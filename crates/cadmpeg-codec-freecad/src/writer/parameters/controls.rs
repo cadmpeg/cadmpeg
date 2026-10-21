@@ -83,6 +83,7 @@ pub(super) fn write(
             let expression = match measurement {
                 Measurement::Direct => reference,
                 Measurement::Diameter => format!("{reference} / 2"),
+                Measurement::Negated => format!("-({reference})"),
             };
             expressions
                 .entry(name.clone())
@@ -208,5 +209,14 @@ pub(super) fn bindings(
         false,
         &mut controls,
     );
+    // The native Reversed flag applies a second sign transform. Its Angle
+    // control must therefore be the inverse of the signed neutral draft angle.
+    if operation == "draft" && definition["outward"] == true {
+        if let Some(bindings) = controls.get_mut("Angle") {
+            for (_, measurement) in bindings {
+                *measurement = Measurement::Negated;
+            }
+        }
+    }
     Ok(controls)
 }
