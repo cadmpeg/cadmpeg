@@ -1218,11 +1218,13 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
+    let mut history_predecessors = HashMap::new();
     for scope in &native.design_parameter_scopes {
         // Known history-state references can prove a cycle independently of
         // whether every scope has an authored timeline position.
         match scope_history.predecessor(scope, |_| true) {
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
+                history_predecessors.insert(scope.id.as_str(), predecessor.id.as_str());
                 if scope_positions
                     .get(predecessor.id.as_str())
                     .zip(scope_positions.get(scope.id.as_str()))
@@ -1248,6 +1250,35 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                 | crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous,
             ) => {}
         }
+    }
+    // An immediate predecessor lookup stops at the first resolved scope.
+    // Check the resulting graph explicitly so absent authored positions do
+    // not conceal a cycle between otherwise unambiguous native state links.
+    let mut settled = HashSet::new();
+    for &start in history_predecessors.keys() {
+        let mut path = Vec::new();
+        let mut positions = HashMap::new();
+        let mut current = start;
+        while !settled.contains(current) {
+            if let Some(&first) = positions.get(current) {
+                for &id in &path[first..] {
+                    push_constant_finding(
+                        findings,
+                        Check::NativeLinks,
+                        "Fusion Design scope history-state dependency is cyclic",
+                        Some(id.to_owned()),
+                    );
+                }
+                break;
+            }
+            positions.insert(current, path.len());
+            path.push(current);
+            let Some(&predecessor) = history_predecessors.get(current) else {
+                break;
+            };
+            current = predecessor;
+        }
+        settled.extend(path);
     }
     Ok(())
 }
