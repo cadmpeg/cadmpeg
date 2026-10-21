@@ -2,6 +2,7 @@
 //! Versioned document structure and canonical arena ordering.
 
 mod edit;
+mod legacy;
 pub use edit::DimensionEditError;
 mod topology_edit;
 pub use topology_edit::TopologyEditError;
@@ -1391,9 +1392,7 @@ impl Model {
 fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) -> Result<(), E> {
     let version = version.and_then(serde_json::Value::as_str);
     if version != Some(IR_VERSION) {
-        return Err(E::custom(format!(
-            "unsupported ir_version {version:?}; expected {IR_VERSION}; wire v7 replaces decode_depth with scope and changes decode report transfer to delivered scope"
-        )));
+        return Err(E::custom(legacy::unsupported_version(version)));
     }
     Ok(())
 }
