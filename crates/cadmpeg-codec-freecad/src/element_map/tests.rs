@@ -959,6 +959,6 @@ fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
             .losses
             .iter()
             .any(|loss| loss.code
-                == crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.kind())
+                == crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note("").code)
     );
 }
