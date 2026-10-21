@@ -196,7 +196,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     );
     assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["representation"],
+        result.source_fidelity().metadata["iges.representation"],
         "compressed-ascii"
     );
 
@@ -381,11 +381,11 @@ fn compressed_ascii_accepts_non_default_delimiters() {
         .unwrap();
     assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["parameter_delimiter"],
+        result.source_fidelity().metadata["iges.parameter_delimiter"],
         "|"
     );
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["record_delimiter"],
+        result.source_fidelity().metadata["iges.record_delimiter"],
         "!"
     );
 }

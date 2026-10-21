@@ -4,7 +4,6 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use serde_json::json;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{
@@ -54,24 +53,20 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
         let definitions = &native.arenas()["macro_definitions"];
         assert_eq!(definitions.len(), 1);
         assert_eq!(definitions[0].fields().unwrap()["defined_entity_type"], 621);
+        let (_, parameters) = crate::test_support::retained_fixed_ascii(&result);
+        let record = parameters
+            .records
+            .iter()
+            .find(|record| record.directory_sequence == 1)
+            .unwrap();
+        let data = crate::parameter::macro_parameter_data(&record.bytes, b',', b';').unwrap();
         assert_eq!(
-            definitions[0].fields().unwrap()["macro_statement"],
-            json!(cadmpeg_ir::native::bytes::NativeBytes::from(
-                b"306,MACRO,621,X,Y".as_slice()
-            ))
+            &record.bytes[data.statement_spans[0].clone()],
+            b"306,MACRO,621,X,Y"
         );
-        assert_eq!(
-            definitions[0].fields().unwrap()["language_statements"],
-            json!([cadmpeg_ir::native::bytes::NativeBytes::from(
-                b"LET Z=0".as_slice()
-            )])
-        );
-        assert_eq!(
-            definitions[0].fields().unwrap()["end_statement"],
-            json!(cadmpeg_ir::native::bytes::NativeBytes::from(
-                b"ENDM".as_slice()
-            ))
-        );
+        assert_eq!(data.statement_spans.len(), 3);
+        assert_eq!(&record.bytes[data.statement_spans[1].clone()], b"LET Z=0");
+        assert_eq!(&record.bytes[data.statement_spans[2].clone()], b"ENDM");
 
         let instances = &native.arenas()["macro_instances"];
         assert_eq!(instances.len(), 1);

@@ -23,7 +23,7 @@ use super::IgesCodec;
 const FIXTURE_EXTENSION: &str = "igs";
 
 /// Crate-relative regeneration hint used in every failure message.
-const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden";
+const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
 fn harness() -> Harness {
     Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
@@ -157,14 +157,16 @@ fn geometry_depth_agrees_with_full_depth() {
         &IgesCodec,
         &harness().fixture_inputs(),
         |result| {
-            let expected = crate::loss::unrepresented(
-                &result.report().losses,
-                result.ir().native.namespace("iges"),
-            );
+            let expected: cadmpeg_ir::ArenaClasses = result
+                .source_fidelity()
+                .retained_records()
+                .values()
+                .flat_map(|record| record.untyped().iter().copied())
+                .collect();
             assert_eq!(
                 result.source_fidelity().unrepresented(),
                 expected,
-                "every source-only loss must declare its arena class"
+                "unrepresented is the union of retained source-record classes"
             );
         },
     );
