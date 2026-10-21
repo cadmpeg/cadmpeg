@@ -51,6 +51,17 @@ fn unique_native_slot_selects_active_configuration_without_fabricating_source_in
         configuration("Large", 1, None, None),
         configuration("Default", 0, None, None),
     ]);
+    // An ordinal alone is not a source-slot statement. Preserve that exact
+    // input as the unproven contrast to the explicitly identified slot below.
+    assert!(ir
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| !configuration.active));
+    let ir = activate(vec![
+        configuration("Large", 1, None, None),
+        configuration("Default", 0, Some(0), None),
+    ]);
     assert!(!ir.model.configurations[0].active);
     assert!(ir.model.configurations[1].active);
     assert!(ir
