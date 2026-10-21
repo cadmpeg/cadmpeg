@@ -135,8 +135,9 @@ pub(crate) fn recover(
         if let Some((u, v, actual, cached, distance)) = counterexample {
             rejected.insert(surface.id.clone());
             losses.push(F3dLossCode::SurfaceCacheRejected.note(format!(
-                "surface {} source cache rejected: at ({u}, {v}) construction {actual:?} and cache {cached:?} differ by {distance}, beyond allowance {allowance}; retained construction and source bytes",
-                surface.id
+                "surface {} source cache and its fit tolerance {:?} rejected: at ({u}, {v}) construction {actual:?} and cache {cached:?} differ by {distance}, beyond allowance {allowance}; retained construction and source bytes",
+                surface.id,
+                definition.cache_fit_tolerance().map(cadmpeg_ir::geometry::FitTolerance::get)
             )));
         }
     }
@@ -145,8 +146,24 @@ pub(crate) fn recover(
     }
     for surface in &mut ir.model.surfaces {
         if rejected.contains(&surface.id) {
-            if let SurfaceGeometry::Procedural { cache, .. } = &mut surface.geometry {
+            if let SurfaceGeometry::Procedural {
+                construction,
+                cache,
+            } = &mut surface.geometry
+            {
                 *cache = None;
+                if let Some(definition) = ir
+                    .model
+                    .procedural_surfaces
+                    .iter_mut()
+                    .find(|row| row.id == *construction)
+                {
+                    // The fit contract describes the rejected solved cache,
+                    // not the exact construction that remains in the document.
+                    definition
+                        .set_cache_fit_tolerance(None)
+                        .map_err(CodecError::malformed)?;
+                }
             }
         }
     }
