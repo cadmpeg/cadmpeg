@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scalar dictionary wire projection with positional indices and derived extent.
 
-use cadmpeg_ir::native::bytes::NativeBytes;
+use crate::source_bytes::SourceBytes as NativeBytes;
 
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Serialize, Serializer};

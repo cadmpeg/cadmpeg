@@ -191,8 +191,6 @@ struct SourceIndex {
     denied: BTreeSet<WireKey>,
     imports: Vec<ImportBinding>,
     symbols: Vec<SymbolKey>,
-    module_items: BTreeMap<(String, Vec<String>), Vec<syn::Item>>,
-    source_text: BTreeMap<String, String>,
 }
 
 /// One lexical `use` binding. The target is retained as a syntax path so
@@ -607,7 +605,6 @@ fn collect_source_items(
     scope: &[String],
     index: &mut SourceIndex,
 ) {
-    version_prefix::collect_module(items, path, source, scope, index);
     for item in items {
         match item {
             syn::Item::ExternCrate(declaration) => {
@@ -1270,4 +1267,3 @@ mod resolve;
 mod scan;
 #[cfg(test)]
 mod tests;
-mod version_prefix;

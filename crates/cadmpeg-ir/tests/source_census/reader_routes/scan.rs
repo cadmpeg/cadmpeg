@@ -242,9 +242,7 @@ fn helper_route(
         return None;
     };
     let shape = expr_path_shape(path)?;
-    let resolved = resolve_receiver_path(route, &shape, index);
-    resolved_helper_route(&resolved)
-        .or_else(|| super::version_prefix::closed_route(&resolved, index))
+    resolved_helper_route(&resolve_receiver_path(route, &shape, index))
 }
 
 fn scan_expr(
