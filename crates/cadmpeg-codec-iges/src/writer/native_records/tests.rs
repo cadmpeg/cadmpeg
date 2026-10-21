@@ -119,3 +119,50 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         .unwrap();
     assert_eq!(&directory[24..32], b"      -3");
 }
+
+#[test]
+fn units_data_preserves_its_current_owner_link() {
+    let mut ir = CadIr::empty();
+    let id = "iges:metadata:units-data#D99";
+    install(
+        &mut ir,
+        "units_data",
+        id,
+        json!({
+            "source_entity":"iges:entity:directory#99", "declared_count":1,
+            "units":[{"unit_type":"4c454e475448", "unit_value":"4d4d", "scale_factor":1.0}],
+            "owners":["iges:entity:directory#1"],
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert!(exported.losses.is_empty());
+    assert!(exported.regenerated.contains(id));
+    assert_eq!(entities[0].property_links, [1]);
+    assert_eq!(entities[1].type_code, 316);
+    assert_eq!(&entities[1].parameter_body, b"1,6HLENGTH,2HMM,1;");
+}
+
+#[test]
+fn missing_units_owner_drops_the_record_with_its_identity() {
+    let mut ir = CadIr::empty();
+    let id = "iges:metadata:units-data#D99";
+    install(
+        &mut ir,
+        "units_data",
+        id,
+        json!({
+            "source_entity":"iges:entity:directory#99", "declared_count":0,
+            "units":[], "owners":["iges:entity:directory#missing"],
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert_eq!(entities.len(), 1);
+    assert!(!exported.regenerated.contains(id));
+    assert_eq!(exported.losses.len(), 1);
+    assert!(exported.losses[0].message.contains(id));
+    assert!(exported.losses[0]
+        .message
+        .contains("iges:entity:directory#missing"));
+}
