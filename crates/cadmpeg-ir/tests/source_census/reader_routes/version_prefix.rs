@@ -254,9 +254,8 @@ fn external_path(
 }
 
 pub(super) fn closed_route(resolved: &ResolvedPath, index: &SourceIndex) -> Option<InputRoute> {
-    let mut stage = "helper candidate";
+    let mut stage = "helper resolution";
     let result = (|| {
-        stage = "helper resolution";
         let ResolvedPath::Local(symbol) = resolved else {
             return None;
         };
@@ -308,9 +307,15 @@ pub(super) fn closed_route(resolved: &ResolvedPath, index: &SourceIndex) -> Opti
                 method(visitor, "visit_map")?.block.span(),
                 VISIT_MAP,
             )
-            || !adapter_is_forwarding(items, source)
-            || !prefix_preserves_keys(symbol, index)
         {
+            return None;
+        }
+        stage = "generic MapAccess adapter";
+        if !adapter_is_forwarding(items, source) {
+            return None;
+        }
+        stage = "recursive prefix key guard";
+        if !prefix_preserves_keys(symbol, index) {
             return None;
         }
         stage = "visitor result";
@@ -327,7 +332,6 @@ pub(super) fn closed_route(resolved: &ResolvedPath, index: &SourceIndex) -> Opti
         if value.segments != ["super", "CadIrReadWire"] {
             return None;
         }
-        stage = "wire context";
         let route = context(symbol);
         stage = "external library owners";
         for names in [
