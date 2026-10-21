@@ -13,6 +13,47 @@ pub(super) fn reconcile(
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let mut stream_records = std::collections::BTreeMap::<String, Vec<String>>::new();
+    for id in native
+        .act_tables
+        .iter()
+        .map(|record| record.id.clone())
+        .chain(native.act_types.iter().map(|record| record.id().to_owned()))
+        .chain(
+            native
+                .act_entities
+                .iter()
+                .map(|record| record.id().to_string()),
+        )
+        .chain(native.act_guids.iter().map(|record| record.id().to_owned()))
+        .chain(
+            native
+                .act_registry_channels
+                .iter()
+                .map(|record| record.id().to_owned()),
+        )
+        .chain(
+            native
+                .act_root_components
+                .iter()
+                .map(|record| record.id().to_owned()),
+        )
+        .chain(
+            native
+                .act_table_references
+                .iter()
+                .map(|record| record.id().to_owned()),
+        )
+    {
+        let Some(scope) = crate::ids::native_stream(&id) else {
+            continue;
+        };
+        let scope = scope.strip_suffix("MetaStream.dat").map_or_else(
+            || scope.to_owned(),
+            |prefix| format!("{prefix}BulkStream.dat"),
+        );
+        stream_records.entry(scope).or_default().push(id);
+    }
     let all_bodies = ir
         .model
         .bodies
@@ -64,7 +105,7 @@ pub(super) fn reconcile(
             .appearance_bindings
             .iter()
             .any(|binding| binding.source_entity_id.as_deref() == Some(record.entity_id()));
-        if appearance && !has_binding {
+        if ir.scope.model && appearance && !has_binding {
             losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
                 "ACT entity {} is omitted with its unsupported canonical appearance binding",
                 record.id(),
@@ -113,6 +154,21 @@ pub(super) fn reconcile(
         native
             .act_root_components
             .retain(|record| record.stream() != scope || registered(record.record_index));
+        if native
+            .act_root_components
+            .iter()
+            .filter(|record| record.stream() == scope)
+            .count()
+            != 1
+        {
+            let omitted = stream_records
+                .get(scope)
+                .map_or_else(String::new, |ids| ids.join(", "));
+            losses.push(F3dLossCode::WriterActStreamOmitted.note(format!(
+                "ACT stream {scope} has no unique encodable current document-root component after canonical reconciliation; omitted dependent typed records [{omitted}]"
+            )));
+            continue;
+        }
         let known = native
             .act_entities
             .iter()
