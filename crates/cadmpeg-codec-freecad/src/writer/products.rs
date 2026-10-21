@@ -474,21 +474,23 @@ pub(super) fn write(
             "Placement",
             placement(rigid, occurrence.id.as_str(), losses)?,
         );
-        object.set(
-            "ScaleVector",
-            xml::property(
+        if scale != [1.0; 3] {
+            object.set(
                 "ScaleVector",
-                "App::PropertyVector",
-                &xml::element(
-                    "PropertyVector",
-                    &[
-                        ("valueX", scale[0].to_string()),
-                        ("valueY", scale[1].to_string()),
-                        ("valueZ", scale[2].to_string()),
-                    ],
+                xml::property(
+                    "ScaleVector",
+                    "App::PropertyVector",
+                    &xml::element(
+                        "PropertyVector",
+                        &[
+                            ("valueX", scale[0].to_string()),
+                            ("valueY", scale[1].to_string()),
+                            ("valueZ", scale[2].to_string()),
+                        ],
+                    ),
                 ),
-            ),
-        );
+            );
+        }
     }
     let mut children: Vec<_> = ir.model.occurrences.iter().collect();
     children.sort_by_key(|occurrence| occurrence.ordinal);
