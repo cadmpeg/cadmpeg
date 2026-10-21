@@ -360,9 +360,9 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
                 origin.z == 3.0
             })
         ));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok());
+        let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("validate the neutral model");
+        assert!(validation.is_ok(), "{version:?}: {validation:#?}");
     }
 }
 
