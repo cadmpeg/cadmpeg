@@ -2,8 +2,8 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -12,7 +12,6 @@ use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
-use crate::F3dCodec;
 use crate::loss::F3dLossCode;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
@@ -41,17 +40,43 @@ use crate::test_support::zip_test::{
     assert_revision_surface_round_trip, f3d_with_deflated_smbh, f3d_with_smbh,
     f3d_with_smbh_and_protein, set_zip_entry_uncompressed_size,
 };
+use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
-    use crate::records::dimension_null_locus_wire::{OWNED_WIRE_CONVERSIONS, Wire};
-    use crate::records::dimensions::DesignDimensionLocusPair;
+    use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
+    use crate::records::dimensions::{
+        DesignDimensionAnnotationOperand, DesignDimensionLocusPair, DesignDimensionLocusPairDraft,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let pair: DesignDimensionLocusPair = serde_json::from_str(
-        r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"first_geometry_record_index":0,"first_geometry_reference_offset":35,"first_role":0,"first_role_offset":45,"second_geometry_record_index":41,"second_geometry_reference_offset":50,"second_role":1,"second_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#,
-    )
+    let pair = DesignDimensionLocusPair::try_new(DesignDimensionLocusPairDraft {
+        id: "f3d:test:dimension-locus-pair#0".into(),
+        companion_record_index: 1,
+        governing_companion_record_index: 2,
+        byte_offset: 10,
+        class_tag: "274".to_owned().try_into().unwrap(),
+        record_index: 3,
+        frame_length: 80,
+        opaque_index: None,
+        loci: [
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: None,
+                geometry_reference_offset: Some(35),
+                role: 0,
+                role_offset: Some(45),
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(41),
+                geometry_reference_offset: Some(50),
+                role: 1,
+                role_offset: Some(60),
+            },
+        ],
+        paired_class_tag: "273".to_owned().try_into().unwrap(),
+        paired_byte_offset: 90,
+    })
     .unwrap();
     let record_bytes = serde_json::to_vec(&Wire::from(&pair)).unwrap().len();
     let native = super::F3dNative {
@@ -125,9 +150,12 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 78);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 80);
+    assert!(catalogue_names.contains("act_tables"));
+    assert!(catalogue_names.contains("act_types"));
     assert!(catalogue_names.contains("asm_face_boundaries"));
     assert!(catalogue_names.contains("design_sheet_metal_settings"));
+    assert!(!catalogue_names.contains("design_intent_failures"));
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -259,15 +287,13 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
             .collect::<Vec<_>>(),
         vec![[0.25, 0.75]; 3]
     );
-    assert!(
-        f3d_native(decoded.ir())
-            .tolerant_coedge_parameters
-            .iter()
-            .all(|parameters| matches!(
-                parameters.extension,
-                cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None }
-            ))
-    );
+    assert!(f3d_native(decoded.ir())
+        .tolerant_coedge_parameters
+        .iter()
+        .all(|parameters| matches!(
+            parameters.extension,
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None }
+        )));
 
     decoded.ir_mut().model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     update_f3d_native(&mut decoded.ir_mut(), |native| {
@@ -1016,14 +1042,12 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         )
         .unwrap();
     assert_eq!(actual, expected);
-    assert!(
-        round_trip
-            .ir()
-            .model
-            .curves
-            .iter()
-            .any(|curve| curve.id == round_trip_base)
-    );
+    assert!(round_trip
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == round_trip_base));
 }
 
 #[test]
@@ -1346,14 +1370,12 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("an inconsistent cage must not fail the document decode");
     assert!(result.ir().model.subds.is_empty());
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
-                && loss.message.contains("T-spline control cage not decoded"))
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss.message.contains("T-spline control cage not decoded")));
 }
 
 #[test]
