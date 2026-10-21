@@ -207,12 +207,19 @@ pub(super) fn linear_pattern_display_directions(
         .collect()
 }
 
-pub(super) fn typed_linear_pattern_dimensions(
-    feature: &crate::records::Feature,
-    lane: &FeatureInputLane,
+pub(super) struct TypedLinearPatternDimensions<'a> {
+    pub(super) spacing_name: &'a str,
+    pub(super) spacing: PositiveLength,
+    pub(super) count_name: &'a str,
+    pub(super) count: u32,
+}
+
+pub(super) fn typed_linear_pattern_dimensions<'a>(
+    feature: &'a crate::records::Feature,
+    lane: &'a FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Option<(PositiveLength, u32)> {
+) -> Option<TypedLinearPatternDimensions<'a>> {
     let parameter = |class_name: &str| {
         let mut classes = lane.classes.iter().filter(|class| {
             class.name == class_name
@@ -233,17 +240,25 @@ pub(super) fn typed_linear_pattern_dimensions(
                 && feature.parameters.contains_key(name.value.as_str())
         });
         let name = names.next().filter(|_| names.next().is_none())?;
-        feature.parameters.get(name.value.as_str())
+        Some((
+            name.value.as_str(),
+            feature.parameters.get(name.value.as_str())?,
+        ))
     };
-    let count = parameter("moNumberDim_c")?
+    let (count_name, count) = parameter("moNumberDim_c")?;
+    let count = count
         .trim()
         .parse::<u32>()
         .ok()
         .filter(|count| *count > 0)?;
-    let spacing = crate::history::literals::parse_positive_dimension_length_mm(parameter(
-        "ParallelPlaneDistanceDim_c",
-    )?)?;
-    Some((spacing, count))
+    let (spacing_name, spacing) = parameter("ParallelPlaneDistanceDim_c")?;
+    let spacing = crate::history::literals::parse_positive_dimension_length_mm(spacing)?;
+    Some(TypedLinearPatternDimensions {
+        spacing_name,
+        spacing,
+        count_name,
+        count,
+    })
 }
 
 #[cfg(test)]

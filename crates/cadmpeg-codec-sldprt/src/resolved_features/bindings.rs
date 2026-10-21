@@ -328,7 +328,7 @@ pub(crate) fn bind_pattern_inputs(
                         }
                     )
                 ) {
-                    if let Some((_spacing, _count)) =
+                    if let Some(dimensions) =
                         object_start.filter(|start| *start < end).and_then(|start| {
                             typed_linear_pattern_dimensions(
                                 feature,
@@ -343,14 +343,14 @@ pub(crate) fn bind_pattern_inputs(
                             distance: match crate::history::project::parameter_dimension::<
                                 cadmpeg_ir::scalar::Length,
                             >(
-                                feature, &["Spacing", "D3"]
+                                feature, &[dimensions.spacing_name]
                             ) {
                                 Some(dimension) => dimension.into(),
                                 None => continue,
                             },
                             count: match crate::history::project::parameter_dimension(
                                 feature,
-                                &["Count", "D1"],
+                                &[dimensions.count_name],
                             ) {
                                 Some(dimension) => dimension,
                                 None => continue,
