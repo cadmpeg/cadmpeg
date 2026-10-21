@@ -677,14 +677,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     assert_eq!(parsed.companion_record_index(), 102);
     assert_eq!(parsed.scope_record_index(), None);
     assert_eq!(parsed.local_ordinal(), None);
-    assert_eq!(
-        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
-            serde_json::to_value(&parsed).unwrap()
-        )
-        .unwrap()
-        .owned_ordinal,
-        290
-    );
+    assert_eq!(parsed.owned_ordinal(), 290);
     assert_eq!(parsed.evaluated_value().get(), 0.0);
 
     for class_tag in ["268", "282", "289", "292", "297", "299", "325", "336"] {
@@ -747,14 +740,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     assert_eq!(parsed.frame_length(), Some(88));
     assert_eq!(parsed.scope_record_index(), Some(77));
     assert_eq!(parsed.local_ordinal(), None);
-    assert_eq!(
-        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
-            serde_json::to_value(&parsed).unwrap()
-        )
-        .unwrap()
-        .owned_ordinal,
-        290
-    );
+    assert_eq!(parsed.owned_ordinal(), 290);
     assert_eq!(parsed.parameter_record_index(), 101);
     assert_eq!(parsed.companion_record_index(), 102);
     assert_eq!(parsed.evaluated_value().get(), 2.5);
