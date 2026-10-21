@@ -190,7 +190,7 @@ pub(super) fn write(
     }
     let mut attributes = String::new();
     for (key, value) in &root {
-        let _ = write!(attributes, " {key}=\"{}\"", xml::escaped(value));
+        let _infallible_string_write = write!(attributes, " {key}=\"{}\"", xml::escaped(value));
     }
     Ok((schema, attributes, states))
 }

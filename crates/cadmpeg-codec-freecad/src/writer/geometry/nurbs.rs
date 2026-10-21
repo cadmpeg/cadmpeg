@@ -105,9 +105,9 @@ pub(super) fn curve(value: &NurbsCurve) -> Option<String> {
         axis.rows.len()
     );
     for (index, pole) in poles.iter().take(axis.count).enumerate() {
-        let _ = write!(output, " {}", super::point(pole.get()));
+        let _infallible_string_write = write!(output, " {}", super::point(pole.get()));
         if let Some(weights) = &weights {
-            let _ = write!(output, " {}", weights[index].get());
+            let _infallible_string_write = write!(output, " {}", weights[index].get());
         }
     }
     append_knots(&mut output, axis.rows);
@@ -155,9 +155,9 @@ pub(super) fn surface(value: &NurbsSurface) -> Option<String> {
     );
     for (ui, row) in poles.iter().take(u.count).enumerate() {
         for (vi, pole) in row.iter().take(v.count).enumerate() {
-            let _ = write!(output, " {}", super::point(pole.get()));
+            let _infallible_string_write = write!(output, " {}", super::point(pole.get()));
             if let Some(weights) = &weights {
-                let _ = write!(output, " {}", weights[ui][vi].get());
+                let _infallible_string_write = write!(output, " {}", weights[ui][vi].get());
             }
         }
     }
@@ -168,7 +168,7 @@ pub(super) fn surface(value: &NurbsSurface) -> Option<String> {
 
 fn append_knots(output: &mut String, rows: Vec<(f64, usize)>) {
     for (knot, multiplicity) in rows {
-        let _ = write!(output, " {knot} {multiplicity}");
+        let _infallible_string_write = write!(output, " {knot} {multiplicity}");
     }
 }
 

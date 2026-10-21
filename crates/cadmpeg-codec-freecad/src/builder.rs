@@ -312,7 +312,7 @@ pub(crate) fn document_xml(
     let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
     if schema != "2" {
         for object in objects {
-            let _ = write!(
+            let _infallible_string_write = write!(
                 result,
                 "<ObjectDeps Name=\"{}\" Count=\"{}\">",
                 crate::writer::xml::escaped(&object.name),
@@ -328,7 +328,7 @@ pub(crate) fn document_xml(
         }
     }
     for (index, object) in objects.iter().enumerate() {
-        let _ = write!(
+        let _infallible_string_write = write!(
             result,
             "<{object_tag} name=\"{}\" type=\"{}\" id=\"{}\"",
             crate::writer::xml::escaped(&object.name),
@@ -336,17 +336,18 @@ pub(crate) fn document_xml(
             index + 1
         );
         for (name, value) in &object.declaration_attributes {
-            let _ = write!(result, " {name}=\"{}\"", crate::writer::xml::escaped(value));
+            let _infallible_string_write =
+                write!(result, " {name}=\"{}\"", crate::writer::xml::escaped(value));
         }
         result.push_str("/>");
     }
-    let _ = write!(
+    let _infallible_string_write = write!(
         result,
         "</{objects_tag}><{data_tag} Count=\"{}\">",
         objects.len()
     );
     for object in objects {
-        let _ = write!(
+        let _infallible_string_write = write!(
             result,
             "<{object_tag} name=\"{}\"{}>{}{}</{object_tag}>",
             crate::writer::xml::escaped(&object.name),
@@ -367,6 +368,6 @@ pub(crate) fn document_xml(
             properties_xml(&object.properties)
         );
     }
-    let _ = write!(result, "</{data_tag}></Document>");
+    let _infallible_string_write = write!(result, "</{data_tag}></Document>");
     result
 }

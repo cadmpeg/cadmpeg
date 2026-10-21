@@ -217,7 +217,7 @@ fn gui_xml_impl(
             };
             encoded_properties.push(value);
         }
-        let _ = write!(
+        let _infallible_string_write = write!(
             output,
             "<ViewProvider name=\"{}\"{}><Properties Count=\"{}\">",
             xml::escaped(&provider.name),

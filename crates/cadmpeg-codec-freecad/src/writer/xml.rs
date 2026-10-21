@@ -80,7 +80,7 @@ pub(super) fn report_reductions(
 pub(crate) fn element(tag: &str, attributes: &[(&str, String)]) -> String {
     let mut result = format!("<{tag}");
     for (key, value) in attributes {
-        let _ = write!(result, " {key}=\"{}\"", escaped(value));
+        let _infallible_string_write = write!(result, " {key}=\"{}\"", escaped(value));
     }
     result.push_str("/>");
     result
@@ -243,7 +243,7 @@ fn native_named_impl(
     while let Some((index, close)) = stack.pop() {
         let value: &ValueRecord = &values[index];
         if close {
-            let _ = write!(content, "</{}>", value.tag);
+            let _infallible_string_write = write!(content, "</{}>", value.tag);
             continue;
         }
         content.push('<');
@@ -273,7 +273,7 @@ fn native_named_impl(
             } else {
                 text
             };
-            let _ = write!(content, " {key}=\"{}\"", escaped(text));
+            let _infallible_string_write = write!(content, " {key}=\"{}\"", escaped(text));
         }
         content.push('>');
         if let Some(text) = &value.text {
@@ -308,7 +308,7 @@ fn native_named_impl(
     }
     let mut result = String::from("<Property");
     for (name, value) in attributes {
-        let _ = write!(result, " {name}=\"{}\"", escaped(&value));
+        let _infallible_string_write = write!(result, " {name}=\"{}\"", escaped(&value));
     }
     result.push('>');
     result.push_str(&content);
