@@ -54,3 +54,19 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
         },
     )
 }
+
+/// Render current parameter names without recreating a duplicate dependency list.
+pub(crate) fn parameter_expression_text(
+    ir: &cadmpeg_ir::CadIr,
+    expression: &cadmpeg_ir::features::Expression,
+) -> String {
+    expression
+        .render_with(|id| {
+            ir.model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .map(|parameter| parameter.name.clone())
+        })
+        .expect("expression references resolve")
+}

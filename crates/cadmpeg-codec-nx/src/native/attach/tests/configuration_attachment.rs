@@ -18,7 +18,7 @@ fn configuration_attachment_preserves_active_relation() {
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap(),
             )),
-            dependencies: DistinctMembers::default(),
+            driving: true,
             properties: std::collections::BTreeMap::default(),
             pmi: None,
             native_ref: None,

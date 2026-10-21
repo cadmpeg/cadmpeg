@@ -46,7 +46,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                         .unwrap(),
                 ),
                 distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
-                    distance: (cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()).into(),
+                    distance: (cadmpeg_ir::scalar::Length::new(2.0).unwrap()).into(),
                 },
                 count: 3_u32.into(),
                 second: None,
