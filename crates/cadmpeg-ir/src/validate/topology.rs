@@ -2644,7 +2644,7 @@ fn check_feature_references(
             }
             if let Some(definition) = state.definition() {
                 for reference in regeneration_references(definition.operation()) {
-                    if !features.contains_key(reference.as_str()) {
+                    if !features.contains(reference.as_str()) {
                         ref_error(
                             findings,
                             configuration.id.as_str(),
@@ -2839,7 +2839,7 @@ fn check_feature_references(
             );
         }
         for dependency in &feature.dependencies {
-            if !features.contains_key(dependency.as_str()) {
+            if !features.contains(dependency.as_str()) {
                 ref_error(
                     findings,
                     feature.id.as_str(),
@@ -3377,7 +3377,7 @@ fn check_feature_references(
                         })
                 {
                     if let crate::features::BinderTarget::Feature { feature: target } = target {
-                        if !features.contains_key(target.as_str()) {
+                        if !features.contains(target.as_str()) {
                             ref_error(
                                 findings,
                                 feature.id.as_str(),
