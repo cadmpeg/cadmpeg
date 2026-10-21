@@ -333,3 +333,14 @@ projection.
 **Known.** `asm.md` §6.3 "**Law formulas**" names `SIGN` as a unary operator. Its serialized form has one recursively framed operand and no field that selects a zero convention. The format model does not give its value at zero.
 
 **Need.** A source rule or a law-driven construction with a defined value at an operand zero must settle whether `SIGN(0)` is zero, positive one, negative one, or has no value. This determines the section of a cacheless law-driven sweep at that parameter.
+
+## 6. Construction history
+
+### HS-01. Role of the first `history_stream` preamble field
+
+**Question.** What does the first preamble field, `stream_size`, identify?
+
+**Known.** `asm.md` §3.1 "The history-container record" gives the preamble. The linked `delta_state` chain runs from the current model toward the initial model, and its head is the current model. Usually `stream_size` equals the `state_id` of the head. A head can also have `state_id` `0` and be followed by the state whose `state_id` is `stream_size`. And `stream_size` can be a value that no `state_id` in the chain has.
+
+**Need.** A writer that adds a state must write a correct `stream_size`.
+
