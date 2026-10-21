@@ -145,60 +145,16 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
     false
 }
 
-pub(crate) fn target(ir: &CadIr, owner: &str) -> AttributeTarget {
+pub(crate) fn target(_ir: &CadIr, owner: &str) -> AttributeTarget {
     if owner == crate::native::native_id("document", "0") {
-        return AttributeTarget::Document;
-    }
-    if let Some(feature) = ir
-        .model
-        .features
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::Feature(feature.id.clone());
-    }
-    if let Some(sketch) = ir
-        .model
-        .sketches
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::Sketch(sketch.id.clone());
-    }
-    if let Some(product) = ir
-        .model
-        .product_definitions
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::ProductDefinition(product.id.clone());
-    }
-    if let Some(occurrence) = ir
-        .model
-        .occurrences
-        .iter()
-        .find(|record| record.native_ref.as_deref() == Some(owner))
-    {
-        return AttributeTarget::Occurrence(occurrence.id.clone());
-    }
-    if let Some(drawing) = ir
-        .model
-        .drawings
-        .iter()
-        .find(|record| record.object == owner)
-    {
-        return AttributeTarget::Drawing(drawing.id.clone());
-    }
-    if let Some(annotation) = ir
-        .model
-        .semantic_annotations
-        .iter()
-        .find(|record| record.object == owner)
-    {
-        return AttributeTarget::SemanticAnnotation(annotation.id.clone());
-    }
-    AttributeTarget::Source {
-        source_id: owner.to_owned(),
+        AttributeTarget::Document
+    } else {
+        // The typed source object owns an unconsumed native property at every
+        // delivery depth. A neutral projection of that object is not a second
+        // authority for its extra native properties.
+        AttributeTarget::Source {
+            source_id: owner.to_owned(),
+        }
     }
 }
 
@@ -215,26 +171,41 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         return None;
     };
     if !side_entries.is_empty() {
-        return None;
+        return (property.family != crate::native::PropertyFamily::Unknown)
+            .then(|| vec![AttributeValue::Reference(property.id.clone())]);
     }
     if !links.is_empty() {
-        return links
-            .iter()
-            .map(|link| {
-                link.as_ref()
-                    .filter(|link| link.document().is_none() && link.subelements().is_empty())
-                    .and_then(|link| {
+        // A property with subelements, external documents, or empty targets
+        // cannot be reduced to a bare object identity. Its admitted typed
+        // record is the authoritative, ordered reference value.
+        if links.iter().all(|link| {
+            link.as_ref().is_some_and(|link| {
+                link.document().is_none()
+                    && link.subelements().is_empty()
+                    && link.object().is_some()
+            })
+        }) {
+            return Some(
+                links
+                    .iter()
+                    .flatten()
+                    .filter_map(|link| {
                         link.object()
                             .map(|object| AttributeValue::Reference(object.to_owned()))
                     })
-            })
-            .collect();
+                    .collect(),
+            );
+        }
+        return Some(vec![AttributeValue::Reference(property.id.clone())]);
+    }
+    if property.family == crate::native::PropertyFamily::Map {
+        return Some(vec![AttributeValue::Reference(property.id.clone())]);
     }
     let mut projected = Vec::new();
     for value in values {
         let attributes = &value.attributes;
         if value.decoded_json.is_some() {
-            return None;
+            return Some(vec![AttributeValue::Reference(property.id.clone())]);
         }
         // An enumeration's choices describe its native grammar; the root
         // Integer is the selected semantic value. Keep all labels in the typed
@@ -319,7 +290,10 @@ pub(crate) fn transfer(
     for property in properties {
         if !projection_held(ir)
             || consumed(ir, property, objects)
-            || matches!(property.body, PropertyBody::Transient)
+            || matches!(
+                property.body,
+                PropertyBody::Transient | PropertyBody::Unreadable(_)
+            )
         {
             continue;
         }

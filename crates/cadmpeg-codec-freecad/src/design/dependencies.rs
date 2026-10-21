@@ -32,6 +32,18 @@ pub(super) fn structural(
                 .map(|native| (native.to_owned(), feature.id.clone()))
         })
         .collect();
+    let sketch_owners: BTreeMap<_, _> = ir
+        .model
+        .sketches
+        .iter()
+        .filter_map(|sketch| {
+            sketch
+                .native_ref
+                .as_ref()
+                .and_then(|native| owners.get(native))
+                .map(|owner| (sketch.id.as_str().to_owned(), owner.clone()))
+        })
+        .collect();
     let parameter_owners: BTreeMap<_, _> = ir
         .model
         .parameters
@@ -62,6 +74,9 @@ pub(super) fn structural(
             .visit_identity_references(ctx, &mut |reference| {
                 if let Some(id) = known.iter().find(|id| id.as_str() == reference) {
                     explicit.insert(id.clone());
+                }
+                if let Some(owner) = sketch_owners.get(reference) {
+                    explicit.insert(owner.clone());
                 }
                 if let Some(property) = properties.iter().find(|property| property.id == reference)
                 {
