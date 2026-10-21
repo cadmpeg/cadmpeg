@@ -526,3 +526,36 @@ fn stored_configuration_id_precedes_ordinal_fallback() {
         [(0, 0)]
     );
 }
+
+#[test]
+fn renamed_identifiers_round_trip_the_source_token_grammar() {
+    for name in ["Width@Sketch1", "$Global", "name.with.parts"] {
+        let rendered = super::render_identifier(name);
+        assert_eq!(rendered, name);
+        let tokens = super::expression_identifier_tokens(&rendered).unwrap();
+        let [token] = tokens.as_slice() else {
+            panic!("one identifier: {rendered}");
+        };
+        assert_eq!(token.value(), name);
+        assert!(!token.is_syntax());
+    }
+    for name in [
+        "12",
+        "1e3",
+        "PI",
+        "true",
+        "false",
+        "长度",
+        "part depth",
+        "A\"B",
+    ] {
+        let rendered = super::render_identifier(name);
+        let tokens = super::expression_identifier_tokens(&rendered).unwrap();
+        let [token] = tokens.as_slice() else {
+            panic!("one identifier: {rendered}");
+        };
+        assert!(token.is_quoted(), "{name}");
+        assert!(!token.is_syntax(), "{name}");
+        assert_eq!(token.value(), name, "{rendered}");
+    }
+}

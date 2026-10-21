@@ -500,12 +500,10 @@ pub(crate) fn render_parameter_expression(
 }
 
 pub(crate) fn render_identifier(name: &str) -> String {
-    let mut characters = name.chars();
-    let unquoted = characters
-        .next()
-        .is_some_and(|first| first.is_alphabetic() || first == '_')
-        && characters
-            .all(|character| character.is_alphanumeric() || matches!(character, '_' | '.'));
+    let unquoted = expression_identifier_tokens(name).is_some_and(|tokens| {
+        matches!(tokens.as_slice(), [token]
+            if token.raw == name && !token.is_quoted() && !token.is_syntax())
+    });
     if unquoted {
         name.to_owned()
     } else {
