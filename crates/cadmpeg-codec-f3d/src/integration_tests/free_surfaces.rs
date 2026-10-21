@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Free constructions are real saved roots; wire admission stays truthful.
 
+use crate::test_support::native_test::TestEncode;
 use crate::{loss::F3dLossCode, F3dCodec};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{
