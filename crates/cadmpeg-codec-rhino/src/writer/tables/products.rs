@@ -2,9 +2,8 @@
 //! Local prototypes and relative block placements, authored from neutral products.
 
 use super::{
-    CadIr, CodecError, Digest, Value, anonymous, attributed_object_record,
-    class_wrapper_with_direct, crc_chunk_with_direct, neutral_object_uuid, records, utf16,
-    wire_index,
+    CadIr, CodecError, Value, anonymous, attributed_object_record, class_wrapper_with_direct,
+    crc_chunk_with_direct, neutral_object_uuid, records, utf16, wire_index,
 };
 use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference};
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::writer::{TCODE_OBJECT_TABLE, TCODE_SETTINGS_TABLE};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;

@@ -246,11 +246,7 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
         .model
         .loops
         .iter()
-        .flat_map(
-            cadmpeg_ir::ids::CoedgeId::as_str
-                .iter()
-                .map(cadmpeg_ir::ids::LoopId::as_str),
-        )
+        .flat_map(|row| row.coedges().iter().map(cadmpeg_ir::ids::CoedgeId::as_str))
         .collect();
     result
         .model
@@ -291,18 +287,19 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
         .model
         .edges
         .retain(|row| edge_ids.contains(row.id.as_str()));
-    let vertex_ids: BTreeSet<_> =
-        result
-            .model
-            .edges
-            .iter()
-            .flat_map(|row| [row.start.as_str(), row.end.as_str()])
-            .chain(
-                result.model.loops.iter().flat_map(
-                    cadmpeg_ir::ids::VertexId::as_str.map(cadmpeg_ir::ids::LoopId::as_str),
-                ),
-            )
-            .collect();
+    let vertex_ids: BTreeSet<_> = result
+        .model
+        .edges
+        .iter()
+        .flat_map(|row| [row.start.as_str(), row.end.as_str()])
+        .chain(
+            result
+                .model
+                .loops
+                .iter()
+                .flat_map(|row| row.vertices().map(cadmpeg_ir::ids::VertexId::as_str)),
+        )
+        .collect();
     result
         .model
         .vertices
@@ -321,7 +318,7 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
         .model
         .edges
         .iter()
-        .filter_map(cadmpeg_ir::ids::CurveId::as_str.map(cadmpeg_ir::ids::LoopId::as_str))
+        .filter_map(|row| row.curve().map(cadmpeg_ir::ids::CurveId::as_str))
         .chain(
             result
                 .model

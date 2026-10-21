@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::writer::TCODE_FONT_TABLE;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn source_free_text_style_retains_font_names_weight_and_panose() {

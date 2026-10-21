@@ -2,8 +2,8 @@
 //! Typed view attributes, page settings and clipping planes.
 
 use super::{
-    CodecError, Digest, Map, Value, anonymous, crc_chunk_with_direct, flag, integer, object,
-    scalar, text, utf16, vector, wire_index,
+    CodecError, Map, Value, anonymous, crc_chunk_with_direct, flag, integer, object, scalar, text,
+    utf16, vector, wire_index,
 };
 
 fn optional_real(fields: &Map<String, Value>, name: &str, output: &mut Vec<u8>) {

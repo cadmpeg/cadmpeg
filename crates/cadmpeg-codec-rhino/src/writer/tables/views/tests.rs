@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::writer::TCODE_SETTINGS_TABLE;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::presentation::{
@@ -48,11 +49,13 @@ fn current_neutral_pose_and_name_regenerate_saved_view_without_source_bytes() {
     let fields=serde_json::from_value(serde_json::json!({"list_kind":"named","list_index":0,"neutral_view":view_id,"viewport":{"neutral_camera":camera_id,"camera_valid":true,"frustum_valid":true,"port_valid":true,"projection":2,"frustum_mm":[-2,2,-1,1,0.1,100],"port":[0,1920,1080,0,0,1]}})).unwrap();
     ir.native.namespace_mut("rhino").arenas_mut().insert(
         "views".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            Identity::new("rhino:document:view#saved").unwrap(),
-            fields,
-        )
-        .unwrap()],
+        vec![
+            cadmpeg_ir::NativeRecord::new(
+                Identity::new("rhino:document:view#saved").unwrap(),
+                fields,
+            )
+            .unwrap(),
+        ],
     );
     let exported = settings(&ir).unwrap();
     assert!(exported.losses.is_empty());
