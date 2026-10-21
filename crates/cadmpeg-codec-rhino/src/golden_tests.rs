@@ -274,15 +274,17 @@ fn geometry_depth_agrees_with_full_depth() {
         &RhinoCodec,
         &harness().fixture_inputs(),
         |result| {
-            let expected = crate::loss::unrepresented(
-                &result.report().losses,
-                result.ir().native.namespace("rhino"),
-            );
+            // #209 §1.3 derives B1 classes from concrete retained records;
+            // a diagnostic about typed content cannot infer an absent class.
+            let fidelity = result.source_fidelity();
+            let restored: cadmpeg_ir::SourceFidelity =
+                serde_json::from_value(serde_json::to_value(fidelity).unwrap()).unwrap();
             assert_eq!(
-                result.source_fidelity().unrepresented(),
-                expected,
-                "every source-only loss must declare its arena class"
+                restored.retained_records(),
+                fidelity.retained_records(),
+                "the sidecar must retain every source span, byte and untyped class"
             );
+            assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
