@@ -74,7 +74,19 @@ pub(crate) fn validate(
     validate_span_chain("physical archive", &physical, physical_end, &mut findings);
     for entry in &unreadable {
         if !fidelity.retained_record(&entry.id).is_some_and(|record| {
-            record.byte_len() == entry.byte_len && record.sha256() == entry.sha256
+            let source_bytes = fidelity
+                .retained_record(super::SOURCE_IMAGE)
+                .and_then(|image| image.data())
+                .and_then(|image| {
+                    let start = usize::try_from(record.offset()).ok()?;
+                    let end = usize::try_from(record.end_offset()).ok()?;
+                    image.get(start..end)
+                });
+            record.stream() == super::SOURCE_IMAGE
+                && record.byte_len() == entry.byte_len
+                && record.sha256() == entry.sha256
+                && source_bytes
+                    .is_some_and(|bytes| cadmpeg_ir::hash::sha256_hex(bytes) == entry.sha256)
         }) {
             findings.push(finding(
                 Check::PayloadIntegrity,
